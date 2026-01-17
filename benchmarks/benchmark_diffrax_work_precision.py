@@ -249,15 +249,15 @@ for idx, N in enumerate(GRID_SIZES):
     ax.legend(fontsize=10, loc='upper right')
     ax.grid(True, alpha=0.3)
 
-    # Add annotation for speedup at comparable error
-    # Find closest error match
-    fft_mid = results['fft_cn'][1]  # Middle dt point
-    diff_mid = results['diffrax'][1]  # Middle tolerance point
-    if fft_mid['time_s'] < diff_mid['time_s']:
-        speedup = diff_mid['time_s'] / fft_mid['time_s']
-        ax.annotate(f'{speedup:.0f}× faster\nat ~{fft_mid["error"]:.0e}',
-                    xy=(fft_mid['time_s'], fft_mid['error']),
-                    xytext=(fft_mid['time_s']*5, fft_mid['error']*5),
+    # Add annotation for speedup at matched ~2e-8 error
+    # Use FFT-CN at dt=1e-4 (index 2) vs Diffrax at rtol=1e-5 (index 0)
+    fft_best = results['fft_cn'][2]  # dt=1e-4, error ~2e-8
+    diff_first = results['diffrax'][0]  # rtol=1e-5, error ~2e-8
+    if fft_best['time_s'] < diff_first['time_s']:
+        speedup = diff_first['time_s'] / fft_best['time_s']
+        ax.annotate(f'{speedup:.0f}× faster\nat ~2e-8 error',
+                    xy=(fft_best['time_s'], fft_best['error']),
+                    xytext=(fft_best['time_s']*5, fft_best['error']*5),
                     fontsize=9, ha='left',
                     arrowprops=dict(arrowstyle='->', color='black', alpha=0.7))
 
@@ -300,14 +300,14 @@ for N in GRID_SIZES:
     for r in results['diffrax']:
         print(f"  rtol={r['rtol']:.0e}, atol={r['atol']:.0e}: {r['time_s']:.4f}s, error={r['error']:.2e}")
 
-    # Matched-accuracy comparison
-    fft_mid = results['fft_cn'][1]
-    diff_mid = results['diffrax'][1]
-    print(f"\nMatched-accuracy comparison (~{fft_mid['error']:.0e} error):")
-    print(f"  FFT-CN: {fft_mid['time_s']:.4f}s")
-    print(f"  Diffrax: {diff_mid['time_s']:.4f}s")
-    if fft_mid['time_s'] < diff_mid['time_s']:
-        print(f"  FFT-CN is {diff_mid['time_s']/fft_mid['time_s']:.0f}× faster")
+    # Matched-accuracy comparison at ~2e-8 error
+    fft_best = results['fft_cn'][2]  # dt=1e-4
+    diff_first = results['diffrax'][0]  # rtol=1e-5
+    print(f"\nMatched-accuracy comparison (~2e-8 error):")
+    print(f"  FFT-CN (dt=1e-4): {fft_best['time_s']:.4f}s, error={fft_best['error']:.2e}")
+    print(f"  Diffrax (rtol=1e-5): {diff_first['time_s']:.4f}s, error={diff_first['error']:.2e}")
+    if fft_best['time_s'] < diff_first['time_s']:
+        print(f"  FFT-CN is {diff_first['time_s']/fft_best['time_s']:.0f}× faster")
 
 
 # =============================================================================
