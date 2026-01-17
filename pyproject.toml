@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moljax"
+version = "0.1.0"
+description = "GPU-Portable Adaptive Method-of-Lines in JAX via AD-JVP Newton-Krylov and Spectral/FFT Operators"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Gorgi Pavlov", email = "gpavlov1@its.jnj.com"}
+]
+keywords = [
+    "PDE",
+    "method-of-lines",
+    "JAX",
+    "GPU",
+    "spectral-methods",
+    "FFT",
+    "Newton-Krylov",
+    "automatic-differentiation",
+    "stiff-ODEs",
+    "reaction-diffusion",
+    "chemical-engineering"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "jax>=0.4.20",
+    "jaxlib>=0.4.20",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+]
+viz = [
+    "matplotlib>=3.7",
+]
+all = [
+    "moljax[dev,viz]",
+]
+
+[project.urls]
+Homepage = "https://github.com/gogipav14/moljax"
+Documentation = "https://github.com/gogipav14/moljax#readme"
+Repository = "https://github.com/gogipav14/moljax"
+Issues = "https://github.com/gogipav14/moljax/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["moljax*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]  # Line too long (handled by black)

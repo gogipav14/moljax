@@ -1,0 +1,34 @@
+{
+  "julia_version": "1.12.4",
+  "cuda_available": true,
+  "config": {
+    "fft_cn_dt": 0.001,
+    "grid_size": 128,
+    "fft_cn_steps": 1000,
+    "D": 0.01,
+    "t_final": 1.0
+  },
+  "gpu_device": "NVIDIA GeForce RTX 5060",
+  "results": {
+    "diffeq_qndf_fd": {
+      "error": 0.0003859797704851564,
+      "mean_s": 188.6765215376,
+      "std_s": 158.11689093600143
+    },
+    "fft_cn_cpu": {
+      "error": 1.8624419673152204e-8,
+      "mean_s": 0.1637506498,
+      "std_s": 0.002458449708659241
+    },
+    "diffeq_tsit5_fd": {
+      "error": 7.469782336094744e-5,
+      "mean_s": 1.1606917908,
+      "std_s": 0.07354010236456572
+    },
+    "fft_cn_gpu": {
+      "error": 1.862433068877678e-8,
+      "mean_s": 0.089181341,
+      "std_s": 0.026820916944685247
+    }
+  }
+}
