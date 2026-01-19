@@ -1,0 +1,38 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: "moljax: GPU-Portable Method-of-Lines PDE Solver in JAX"
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Gorgi
+    family-names: Pavlov
+    email: gpavlov1@its.jnj.com
+    affiliation: Johnson & Johnson
+repository-code: 'https://github.com/gogipav14/moljax'
+url: 'https://github.com/gogipav14/moljax'
+abstract: >-
+  GPU-Portable Adaptive Method-of-Lines in JAX via AD-JVP
+  Newton-Krylov and Spectral/FFT Operators. Enables
+  transparent CPU/GPU execution for stiff PDE systems
+  including reaction-diffusion, advection-diffusion, and
+  tubular reactor models with FFT-accelerated implicit
+  time integration.
+keywords:
+  - PDE
+  - method-of-lines
+  - JAX
+  - GPU
+  - spectral-methods
+  - FFT
+  - Newton-Krylov
+  - automatic-differentiation
+  - stiff-ODEs
+  - reaction-diffusion
+  - chemical-engineering
+license: MIT
+version: 0.1.0
+date-released: '2025-01-17'
