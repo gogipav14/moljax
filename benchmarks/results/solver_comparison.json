@@ -1,0 +1,38 @@
+{
+  "solvers": [
+    {
+      "name": "SciPy Radau",
+      "type": "implicit",
+      "device": "CPU",
+      "time_s": 24.415697025999975,
+      "steps": 568,
+      "rtol": 1e-06,
+      "atol": 1e-08
+    },
+    {
+      "name": "moljax FFT-CN",
+      "type": "implicit",
+      "device": "GPU",
+      "time_s": 1.4797476510000251,
+      "steps": 10000,
+      "dt": 0.001,
+      "error_vs_scipy": 1.1933920156803612e-06
+    },
+    {
+      "name": "moljax IMEX",
+      "type": "IMEX",
+      "device": "GPU",
+      "time_s": 0.43819561000009344,
+      "steps": 2000,
+      "dt": 0.005,
+      "rtol": 1e-05,
+      "error_vs_scipy": 2.4477774311915113e-06
+    }
+  ],
+  "config": {
+    "N": 1024,
+    "D": 0.01,
+    "v": 1.0,
+    "t_final": 10.0
+  }
+}

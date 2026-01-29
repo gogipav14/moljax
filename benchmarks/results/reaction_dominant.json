@@ -1,0 +1,97 @@
+{
+  "experiments": [
+    {
+      "k": 0.1,
+      "stiffness_ratio": 0.024095713869847067,
+      "cluster_radius": 0.001,
+      "bound_satisfied": true,
+      "gmres_iterations": 2,
+      "gmres_converged": true,
+      "cn_time_ms": 4.2296100000385195,
+      "imex_time_ms": 4.391357011627406,
+      "winner": "CN",
+      "solution_diff": 6.185283547677223e-06
+    },
+    {
+      "k": 1.0,
+      "stiffness_ratio": 0.24095713869847066,
+      "cluster_radius": 0.01,
+      "bound_satisfied": true,
+      "gmres_iterations": 2,
+      "gmres_converged": true,
+      "cn_time_ms": 3.299215983133763,
+      "imex_time_ms": 4.5905570150353014,
+      "winner": "CN",
+      "solution_diff": 6.602008295830686e-06
+    },
+    {
+      "k": 10.0,
+      "stiffness_ratio": 2.4095713869847066,
+      "cluster_radius": 0.1,
+      "bound_satisfied": true,
+      "gmres_iterations": 2,
+      "gmres_converged": true,
+      "cn_time_ms": 4.348081012722105,
+      "imex_time_ms": 5.369980994146317,
+      "winner": "CN",
+      "solution_diff": 0.00031412785410805943
+    },
+    {
+      "k": 50.0,
+      "stiffness_ratio": 12.047856934923532,
+      "cluster_radius": 0.5,
+      "bound_satisfied": true,
+      "gmres_iterations": 2,
+      "gmres_converged": true,
+      "cn_time_ms": 3.3107540220953524,
+      "imex_time_ms": 3.550797002390027,
+      "winner": "CN",
+      "solution_diff": 0.0006890676473428059
+    },
+    {
+      "k": 100.0,
+      "stiffness_ratio": 24.095713869847064,
+      "cluster_radius": 1.0,
+      "bound_satisfied": false,
+      "gmres_iterations": 2,
+      "gmres_converged": true,
+      "cn_time_ms": 4.002366971690208,
+      "imex_time_ms": 3.497633006190881,
+      "winner": "IMEX",
+      "solution_diff": 2.828363623416794e-05
+    },
+    {
+      "k": 500.0,
+      "stiffness_ratio": 120.47856934923533,
+      "cluster_radius": 5.0,
+      "bound_satisfied": false,
+      "gmres_iterations": 3,
+      "gmres_converged": true,
+      "cn_time_ms": 4.083445994183421,
+      "imex_time_ms": 3.9654489955864847,
+      "winner": "IMEX",
+      "solution_diff": 0.00020936022729220677
+    },
+    {
+      "k": 1000.0,
+      "stiffness_ratio": 240.95713869847066,
+      "cluster_radius": 10.0,
+      "bound_satisfied": false,
+      "gmres_iterations": 3,
+      "gmres_converged": true,
+      "cn_time_ms": 5.381002003559843,
+      "imex_time_ms": 2.865802001906559,
+      "winner": "IMEX",
+      "solution_diff": 0.017347311389145158
+    }
+  ],
+  "config": {
+    "N": 128,
+    "D": 0.01,
+    "dt": 0.01,
+    "n_steps": 10,
+    "gmres_tol": 1e-08,
+    "gmres_maxiter": 500,
+    "device": "cuda:0"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "benchmark_256x256": {
+    "grid": "256x256",
+    "t_final": 10000.0,
+    "methods": [
+      {
+        "solver": "Diffrax Tsit5",
+        "status": "completed",
+        "time_s": 233.92,
+        "steps": 93961,
+        "note": "Explicit adaptive solver"
+      },
+      {
+        "solver": "Diffrax Kvaerno5",
+        "status": "infeasible",
+        "reason": "Jacobian requires 137GB memory (256*256*2)^2 * 8 bytes",
+        "note": "Implicit solvers scale as O(N^4) memory for 2D PDEs"
+      }
+    ]
+  },
+  "benchmark_64x64": {
+    "grid": "64x64",
+    "t_final": 10000.0,
+    "note": "Smaller grid where Kvaerno5 is feasible (0.54GB Jacobian)",
+    "methods": [
+      {
+        "solver": "Diffrax Kvaerno5",
+        "status": "completed",
+        "time_s": 86.0,
+        "steps": 33,
+        "note": "Implicit adaptive, very few steps but slow per-step"
+      },
+      {
+        "solver": "Diffrax Tsit5",
+        "status": "completed",
+        "time_s": 8.9,
+        "steps": 5997,
+        "note": "Explicit adaptive, 9.6x faster than Kvaerno5"
+      }
+    ]
+  },
+  "moljax_256x256": {
+    "grid": "256x256",
+    "t_final": 10000.0,
+    "note": "From gray_scott.json (actual walltime, no scaling)",
+    "methods": [
+      {
+        "solver": "IMEX-Strang",
+        "time_s": 6.0,
+        "steps": 20000
+      },
+      {
+        "solver": "ETDRK4",
+        "time_s": 10.6,
+        "steps": 10000
+      },
+      {
+        "solver": "CN (Newton-Krylov)",
+        "time_s": 21.6,
+        "steps": 20000
+      },
+      {
+        "solver": "RK4 (explicit)",
+        "time_s": 99.6,
+        "steps": 102669
+      }
+    ]
+  },
+  "key_findings": {
+    "implicit_memory_scaling": "O(N^4) for 2D PDEs with dense Jacobian",
+    "jacobian_256x256": "137 GB (infeasible on consumer GPUs)",
+    "jacobian_64x64": "0.54 GB (feasible but slow)",
+    "moljax_advantage": "IMEX/ETD methods avoid Jacobian computation entirely",
+    "speedup_imex_vs_diffrax_tsit5": "39x at 256x256 (6s vs 234s)"
+  },
+  "config": {
+    "Du": 2e-05,
+    "Dv": 1e-05,
+    "F": 0.035,
+    "k": 0.065,
+    "laplacian": "pseudo-spectral (-k^2)",
+    "dtype": "float64",
+    "device": "cuda:0",
+    "diffrax_version": "0.7.0"
+  }
+}

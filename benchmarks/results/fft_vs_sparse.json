@@ -1,0 +1,83 @@
+{
+  "grids": [
+    {
+      "N": 64,
+      "Ni": 62,
+      "DOFs": 3844,
+      "dt": 0.001,
+      "n_steps": 100,
+      "sparse": {
+        "time_ms": 19.050994000281207,
+        "time_iqr_ms": 0.48858049740374554,
+        "error": 4.00758355378894e-06
+      },
+      "dst": {
+        "time_ms": 6.610799002373824,
+        "time_iqr_ms": 0.20615799439838156,
+        "error": 0.009721067681110473
+      },
+      "jax_fft": {
+        "time_ms": 17.315199500444578,
+        "time_iqr_ms": 0.6978000019444153,
+        "note": "Periodic BC (timing comparison only)"
+      },
+      "speedup_dst_vs_sparse": 2.8817990069642603,
+      "speedup_jax_vs_sparse": 1.100246866909738
+    },
+    {
+      "N": 128,
+      "Ni": 126,
+      "DOFs": 15876,
+      "dt": 0.001,
+      "n_steps": 100,
+      "sparse": {
+        "time_ms": 133.8841600008891,
+        "time_iqr_ms": 3.835071747744223,
+        "error": 9.866552594939293e-07
+      },
+      "dst": {
+        "time_ms": 101.22137500002282,
+        "time_iqr_ms": 1.1579054989852011,
+        "error": 0.009724099252758744
+      },
+      "jax_fft": {
+        "time_ms": 15.149446498980979,
+        "time_iqr_ms": 3.96099999670696,
+        "note": "Periodic BC (timing comparison only)"
+      },
+      "speedup_dst_vs_sparse": 1.3226866361068392,
+      "speedup_jax_vs_sparse": 8.837561161716025
+    },
+    {
+      "N": 256,
+      "Ni": 254,
+      "DOFs": 64516,
+      "dt": 0.001,
+      "n_steps": 100,
+      "sparse": {
+        "time_ms": 905.2642400019977,
+        "time_iqr_ms": 19.76902449860063,
+        "error": 2.447175353470499e-07
+      },
+      "dst": {
+        "time_ms": 100.90238799966755,
+        "time_iqr_ms": 0.8831639988784445,
+        "error": 0.009724843283623774
+      },
+      "jax_fft": {
+        "time_ms": 50.061387999448925,
+        "time_iqr_ms": 5.188955748963053,
+        "note": "Periodic BC (timing comparison only)"
+      },
+      "speedup_dst_vs_sparse": 8.971683009176951,
+      "speedup_jax_vs_sparse": 18.08308311411507
+    }
+  ],
+  "config": {
+    "n_steps": 100,
+    "t_final": 0.1,
+    "D": 0.01,
+    "n_reps": 10,
+    "device": "cuda:0"
+  }
+}

@@ -83,5 +83,9 @@ figures/
 *.png
 *.pdf
 
+# But keep SISC pre-computed results for reproducibility
+!benchmarks/results/
+!benchmarks/results/*.json
+
 # Logs
 *.log

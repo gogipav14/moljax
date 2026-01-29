@@ -1,0 +1,189 @@
+{
+  "experiments": [
+    {
+      "grid_size": 64,
+      "dof": 4096,
+      "solution_mb": 0.03125,
+      "gmres_basis_mb": 0.9375,
+      "total_estimated_mb": 1.03125,
+      "allocation_success": true
+    },
+    {
+      "grid_size": 128,
+      "dof": 16384,
+      "solution_mb": 0.125,
+      "gmres_basis_mb": 3.75,
+      "total_estimated_mb": 4.125,
+      "allocation_success": true
+    },
+    {
+      "grid_size": 256,
+      "dof": 65536,
+      "solution_mb": 0.5,
+      "gmres_basis_mb": 15.0,
+      "total_estimated_mb": 16.5,
+      "allocation_success": true
+    },
+    {
+      "grid_size": 512,
+      "dof": 262144,
+      "solution_mb": 2.0,
+      "gmres_basis_mb": 60.0,
+      "total_estimated_mb": 66.0,
+      "allocation_success": true
+    },
+    {
+      "grid_size": 1024,
+      "dof": 1048576,
+      "solution_mb": 8.0,
+      "gmres_basis_mb": 240.0,
+      "total_estimated_mb": 264.0,
+      "allocation_success": true
+    }
+  ],
+  "memory_model": {},
+  "config": {
+    "gpu_memory_gb": 8.0,
+    "dtype": "float64",
+    "device": "cuda:0"
+  },
+  "feasibility_map": [
+    {
+      "grid": 64,
+      "dof": 4096,
+      "restarts": {
+        "10": {
+          "memory_gb": 0.000396728515625,
+          "fits": true
+        },
+        "20": {
+          "memory_gb": 0.000701904296875,
+          "fits": true
+        },
+        "30": {
+          "memory_gb": 0.001007080078125,
+          "fits": true
+        },
+        "50": {
+          "memory_gb": 0.001617431640625,
+          "fits": true
+        },
+        "100": {
+          "memory_gb": 0.003143310546875,
+          "fits": true
+        }
+      }
+    },
+    {
+      "grid": 128,
+      "dof": 16384,
+      "restarts": {
+        "10": {
+          "memory_gb": 0.0015869140625,
+          "fits": true
+        },
+        "20": {
+          "memory_gb": 0.0028076171875,
+          "fits": true
+        },
+        "30": {
+          "memory_gb": 0.0040283203125,
+          "fits": true
+        },
+        "50": {
+          "memory_gb": 0.0064697265625,
+          "fits": true
+        },
+        "100": {
+          "memory_gb": 0.0125732421875,
+          "fits": true
+        }
+      }
+    },
+    {
+      "grid": 256,
+      "dof": 65536,
+      "restarts": {
+        "10": {
+          "memory_gb": 0.00634765625,
+          "fits": true
+        },
+        "20": {
+          "memory_gb": 0.01123046875,
+          "fits": true
+        },
+        "30": {
+          "memory_gb": 0.01611328125,
+          "fits": true
+        },
+        "50": {
+          "memory_gb": 0.02587890625,
+          "fits": true
+        },
+        "100": {
+          "memory_gb": 0.05029296875,
+          "fits": true
+        }
+      }
+    },
+    {
+      "grid": 512,
+      "dof": 262144,
+      "restarts": {
+        "10": {
+          "memory_gb": 0.025390625,
+          "fits": true
+        },
+        "20": {
+          "memory_gb": 0.044921875,
+          "fits": true
+        },
+        "30": {
+          "memory_gb": 0.064453125,
+          "fits": true
+        },
+        "50": {
+          "memory_gb": 0.103515625,
+          "fits": true
+        },
+        "100": {
+          "memory_gb": 0.201171875,
+          "fits": true
+        }
+      }
+    },
+    {
+      "grid": 1024,
+      "dof": 1048576,
+      "restarts": {
+        "10": {
+          "memory_gb": 0.1015625,
+          "fits": true
+        },
+        "20": {
+          "memory_gb": 0.1796875,
+          "fits": true
+        },
+        "30": {
+          "memory_gb": 0.2578125,
+          "fits": true
+        },
+        "50": {
+          "memory_gb": 0.4140625,
+          "fits": true
+        },
+        "100": {
+          "memory_gb": 0.8046875,
+          "fits": true
+        }
+      }
+    }
+  ],
+  "max_grid_sizes": {
+    "10": 8128,
+    "20": 6111,
+    "30": 5101,
+    "50": 4025,
+    "100": 2887
+  }
+}

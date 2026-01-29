@@ -1,0 +1,65 @@
+{
+  "experiments": [
+    {
+      "grid_size": 32,
+      "dof": 32768,
+      "memory_mb": 1.25,
+      "time_ms": 1.836960989749059,
+      "time_iqr_ms": 0.05883400444872677,
+      "error": 1.2298008498223822e-06,
+      "success": true
+    },
+    {
+      "grid_size": 48,
+      "dof": 110592,
+      "memory_mb": 4.21875,
+      "time_ms": 2.5413189723622054,
+      "time_iqr_ms": 0.6558430031873286,
+      "error": 1.229800853375096e-06,
+      "success": true
+    },
+    {
+      "grid_size": 64,
+      "dof": 262144,
+      "memory_mb": 10.0,
+      "time_ms": 4.74475699593313,
+      "time_iqr_ms": 0.16615097410976887,
+      "error": 1.2298008461586463e-06,
+      "success": true
+    },
+    {
+      "grid_size": 80,
+      "dof": 512000,
+      "memory_mb": 19.53125,
+      "time_ms": 7.2227670170832425,
+      "time_iqr_ms": 0.12925101327709854,
+      "error": 1.2298008467137578e-06,
+      "success": true
+    },
+    {
+      "grid_size": 100,
+      "dof": 1000000,
+      "memory_mb": 38.14697265625,
+      "time_ms": 14.05285601504147,
+      "time_iqr_ms": 0.44579399400390685,
+      "error": 1.2298008480460254e-06,
+      "success": true
+    },
+    {
+      "grid_size": 128,
+      "dof": 2097152,
+      "memory_mb": 80.0,
+      "time_ms": 30.38179100258276,
+      "time_iqr_ms": 0.37282900302670896,
+      "error": 1.2298008483790923e-06,
+      "success": true
+    }
+  ],
+  "config": {
+    "D": 0.1,
+    "t_final": 0.01,
+    "n_steps": 10,
+    "n_reps": 5,
+    "device": "cuda:0"
+  }
+}

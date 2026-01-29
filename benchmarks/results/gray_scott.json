@@ -1,0 +1,49 @@
+{
+  "methods": [
+    {
+      "name": "RK4 (explicit)",
+      "time_s": 99.60844201800137,
+      "iqr_s": 2.735587881747051,
+      "steps": 102669,
+      "dt": 0.09740042983195922,
+      "t_final": 10000.00473041742
+    },
+    {
+      "name": "CN (Newton-Krylov)",
+      "time_s": 21.577493907003372,
+      "iqr_s": 0.23673320824673283,
+      "steps": 20000,
+      "dt": 0.5,
+      "t_final": 10000.0
+    },
+    {
+      "name": "IMEX-Strang",
+      "time_s": 5.963438204496924,
+      "iqr_s": 0.2530791249973845,
+      "steps": 20000,
+      "dt": 0.5,
+      "t_final": 10000.0
+    },
+    {
+      "name": "ETDRK4",
+      "time_s": 10.586106849998032,
+      "iqr_s": 0.2403173937509564,
+      "steps": 10000,
+      "dt": 1.0,
+      "t_final": 10000.0
+    }
+  ],
+  "config": {
+    "N": 256,
+    "Du": 2e-05,
+    "Dv": 1e-05,
+    "F": 0.035,
+    "k": 0.065,
+    "t_final": 10000.0,
+    "scaling_used": false,
+    "n_reps": 10,
+    "dtype": "float64",
+    "device": "cuda:0",
+    "laplacian": "pseudo-spectral (-k^2)"
+  }
+}

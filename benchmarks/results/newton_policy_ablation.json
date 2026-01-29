@@ -1,0 +1,219 @@
+{
+  "experiments": [
+    {
+      "policy": "terminate",
+      "shrink_factor": null,
+      "success_rate": 0.0,
+      "avg_accepted": 0.0,
+      "avg_rejected": 1.0,
+      "avg_newton_failures": 1.0,
+      "avg_time_s": 0.09660003680037335,
+      "trials": [
+        {
+          "success": false,
+          "final_t": 0.0,
+          "n_accepted": 0,
+          "n_rejected": 1,
+          "n_newton_failures": 1,
+          "time_s": 0.39823023101780564
+        },
+        {
+          "success": false,
+          "final_t": 0.0,
+          "n_accepted": 0,
+          "n_rejected": 1,
+          "n_newton_failures": 1,
+          "time_s": 0.01871725099044852
+        },
+        {
+          "success": false,
+          "final_t": 0.0,
+          "n_accepted": 0,
+          "n_rejected": 1,
+          "n_newton_failures": 1,
+          "time_s": 0.021915226010605693
+        },
+        {
+          "success": false,
+          "final_t": 0.0,
+          "n_accepted": 0,
+          "n_rejected": 1,
+          "n_newton_failures": 1,
+          "time_s": 0.02292469999520108
+        },
+        {
+          "success": false,
+          "final_t": 0.0,
+          "n_accepted": 0,
+          "n_rejected": 1,
+          "n_newton_failures": 1,
+          "time_s": 0.0212127759878058
+        }
+      ]
+    },
+    {
+      "policy": "\u00f72",
+      "shrink_factor": 2,
+      "success_rate": 1.0,
+      "avg_accepted": 133.0,
+      "avg_rejected": 35.4,
+      "avg_newton_failures": 35.4,
+      "avg_time_s": 2.493756376596866,
+      "trials": [
+        {
+          "success": true,
+          "final_t": 1.04555801791462,
+          "n_accepted": 133,
+          "n_rejected": 35,
+          "n_newton_failures": 35,
+          "time_s": 2.4680283979978412
+        },
+        {
+          "success": true,
+          "final_t": 1.008371213393961,
+          "n_accepted": 133,
+          "n_rejected": 37,
+          "n_newton_failures": 37,
+          "time_s": 2.5168792059994303
+        },
+        {
+          "success": true,
+          "final_t": 1.0400046399681677,
+          "n_accepted": 133,
+          "n_rejected": 35,
+          "n_newton_failures": 35,
+          "time_s": 2.5464507679862436
+        },
+        {
+          "success": true,
+          "final_t": 1.04555801791462,
+          "n_accepted": 133,
+          "n_rejected": 35,
+          "n_newton_failures": 35,
+          "time_s": 2.419738950993633
+        },
+        {
+          "success": true,
+          "final_t": 1.0400046399681677,
+          "n_accepted": 133,
+          "n_rejected": 35,
+          "n_newton_failures": 35,
+          "time_s": 2.517684560007183
+        }
+      ]
+    },
+    {
+      "policy": "\u00f74",
+      "shrink_factor": 4,
+      "success_rate": 1.0,
+      "avg_accepted": 161.0,
+      "avg_rejected": 21.0,
+      "avg_newton_failures": 21.0,
+      "avg_time_s": 2.463224495603936,
+      "trials": [
+        {
+          "success": true,
+          "final_t": 1.0597545486577777,
+          "n_accepted": 161,
+          "n_rejected": 21,
+          "n_newton_failures": 21,
+          "time_s": 2.488827899011085
+        },
+        {
+          "success": true,
+          "final_t": 1.0541841701530368,
+          "n_accepted": 161,
+          "n_rejected": 21,
+          "n_newton_failures": 21,
+          "time_s": 2.461287521000486
+        },
+        {
+          "success": true,
+          "final_t": 1.0541841701530368,
+          "n_accepted": 161,
+          "n_rejected": 21,
+          "n_newton_failures": 21,
+          "time_s": 2.4840673510043416
+        },
+        {
+          "success": true,
+          "final_t": 1.0597545486577777,
+          "n_accepted": 161,
+          "n_rejected": 21,
+          "n_newton_failures": 21,
+          "time_s": 2.421797160001006
+        },
+        {
+          "success": true,
+          "final_t": 1.0541841701530368,
+          "n_accepted": 161,
+          "n_rejected": 21,
+          "n_newton_failures": 21,
+          "time_s": 2.4601425470027607
+        }
+      ]
+    },
+    {
+      "policy": "\u00f78",
+      "shrink_factor": 8,
+      "success_rate": 1.0,
+      "avg_accepted": 214.0,
+      "avg_rejected": 19.0,
+      "avg_newton_failures": 19.0,
+      "avg_time_s": 2.686553567799274,
+      "trials": [
+        {
+          "success": true,
+          "final_t": 1.0372505442597337,
+          "n_accepted": 214,
+          "n_rejected": 19,
+          "n_newton_failures": 19,
+          "time_s": 2.6602667669940274
+        },
+        {
+          "success": true,
+          "final_t": 1.0372505442597337,
+          "n_accepted": 214,
+          "n_rejected": 19,
+          "n_newton_failures": 19,
+          "time_s": 2.7661330539849587
+        },
+        {
+          "success": true,
+          "final_t": 1.0372505442597337,
+          "n_accepted": 214,
+          "n_rejected": 19,
+          "n_newton_failures": 19,
+          "time_s": 2.62675971101271
+        },
+        {
+          "success": true,
+          "final_t": 1.0372505442597337,
+          "n_accepted": 214,
+          "n_rejected": 19,
+          "n_newton_failures": 19,
+          "time_s": 2.684846237010788
+        },
+        {
+          "success": true,
+          "final_t": 1.0372505442597337,
+          "n_accepted": 214,
+          "n_rejected": 19,
+          "n_newton_failures": 19,
+          "time_s": 2.6947620699938852
+        }
+      ]
+    }
+  ],
+  "config": {
+    "grid_size": 64,
+    "D": 0.01,
+    "reaction_k": 50.0,
+    "t_final": 1.0,
+    "dt_init": 0.1,
+    "newton_tol": 1e-08,
+    "newton_maxiter": 10,
+    "n_trials": 5,
+    "device": "cuda:0"
+  }
+}

@@ -6,6 +6,17 @@
 [![JAX](https://img.shields.io/badge/JAX-0.4.25+-green.svg)](https://github.com/google/jax)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## SISC Paper
+
+This repository accompanies the paper:
+
+> **MOL-JAX: A JIT-Compiled Method of Lines Engine with FFT-Diagonalized Newton–Krylov Solvers for Stiff Parabolic PDEs**
+> Submitted to SIAM Journal on Scientific Computing (SISC)
+
+To reproduce all paper results, see [REPRODUCE.md](REPRODUCE.md).
+
+---
+
 `moljax` is a JAX-native method-of-lines framework for solving stiff PDEs with:
 
 - **JIT-compiled adaptive time stepping** with accept/reject control flow on GPU/TPU

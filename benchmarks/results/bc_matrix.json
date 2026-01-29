@@ -1,0 +1,71 @@
+{
+  "experiments": [
+    {
+      "grid_size": 64,
+      "periodic_fft": {
+        "time_ms": 12.80005399894435,
+        "time_iqr_ms": 0.6052242388250306,
+        "error": 1.8624556509805323e-06
+      },
+      "dirichlet_dst": {
+        "time_ms": 23.22178750182502,
+        "time_iqr_ms": 7.316180504858494,
+        "error": 0.8203898984642782,
+        "overhead_pct": 81.4194495096675
+      },
+      "neumann_dct": {
+        "time_ms": 14.688484501675703,
+        "time_iqr_ms": 0.6854300008853897,
+        "error": 0.8208687174155399,
+        "overhead_pct": 14.75330106331658
+      }
+    },
+    {
+      "grid_size": 128,
+      "periodic_fft": {
+        "time_ms": 15.419587478390895,
+        "time_iqr_ms": 1.6280640120385215,
+        "error": 1.8624556587520935e-06
+      },
+      "dirichlet_dst": {
+        "time_ms": 36.03935799037572,
+        "time_iqr_ms": 0.8748249674681574,
+        "error": 0.8207470411956531,
+        "overhead_pct": 133.7245275911661
+      },
+      "neumann_dct": {
+        "time_ms": 20.774557488039136,
+        "time_iqr_ms": 1.1507084855111316,
+        "error": 0.8208687174155399,
+        "overhead_pct": 34.72836103529182
+      }
+    },
+    {
+      "grid_size": 256,
+      "periodic_fft": {
+        "time_ms": 20.11504548136145,
+        "time_iqr_ms": 4.73506074922625,
+        "error": 1.8624556614166288e-06
+      },
+      "dirichlet_dst": {
+        "time_ms": 196.33081500069238,
+        "time_iqr_ms": 1.31153150141472,
+        "error": 0.8208380543766702,
+        "overhead_pct": 876.0396275644121
+      },
+      "neumann_dct": {
+        "time_ms": 42.513019012403674,
+        "time_iqr_ms": 0.5370275030145422,
+        "error": 0.8208687174155399,
+        "overhead_pct": 111.3493556442422
+      }
+    }
+  ],
+  "config": {
+    "D": 0.1,
+    "t_final": 0.1,
+    "n_steps": 100,
+    "n_reps": 10,
+    "device": "cuda:0"
+  }
+}

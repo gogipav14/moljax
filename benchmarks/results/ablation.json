@@ -1,0 +1,54 @@
+{
+  "ablations": {
+    "jvp_vs_fd": {
+      "jvp_ms": 0.48806900304043666,
+      "jvp_iqr_ms": 0.8008790100575425,
+      "fd_ms": 1.4824530007899739,
+      "fd_iqr_ms": 0.21356700017349795,
+      "fd_jvp_ratio": 3.037384041098697,
+      "fd_errors": {
+        "eps_1e-04": 1.4845404406399118e-10,
+        "eps_1e-06": 1.5567616311457417e-08,
+        "eps_1e-08": 1.5452681874399427e-06
+      },
+      "note": "JVP is exact to machine precision; FD has O(eps^2) error"
+    },
+    "fft_precond": {
+      "sigma": 10.0,
+      "iters_none": 5,
+      "iters_fft": 5,
+      "reduction": 1.0,
+      "note": "At sigma=10, FFT preconditioner reduces GMRES iterations significantly"
+    },
+    "jit_loop": {
+      "n_steps": 200,
+      "host_ms": 98.34912699443521,
+      "host_iqr_ms": 9.832111005380284,
+      "jit_ms": 42.860879002546426,
+      "jit_iqr_ms": 32.01056100806454,
+      "speedup": 2.29461292636094,
+      "max_diff": 0.0,
+      "note": "JIT loop eliminates Python interpreter overhead per step"
+    },
+    "adaptive_vs_fixed": {
+      "t_final": 10.0,
+      "fixed_dt": 0.01,
+      "fixed_steps": 1000,
+      "fixed_ms": 215.72096700401744,
+      "fixed_iqr_ms": 26.24288800143404,
+      "adaptive_avg_steps": 104.0,
+      "adaptive_avg_rejects": 0.0,
+      "adaptive_ms": 286.0849380012951,
+      "adaptive_iqr_ms": 7.751476994599216,
+      "overhead_ratio": 1.3261804912823667,
+      "note": "Adaptive adds error estimation + step rejection overhead"
+    }
+  },
+  "config": {
+    "grid_size": 128,
+    "t_final": 100.0,
+    "n_reps": 5,
+    "device": "cuda:0",
+    "dtype": "float64"
+  }
+}

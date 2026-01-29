@@ -1,0 +1,91 @@
+{
+  "experiments": [
+    {
+      "dim": 1,
+      "N": 1000,
+      "shape": [1000],
+      "dof": 1000,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 4,
+        "count": 20,
+        "time_s": 0.45
+      },
+      "unpreconditioned": {
+        "median": 65.0,
+        "q25": 58.0,
+        "q75": 72.0,
+        "max": 85,
+        "min": 52,
+        "count": 20,
+        "time_s": 2.1
+      }
+    },
+    {
+      "dim": 2,
+      "N": 64,
+      "shape": [64, 64],
+      "dof": 4096,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 4,
+        "count": 20,
+        "time_s": 0.62
+      },
+      "unpreconditioned": {
+        "median": 89.0,
+        "q25": 82.0,
+        "q75": 95.0,
+        "max": 108,
+        "min": 75,
+        "count": 20,
+        "time_s": 3.8
+      }
+    },
+    {
+      "dim": 3,
+      "N": 16,
+      "shape": [16, 16, 16],
+      "dof": 4096,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 5,
+        "count": 20,
+        "time_s": 0.58
+      },
+      "unpreconditioned": {
+        "median": 95.0,
+        "q25": 88.0,
+        "q75": 102.0,
+        "max": 115,
+        "min": 78,
+        "count": 20,
+        "time_s": 4.2
+      }
+    }
+  ],
+  "config": {
+    "sigma": 10,
+    "gmres_tol": 1e-8,
+    "gmres_maxiter": 500,
+    "gmres_restart": 30,
+    "n_timesteps": 5,
+    "n_linear_solves_per_config": 20,
+    "D": 0.01,
+    "reaction_k": 1.0,
+    "device": "cuda:0",
+    "note": "Statistics collected over multiple Newton linear solves during 5-timestep integration"
+  }
+}

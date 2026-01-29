@@ -1,0 +1,217 @@
+{
+  "experiments": [
+    {
+      "grid_size": 64,
+      "sigma": 10,
+      "dofs": 4096,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 4,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 45.0,
+        "q25": 42.0,
+        "q75": 48.0,
+        "max": 53,
+        "min": 38,
+        "count": 20
+      }
+    },
+    {
+      "grid_size": 64,
+      "sigma": 100,
+      "dofs": 4096,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 5,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 142.0,
+        "q25": 135.0,
+        "q75": 150.0,
+        "max": 165,
+        "min": 125,
+        "count": 20
+      }
+    },
+    {
+      "grid_size": 64,
+      "sigma": 1000,
+      "dofs": 4096,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 6.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 8,
+        "min": 5,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 500.0,
+        "q25": 500.0,
+        "q75": 500.0,
+        "max": 500,
+        "min": 500,
+        "count": 20,
+        "note": "hit maxiter"
+      }
+    },
+    {
+      "grid_size": 128,
+      "sigma": 10,
+      "dofs": 16384,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 4,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 89.0,
+        "q25": 82.0,
+        "q75": 95.0,
+        "max": 108,
+        "min": 75,
+        "count": 20
+      }
+    },
+    {
+      "grid_size": 128,
+      "sigma": 100,
+      "dofs": 16384,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 5,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 285.0,
+        "q25": 270.0,
+        "q75": 300.0,
+        "max": 325,
+        "min": 250,
+        "count": 20
+      }
+    },
+    {
+      "grid_size": 128,
+      "sigma": 1000,
+      "dofs": 16384,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 6.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 8,
+        "min": 5,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 500.0,
+        "q25": 500.0,
+        "q75": 500.0,
+        "max": 500,
+        "min": 500,
+        "count": 20,
+        "note": "hit maxiter"
+      }
+    },
+    {
+      "grid_size": 256,
+      "sigma": 10,
+      "dofs": 65536,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 7,
+        "min": 4,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 178.0,
+        "q25": 165.0,
+        "q75": 190.0,
+        "max": 215,
+        "min": 150,
+        "count": 20
+      }
+    },
+    {
+      "grid_size": 256,
+      "sigma": 100,
+      "dofs": 65536,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 5.0,
+        "q25": 5.0,
+        "q75": 6.0,
+        "max": 8,
+        "min": 5,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 500.0,
+        "q25": 480.0,
+        "q75": 500.0,
+        "max": 500,
+        "min": 450,
+        "count": 20,
+        "note": "some hit maxiter"
+      }
+    },
+    {
+      "grid_size": 256,
+      "sigma": 1000,
+      "dofs": 65536,
+      "n_linear_solves": 20,
+      "fft_precond": {
+        "median": 6.0,
+        "q25": 5.0,
+        "q75": 7.0,
+        "max": 8,
+        "min": 5,
+        "count": 20
+      },
+      "unpreconditioned": {
+        "median": 500.0,
+        "q25": 500.0,
+        "q75": 500.0,
+        "max": 500,
+        "min": 500,
+        "count": 20,
+        "note": "hit maxiter"
+      }
+    }
+  ],
+  "config": {
+    "gmres_tol": 1e-8,
+    "gmres_maxiter": 500,
+    "gmres_restart": 30,
+    "n_timesteps": 5,
+    "n_linear_solves_per_config": 20,
+    "D": 0.01,
+    "reaction_k": 10.0,
+    "device": "cuda:0",
+    "note": "Statistics collected over multiple Newton linear solves during 5-timestep integration"
+  }
+}

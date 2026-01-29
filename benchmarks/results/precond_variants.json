@@ -1,0 +1,105 @@
+{
+  "experiments": [
+    {
+      "sigma": 1,
+      "dt": 0.006103515625,
+      "preconditioners": {
+        "None": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 1635.4900089791045
+        },
+        "Jacobi": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 537.4777200049721
+        },
+        "Block-Jacobi": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 410.61094400356524
+        },
+        "FFT Diffusion": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 439.17796399910003
+        },
+        "Shifted FFT": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 470.1820189948194
+        }
+      }
+    },
+    {
+      "sigma": 10,
+      "dt": 0.06103515625,
+      "preconditioners": {
+        "None": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 40758.258399990154
+        },
+        "Jacobi": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 40934.33164097951
+        },
+        "Block-Jacobi": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 40780.22684899042
+        },
+        "FFT Diffusion": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 47497.03720200341
+        },
+        "Shifted FFT": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 47626.14388100337
+        }
+      }
+    },
+    {
+      "sigma": 100,
+      "dt": 0.6103515625,
+      "preconditioners": {
+        "None": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 41173.86468700715
+        },
+        "Jacobi": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 40826.39750101953
+        },
+        "Block-Jacobi": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 40645.47784300521
+        },
+        "FFT Diffusion": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 46087.759229994845
+        },
+        "Shifted FFT": {
+          "iterations": 5,
+          "converged": true,
+          "time_ms": 45783.50618499098
+        }
+      }
+    }
+  ],
+  "config": {
+    "grid_size": 128,
+    "gmres_tol": 1e-06,
+    "gmres_maxiter": 5000,
+    "D": 0.01,
+    "reaction_k": 10.0,
+    "device": "cuda:0"
+  }
+}

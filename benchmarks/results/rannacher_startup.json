@@ -1,0 +1,44 @@
+{
+  "methods": {
+    "pure_cn": {
+      "min_value": 4.562475266587576e-15,
+      "max_value": 0.9999863277230308,
+      "oscillation_amplitude": -4.562475266587576e-15,
+      "solutions_at_steps": [
+        9,
+        19,
+        29,
+        39,
+        49,
+        59,
+        69,
+        79,
+        89,
+        99,
+        100
+      ]
+    },
+    "cn_rannacher": {
+      "min_value": 4.511722463873263e-15,
+      "max_value": 0.9999862966200908,
+      "oscillation_amplitude": -4.511722463873263e-15,
+      "rannacher_steps": 2
+    },
+    "pure_be": {
+      "min_value": 8.50132770220698e-15,
+      "max_value": 0.999979528600508,
+      "oscillation_amplitude": -8.50132770220698e-15
+    }
+  },
+  "config": {
+    "grid_size": 256,
+    "D": 0.01,
+    "dt": 0.001,
+    "n_steps": 100,
+    "t_final": 0.1,
+    "device": "cuda:0"
+  },
+  "smooth_ic_comparison": {
+    "max_diff_cn_be": 0.0002310976545797372
+  }
+}

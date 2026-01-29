@@ -1,0 +1,103 @@
+{
+  "ad_jvp": {
+    "norm": 205.99961307732647,
+    "time_ms": 131.03585201315582
+  },
+  "fd_jvp": [
+    {
+      "epsilon": 0.01,
+      "norm": 206.00158436629218,
+      "relative_error": 1.2821786286291801e-05,
+      "time_ms": 71.06760400347412
+    },
+    {
+      "epsilon": 0.001,
+      "norm": 205.99963279014187,
+      "relative_error": 1.2821786299930008e-07,
+      "time_ms": 67.98349999007769
+    },
+    {
+      "epsilon": 0.0001,
+      "norm": 205.99961327445064,
+      "relative_error": 1.2821856474058515e-09,
+      "time_ms": 70.36070799222216
+    },
+    {
+      "epsilon": 1e-05,
+      "norm": 205.99961307929735,
+      "relative_error": 1.5597379097608054e-11,
+      "time_ms": 69.92943299701437
+    },
+    {
+      "epsilon": 1e-06,
+      "norm": 205.99961307776994,
+      "relative_error": 9.009415244165311e-11,
+      "time_ms": 68.6504380137194
+    },
+    {
+      "epsilon": 1e-07,
+      "norm": 205.99961308113183,
+      "relative_error": 8.968370112859599e-10,
+      "time_ms": 70.34596099401824
+    },
+    {
+      "epsilon": 1e-08,
+      "norm": 205.99961311034235,
+      "relative_error": 8.760550128763289e-09,
+      "time_ms": 68.20656097261235
+    },
+    {
+      "epsilon": 1e-09,
+      "norm": 205.99961244490893,
+      "relative_error": 8.731109091668172e-08,
+      "time_ms": 63.076493999687955
+    },
+    {
+      "epsilon": 1e-10,
+      "norm": 205.99961619762632,
+      "relative_error": 8.981453735234916e-07,
+      "time_ms": 64.52814899967052
+    },
+    {
+      "epsilon": 1e-11,
+      "norm": 205.99954985157714,
+      "relative_error": 9.243024152799438e-06,
+      "time_ms": 66.98092501028441
+    },
+    {
+      "epsilon": 1e-12,
+      "norm": 205.99978725054456,
+      "relative_error": 9.011093484428574e-05,
+      "time_ms": 66.01951798074879
+    }
+  ],
+  "config": {
+    "grid_size": 64,
+    "D": 0.01,
+    "dt": 0.01,
+    "reaction_k": 10.0,
+    "gmres_tol": 1e-10,
+    "device": "cuda:0"
+  },
+  "gmres_comparison": {
+    "ad": {
+      "iterations": 5
+    },
+    "fd_eps_0.0001": {
+      "iterations": 200,
+      "converged": false
+    },
+    "fd_eps_1e-06": {
+      "iterations": 200,
+      "converged": false
+    },
+    "fd_eps_1e-08": {
+      "iterations": 200,
+      "converged": false
+    },
+    "fd_eps_1e-10": {
+      "iterations": 200,
+      "converged": false
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "sweeps": [
+    {
+      "sigma": 0.1,
+      "dt": 0.0006103515625,
+      "none": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 328.66885750263464,
+        "time_iqr_ms": 6.915751504493528
+      },
+      "fft": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 346.824750497035,
+        "time_iqr_ms": 7.036102244455833
+      },
+      "reduction": 1.0,
+      "time_speedup": 0.9476511034221718
+    },
+    {
+      "sigma": 1,
+      "dt": 0.006103515625,
+      "none": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 328.52366699808044,
+        "time_iqr_ms": 4.558095999527723
+      },
+      "fft": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 354.2139920027694,
+        "time_iqr_ms": 9.599349750715191
+      },
+      "reduction": 1.0,
+      "time_speedup": 0.9274723032271179
+    },
+    {
+      "sigma": 10,
+      "dt": 0.06103515625,
+      "none": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 354.04202199788415,
+        "time_iqr_ms": 13.153650746971834
+      },
+      "fft": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 354.6301135029353,
+        "time_iqr_ms": 6.326597751467489
+      },
+      "reduction": 1.0,
+      "time_speedup": 0.9983416763476679
+    },
+    {
+      "sigma": 100,
+      "dt": 0.6103515625,
+      "none": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 403.83513149572536,
+        "time_iqr_ms": 13.620986001114943
+      },
+      "fft": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 351.9002624998393,
+        "time_iqr_ms": 4.734932505016332
+      },
+      "reduction": 1.0,
+      "time_speedup": 1.1475840586959203
+    },
+    {
+      "sigma": 1000,
+      "dt": 6.103515625,
+      "none": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 660.9697764979501,
+        "time_iqr_ms": 26.081429246914922
+      },
+      "fft": {
+        "iterations": 5,
+        "converged": true,
+        "time_ms": 351.9561140019505,
+        "time_iqr_ms": 6.667277753876988
+      },
+      "reduction": 1.0,
+      "time_speedup": 1.8779891872947747
+    }
+  ],
+  "config": {
+    "grid_size": 128,
+    "gmres_tol": 1e-06,
+    "gmres_maxiter": 10000,
+    "device": "cuda:0",
+    "dtype": "float64",
+    "D": 0.01,
+    "discretization": "finite_difference"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "methods": [
+    {
+      "name": "RK4 (explicit)",
+      "time_s": 676.2773318012478,
+      "time_bench_s": 6.762773318012478,
+      "steps": 58300
+    },
+    {
+      "name": "CN + FFT precond",
+      "time_s": 949.0068713988876,
+      "time_bench_s": 9.490068713988876,
+      "steps": 100
+    },
+    {
+      "name": "IMEX-Strang",
+      "time_s": 330.07393260195386,
+      "time_bench_s": 3.3007393260195386,
+      "steps": 100
+    }
+  ],
+  "config": {
+    "N": 256,
+    "Du": 2e-05,
+    "Dv": 1e-05,
+    "F": 0.035,
+    "k": 0.065,
+    "t_bench": 100.0,
+    "t_paper": 10000.0,
+    "scale_factor": 100.0,
+    "library": "moljax"
+  }
+}
