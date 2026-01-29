@@ -39,10 +39,10 @@ pip install -e .
 
 ## Running Benchmarks
 
-All benchmark scripts are in `Elsevier_Article__elsarticle__Template/paper1/benchmarks/`.
+All benchmark scripts are in `benchmarks/`.
 
 ```bash
-cd Elsevier_Article__elsarticle__Template/paper1/benchmarks
+cd benchmarks
 
 # Run all benchmarks (may take 30+ minutes)
 python benchmark_vs_scipy.py      # Table 5: SciPy comparison
