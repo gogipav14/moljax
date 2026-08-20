@@ -10,6 +10,12 @@ import jax.numpy as jnp
 
 from moljax.core.fft_nonperiodic import laplacian_symbol_dirichlet, solve_helmholtz_dirichlet
 from moljax.core.grid import Grid1D
+from moljax.experimental.node_centered import (
+    NodeCenteredDirichletGrid,
+    node_centered_dirichlet_laplacian,
+)
+
+PMEGrid = Grid1D | NodeCenteredDirichletGrid
 
 
 def d0_frozen_mean(u: jax.Array, m: float) -> float:
@@ -17,6 +23,19 @@ def d0_frozen_mean(u: jax.Array, m: float) -> float:
     with jax.enable_x64(True):
         mean = jnp.mean(jnp.asarray(u, dtype=jnp.float64))
         return float(m * mean ** (m - 1.0))
+
+
+def d0_frozen_bulk(u: jax.Array, m: float, *, quantile: float = 0.9) -> float:
+    """Return ``m * q(|u|)**(m - 1)`` using a robust bulk-state quantile.
+
+    The default 90th percentile avoids diluting the frozen diffusivity by the
+    large zero-state region surrounding a compact porous-medium profile.
+    """
+    if not 0.0 < quantile <= 1.0:
+        raise ValueError("quantile must lie in (0, 1]")
+    with jax.enable_x64(True):
+        reference = jnp.quantile(jnp.abs(jnp.asarray(u, dtype=jnp.float64)), quantile)
+        return float(m * reference ** (m - 1.0))
 
 
 def d0_floor(m: float, epsilon: float) -> float:
@@ -56,9 +75,50 @@ class PMEHelmholtzPreconditioner:
 def pme_helmholtz_preconditioner(
     d0: float,
     dt: float,
-    grid: Grid1D,
+    grid: PMEGrid,
 ) -> PMEHelmholtzPreconditioner:
     """Build the fixed-``d0`` DST Helmholtz preconditioner for one PME step."""
     with jax.enable_x64(True):
         symbol = laplacian_symbol_dirichlet(grid.nx, grid.dx, dtype=jnp.float64)
     return PMEHelmholtzPreconditioner(d0=float(d0), dt=float(dt), laplacian_symbol=symbol)
+
+
+def cell_centered_dirichlet_laplacian(values: jax.Array, grid: Grid1D) -> jax.Array:
+    """Apply the cell-centred zero-face Laplacian used by the original PME RHS."""
+    interior = jnp.asarray(values)
+    if interior.shape != (grid.nx,):
+        raise ValueError(f"Expected shape {(grid.nx,)}, got {interior.shape}")
+    padded = jnp.zeros(grid.nx_total, dtype=interior.dtype).at[grid.interior_slice].set(interior)
+    left_ghost = grid.n_ghost - 1
+    right_ghost = grid.n_ghost + grid.nx
+    padded = padded.at[left_ghost].set(-interior[0])
+    padded = padded.at[right_ghost].set(-interior[-1])
+    start = grid.n_ghost
+    return (
+        padded[start + 1 : start + grid.nx + 1]
+        - 2.0 * padded[start : start + grid.nx]
+        + padded[start - 1 : start + grid.nx - 1]
+    ) / grid.dx**2
+
+
+def helmholtz_inverse_relative_residual(
+    d0: float,
+    dt: float,
+    grid: PMEGrid,
+    key: jax.Array,
+) -> float:
+    """Measure the residual of the DST inverse against a grid's Laplacian.
+
+    A node-centred grid should give roundoff-level residual because its
+    Laplacian diagonalizes in DST-I.  Passing a cell-centred :class:`Grid1D`
+    deliberately quantifies the former centring mismatch instead.
+    """
+    with jax.enable_x64(True):
+        rhs = jax.random.normal(key, (grid.nx,), dtype=jnp.float64)
+        solution = pme_helmholtz_preconditioner(d0, dt, grid).apply(rhs)
+        if isinstance(grid, Grid1D):
+            laplacian = cell_centered_dirichlet_laplacian(solution, grid)
+        else:
+            laplacian = node_centered_dirichlet_laplacian(solution, grid)
+        residual = solution - dt * d0 * laplacian - rhs
+        return float(jnp.linalg.norm(residual) / jnp.linalg.norm(rhs))

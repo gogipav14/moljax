@@ -1,748 +1,1393 @@
 {
+  "centering": {
+    "adopted_discretization": "node_centered_dirichlet",
+    "cases": [
+      {
+        "d0": 1.0,
+        "dt": 0.02,
+        "legacy_cell_centered_relative_residual": 0.050312873848612306,
+        "node_centered_relative_residual": 2.4673817933590674e-16
+      },
+      {
+        "d0": 1.0,
+        "dt": 0.1,
+        "legacy_cell_centered_relative_residual": 0.2303235896399674,
+        "node_centered_relative_residual": 5.450310114935973e-16
+      },
+      {
+        "d0": 0.16,
+        "dt": 0.02,
+        "legacy_cell_centered_relative_residual": 0.03090638166565068,
+        "node_centered_relative_residual": 2.826717856015001e-16
+      }
+    ],
+    "decision": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+    "largest_legacy_relative_residual": 0.2303235896399674
+  },
   "config": {
-    "arnoldi_steps": 8,
+    "arnoldi_steps": 6,
     "const_d0": 1.0,
-    "dt": 0.01,
+    "d0_kinds": [
+      "frozen_mean",
+      "frozen_bulk",
+      "floor",
+      "const",
+      "identity"
+    ],
+    "dt": 0.02,
     "epsilon": 1e-05,
-    "fov_max_iters": 30,
-    "krylov_tol": 1e-07,
-    "max_krylov_iters": 16,
-    "max_newton_iters": 5,
-    "n_angles": 6,
+    "fov_max_iters": 10,
+    "krylov_tol": 1e-08,
+    "m_values": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "max_krylov_iters": 64,
+    "max_newton_iters": 8,
+    "n_angles": 3,
     "newton_tol": 1e-08,
-    "nx": 64,
-    "output_path": "benchmarks/results/pme_breakdown.json",
-    "t0": 1.0,
-    "visited_steps": 2,
+    "nx": 48,
+    "output_path": "/tmp/pme-breakdown-m1-frozen_mean.json",
+    "t0": 0.1,
+    "visited_steps": 3,
     "x_max": 4.0,
     "x_min": -4.0
   },
+  "correlation": {
+    "description": "Paired disk-rate and counted-GMRES values for direct inspection.",
+    "pairs": [
+      {
+        "actual_gmres_iterations": 1,
+        "d0_kind": "frozen_mean",
+        "disk_rate": 0.0,
+        "m": 1
+      },
+      {
+        "actual_gmres_iterations": 1,
+        "d0_kind": "frozen_bulk",
+        "disk_rate": 0.0,
+        "m": 1
+      },
+      {
+        "actual_gmres_iterations": 1,
+        "d0_kind": "floor",
+        "disk_rate": 0.0,
+        "m": 1
+      },
+      {
+        "actual_gmres_iterations": 1,
+        "d0_kind": "const",
+        "disk_rate": 0.0,
+        "m": 1
+      },
+      {
+        "actual_gmres_iterations": 12,
+        "d0_kind": "identity",
+        "disk_rate": 0.5845958760340456,
+        "m": 1
+      },
+      {
+        "actual_gmres_iterations": 10,
+        "d0_kind": "frozen_mean",
+        "disk_rate": 0.5819139683561462,
+        "m": 2
+      },
+      {
+        "actual_gmres_iterations": 14,
+        "d0_kind": "frozen_bulk",
+        "disk_rate": 0.5888998765729213,
+        "m": 2
+      },
+      {
+        "actual_gmres_iterations": 7,
+        "d0_kind": "floor",
+        "disk_rate": 0.567521358607602,
+        "m": 2
+      },
+      {
+        "actual_gmres_iterations": 15,
+        "d0_kind": "const",
+        "disk_rate": 0.5936446003204597,
+        "m": 2
+      },
+      {
+        "actual_gmres_iterations": 7,
+        "d0_kind": "identity",
+        "disk_rate": 0.5803471889805186,
+        "m": 2
+      },
+      {
+        "actual_gmres_iterations": 11,
+        "d0_kind": "frozen_mean",
+        "disk_rate": 0.7399799307240088,
+        "m": 3
+      },
+      {
+        "actual_gmres_iterations": 19,
+        "d0_kind": "frozen_bulk",
+        "disk_rate": 0.7447927205695718,
+        "m": 3
+      },
+      {
+        "actual_gmres_iterations": 8,
+        "d0_kind": "floor",
+        "disk_rate": 0.7401261279559078,
+        "m": 3
+      },
+      {
+        "actual_gmres_iterations": 17,
+        "d0_kind": "const",
+        "disk_rate": 0.7427245417324907,
+        "m": 3
+      },
+      {
+        "actual_gmres_iterations": 8,
+        "d0_kind": "identity",
+        "disk_rate": 0.7401261279886657,
+        "m": 3
+      },
+      {
+        "actual_gmres_iterations": 11,
+        "d0_kind": "frozen_mean",
+        "disk_rate": 0.7730186033959243,
+        "m": 4
+      },
+      {
+        "actual_gmres_iterations": 21,
+        "d0_kind": "frozen_bulk",
+        "disk_rate": 0.8080065804475696,
+        "m": 4
+      },
+      {
+        "actual_gmres_iterations": 8,
+        "d0_kind": "floor",
+        "disk_rate": 0.8043329633017599,
+        "m": 4
+      },
+      {
+        "actual_gmres_iterations": 20,
+        "d0_kind": "const",
+        "disk_rate": 0.805713870682272,
+        "m": 4
+      },
+      {
+        "actual_gmres_iterations": 8,
+        "d0_kind": "identity",
+        "disk_rate": 0.8043329633017469,
+        "m": 4
+      },
+      {
+        "actual_gmres_iterations": 11,
+        "d0_kind": "frozen_mean",
+        "disk_rate": 0.8230158476747212,
+        "m": 5
+      },
+      {
+        "actual_gmres_iterations": 22,
+        "d0_kind": "frozen_bulk",
+        "disk_rate": 0.8403443348188521,
+        "m": 5
+      },
+      {
+        "actual_gmres_iterations": 9,
+        "d0_kind": "floor",
+        "disk_rate": 0.8366325788267407,
+        "m": 5
+      },
+      {
+        "actual_gmres_iterations": 20,
+        "d0_kind": "const",
+        "disk_rate": 0.8380823876525373,
+        "m": 5
+      },
+      {
+        "actual_gmres_iterations": 9,
+        "d0_kind": "identity",
+        "disk_rate": 0.8366325788267264,
+        "m": 5
+      },
+      {
+        "actual_gmres_iterations": 11,
+        "d0_kind": "frozen_mean",
+        "disk_rate": 0.8375764999577815,
+        "m": 6
+      },
+      {
+        "actual_gmres_iterations": 22,
+        "d0_kind": "frozen_bulk",
+        "disk_rate": 0.8605771810321174,
+        "m": 6
+      },
+      {
+        "actual_gmres_iterations": 9,
+        "d0_kind": "floor",
+        "disk_rate": 0.8549784944699166,
+        "m": 6
+      },
+      {
+        "actual_gmres_iterations": 21,
+        "d0_kind": "const",
+        "disk_rate": 0.8582280732849966,
+        "m": 6
+      },
+      {
+        "actual_gmres_iterations": 9,
+        "d0_kind": "identity",
+        "disk_rate": 0.8549784944700148,
+        "m": 6
+      }
+    ]
+  },
   "description": "Experimental PME conditioning breakdown study. It detects preconditioner adequacy or breakdown; it does not claim to fix stiffness degradation.",
+  "gmres_measurement_note": "actual_gmres is an explicit residual-history count for the fixed system P^-1 J delta = P^-1 (-R), not NKStats.lin_iters.",
   "metric": {
     "accuracy": "L_inf",
     "timing": "not measured"
   },
   "records": [
     {
-      "adjoint_identity": 5.41944938641421e-17,
+      "actual_gmres": {
+        "converged": true,
+        "d0": 1.0,
+        "final_relative_residual": 2.2334444386907223e-16,
+        "iterations": 1
+      },
+      "adjoint_identity": 6.938893903907228e-17,
       "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
       "d0_kind": "frozen_mean",
       "d0_used": 1.0,
-      "disk_rate": 0.13990972281866085,
-      "epsilon_zero": 0.9999436682113453,
-      "exact_linf_error": 0.0042382475696770994,
+      "disk_rate": 0.0,
+      "epsilon_zero": 1.0,
+      "exact_linf_error": 0.01335096738121544,
+      "front_max_gradient": 0.7737874151999171,
       "m": 1,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.13314481618410826,
+      "predicted_gmres_factor": 0.0,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.13314481618410826,
-        "r1": 0.13990972281866085,
-        "r2": 0.13990972281865055,
-        "r3": 0.13314481618410826
+        "predicted_gmres_factor": 0.0,
+        "r1": 0.0,
+        "r2": 3.552713678800501e-15,
+        "r3": 0.0
       },
-      "sigma_frozen_mean": 0.64,
+      "sigma": 0.7503125000000002,
       "solver": {
+        "configured_krylov_budget_total": 128,
         "converged": true,
         "d0": 1.0,
-        "final_residual_l2": 1.7437796155164257e-16,
-        "gmres_lin_iters": 32,
+        "final_residual_l2": 2.4529633396924494e-16,
         "newton_iters": 2
       },
       "verdict": "adequate",
-      "visited_time": 1.02
+      "visited_time": 0.16
     },
     {
-      "adjoint_identity": 6.206335383118183e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "floor",
-      "d0_used": 1.0,
-      "disk_rate": 0.13990972281866085,
-      "epsilon_zero": 0.9999675526015105,
-      "exact_linf_error": 0.0042382475696770994,
-      "m": 1,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.13314481618410806,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.13314481618410806,
-        "r1": 0.13990972281866085,
-        "r2": 0.13990972281865055,
-        "r3": 0.13314481618410806
-      },
-      "sigma_frozen_mean": 0.64,
-      "solver": {
+      "actual_gmres": {
         "converged": true,
         "d0": 1.0,
-        "final_residual_l2": 1.7437796155164257e-16,
-        "gmres_lin_iters": 32,
-        "newton_iters": 2
+        "final_relative_residual": 2.2334444386907223e-16,
+        "iterations": 1
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 6.834017936133213e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "const",
-      "d0_used": 1.0,
-      "disk_rate": 0.13990972281866085,
-      "epsilon_zero": 0.9998977629566713,
-      "exact_linf_error": 0.0042382475696770994,
-      "m": 1,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.13314481618410845,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.13314481618410845,
-        "r1": 0.13990972281866085,
-        "r2": 0.13990972281865055,
-        "r3": 0.13314481618410845
-      },
-      "sigma_frozen_mean": 0.64,
-      "solver": {
-        "converged": true,
-        "d0": 1.0,
-        "final_residual_l2": 1.7437796155164257e-16,
-        "gmres_lin_iters": 32,
-        "newton_iters": 2
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.551115123125783e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "identity",
-      "d0_used": 0.0,
-      "disk_rate": 0.5592818101035482,
-      "epsilon_zero": 1.0338445551436843,
-      "exact_linf_error": 0.0042382475696770994,
-      "m": 1,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5457657459929464,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.5457657459929464,
-        "r1": 0.5592818101035482,
-        "r2": 0.5592818101035455,
-        "r3": 0.5457657459929464
-      },
-      "sigma_frozen_mean": 0.64,
-      "solver": {
-        "converged": true,
-        "d0": 0.0,
-        "final_residual_l2": 1.745716345339952e-16,
-        "gmres_lin_iters": 32,
-        "newton_iters": 2
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 3.925231146709438e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "frozen_mean",
-      "d0_used": 0.16190917968750004,
-      "disk_rate": 0.4003371871281728,
-      "epsilon_zero": 0.7161221878663153,
-      "exact_linf_error": 0.0008518387159625973,
-      "m": 2,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.3929632905942636,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.3929632905942636,
-        "r1": 0.4003371871281728,
-        "r2": 0.4003371871281658,
-        "r3": 0.3929632905942636
-      },
-      "sigma_frozen_mean": 0.10362187500000003,
-      "solver": {
-        "converged": true,
-        "d0": 0.16190917968750004,
-        "final_residual_l2": 9.714971595454984e-17,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.003707553108402e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "floor",
-      "d0_used": 2e-05,
-      "disk_rate": 0.39878155633692836,
-      "epsilon_zero": 1.000851676974246,
-      "exact_linf_error": 0.0008518387159625973,
-      "m": 2,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.3982138700115038,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.3982138700115038,
-        "r1": 0.39878155633692836,
-        "r2": 0.398781556225984,
-        "r3": 0.3982138700115038
-      },
-      "sigma_frozen_mean": 0.10362187500000003,
-      "solver": {
-        "converged": true,
-        "d0": 2e-05,
-        "final_residual_l2": 9.714971595454984e-17,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 2.7755575615628914e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "const",
-      "d0_used": 1.0,
-      "disk_rate": 0.5592298655703074,
-      "epsilon_zero": 0.2890342472813183,
-      "exact_linf_error": 0.0008518387159625973,
-      "m": 2,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5474821260182573,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.5474821260182573,
-        "r1": 0.5592298655703074,
-        "r2": 0.5592298655697654,
-        "r3": 0.5474821260182573
-      },
-      "sigma_frozen_mean": 0.10362187500000003,
-      "solver": {
-        "converged": true,
-        "d0": 1.0,
-        "final_residual_l2": 9.714971594719254e-17,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 2.7755575615628914e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "identity",
-      "d0_used": 0.0,
-      "disk_rate": 0.3986836495383226,
-      "epsilon_zero": 1.0005219711805728,
-      "exact_linf_error": 0.0008518387159625973,
-      "m": 2,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.397008400585403,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.397008400585403,
-        "r1": 0.3986836495383226,
-        "r2": 0.3986836495383166,
-        "r3": 0.397008400585403
-      },
-      "sigma_frozen_mean": 0.10362187500000003,
-      "solver": {
-        "converged": true,
-        "d0": 0.0,
-        "final_residual_l2": 9.714971595454984e-17,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
       "adjoint_identity": 3.1031676915590914e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "frozen_mean",
-      "d0_used": 0.10025922953907383,
-      "disk_rate": 0.49845108097196517,
-      "epsilon_zero": 0.8168590887436609,
-      "exact_linf_error": 0.003259596804175433,
-      "m": 3,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_bulk",
+      "d0_used": 1.0,
+      "disk_rate": 0.0,
+      "epsilon_zero": 1.0,
+      "exact_linf_error": 0.01335096738121544,
+      "front_max_gradient": 0.7737874151999171,
+      "m": 1,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.48862046113040725,
+      "predicted_gmres_factor": 0.0,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.48862046113040725,
-        "r1": 0.49845108097196517,
-        "r2": 0.4984510809719609,
-        "r3": 0.48862046113040725
+        "predicted_gmres_factor": 0.0,
+        "r1": 0.0,
+        "r2": 3.552713678800501e-15,
+        "r3": 0.0
       },
-      "sigma_frozen_mean": 0.06416590690500726,
+      "sigma": 0.7503125000000002,
       "solver": {
+        "configured_krylov_budget_total": 128,
         "converged": true,
-        "d0": 0.10025922953907383,
-        "final_residual_l2": 2.21602447763372e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "d0": 1.0,
+        "final_residual_l2": 2.45283360145555e-16,
+        "newton_iters": 2
       },
       "verdict": "adequate",
-      "visited_time": 1.02
+      "visited_time": 0.16
     },
     {
-      "adjoint_identity": 1.1443916996305594e-16,
+      "actual_gmres": {
+        "converged": true,
+        "d0": 1.0,
+        "final_relative_residual": 2.2334444386907223e-16,
+        "iterations": 1
+      },
+      "adjoint_identity": 3.1031676915590914e-17,
       "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
       "d0_kind": "floor",
-      "d0_used": 3.0000000000000005e-10,
-      "disk_rate": 0.497791991776591,
-      "epsilon_zero": 1.0006102841961142,
-      "exact_linf_error": 0.003259596804175433,
+      "d0_used": 1.0,
+      "disk_rate": 0.0,
+      "epsilon_zero": 1.0,
+      "exact_linf_error": 0.01335096738121544,
+      "front_max_gradient": 0.7737874151999171,
+      "m": 1,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.0,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.0,
+        "r1": 0.0,
+        "r2": 3.552713678800501e-15,
+        "r3": 0.0
+      },
+      "sigma": 0.7503125000000002,
+      "solver": {
+        "configured_krylov_budget_total": 128,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 2.45283360145555e-16,
+        "newton_iters": 2
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 1.0,
+        "final_relative_residual": 2.2334444386907223e-16,
+        "iterations": 1
+      },
+      "adjoint_identity": 6.938893903907228e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "const",
+      "d0_used": 1.0,
+      "disk_rate": 0.0,
+      "epsilon_zero": 1.0,
+      "exact_linf_error": 0.01335096738121544,
+      "front_max_gradient": 0.7737874151999171,
+      "m": 1,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.0,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.0,
+        "r1": 0.0,
+        "r2": 3.552713678800501e-15,
+        "r3": 0.0
+      },
+      "sigma": 0.7503125000000002,
+      "solver": {
+        "configured_krylov_budget_total": 128,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 2.4529633396924494e-16,
+        "newton_iters": 2
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.0,
+        "final_relative_residual": 6.91120876055972e-09,
+        "iterations": 12
+      },
+      "adjoint_identity": 1.1188630228279524e-16,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "identity",
+      "d0_used": 0.0,
+      "disk_rate": 0.5845958760340456,
+      "epsilon_zero": 1.0840047067079526,
+      "exact_linf_error": 0.01335096738121544,
+      "front_max_gradient": 0.7737874151999171,
+      "m": 1,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.5697984462126904,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.5697984462126904,
+        "r1": 0.5845958760340456,
+        "r2": 0.5845958760340437,
+        "r3": 0.5697984462126904
+      },
+      "sigma": 0.0,
+      "solver": {
+        "configured_krylov_budget_total": 128,
+        "converged": true,
+        "d0": 0.0,
+        "final_residual_l2": 2.3905600679532343e-16,
+        "newton_iters": 2
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.16601682918696536,
+        "final_relative_residual": 6.766347382600275e-09,
+        "iterations": 10
+      },
+      "adjoint_identity": 6.938893903907228e-18,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_mean",
+      "d0_used": 0.16601682918696536,
+      "disk_rate": 0.5819139683561462,
+      "epsilon_zero": 0.7088101308472644,
+      "exact_linf_error": 0.011827174544312816,
+      "front_max_gradient": 0.8499250980087935,
+      "m": 2,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.5648051246798073,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.5648051246798073,
+        "r1": 0.5819139683561462,
+        "r2": 0.5819139683554262,
+        "r3": 0.5648051246798073
+      },
+      "sigma": 0.12456450214934499,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.16601682918696536,
+        "final_residual_l2": 1.5658088598193393e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.8246692200123129,
+        "final_relative_residual": 8.255267297988112e-09,
+        "iterations": 14
+      },
+      "adjoint_identity": 4.57980139313838e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_bulk",
+      "d0_used": 0.8246692200123129,
+      "disk_rate": 0.5888998765729213,
+      "epsilon_zero": 0.30855152012601494,
+      "exact_linf_error": 0.011827174544312816,
+      "front_max_gradient": 0.8499250980087935,
+      "m": 2,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.5677957672339263,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.5677957672339263,
+        "r1": 0.5888998765729213,
+        "r2": 0.5888998765723628,
+        "r3": 0.5677957672339263
+      },
+      "sigma": 0.6187596241404887,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.8246692200123129,
+        "final_residual_l2": 1.5658088598193403e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 2e-05,
+        "final_relative_residual": 9.235288086068273e-10,
+        "iterations": 7
+      },
+      "adjoint_identity": 1.04372128693154e-16,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "floor",
+      "d0_used": 2e-05,
+      "disk_rate": 0.567521358607602,
+      "epsilon_zero": 1.0021021357150206,
+      "exact_linf_error": 0.011827174544312816,
+      "front_max_gradient": 0.8499250980087935,
+      "m": 2,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.5673779456509607,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.5673779456509607,
+        "r1": 0.567521358607602,
+        "r2": 0.5673779456509607,
+        "r3": 0.5788224114122077
+      },
+      "sigma": 1.5006250000000004e-05,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 2e-05,
+        "final_residual_l2": 1.5658088598193396e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 1.0,
+        "final_relative_residual": 8.17659227048453e-09,
+        "iterations": 15
+      },
+      "adjoint_identity": 2.797157557069881e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "const",
+      "d0_used": 1.0,
+      "disk_rate": 0.5936446003204597,
+      "epsilon_zero": 0.2687039390922241,
+      "exact_linf_error": 0.011827174544312816,
+      "front_max_gradient": 0.8499250980087935,
+      "m": 2,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.57366163674405,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.57366163674405,
+        "r1": 0.5936446003204597,
+        "r2": 0.5936445990218395,
+        "r3": 0.57366163674405
+      },
+      "sigma": 0.7503125000000002,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 1.239734138988365e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.0,
+        "final_relative_residual": 1.5531679775399037e-09,
+        "iterations": 7
+      },
+      "adjoint_identity": 6.947562107041945e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "identity",
+      "d0_used": 0.0,
+      "disk_rate": 0.5803471889805186,
+      "epsilon_zero": 1.0021293229698658,
+      "exact_linf_error": 0.011827174544312816,
+      "front_max_gradient": 0.8499250980087935,
+      "m": 2,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.5788324828576294,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.5788324828576294,
+        "r1": 0.5803471889805186,
+        "r2": 0.5803471889805181,
+        "r3": 0.5788324828576294
+      },
+      "sigma": 0.0,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.0,
+        "final_residual_l2": 1.5658088598193393e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.1049033157957528,
+        "final_relative_residual": 7.995630300340276e-09,
+        "iterations": 11
+      },
+      "adjoint_identity": 1.3877787807814457e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_mean",
+      "d0_used": 0.1049033157957528,
+      "disk_rate": 0.7399799307240088,
+      "epsilon_zero": 0.8413458654104229,
+      "exact_linf_error": 0.04945492216798536,
+      "front_max_gradient": 1.633152745896668,
       "m": 3,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.4969805421792887,
+      "predicted_gmres_factor": 0.7190343808689107,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.4969805421792887,
-        "r1": 0.497791991776591,
-        "r2": 0.4977919917765874,
-        "r3": 0.4969805421792887
+        "predicted_gmres_factor": 0.7190343808689107,
+        "r1": 0.7399799307240088,
+        "r2": 0.7399799306060721,
+        "r3": 0.7190343808689107
       },
-      "sigma_frozen_mean": 0.06416590690500726,
+      "sigma": 0.07871026913300079,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.1049033157957528,
+        "final_residual_l2": 2.5225915522857337e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 1.7884217936040376,
+        "final_relative_residual": 8.97940576639758e-09,
+        "iterations": 19
+      },
+      "adjoint_identity": 1.0408340855860843e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_bulk",
+      "d0_used": 1.7884217936040376,
+      "disk_rate": 0.7447927205695718,
+      "epsilon_zero": 0.1785475934790954,
+      "exact_linf_error": 0.04945492216798536,
+      "front_max_gradient": 1.633152745896668,
+      "m": 3,
+      "n_right_real_outliers": 0,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.7199103962613097,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.7199103962613097,
+        "r1": 0.7447927205695718,
+        "r2": 0.7447927205658154,
+        "r3": 0.7199103962613097
+      },
+      "sigma": 1.34187522701353,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 1.7884217936040376,
+        "final_residual_l2": 4.2376605155172283e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 3.0000000000000005e-10,
-        "final_residual_l2": 2.21602447763372e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 2.0842588226393095e-13,
+        "iterations": 8
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 8.326672684688674e-17,
+      "adjoint_identity": 1.3877787807814457e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "const",
-      "d0_used": 1.0,
-      "disk_rate": 0.5589604701996944,
-      "epsilon_zero": 0.29388133179606435,
-      "exact_linf_error": 0.003259596804175433,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "floor",
+      "d0_used": 3.0000000000000005e-10,
+      "disk_rate": 0.7401261279559078,
+      "epsilon_zero": 0.9978674689228726,
+      "exact_linf_error": 0.04945492216798536,
+      "front_max_gradient": 1.633152745896668,
       "m": 3,
-      "n_right_real_outliers": 0,
+      "n_right_real_outliers": 1,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5423571753469426,
+      "predicted_gmres_factor": 0.7401261279559073,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5423571753469426,
-        "r1": 0.5589604701996944,
-        "r2": 0.5589604693072303,
-        "r3": 0.5423571753469426
+        "predicted_gmres_factor": 0.7401261279559073,
+        "r1": 0.7401261279559078,
+        "r2": 0.7401261279559073,
+        "r3": 0.7413579968986679
       },
-      "sigma_frozen_mean": 0.06416590690500726,
+      "sigma": 2.2509375000000008e-10,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 3.0000000000000005e-10,
+        "final_residual_l2": 2.5225915522857337e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 1.0,
-        "final_residual_l2": 1.8323544073204096e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 8.224232133023662e-09,
+        "iterations": 17
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.551115123125783e-17,
+      "adjoint_identity": 2.797157557069881e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "identity",
-      "d0_used": 0.0,
-      "disk_rate": 0.4977919918364006,
-      "epsilon_zero": 1.001483111309363,
-      "exact_linf_error": 0.003259596804175433,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "const",
+      "d0_used": 1.0,
+      "disk_rate": 0.7427245417324907,
+      "epsilon_zero": 0.2822852632811612,
+      "exact_linf_error": 0.049454922167985305,
+      "front_max_gradient": 1.633152745896668,
       "m": 3,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.4944504116170721,
+      "predicted_gmres_factor": 0.7190255709323362,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.4944504116170721,
-        "r1": 0.4977919918364006,
-        "r2": 0.49779199183639733,
-        "r3": 0.4944504116170721
+        "predicted_gmres_factor": 0.7190255709323362,
+        "r1": 0.7427245417324907,
+        "r2": 0.7427245417299488,
+        "r3": 0.7190255709323362
       },
-      "sigma_frozen_mean": 0.06416590690500726,
+      "sigma": 0.7503125000000002,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 2.311451217970856e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 0.0,
-        "final_residual_l2": 2.21602447763372e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 2.0530679091440863e-13,
+        "iterations": 8
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.551115123125783e-17,
+      "adjoint_identity": 1.3877787807814457e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "frozen_mean",
-      "d0_used": 0.05141508289630747,
-      "disk_rate": 0.5428597296033462,
-      "epsilon_zero": 0.9083777917975263,
-      "exact_linf_error": 0.01876982214240837,
-      "m": 4,
-      "n_right_real_outliers": 0,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "identity",
+      "d0_used": 0.0,
+      "disk_rate": 0.7401261279886657,
+      "epsilon_zero": 0.9978674693066524,
+      "exact_linf_error": 0.049454922167985305,
+      "front_max_gradient": 1.633152745896668,
+      "m": 3,
+      "n_right_real_outliers": 1,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5326636855304634,
+      "predicted_gmres_factor": 0.7401261279886657,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5326636855304634,
-        "r1": 0.5428597296033462,
-        "r2": 0.542859729603343,
-        "r3": 0.5326636855304634
+        "predicted_gmres_factor": 0.7401261279886657,
+        "r1": 0.7401261279886657,
+        "r2": 0.7401261279886668,
+        "r3": 0.7413579970078606
       },
-      "sigma_frozen_mean": 0.03290565305363678,
+      "sigma": 0.0,
       "solver": {
+        "configured_krylov_budget_total": 256,
         "converged": true,
-        "d0": 0.05141508289630747,
-        "final_residual_l2": 3.989427104377477e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "d0": 0.0,
+        "final_residual_l2": 2.3114498698385318e-16,
+        "newton_iters": 4
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
+      "verdict": "investigate",
+      "visited_time": 0.16
     },
     {
-      "adjoint_identity": 1.962615573354719e-17,
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.057577218790817015,
+        "final_relative_residual": 6.827748309731489e-10,
+        "iterations": 11
+      },
+      "adjoint_identity": 1.2412670766236366e-16,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "floor",
-      "d0_used": 4.000000000000001e-15,
-      "disk_rate": 0.5427655659561866,
-      "epsilon_zero": 1.000287191688458,
-      "exact_linf_error": 0.01876982214240837,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_mean",
+      "d0_used": 0.057577218790817015,
+      "disk_rate": 0.7730186033959243,
+      "epsilon_zero": 0.9252503046456763,
+      "exact_linf_error": 0.062274884602599445,
+      "front_max_gradient": 2.1456882912323905,
+      "m": 4,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.7730186033959185,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.7730186033959185,
+        "r1": 0.7730186033959243,
+        "r2": 0.7730186033959185,
+        "r3": 0.7916922186482214
+      },
+      "sigma": 0.043200906973984904,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.057577218790817015,
+        "final_residual_l2": 5.107648702310806e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 2.6568430171610284,
+        "final_relative_residual": 5.048383869374883e-09,
+        "iterations": 21
+      },
+      "adjoint_identity": 3.2959746043559335e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_bulk",
+      "d0_used": 2.6568430171610284,
+      "disk_rate": 0.8080065804475696,
+      "epsilon_zero": 0.12868836492100993,
+      "exact_linf_error": 0.062274884602599445,
+      "front_max_gradient": 2.1456882912323905,
       "m": 4,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5417930341211177,
+      "predicted_gmres_factor": 0.7878751413901512,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5417930341211177,
-        "r1": 0.5427655659561866,
-        "r2": 0.5427655659561843,
-        "r3": 0.5417930341211177
+        "predicted_gmres_factor": 0.7878751413901512,
+        "r1": 0.8080065804475696,
+        "r2": 0.8080065804288026,
+        "r3": 0.7878751413901512
       },
-      "sigma_frozen_mean": 0.03290565305363678,
+      "sigma": 1.9934625263136347,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 2.6568430171610284,
+        "final_residual_l2": 5.109104701119817e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 4.000000000000001e-15,
-        "final_residual_l2": 3.989427104377477e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 2.56889702191502e-10,
+        "iterations": 8
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.594315114139762e-17,
+      "adjoint_identity": 0.0,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "const",
-      "d0_used": 1.0,
-      "disk_rate": 0.5594358309820663,
-      "epsilon_zero": 0.2889979506947124,
-      "exact_linf_error": 0.01876982214240837,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "floor",
+      "d0_used": 4.000000000000001e-15,
+      "disk_rate": 0.8043329633017599,
+      "epsilon_zero": 1.0149672558224418,
+      "exact_linf_error": 0.062274884602599445,
+      "front_max_gradient": 2.1456882912323905,
       "m": 4,
-      "n_right_real_outliers": 0,
+      "n_right_real_outliers": 1,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5487985536484986,
+      "predicted_gmres_factor": 0.8028277751616876,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5487985536484986,
-        "r1": 0.5594358309820663,
-        "r2": 0.5594358306079315,
-        "r3": 0.5487985536484986
+        "predicted_gmres_factor": 0.8028277751616876,
+        "r1": 0.8043329633017599,
+        "r2": 0.8043329633017571,
+        "r3": 0.8028277751616876
       },
-      "sigma_frozen_mean": 0.03290565305363678,
+      "sigma": 3.001250000000001e-15,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 4.000000000000001e-15,
+        "final_residual_l2": 5.107648702310806e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 1.0,
-        "final_residual_l2": 3.978368462289103e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 2.891232903591267e-09,
+        "iterations": 20
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 6.397344083151129e-17,
+      "adjoint_identity": 4.163336342344337e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "identity",
-      "d0_used": 0.0,
-      "disk_rate": 0.5427655659561803,
-      "epsilon_zero": 1.0006947410619915,
-      "exact_linf_error": 0.01876982214240837,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "const",
+      "d0_used": 1.0,
+      "disk_rate": 0.805713870682272,
+      "epsilon_zero": 0.28794715718857183,
+      "exact_linf_error": 0.062274884602599445,
+      "front_max_gradient": 2.1456882912323905,
       "m": 4,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.531413755072582,
+      "predicted_gmres_factor": 0.7855428851601249,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.531413755072582,
-        "r1": 0.5427655659561803,
-        "r2": 0.5427655659561772,
-        "r3": 0.531413755072582
+        "predicted_gmres_factor": 0.7855428851601249,
+        "r1": 0.805713870682272,
+        "r2": 0.8057138706821902,
+        "r3": 0.7855428851601249
       },
-      "sigma_frozen_mean": 0.03290565305363678,
+      "sigma": 0.7503125000000002,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 5.107715358794408e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 0.0,
-        "final_residual_l2": 3.989427104377477e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 2.5688968726724744e-10,
+        "iterations": 8
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.003707553108402e-17,
+      "adjoint_identity": 5.551115123125783e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "frozen_mean",
-      "d0_used": 0.024679671020789863,
-      "disk_rate": 0.5683469184251161,
-      "epsilon_zero": 0.9648265651005714,
-      "exact_linf_error": 0.021412911896353085,
-      "m": 5,
-      "n_right_real_outliers": 0,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "identity",
+      "d0_used": 0.0,
+      "disk_rate": 0.8043329633017469,
+      "epsilon_zero": 1.0149672558224505,
+      "exact_linf_error": 0.062274884602599445,
+      "front_max_gradient": 2.1456882912323905,
+      "m": 4,
+      "n_right_real_outliers": 1,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5584182666337093,
+      "predicted_gmres_factor": 0.8028277751616887,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5584182666337093,
-        "r1": 0.5683469184251161,
-        "r2": 0.5683469184251102,
-        "r3": 0.5584182666337093
+        "predicted_gmres_factor": 0.8028277751616887,
+        "r1": 0.8043329633017469,
+        "r2": 0.8043329633017464,
+        "r3": 0.8028277751616887
       },
-      "sigma_frozen_mean": 0.015794989453305514,
+      "sigma": 0.0,
       "solver": {
+        "configured_krylov_budget_total": 256,
         "converged": true,
-        "d0": 0.024679671020789863,
-        "final_residual_l2": 3.377383007609626e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "d0": 0.0,
+        "final_residual_l2": 5.107648702310806e-16,
+        "newton_iters": 4
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
+      "verdict": "investigate",
+      "visited_time": 0.16
     },
     {
-      "adjoint_identity": 8.326672684688674e-17,
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.02802060223112729,
+        "final_relative_residual": 6.154635006142205e-09,
+        "iterations": 11
+      },
+      "adjoint_identity": 1.2412670766236366e-16,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "floor",
-      "d0_used": 5.000000000000002e-20,
-      "disk_rate": 0.568443205309664,
-      "epsilon_zero": 1.0033363518076004,
-      "exact_linf_error": 0.021412911896353085,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_mean",
+      "d0_used": 0.02802060223112729,
+      "disk_rate": 0.8230158476747212,
+      "epsilon_zero": 0.958697082112257,
+      "exact_linf_error": 0.09839815535993751,
+      "front_max_gradient": 2.9358135369302754,
+      "m": 5,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.8229059252140765,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.8229059252140765,
+        "r1": 0.8230158476747212,
+        "r2": 0.8229059252140765,
+        "r3": 0.8340971461495749
+      },
+      "sigma": 0.0210242081115427,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.02802060223112729,
+        "final_residual_l2": 6.024819284471838e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 3.3712611891858852,
+        "final_relative_residual": 8.793220986086916e-10,
+        "iterations": 22
+      },
+      "adjoint_identity": 4.5102810375396984e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_bulk",
+      "d0_used": 3.3712611891858852,
+      "disk_rate": 0.8403443348188521,
+      "epsilon_zero": 0.10650362971403186,
+      "exact_linf_error": 0.09839815535993751,
+      "front_max_gradient": 2.9358135369302754,
       "m": 5,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5663705073923821,
+      "predicted_gmres_factor": 0.817949466860278,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5663705073923821,
-        "r1": 0.568443205309664,
-        "r2": 0.5684432053096629,
-        "r3": 0.5663705073923821
+        "predicted_gmres_factor": 0.817949466860278,
+        "r1": 0.8403443348188521,
+        "r2": 0.840344334786721,
+        "r3": 0.817949466860278
       },
-      "sigma_frozen_mean": 0.015794989453305514,
+      "sigma": 2.5294994110110354,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 3.3712611891858852,
+        "final_residual_l2": 7.076684045023389e-16,
+        "newton_iters": 4
+      },
+      "verdict": "adequate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 5.000000000000002e-20,
-        "final_residual_l2": 3.377383007609626e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 9.139953688629371e-13,
+        "iterations": 9
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 4.563344992840995e-17,
+      "adjoint_identity": 2.355138688025663e-16,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "const",
-      "d0_used": 1.0,
-      "disk_rate": 0.5741557678820268,
-      "epsilon_zero": 0.2885537081478733,
-      "exact_linf_error": 0.021412911896353085,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "floor",
+      "d0_used": 5.000000000000002e-20,
+      "disk_rate": 0.8366325788267407,
+      "epsilon_zero": 0.9965916646157749,
+      "exact_linf_error": 0.09839815535993751,
+      "front_max_gradient": 2.9358135369302754,
       "m": 5,
-      "n_right_real_outliers": 0,
+      "n_right_real_outliers": 1,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5626323974581543,
+      "predicted_gmres_factor": 0.8366325788267407,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5626323974581543,
-        "r1": 0.5741557678820268,
-        "r2": 0.5741557678779152,
-        "r3": 0.5626323974581543
+        "predicted_gmres_factor": 0.8366325788267407,
+        "r1": 0.8366325788267407,
+        "r2": 0.836632578826741,
+        "r3": 0.8400249610064724
       },
-      "sigma_frozen_mean": 0.015794989453305514,
+      "sigma": 3.7515625000000027e-20,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 5.000000000000002e-20,
+        "final_residual_l2": 6.024819284471838e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 1.0,
-        "final_residual_l2": 3.377383007611534e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 3.7247960180616894e-09,
+        "iterations": 20
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 5.721958498152797e-17,
+      "adjoint_identity": 5.003707553108402e-17,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "identity",
-      "d0_used": 0.0,
-      "disk_rate": 0.5684432053096602,
-      "epsilon_zero": 1.000099007224849,
-      "exact_linf_error": 0.021412911896353085,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "const",
+      "d0_used": 1.0,
+      "disk_rate": 0.8380823876525373,
+      "epsilon_zero": 0.29120756833909867,
+      "exact_linf_error": 0.09839815535993751,
+      "front_max_gradient": 2.9358135369302754,
       "m": 5,
-      "n_right_real_outliers": 0,
+      "n_right_real_outliers": 1,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5528754082979671,
+      "predicted_gmres_factor": 0.8205959354580405,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5528754082979671,
-        "r1": 0.5684432053096602,
-        "r2": 0.5684432053096593,
-        "r3": 0.5528754082979671
+        "predicted_gmres_factor": 0.8205959354580405,
+        "r1": 0.8380823876525373,
+        "r2": 0.8380823876524879,
+        "r3": 0.8205959354580405
       },
-      "sigma_frozen_mean": 0.015794989453305514,
+      "sigma": 0.7503125000000002,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 7.047016456835684e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 0.0,
-        "final_residual_l2": 3.377383007609626e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 9.080291695843525e-13,
+        "iterations": 9
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 1.4152622167509192e-16,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "frozen_mean",
-      "d0_used": 0.01147774934280154,
-      "disk_rate": 0.5849209349383465,
-      "epsilon_zero": 0.9830107248174735,
-      "exact_linf_error": 0.02220904381727818,
-      "m": 6,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5806641182101802,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.5806641182101802,
-        "r1": 0.5849209349383465,
-        "r2": 0.5849209349383102,
-        "r3": 0.5806641182101802
-      },
-      "sigma_frozen_mean": 0.007345759579392985,
-      "solver": {
-        "converged": true,
-        "d0": 0.01147774934280154,
-        "final_residual_l2": 3.340579570307956e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
       "adjoint_identity": 1.1102230246251565e-16,
       "adjoint_tolerance": 1e-08,
-      "d0_kind": "floor",
-      "d0_used": 6.000000000000002e-25,
-      "disk_rate": 0.5850497036410639,
-      "epsilon_zero": 1.0021652486188422,
-      "exact_linf_error": 0.02220904381727818,
-      "m": 6,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5824538769610168,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.5824538769610168,
-        "r1": 0.5850497036410639,
-        "r2": 0.5850497036410616,
-        "r3": 0.5824538769610168
-      },
-      "sigma_frozen_mean": 0.007345759579392985,
-      "solver": {
-        "converged": true,
-        "d0": 6.000000000000002e-25,
-        "final_residual_l2": 3.340579570307956e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 4.2207643840401616e-17,
-      "adjoint_tolerance": 1e-08,
-      "d0_kind": "const",
-      "d0_used": 1.0,
-      "disk_rate": 0.5902863307616171,
-      "epsilon_zero": 0.29285044675714955,
-      "exact_linf_error": 0.02220904381727818,
-      "m": 6,
-      "n_right_real_outliers": 0,
-      "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5713799861124489,
-      "rates": {
-        "agree": true,
-        "predicted_gmres_factor": 0.5713799861124489,
-        "r1": 0.5902863307616171,
-        "r2": 0.5902863307573192,
-        "r3": 0.5713799861124489
-      },
-      "sigma_frozen_mean": 0.007345759579392985,
-      "solver": {
-        "converged": true,
-        "d0": 1.0,
-        "final_residual_l2": 3.340579570309359e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
-      },
-      "verdict": "adequate",
-      "visited_time": 1.02
-    },
-    {
-      "adjoint_identity": 2.0816681711721685e-17,
-      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
       "d0_kind": "identity",
       "d0_used": 0.0,
-      "disk_rate": 0.5850497036410685,
-      "epsilon_zero": 1.000348114324953,
-      "exact_linf_error": 0.02220904381727818,
+      "disk_rate": 0.8366325788267264,
+      "epsilon_zero": 0.996591664615774,
+      "exact_linf_error": 0.09839815535993754,
+      "front_max_gradient": 2.9358135369302754,
+      "m": 5,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.8366325788267264,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.8366325788267264,
+        "r1": 0.8366325788267264,
+        "r2": 0.8366325788267268,
+        "r3": 0.8400249610064735
+      },
+      "sigma": 0.0,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.0,
+        "final_residual_l2": 6.021621775794566e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 0.014273511089066614,
+        "final_relative_residual": 5.848254591246948e-10,
+        "iterations": 11
+      },
+      "adjoint_identity": 2.1183523716375092e-16,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_mean",
+      "d0_used": 0.014273511089066614,
+      "disk_rate": 0.8375764999577815,
+      "epsilon_zero": 0.9856254467570091,
+      "exact_linf_error": 0.11641198787221296,
+      "front_max_gradient": 2.7530463421534557,
+      "m": 6,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.8359747410689948,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.8359747410689948,
+        "r1": 0.8375764999577815,
+        "r2": 0.8359747410689948,
+        "r3": 0.8573624627835043
+      },
+      "sigma": 0.010709593789015297,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.014273511089066614,
+        "final_residual_l2": 8.473162270657268e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 4.010523924707519,
+        "final_relative_residual": 3.733475288032109e-09,
+        "iterations": 22
+      },
+      "adjoint_identity": 6.947562107041945e-17,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "frozen_bulk",
+      "d0_used": 4.010523924707519,
+      "disk_rate": 0.8605771810321174,
+      "epsilon_zero": 0.08817078157498859,
+      "exact_linf_error": 0.11641198787221296,
+      "front_max_gradient": 2.7530463421534557,
       "m": 6,
       "n_right_real_outliers": 0,
       "origin_enclosed": false,
-      "predicted_gmres_factor": 0.5848365072618342,
+      "predicted_gmres_factor": 0.8455381337085814,
       "rates": {
         "agree": true,
-        "predicted_gmres_factor": 0.5848365072618342,
-        "r1": 0.5850497036410685,
-        "r2": 0.5850497036410651,
-        "r3": 0.5848365072618342
+        "predicted_gmres_factor": 0.8455381337085814,
+        "r1": 0.8605771810321174,
+        "r2": 0.860577180997474,
+        "r3": 0.8455381337085814
       },
-      "sigma_frozen_mean": 0.007345759579392985,
+      "sigma": 3.0091462322571108,
       "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 4.010523924707519,
+        "final_residual_l2": 8.473159069294023e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 6.000000000000002e-25,
+        "final_relative_residual": 5.093760974167334e-14,
+        "iterations": 9
+      },
+      "adjoint_identity": 3.1401849173675503e-16,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "floor",
+      "d0_used": 6.000000000000002e-25,
+      "disk_rate": 0.8549784944699166,
+      "epsilon_zero": 1.0111210399619606,
+      "exact_linf_error": 0.11641198787221296,
+      "front_max_gradient": 2.7530463421534557,
+      "m": 6,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.8549784944699166,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.8549784944699166,
+        "r1": 0.8549784944699166,
+        "r2": 0.8549784944699184,
+        "r3": 0.8593594247901718
+      },
+      "sigma": 4.501875000000003e-25,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 6.000000000000002e-25,
+        "final_residual_l2": 8.473162270657268e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
+        "converged": true,
+        "d0": 1.0,
+        "final_relative_residual": 5.773445640924233e-09,
+        "iterations": 21
+      },
+      "adjoint_identity": 1.3668035872266426e-16,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "const",
+      "d0_used": 1.0,
+      "disk_rate": 0.8582280732849966,
+      "epsilon_zero": 0.2837473682893515,
+      "exact_linf_error": 0.11641198787221296,
+      "front_max_gradient": 2.7530463421534557,
+      "m": 6,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.8465494030721943,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.8465494030721943,
+        "r1": 0.8582280732849966,
+        "r2": 0.8582280732781342,
+        "r3": 0.8465494030721943
+      },
+      "sigma": 0.7503125000000002,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 1.0,
+        "final_residual_l2": 8.473162326929285e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
+    },
+    {
+      "actual_gmres": {
         "converged": true,
         "d0": 0.0,
-        "final_residual_l2": 3.340579570307956e-16,
-        "gmres_lin_iters": 48,
-        "newton_iters": 3
+        "final_relative_residual": 2.451823879284601e-12,
+        "iterations": 9
       },
-      "verdict": "adequate",
-      "visited_time": 1.02
+      "adjoint_identity": 2.7894008272968645e-16,
+      "adjoint_tolerance": 1e-08,
+      "centering_mismatch_note": "The cell-centred residual is material relative to conditioning-rate differences; the experimental study therefore uses the node-centred operator that the DST-I Helmholtz inverse diagonalizes exactly.",
+      "d0_kind": "identity",
+      "d0_used": 0.0,
+      "disk_rate": 0.8549784944700148,
+      "epsilon_zero": 1.011121039961962,
+      "exact_linf_error": 0.11641198787221291,
+      "front_max_gradient": 2.7530463421534557,
+      "m": 6,
+      "n_right_real_outliers": 1,
+      "origin_enclosed": false,
+      "predicted_gmres_factor": 0.8549784944700143,
+      "rates": {
+        "agree": true,
+        "predicted_gmres_factor": 0.8549784944700143,
+        "r1": 0.8549784944700148,
+        "r2": 0.8549784944700143,
+        "r3": 0.8593594247901716
+      },
+      "sigma": 0.0,
+      "solver": {
+        "configured_krylov_budget_total": 256,
+        "converged": true,
+        "d0": 0.0,
+        "final_residual_l2": 8.614607624341747e-16,
+        "newton_iters": 4
+      },
+      "verdict": "investigate",
+      "visited_time": 0.16
     }
-  ],
-  "solver_stat_note": "gmres_lin_iters is NKStats.lin_iters from newton_krylov_solve; the current solver reports its configured Krylov budget per Newton solve rather than a callback count."
+  ]
 }

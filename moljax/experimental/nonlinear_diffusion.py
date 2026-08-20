@@ -6,6 +6,7 @@ import jax.numpy as jnp
 
 from moljax.core.grid import Grid1D
 from moljax.core.operators import laplacian_1d
+from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 
 
 def _regularized_potential_with_dirichlet_zero(
@@ -66,6 +67,32 @@ def porous_medium_flux_rhs(
 
     phi = _regularized_potential_with_dirichlet_zero(u, grid, m, epsilon)
     return laplacian_1d(phi, grid)
+
+
+def porous_medium_node_centered_rhs(
+    u: jnp.ndarray,
+    grid: NodeCenteredDirichletGrid,
+    m: float,
+    *,
+    epsilon: float = 1.0e-5,
+) -> jnp.ndarray:
+    """Apply the regularized PME operator on interior Dirichlet nodes.
+
+    The unknowns occupy the interior nodes of a uniform grid whose boundary
+    nodes are fixed at zero.  With
+    ``phi(u) = (u**2 + epsilon**2)**(m/2)``, this uses the three-point stencil
+    for ``d²phi/dx²`` after adjoining the boundary value ``epsilon**m``.  It
+    therefore shares the node-centred Dirichlet convention of the DST-I
+    Helmholtz inverse exactly.  The state regularization is smooth and
+    branchless, so JAX can differentiate the operator directly.
+    """
+    interior = jnp.asarray(u)
+    if interior.shape != (grid.nx,):
+        raise ValueError(f"Expected shape {(grid.nx,)}, got {interior.shape}")
+    phi = (interior**2 + epsilon**2) ** (m / 2.0)
+    boundary = jnp.asarray(epsilon, dtype=interior.dtype) ** m
+    padded = jnp.concatenate((boundary[None], phi, boundary[None]))
+    return (padded[2:] - 2.0 * padded[1:-1] + padded[:-2]) / grid.dx**2
 
 
 def barenblatt(
