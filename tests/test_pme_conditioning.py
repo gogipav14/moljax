@@ -231,7 +231,7 @@ def test_regime_claim_smoke_reports_when_the_small_sample_is_not_separated(tmp_p
             nx=128,
             m_values=(1,),
             analysis_dt_values=(2.0e-4, 2.0),
-            visited_steps=(1, 2),
+            front_target_halfwidths=(0.25, 3.0),
             n_angles=3,
             fov_max_iters=4,
             arnoldi_steps=4,
@@ -261,7 +261,7 @@ def test_identity_stress_sweep_has_required_dynamic_range(tmp_path) -> None:
             d0_kinds=("identity",),
             state_dt=0.02,
             analysis_dt_values=(2.0e-4, 2.0),
-            visited_steps=(1, 2, 3),
+            front_target_halfwidths=(0.25, 3.0),
             n_angles=3,
             fov_max_iters=4,
             arnoldi_steps=4,
@@ -275,4 +275,36 @@ def test_identity_stress_sweep_has_required_dynamic_range(tmp_path) -> None:
         "The stress schedule is too benign: "
         f"min={dynamic_range['min']}, max={dynamic_range['max']}, "
         f"ratio={dynamic_range['ratio']}"
+    )
+
+
+@pytest.mark.slow
+def test_regime_map_reports_non_benign_high_stiffness_cells(tmp_path) -> None:
+    """The map must retain high-stiffness nonlinear cells with real cost variation."""
+    high_dt = 2.0
+    report = run_breakdown_study(
+        BreakdownConfig(
+            nx=128,
+            m_values=(1, 2, 3),
+            d0_kinds=("identity",),
+            state_dt=0.02,
+            analysis_dt_values=(2.0e-4, high_dt),
+            front_target_halfwidths=(0.25, 0.75, 3.0),
+            n_angles=3,
+            fov_max_iters=4,
+            arnoldi_steps=4,
+            max_krylov_iters=400,
+            output_path=str(tmp_path / "pme_regime_map.json"),
+        )
+    )
+    regime_map = report["regime_map"]
+    cells = regime_map["cells"]
+    high_stiffness_nonlinear = [
+        cell for cell in cells if cell["analysis_dt"] == high_dt and cell["m"] in {2, 3}
+    ]
+
+    assert len(cells) == 6
+    assert len(high_stiffness_nonlinear) == 2
+    assert all(
+        cell["identity_iteration_range"]["ratio"] >= 5.0 for cell in high_stiffness_nonlinear
     )
