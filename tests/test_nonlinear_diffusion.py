@@ -47,7 +47,7 @@ def _heat_gaussian_laplacian(x: jnp.ndarray, t: float) -> jnp.ndarray:
     return (x**2 / (4.0 * t**2) - 1.0 / (2.0 * t)) * u
 
 
-def test_linear_control_has_second_order_spatial_accuracy() -> None:
+def test_linear_control_has_second_order_max_norm_accuracy() -> None:
     """The three-point transformed-field stencil is second order for ``m=1``."""
     t = 0.1
     sizes = (101, 201, 401, 801)
@@ -65,11 +65,11 @@ def test_linear_control_has_second_order_spatial_accuracy() -> None:
             )
             numerical = porous_medium_flux_rhs(u, grid, 1.0, epsilon=0.0)[grid.interior_slice]
             exact = _heat_gaussian_laplacian(x, t)
-            errors.append(float(jnp.sqrt(grid.dx * jnp.sum((numerical - exact) ** 2))))
+            errors.append(float(jnp.max(jnp.abs(numerical - exact))))
             spacings.append(grid.dx)
 
     order = float(np.polyfit(np.log(spacings), np.log(errors), 1)[0])
-    print(f"linear-control errors={errors}, observed_order={order:.6f}")
+    print(f"linear-control max-norm errors={errors}, observed_order={order:.6f}")
     assert 1.7 <= order <= 2.3
 
 
