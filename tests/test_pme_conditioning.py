@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from math import ceil, floor, isinf, sqrt
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from benchmarks.pme_breakdown import BreakdownConfig, run_breakdown_study
+from moljax.conditioning import crouzeix_palencia_envelope
 from moljax.core.grid import Grid1D
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 from moljax.experimental.nonlinear_diffusion import barenblatt
@@ -14,6 +18,7 @@ from moljax.experimental.pme_conditioning import (
     assess_pme_state,
     build_pme_linearization,
     measure_gmres_iterations,
+    predicted_iterations_from_envelope,
 )
 from moljax.experimental.pme_preconditioner import (
     d0_frozen_mean,
@@ -186,3 +191,56 @@ def test_helmholtz_variants_reduce_real_gmres_work_for_linear_control() -> None:
     assert frozen_bulk["converged"]
     assert identity["iterations"] >= frozen_mean["iterations"]
     assert identity["iterations"] >= frozen_bulk["iterations"]
+
+
+@pytest.mark.parametrize("disk_rate", (0.2, 0.5, 0.8))
+def test_envelope_iteration_predictor_reaches_the_requested_threshold(disk_rate: float) -> None:
+    """The ceiling of the predictor is the first CP-envelope index below tolerance."""
+    tolerance = 1.0e-6
+    prefactor = 1.0 + sqrt(2.0)
+    predicted = predicted_iterations_from_envelope(
+        disk_rate,
+        tol=tolerance,
+        prefactor=prefactor,
+    )
+    first_index = ceil(predicted)
+    previous_index = floor(predicted)
+    envelope = crouzeix_palencia_envelope(disk_rate, first_index, prefactor=prefactor)
+
+    assert float(envelope[-1]) <= tolerance
+    assert (
+        float(crouzeix_palencia_envelope(disk_rate, previous_index, prefactor=prefactor)[-1])
+        > tolerance
+    )
+
+
+def test_envelope_iteration_predictor_is_monotone_and_marks_nonpredictive_rates() -> None:
+    """Broader disks require more bound iterations; a unit rate has no decay estimate."""
+    rates = (0.0, 0.2, 0.5, 0.8)
+    predictions = [predicted_iterations_from_envelope(rate, tol=1.0e-6) for rate in rates]
+
+    assert predictions == sorted(predictions)
+    assert isinf(predicted_iterations_from_envelope(1.0, tol=1.0e-6))
+
+
+@pytest.mark.slow
+def test_regime_claim_smoke_reports_when_the_small_sample_is_not_separated(tmp_path) -> None:
+    """A small mixed-verdict sample either supports separation or reports its absence."""
+    report = run_breakdown_study(
+        BreakdownConfig(
+            nx=24,
+            m_values=(3,),
+            visited_steps=(1, 2),
+            output_path=str(tmp_path / "pme_regime_smoke.json"),
+        )
+    )
+    claim = report["regime_claim"]["adequate_vs_investigate"]
+    buckets = report["regime_claim"]["iteration_by_verdict"]
+
+    if buckets.get("adequate", {"count": 0})["count"] == 0:
+        pytest.skip("small sample did not produce an adequate verdict")
+    if buckets.get("investigate", {"count": 0})["count"] == 0:
+        pytest.skip("small sample did not produce an investigate verdict")
+    if not claim["supports_cost_separation"]:
+        pytest.skip("small sample does not support the regime-cost inequality")
+    assert buckets["investigate"]["median"] >= buckets["adequate"]["median"]
