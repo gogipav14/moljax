@@ -228,9 +228,14 @@ def test_regime_claim_smoke_reports_when_the_small_sample_is_not_separated(tmp_p
     """A small mixed-verdict sample either supports separation or reports its absence."""
     report = run_breakdown_study(
         BreakdownConfig(
-            nx=24,
-            m_values=(3,),
+            nx=128,
+            m_values=(1,),
+            analysis_dt_values=(2.0e-4, 2.0),
             visited_steps=(1, 2),
+            n_angles=3,
+            fov_max_iters=4,
+            arnoldi_steps=4,
+            max_krylov_iters=400,
             output_path=str(tmp_path / "pme_regime_smoke.json"),
         )
     )
@@ -244,3 +249,30 @@ def test_regime_claim_smoke_reports_when_the_small_sample_is_not_separated(tmp_p
     if not claim["supports_cost_separation"]:
         pytest.skip("small sample does not support the regime-cost inequality")
     assert buckets["investigate"]["median"] >= buckets["adequate"]["median"]
+
+
+@pytest.mark.slow
+def test_identity_stress_sweep_has_required_dynamic_range(tmp_path) -> None:
+    """The stress schedule must expose at least a fivefold identity-cost range."""
+    report = run_breakdown_study(
+        BreakdownConfig(
+            nx=128,
+            m_values=(1,),
+            d0_kinds=("identity",),
+            state_dt=0.02,
+            analysis_dt_values=(2.0e-4, 2.0),
+            visited_steps=(1, 2, 3),
+            n_angles=3,
+            fov_max_iters=4,
+            arnoldi_steps=4,
+            max_krylov_iters=400,
+            output_path=str(tmp_path / "pme_identity_stress.json"),
+        )
+    )
+    dynamic_range = report["verdict_on_decision_procedure"]["identity_iteration_dynamic_range"]
+
+    assert dynamic_range["ratio"] >= 5.0, (
+        "The stress schedule is too benign: "
+        f"min={dynamic_range['min']}, max={dynamic_range['max']}, "
+        f"ratio={dynamic_range['ratio']}"
+    )
