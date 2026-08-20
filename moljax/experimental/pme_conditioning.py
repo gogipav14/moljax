@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import log, sqrt
 from typing import Any, NamedTuple
 
 import jax
@@ -300,6 +301,34 @@ def measure_gmres_iterations(
         max_iters=max_iters,
     )
     return {**measurement, "d0": linearization.d0}
+
+
+def predicted_iterations_from_envelope(
+    disk_rate: float,
+    *,
+    tol: float,
+    prefactor: float = 1.0 + sqrt(2.0),
+) -> float:
+    """Return the Crouzeix--Palencia envelope iteration estimate.
+
+    :func:`moljax.conditioning.crouzeix_palencia_envelope` bounds a residual
+    after ``k`` iterations by ``prefactor * disk_rate**k``.  Solving that
+    bound for the first ``k`` at or below ``tol`` gives
+    ``log(tol / prefactor) / log(disk_rate)``.  The result is a real-valued
+    estimate; callers take its ceiling when comparing it with an integer
+    iteration count.  A non-positive disk rate predicts zero iterations,
+    while a rate at least one returns ``inf`` to mark the bound as
+    non-predictive.
+    """
+    if tol <= 0.0:
+        raise ValueError("tol must be positive")
+    if prefactor <= 0.0:
+        raise ValueError("prefactor must be positive")
+    if disk_rate <= 0.0:
+        return 0.0
+    if disk_rate >= 1.0:
+        return float("inf")
+    return max(0.0, log(tol / prefactor) / log(disk_rate))
 
 
 def assess_pme_state(
