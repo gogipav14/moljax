@@ -33,10 +33,10 @@ from moljax.experimental.pme_preconditioner import helmholtz_inverse_relative_re
 class BreakdownConfig(NamedTuple):
     """Static parameters for the one-dimensional PME conditioning sweep.
 
-    The study starts from an early-time compact profile and analyses the first
-    three backward-Euler states. PME smooths rather than sharpens in forward
-    time, so the schedule retains a range of steep fronts while
-    ``analysis_dt / dx**2`` spans a deliberately wide stiffness range.
+    The study advances exact-profile initializations by a stable backward-Euler
+    step.  Their target support halfwidths provide a solver-visited
+    front-sharpness axis, while ``analysis_dt / dx**2`` spans a deliberately
+    wide stiffness range.
     """
 
     nx: int = 512
@@ -46,7 +46,7 @@ class BreakdownConfig(NamedTuple):
     state_dt: float = 0.02
     analysis_dt_values: tuple[float, ...] = (2.0e-4, 2.0e-2, 2.0)
     epsilon: float = 1.0e-5
-    visited_steps: tuple[int, ...] = (1, 2, 3)
+    front_target_halfwidths: tuple[float, ...] = (0.25, 0.75, 3.0)
     n_angles: int = 3
     fov_max_iters: int = 10
     arnoldi_steps: int = 6
@@ -55,7 +55,7 @@ class BreakdownConfig(NamedTuple):
     max_krylov_iters: int = 400
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
-    m_values: tuple[int, ...] = (1, 8)
+    m_values: tuple[int, ...] = (1, 2, 3, 4, 6, 8)
     d0_kinds: tuple[str, ...] = ("frozen_mean", "frozen_bulk", "floor", "const", "identity")
     output_path: str = "benchmarks/results/pme_breakdown.json"
 
@@ -71,12 +71,17 @@ def _barenblatt_b(m: int, target_radius: float = 1.8) -> float:
     return target_radius**2 * (m - 1.0) * beta / (2.0 * m)
 
 
-def _initial_state(grid: NodeCenteredDirichletGrid, m: int, t0: float) -> jax.Array:
-    """Return a node-centred control or Barenblatt initial state."""
+def _initial_state(
+    grid: NodeCenteredDirichletGrid,
+    m: int,
+    t0: float,
+    target_halfwidth: float,
+) -> jax.Array:
+    """Return a control or Barenblatt state with a selected front scale."""
     x = grid.x_coords()
     if m == 1:
         return _heat_gaussian(x, t0)
-    b = _barenblatt_b(m)
+    b = _barenblatt_b(m, target_halfwidth)
     return barenblatt(x, t0, float(m), b=b)
 
 
@@ -259,7 +264,7 @@ def _rank_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
     discordant = 0
     tied = 0
     exact_order_count = 0
-    for (m, analysis_dt, visited_step), rows in sorted(by_state.items()):
+    for (m, analysis_dt, front_case), rows in sorted(by_state.items()):
         disk_order = [
             row["d0_kind"]
             for row in sorted(rows, key=lambda row: (row["disk_rate"], row["d0_kind"]))
@@ -294,7 +299,8 @@ def _rank_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
             {
                 "m": m,
                 "analysis_dt": analysis_dt,
-                "visited_step": visited_step,
+                "front_case": front_case,
+                "target_support_halfwidth": rows[0]["target_support_halfwidth"],
                 "disk_rate_order": disk_order,
                 "actual_iteration_order": iteration_order,
                 "concordant_pairs": state_concordant,
@@ -322,7 +328,8 @@ def _predictor_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
         {
             "m": record["m"],
             "analysis_dt": record["analysis_dt"],
-            "visited_step": record["visited_step"],
+            "front_case": record["front_case"],
+            "target_support_halfwidth": record["target_support_halfwidth"],
             "d0_kind": record["d0_kind"],
             "disk_rate": record["disk_rate"],
             "actual_iterations": record["actual_gmres"]["iterations"],
@@ -333,7 +340,8 @@ def _predictor_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
         {
             "m": record["m"],
             "analysis_dt": record["analysis_dt"],
-            "visited_step": record["visited_step"],
+            "front_case": record["front_case"],
+            "target_support_halfwidth": record["target_support_halfwidth"],
             "d0_kind": record["d0_kind"],
             "predicted_iterations_from_envelope": record["predicted_iterations_from_envelope"],
             "actual_iterations": record["actual_gmres"]["iterations"],
@@ -375,7 +383,8 @@ def _correlation_pairs(records: list[dict[str, Any]]) -> dict[str, Any]:
             {
                 "m": record["m"],
                 "analysis_dt": record["analysis_dt"],
-                "visited_step": record["visited_step"],
+                "front_case": record["front_case"],
+                "target_support_halfwidth": record["target_support_halfwidth"],
                 "d0_kind": record["d0_kind"],
                 "disk_rate": record["disk_rate"],
                 "actual_gmres_iterations": record["actual_gmres"]["iterations"],
@@ -387,7 +396,102 @@ def _correlation_pairs(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _state_key(record: dict[str, Any]) -> tuple[int, float, int]:
     """Return the common physical-state and candidate-step identifier."""
-    return int(record["m"]), float(record["analysis_dt"]), int(record["visited_step"])
+    return int(record["m"]), float(record["analysis_dt"]), int(record["front_case"])
+
+
+def _cell_label(m: int, analysis_dt: float) -> str:
+    """Format one exponent/stiffness cell for a compact report statement."""
+    return f"(m={m}, dt={analysis_dt:g})"
+
+
+def _regime_map(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Map identity-conditioning evidence across exponent and stiffness cells."""
+    by_cell: dict[tuple[int, float], list[dict[str, Any]]] = {}
+    for record in records:
+        if record["d0_kind"] != "identity":
+            continue
+        key = int(record["m"]), float(record["analysis_dt"])
+        by_cell.setdefault(key, []).append(record)
+
+    cells: list[dict[str, Any]] = []
+    reliable_cells: list[str] = []
+    unreliable_or_benign_cells: list[str] = []
+    for (m, analysis_dt), identity_records in sorted(by_cell.items()):
+        iterations = [float(record["actual_gmres"]["iterations"]) for record in identity_records]
+        disk_rates = [float(record["disk_rate"]) for record in identity_records]
+        threshold = float(median(iterations))
+        hard_records = [
+            record
+            for record in identity_records
+            if float(record["actual_gmres"]["iterations"]) >= threshold
+        ]
+        easy_records = [
+            record
+            for record in identity_records
+            if float(record["actual_gmres"]["iterations"]) < threshold
+        ]
+        minimum = min(iterations)
+        maximum = max(iterations)
+        ratio = float("inf") if minimum == 0.0 and maximum > 0.0 else maximum / minimum
+        pearson = _pearson(disk_rates, iterations)
+        label = _cell_label(m, analysis_dt)
+        if pearson is not None and pearson > 0.8:
+            reliable_cells.append(label)
+        else:
+            unreliable_or_benign_cells.append(label)
+        cells.append(
+            {
+                "m": m,
+                "analysis_dt": analysis_dt,
+                "identity_records": len(identity_records),
+                "identity_disk_rate_vs_iterations_pearson": pearson,
+                "identity_hard_iteration_threshold": threshold,
+                "identity_hard_disk_rate": _summary(
+                    [float(record["disk_rate"]) for record in hard_records]
+                ),
+                "identity_easy_disk_rate": _summary(
+                    [float(record["disk_rate"]) for record in easy_records]
+                ),
+                "identity_investigate_fraction": (
+                    sum(record["verdict"] == "investigate" for record in identity_records)
+                    / len(identity_records)
+                ),
+                "identity_hard_investigate_fraction": (
+                    sum(record["verdict"] == "investigate" for record in hard_records)
+                    / len(hard_records)
+                    if hard_records
+                    else None
+                ),
+                "identity_easy_investigate_fraction": (
+                    sum(record["verdict"] == "investigate" for record in easy_records)
+                    / len(easy_records)
+                    if easy_records
+                    else None
+                ),
+                "identity_iteration_range": {
+                    **_summary(iterations),
+                    "ratio": ratio,
+                },
+            }
+        )
+
+    reliable_text = ", ".join(reliable_cells) if reliable_cells else "none"
+    unreliable_text = (
+        ", ".join(unreliable_or_benign_cells) if unreliable_or_benign_cells else "none"
+    )
+    return {
+        "description": (
+            "Identity-preconditioned evidence by porous-medium exponent and candidate "
+            "implicit-step size; hard and easy are split at each cell's identity median."
+        ),
+        "cells": cells,
+        "reliable_cells_pearson_gt_0_8": reliable_cells,
+        "unreliable_or_too_benign_cells_pearson_le_0_8": unreliable_or_benign_cells,
+        "statement": (
+            f"Identity Pearson > 0.8: {reliable_text}. "
+            f"Identity Pearson <= 0.8: {unreliable_text}."
+        ),
+    }
 
 
 def _verdict_on_decision_procedure(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -471,7 +575,8 @@ def _verdict_on_decision_procedure(records: list[dict[str, Any]]) -> dict[str, A
         {
             "m": record["m"],
             "analysis_dt": record["analysis_dt"],
-            "visited_step": record["visited_step"],
+            "front_case": record["front_case"],
+            "target_support_halfwidth": record["target_support_halfwidth"],
             "d0_kind": record["d0_kind"],
             "iterations": record["actual_gmres"]["iterations"],
             "final_relative_residual": record["actual_gmres"]["final_relative_residual"],
@@ -515,7 +620,8 @@ def _record_state(
     state: jax.Array,
     grid: NodeCenteredDirichletGrid,
     m: int,
-    visited_step: int,
+    front_case: int,
+    target_halfwidth: float,
     analysis_dt: float,
     config: BreakdownConfig,
     centering: dict[str, Any],
@@ -537,7 +643,7 @@ def _record_state(
             n_angles=config.n_angles,
             fov_max_iters=config.fov_max_iters,
             arnoldi_steps=config.arnoldi_steps,
-            seed=20260900 + 1000 * m + 10 * visited_step + index,
+            seed=20260900 + 1000 * m + 10 * front_case + index,
         )
         actual_gmres = measure_gmres_iterations(
             state,
@@ -553,8 +659,10 @@ def _record_state(
         records.append(
             {
                 "m": m,
-                "visited_step": visited_step,
-                "visited_time": config.t0 + visited_step * config.state_dt,
+                "front_case": front_case,
+                "target_support_halfwidth": target_halfwidth,
+                "visited_step": 1,
+                "visited_time": config.t0 + config.state_dt,
                 "reference_state_dt": config.state_dt,
                 "analysis_dt": analysis_dt,
                 "front_max_gradient": front_gradient,
@@ -584,8 +692,8 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
     """Run the powered D0-variant sweep and write the decision-grade JSON report."""
     if config is None:
         config = BreakdownConfig()
-    if not config.visited_steps or min(config.visited_steps) < 1:
-        raise ValueError("visited_steps must contain positive step indices")
+    if not config.front_target_halfwidths or min(config.front_target_halfwidths) <= 0.0:
+        raise ValueError("front_target_halfwidths must contain positive halfwidths")
     if not config.analysis_dt_values or min(config.analysis_dt_values) <= 0.0:
         raise ValueError("analysis_dt_values must contain positive step sizes")
 
@@ -594,24 +702,23 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
         grid = NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
         centering = _centering_report(config)
         records: list[dict[str, Any]] = []
-        selected_steps = set(config.visited_steps)
         for m in config.m_values:
-            state = _initial_state(grid, m, config.t0)
-            for visited_step in range(1, max(selected_steps) + 1):
+            for front_case, target_halfwidth in enumerate(config.front_target_halfwidths, start=1):
+                state = _initial_state(grid, m, config.t0, target_halfwidth)
                 state, state_solver = _solve_one_step(state, grid, m, config, "frozen_bulk")
-                if visited_step in selected_steps:
-                    for analysis_dt in config.analysis_dt_values:
-                        _record_state(
-                            records,
-                            state,
-                            grid,
-                            m,
-                            visited_step,
-                            analysis_dt,
-                            config,
-                            centering,
-                            state_solver,
-                        )
+                for analysis_dt in config.analysis_dt_values:
+                    _record_state(
+                        records,
+                        state,
+                        grid,
+                        m,
+                        front_case,
+                        target_halfwidth,
+                        analysis_dt,
+                        config,
+                        centering,
+                        state_solver,
+                    )
 
     runtime_seconds = perf_counter() - started_at
     decision = _verdict_on_decision_procedure(records)
@@ -647,6 +754,7 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
         "rank_claim": _rank_claim(records),
         "predictor_quality": _predictor_quality(records),
         "correlation": _correlation_pairs(records),
+        "regime_map": _regime_map(records),
         "verdict_on_decision_procedure": decision,
         "records": records,
     }
@@ -662,6 +770,7 @@ def _print_summary(report: dict[str, Any]) -> None:
     rank = report["rank_claim"]
     predictor = report["predictor_quality"]
     decision = report["verdict_on_decision_procedure"]
+    regime_map = report["regime_map"]
     print(f"records={len(report['records'])} runtime_seconds={report['runtime_seconds']:.3f}")
     print("verdict       count  min  median  max")
     for verdict, values in regime["iteration_by_verdict"].items():
@@ -689,6 +798,7 @@ def _print_summary(report: dict[str, Any]) -> None:
         f"pearson={decision['identity_disk_rate_vs_iterations_pearson']} "
         f"answer={decision['answer']}"
     )
+    print(f"regime map: {regime_map['statement']}")
 
 
 def main() -> None:
