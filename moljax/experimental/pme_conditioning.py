@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
 
 from moljax.conditioning import (
+    LinearizedOperator,
     adjoint_identity,
     arnoldi,
     assess_preconditioner,
@@ -20,26 +21,45 @@ from moljax.conditioning import (
 )
 from moljax.core.grid import Grid1D
 from moljax.core.preconditioners import IdentityPreconditioner, PrecondContext
-from moljax.experimental.nonlinear_diffusion import porous_medium_flux_rhs
+from moljax.experimental.node_centered import NodeCenteredDirichletGrid
+from moljax.experimental.nonlinear_diffusion import (
+    porous_medium_flux_rhs,
+    porous_medium_node_centered_rhs,
+)
 from moljax.experimental.pme_preconditioner import (
     PMEHelmholtzPreconditioner,
     d0_const,
     d0_floor,
+    d0_frozen_bulk,
     d0_frozen_mean,
     pme_helmholtz_preconditioner,
 )
 
 Residual = Callable[[jax.Array], jax.Array]
 ExperimentalPreconditioner = PMEHelmholtzPreconditioner | IdentityPreconditioner
+PMEGrid = Grid1D | NodeCenteredDirichletGrid
 
 
-def interior_values(u: jax.Array, grid: Grid1D) -> jax.Array:
+class PMELinearization(NamedTuple):
+    """A backward-Euler PME linearization and its consistently preconditioned RHS."""
+
+    operator: LinearizedOperator
+    residual: Residual
+    preconditioner: ExperimentalPreconditioner
+    context: PrecondContext
+    d0: float
+    rhs: jax.Array
+
+
+def interior_values(u: jax.Array, grid: PMEGrid) -> jax.Array:
     """Return interior degrees of freedom from an interior or padded field."""
     values = jnp.asarray(u, dtype=jnp.float64)
     if values.ndim != 1:
         raise ValueError("PME fields must be one-dimensional")
     if values.shape[0] == grid.nx:
         return values
+    if isinstance(grid, NodeCenteredDirichletGrid):
+        raise ValueError(f"PME field length must be {grid.nx}, got {values.shape[0]}")
     if values.shape[0] == grid.nx_total:
         return values[grid.interior_slice]
     raise ValueError(
@@ -47,18 +67,20 @@ def interior_values(u: jax.Array, grid: Grid1D) -> jax.Array:
     )
 
 
-def padded_values(u_interior: jax.Array, grid: Grid1D) -> jax.Array:
-    """Embed interior degrees of freedom in a zero-ghost padded field."""
+def padded_values(u_interior: jax.Array, grid: PMEGrid) -> jax.Array:
+    """Embed a cell field in ghosts, or retain a node-centred interior field."""
     values = jnp.asarray(u_interior, dtype=jnp.float64)
     if values.shape != (grid.nx,):
         raise ValueError(f"Expected interior shape {(grid.nx,)}, got {values.shape}")
+    if isinstance(grid, NodeCenteredDirichletGrid):
+        return values
     return jnp.zeros(grid.nx_total, dtype=values.dtype).at[grid.interior_slice].set(values)
 
 
 def backward_euler_residual(
     u: jax.Array,
     u_prev: jax.Array,
-    grid: Grid1D,
+    grid: PMEGrid,
     m: float,
     dt: float,
     epsilon: float,
@@ -66,13 +88,17 @@ def backward_euler_residual(
     """Return the interior backward-Euler residual for the regularized PME."""
     candidate = interior_values(u, grid)
     previous = interior_values(u_prev, grid)
-    rhs = porous_medium_flux_rhs(padded_values(candidate, grid), grid, m, epsilon=epsilon)
-    return candidate - previous - dt * rhs[grid.interior_slice]
+    if isinstance(grid, NodeCenteredDirichletGrid):
+        rhs = porous_medium_node_centered_rhs(candidate, grid, m, epsilon=epsilon)
+    else:
+        rhs = porous_medium_flux_rhs(padded_values(candidate, grid), grid, m, epsilon=epsilon)
+        rhs = rhs[grid.interior_slice]
+    return candidate - previous - dt * rhs
 
 
 def make_backward_euler_residual(
     u_prev: jax.Array,
-    grid: Grid1D,
+    grid: PMEGrid,
     m: float,
     dt: float,
     epsilon: float,
@@ -88,7 +114,7 @@ def make_backward_euler_residual(
 
 def d0_variant(
     u_prev: jax.Array,
-    grid: Grid1D,
+    grid: PMEGrid,
     m: float,
     epsilon: float,
     d0_kind: str,
@@ -99,6 +125,8 @@ def d0_variant(
     previous = interior_values(u_prev, grid)
     if d0_kind == "frozen_mean":
         return d0_frozen_mean(previous, m)
+    if d0_kind == "frozen_bulk":
+        return d0_frozen_bulk(previous, m)
     if d0_kind == "floor":
         return d0_floor(m, epsilon)
     if d0_kind == "const":
@@ -110,7 +138,7 @@ def d0_variant(
 
 def pme_preconditioner_variant(
     u_prev: jax.Array,
-    grid: Grid1D,
+    grid: PMEGrid,
     m: float,
     dt: float,
     epsilon: float,
@@ -125,25 +153,22 @@ def pme_preconditioner_variant(
     return pme_helmholtz_preconditioner(d0, dt, grid), d0
 
 
-def assess_pme_state(
+def build_pme_linearization(
     u_prev: jax.Array,
-    grid: Grid1D,
+    grid: PMEGrid,
     m: float,
     dt: float,
     epsilon: float,
     d0_kind: str,
     *,
     const_value: float = 1.0,
-    n_angles: int = 6,
-    fov_max_iters: int = 30,
-    arnoldi_steps: int = 8,
-    seed: int = 20260820,
-) -> dict[str, Any]:
-    """Assess one visited PME state under a named D0 preconditioner variant.
+) -> PMELinearization:
+    """Build a preconditioned PME Jacobian and the matching Newton right-hand side.
 
-    The residual is differentiated through public JAX JVP/VJP calls by
-    :func:`moljax.conditioning.linearized_operator`.  The returned operator is
-    the left-preconditioned ``P^-1 J`` action and its Euclidean adjoint.
+    The returned action is ``P^-1 J`` from the shared conditioning adapter and
+    ``rhs`` is exactly ``P^-1 (-R(u_prev))``.  This makes the experimental
+    counted GMRES measurement use the same left-preconditioned linear system
+    as a Newton update, without relying on the core solver's budget counter.
     """
     with jax.enable_x64(True):
         previous = interior_values(u_prev, grid)
@@ -164,6 +189,151 @@ def assess_pme_state(
             preconditioner=preconditioner,
             context=context,
         )
+        rhs = preconditioner.apply(-residual(previous), context)
+    return PMELinearization(operator, residual, preconditioner, context, d0, rhs)
+
+
+def _counted_gmres(
+    matvec: Callable[[jax.Array], jax.Array],
+    rhs: jax.Array,
+    *,
+    tol: float,
+    max_iters: int,
+) -> dict[str, Any]:
+    """Run unrestarted matrix-free GMRES and retain its true residual history.
+
+    This small experimental implementation uses Arnoldi least-squares updates
+    and evaluates the true preconditioned residual after every iteration.
+    It intentionally trades JIT fusion for an explicit, trustworthy iteration
+    count; the operator itself remains matrix-free and JIT-compatible.
+    """
+    if tol <= 0.0:
+        raise ValueError("tol must be positive")
+    if max_iters <= 0:
+        raise ValueError("max_iters must be positive")
+
+    with jax.enable_x64(True):
+        vector_rhs = jnp.asarray(rhs, dtype=jnp.float64)
+        norm_rhs = float(jnp.linalg.norm(vector_rhs))
+        if norm_rhs == 0.0:
+            return {"converged": True, "iterations": 0, "final_relative_residual": 0.0}
+
+        basis = [vector_rhs / norm_rhs]
+        hessenberg = jnp.zeros((max_iters + 1, max_iters), dtype=jnp.float64)
+        threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
+        final_relative_residual = 1.0
+
+        for column in range(max_iters):
+            candidate_vector = jnp.real(matvec(basis[column]))
+            coefficients = []
+            for basis_vector in basis:
+                coefficient = jnp.vdot(basis_vector, candidate_vector)
+                coefficients.append(coefficient)
+                candidate_vector = candidate_vector - coefficient * basis_vector
+            for row, basis_vector in enumerate(basis):
+                correction = jnp.vdot(basis_vector, candidate_vector)
+                coefficients[row] = coefficients[row] + correction
+                candidate_vector = candidate_vector - correction * basis_vector
+
+            subdiagonal = jnp.linalg.norm(candidate_vector)
+            hessenberg = hessenberg.at[: column + 1, column].set(jnp.asarray(coefficients))
+            hessenberg = hessenberg.at[column + 1, column].set(subdiagonal)
+            reduced_rhs = jnp.zeros(column + 2, dtype=jnp.float64).at[0].set(norm_rhs)
+            least_squares = jnp.linalg.lstsq(
+                hessenberg[: column + 2, : column + 1],
+                reduced_rhs,
+                rcond=None,
+            )[0]
+            correction = jnp.zeros_like(vector_rhs)
+            for row, basis_vector in enumerate(basis):
+                correction = correction + least_squares[row] * basis_vector
+            residual = vector_rhs - jnp.real(matvec(correction))
+            final_relative_residual = float(jnp.linalg.norm(residual) / norm_rhs)
+            if final_relative_residual <= tol:
+                return {
+                    "converged": True,
+                    "iterations": column + 1,
+                    "final_relative_residual": final_relative_residual,
+                }
+            if float(subdiagonal) <= threshold:
+                break
+            basis.append(candidate_vector / subdiagonal)
+
+    return {
+        "converged": False,
+        "iterations": len(basis),
+        "final_relative_residual": final_relative_residual,
+    }
+
+
+def measure_gmres_iterations(
+    u_prev: jax.Array,
+    grid: PMEGrid,
+    m: float,
+    dt: float,
+    epsilon: float,
+    d0_kind: str,
+    *,
+    tol: float,
+    max_iters: int,
+    const_value: float = 1.0,
+) -> dict[str, Any]:
+    """Measure the actual GMRES count for one preconditioned PME Newton system.
+
+    The fixed system is ``P^-1 J delta = P^-1 (-R(u_prev))``.  Its count is
+    determined from the true relative residual, unlike ``NKStats.lin_iters``
+    which records only the configured budget in the current core solver.
+    """
+    linearization = build_pme_linearization(
+        u_prev,
+        grid,
+        m,
+        dt,
+        epsilon,
+        d0_kind,
+        const_value=const_value,
+    )
+    measurement = _counted_gmres(
+        linearization.operator.matvec,
+        linearization.rhs,
+        tol=tol,
+        max_iters=max_iters,
+    )
+    return {**measurement, "d0": linearization.d0}
+
+
+def assess_pme_state(
+    u_prev: jax.Array,
+    grid: PMEGrid,
+    m: float,
+    dt: float,
+    epsilon: float,
+    d0_kind: str,
+    *,
+    const_value: float = 1.0,
+    n_angles: int = 6,
+    fov_max_iters: int = 30,
+    arnoldi_steps: int = 8,
+    seed: int = 20260820,
+) -> dict[str, Any]:
+    """Assess one visited PME state under a named D0 preconditioner variant.
+
+    The residual is differentiated through public JAX JVP/VJP calls by
+    :func:`moljax.conditioning.linearized_operator`.  The returned operator is
+    the left-preconditioned ``P^-1 J`` action and its Euclidean adjoint.
+    """
+    with jax.enable_x64(True):
+        linearization = build_pme_linearization(
+            u_prev,
+            grid,
+            m,
+            dt,
+            epsilon,
+            d0_kind,
+            const_value=const_value,
+        )
+        operator = linearization.operator
+        d0 = linearization.d0
         adjoint_error = adjoint_identity(operator, jax.random.PRNGKey(seed), operator.n)
         key_real, key_imag = jax.random.split(jax.random.PRNGKey(seed + 1))
         start = jax.random.normal(key_real, (operator.n,), dtype=jnp.float64)
