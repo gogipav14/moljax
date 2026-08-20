@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from math import log, sqrt
+from math import hypot, log, sqrt
 from typing import Any, NamedTuple
 
 import jax
@@ -203,10 +203,11 @@ def _counted_gmres(
 ) -> dict[str, Any]:
     """Run unrestarted matrix-free GMRES and retain its true residual history.
 
-    This small experimental implementation uses Arnoldi least-squares updates
-    and evaluates the true preconditioned residual after every iteration.
-    It intentionally trades JIT fusion for an explicit, trustworthy iteration
-    count; the operator itself remains matrix-free and JIT-compatible.
+    This small experimental implementation applies Givens rotations to the
+    Arnoldi Hessenberg columns.  The final rotated right-hand-side entry is
+    the GMRES residual norm, so no dense least-squares solve is needed at each
+    step.  It intentionally trades JIT fusion for an explicit, trustworthy
+    iteration count; the operator itself remains matrix-free and JIT-compatible.
     """
     if tol <= 0.0:
         raise ValueError("tol must be positive")
@@ -220,45 +221,55 @@ def _counted_gmres(
             return {"converged": True, "iterations": 0, "final_relative_residual": 0.0}
 
         basis = [vector_rhs / norm_rhs]
-        hessenberg = jnp.zeros((max_iters + 1, max_iters), dtype=jnp.float64)
+        cosines: list[float] = []
+        sines: list[float] = []
+        rotated_rhs = [norm_rhs] + [0.0] * max_iters
         threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
         final_relative_residual = 1.0
 
         for column in range(max_iters):
             candidate_vector = jnp.real(matvec(basis[column]))
-            coefficients = []
+            coefficients: list[float] = []
             for basis_vector in basis:
-                coefficient = jnp.vdot(basis_vector, candidate_vector)
+                coefficient = float(jnp.vdot(basis_vector, candidate_vector))
                 coefficients.append(coefficient)
                 candidate_vector = candidate_vector - coefficient * basis_vector
             for row, basis_vector in enumerate(basis):
-                correction = jnp.vdot(basis_vector, candidate_vector)
+                correction = float(jnp.vdot(basis_vector, candidate_vector))
                 coefficients[row] = coefficients[row] + correction
                 candidate_vector = candidate_vector - correction * basis_vector
 
-            subdiagonal = jnp.linalg.norm(candidate_vector)
-            hessenberg = hessenberg.at[: column + 1, column].set(jnp.asarray(coefficients))
-            hessenberg = hessenberg.at[column + 1, column].set(subdiagonal)
-            reduced_rhs = jnp.zeros(column + 2, dtype=jnp.float64).at[0].set(norm_rhs)
-            least_squares = jnp.linalg.lstsq(
-                hessenberg[: column + 2, : column + 1],
-                reduced_rhs,
-                rcond=None,
-            )[0]
-            correction = jnp.zeros_like(vector_rhs)
-            for row, basis_vector in enumerate(basis):
-                correction = correction + least_squares[row] * basis_vector
-            residual = vector_rhs - jnp.real(matvec(correction))
-            final_relative_residual = float(jnp.linalg.norm(residual) / norm_rhs)
+            arnoldi_subdiagonal = float(jnp.linalg.norm(candidate_vector))
+            hessenberg_column = coefficients + [arnoldi_subdiagonal]
+            for row, (cosine, sine) in enumerate(zip(cosines, sines, strict=True)):
+                upper = cosine * hessenberg_column[row] + sine * hessenberg_column[row + 1]
+                hessenberg_column[row + 1] = (
+                    -sine * hessenberg_column[row] + cosine * hessenberg_column[row + 1]
+                )
+                hessenberg_column[row] = upper
+
+            diagonal = hessenberg_column[column]
+            subdiagonal = hessenberg_column[column + 1]
+            normalization = hypot(diagonal, subdiagonal)
+            if normalization <= threshold:
+                cosine, sine = 1.0, 0.0
+            else:
+                cosine, sine = diagonal / normalization, subdiagonal / normalization
+            cosines.append(cosine)
+            sines.append(sine)
+            previous_rhs = rotated_rhs[column]
+            rotated_rhs[column] = cosine * previous_rhs
+            rotated_rhs[column + 1] = -sine * previous_rhs
+            final_relative_residual = abs(rotated_rhs[column + 1]) / norm_rhs
             if final_relative_residual <= tol:
                 return {
                     "converged": True,
                     "iterations": column + 1,
                     "final_relative_residual": final_relative_residual,
                 }
-            if float(subdiagonal) <= threshold:
+            if arnoldi_subdiagonal <= threshold:
                 break
-            basis.append(candidate_vector / subdiagonal)
+            basis.append(candidate_vector / arnoldi_subdiagonal)
 
     return {
         "converged": False,

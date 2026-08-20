@@ -36,14 +36,15 @@ class BreakdownConfig(NamedTuple):
     The study starts from an early-time compact profile and analyses the first
     three backward-Euler states. PME smooths rather than sharpens in forward
     time, so the schedule retains a range of steep fronts while
-    ``dt / dx**2`` remains order one for the linear control.
+    ``analysis_dt / dx**2`` spans a deliberately wide stiffness range.
     """
 
-    nx: int = 48
+    nx: int = 512
     x_min: float = -4.0
     x_max: float = 4.0
     t0: float = 0.1
-    dt: float = 0.02
+    state_dt: float = 0.02
+    analysis_dt_values: tuple[float, ...] = (2.0e-4, 2.0e-2, 2.0)
     epsilon: float = 1.0e-5
     visited_steps: tuple[int, ...] = (1, 2, 3)
     n_angles: int = 3
@@ -51,10 +52,10 @@ class BreakdownConfig(NamedTuple):
     arnoldi_steps: int = 6
     const_d0: float = 1.0
     max_newton_iters: int = 8
-    max_krylov_iters: int = 64
+    max_krylov_iters: int = 400
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
-    m_values: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
+    m_values: tuple[int, ...] = (1, 8)
     d0_kinds: tuple[str, ...] = ("frozen_mean", "frozen_bulk", "floor", "const", "identity")
     output_path: str = "benchmarks/results/pme_breakdown.json"
 
@@ -70,32 +71,13 @@ def _barenblatt_b(m: int, target_radius: float = 1.8) -> float:
     return target_radius**2 * (m - 1.0) * beta / (2.0 * m)
 
 
-def _initial_state(
-    grid: NodeCenteredDirichletGrid,
-    m: int,
-    t0: float,
-) -> tuple[jax.Array, float | None]:
-    """Return a node-centred control or Barenblatt initial state and its ``b``."""
+def _initial_state(grid: NodeCenteredDirichletGrid, m: int, t0: float) -> jax.Array:
+    """Return a node-centred control or Barenblatt initial state."""
     x = grid.x_coords()
     if m == 1:
-        return _heat_gaussian(x, t0), None
+        return _heat_gaussian(x, t0)
     b = _barenblatt_b(m)
-    return barenblatt(x, t0, float(m), b=b), b
-
-
-def _exact_solution(
-    grid: NodeCenteredDirichletGrid,
-    m: int,
-    time: float,
-    b: float | None,
-) -> jax.Array:
-    """Return the unregularized analytic comparison profile on interior nodes."""
-    x = grid.x_coords()
-    if m == 1:
-        return _heat_gaussian(x, time)
-    if b is None:
-        raise ValueError("Barenblatt comparison requires b")
-    return barenblatt(x, time, float(m), b=b)
+    return barenblatt(x, t0, float(m), b=b)
 
 
 def _solve_one_step(
@@ -108,12 +90,12 @@ def _solve_one_step(
     """Take one BE solve and return its state and nonlinear-solver statistics."""
     epsilon = 0.0 if m == 1 else config.epsilon
     interior = interior_values(state, grid)
-    residual = make_backward_euler_residual(interior, grid, float(m), config.dt, epsilon)
+    residual = make_backward_euler_residual(interior, grid, float(m), config.state_dt, epsilon)
     preconditioner, d0 = pme_preconditioner_variant(
         interior,
         grid,
         float(m),
-        config.dt,
+        config.state_dt,
         epsilon,
         d0_kind,
         const_value=config.const_d0,
@@ -130,7 +112,7 @@ def _solve_one_step(
             newton_tol=config.newton_tol,
             krylov_tol=config.krylov_tol,
         ),
-        dt=config.dt,
+        dt=config.state_dt,
     )
     solution = jax.block_until_ready(result.solution)
     return padded_values(solution, grid), {
@@ -146,7 +128,8 @@ def _centering_report(config: BreakdownConfig) -> dict[str, Any]:
     """Quantify the legacy cell/DST mismatch and validate the selected grid."""
     legacy_grid = Grid1D.uniform(config.nx, config.x_min, config.x_max)
     node_grid = NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
-    settings = ((1.0, config.dt), (1.0, 5.0 * config.dt), (0.16, config.dt))
+    largest_dt = max(config.analysis_dt_values)
+    settings = ((1.0, largest_dt), (1.0, 0.1 * largest_dt), (0.16, largest_dt))
     cases = []
     for index, (d0, dt) in enumerate(settings):
         key = jax.random.PRNGKey(20260950 + index)
@@ -235,9 +218,9 @@ def _regime_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
     investigate = iteration_by_verdict.get("investigate", _summary([]))
     adequate_gradient = gradient_by_verdict.get("adequate", _summary([]))
     investigate_gradient = gradient_by_verdict.get("investigate", _summary([]))
-    state_verdicts: dict[tuple[int, int], set[str]] = {}
+    state_verdicts: dict[tuple[int, float, int], set[str]] = {}
     for record in records:
-        key = (int(record["m"]), int(record["visited_step"]))
+        key = _state_key(record)
         state_verdicts.setdefault(key, set()).add(str(record["verdict"]))
 
     supports_cost_separation = (
@@ -266,9 +249,9 @@ def _regime_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _rank_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Compare disk-rate and actual-iteration orderings within each visited state."""
-    by_state: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    by_state: dict[tuple[int, float, int], list[dict[str, Any]]] = {}
     for record in records:
-        key = (int(record["m"]), int(record["visited_step"]))
+        key = _state_key(record)
         by_state.setdefault(key, []).append(record)
 
     states = []
@@ -276,7 +259,7 @@ def _rank_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
     discordant = 0
     tied = 0
     exact_order_count = 0
-    for (m, visited_step), rows in sorted(by_state.items()):
+    for (m, analysis_dt, visited_step), rows in sorted(by_state.items()):
         disk_order = [
             row["d0_kind"]
             for row in sorted(rows, key=lambda row: (row["disk_rate"], row["d0_kind"]))
@@ -310,6 +293,7 @@ def _rank_claim(records: list[dict[str, Any]]) -> dict[str, Any]:
         states.append(
             {
                 "m": m,
+                "analysis_dt": analysis_dt,
                 "visited_step": visited_step,
                 "disk_rate_order": disk_order,
                 "actual_iteration_order": iteration_order,
@@ -337,6 +321,7 @@ def _predictor_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
     raw_pairs = [
         {
             "m": record["m"],
+            "analysis_dt": record["analysis_dt"],
             "visited_step": record["visited_step"],
             "d0_kind": record["d0_kind"],
             "disk_rate": record["disk_rate"],
@@ -347,6 +332,7 @@ def _predictor_quality(records: list[dict[str, Any]]) -> dict[str, Any]:
     predictor_pairs = [
         {
             "m": record["m"],
+            "analysis_dt": record["analysis_dt"],
             "visited_step": record["visited_step"],
             "d0_kind": record["d0_kind"],
             "predicted_iterations_from_envelope": record["predicted_iterations_from_envelope"],
@@ -388,6 +374,7 @@ def _correlation_pairs(records: list[dict[str, Any]]) -> dict[str, Any]:
         "pairs": [
             {
                 "m": record["m"],
+                "analysis_dt": record["analysis_dt"],
                 "visited_step": record["visited_step"],
                 "d0_kind": record["d0_kind"],
                 "disk_rate": record["disk_rate"],
@@ -398,27 +385,152 @@ def _correlation_pairs(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _state_key(record: dict[str, Any]) -> tuple[int, float, int]:
+    """Return the common physical-state and candidate-step identifier."""
+    return int(record["m"]), float(record["analysis_dt"]), int(record["visited_step"])
+
+
+def _verdict_on_decision_procedure(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Test the decision procedure against the identity-cost hard-state label.
+
+    A state is hard when its identity-preconditioned counted-GMRES cost is at
+    least the median identity cost over the sweep.  Comparing variants only
+    within that label avoids conflating different right-hand sides across
+    separate physical states.
+    """
+    identity_records = [record for record in records if record["d0_kind"] == "identity"]
+    identity_iterations = [
+        float(record["actual_gmres"]["iterations"]) for record in identity_records
+    ]
+    if not identity_iterations:
+        raise ValueError("The stress study requires an identity D0 variant")
+
+    minimum = min(identity_iterations)
+    maximum = max(identity_iterations)
+    ratio = float("inf") if minimum == 0.0 and maximum > 0.0 else maximum / minimum
+    hard_threshold = float(median(identity_iterations))
+    hard_state_keys = {
+        _state_key(record)
+        for record in identity_records
+        if float(record["actual_gmres"]["iterations"]) >= hard_threshold
+    }
+
+    by_variant: dict[str, dict[str, Any]] = {}
+    for d0_kind in sorted({str(record["d0_kind"]) for record in records}):
+        variant_records = [record for record in records if record["d0_kind"] == d0_kind]
+        hard_records = [
+            record for record in variant_records if _state_key(record) in hard_state_keys
+        ]
+        easy_records = [
+            record for record in variant_records if _state_key(record) not in hard_state_keys
+        ]
+        hard_disk_rates = [float(record["disk_rate"]) for record in hard_records]
+        easy_disk_rates = [float(record["disk_rate"]) for record in easy_records]
+        by_variant[d0_kind] = {
+            "hard_records": len(hard_records),
+            "easy_records": len(easy_records),
+            "hard_disk_rate": _summary(hard_disk_rates),
+            "easy_disk_rate": _summary(easy_disk_rates),
+            "hard_actual_iterations": _summary(
+                [float(record["actual_gmres"]["iterations"]) for record in hard_records]
+            ),
+            "easy_actual_iterations": _summary(
+                [float(record["actual_gmres"]["iterations"]) for record in easy_records]
+            ),
+            "hard_investigate_fraction": (
+                sum(record["verdict"] == "investigate" for record in hard_records)
+                / len(hard_records)
+                if hard_records
+                else None
+            ),
+            "easy_investigate_fraction": (
+                sum(record["verdict"] == "investigate" for record in easy_records)
+                / len(easy_records)
+                if easy_records
+                else None
+            ),
+        }
+
+    identity_disk_rates = [float(record["disk_rate"]) for record in identity_records]
+    identity_pearson = _pearson(identity_disk_rates, identity_iterations)
+    identity_stats = by_variant["identity"]
+    hard_median = identity_stats["hard_disk_rate"]["median"]
+    easy_median = identity_stats["easy_disk_rate"]["median"]
+    hard_fraction = identity_stats["hard_investigate_fraction"]
+    easy_fraction = identity_stats["easy_investigate_fraction"]
+    separates = (
+        identity_pearson is not None
+        and hard_median is not None
+        and easy_median is not None
+        and hard_fraction is not None
+        and easy_fraction is not None
+        and float(hard_median) > float(easy_median)
+        and hard_fraction >= easy_fraction
+    )
+    nonconvergence_cases = [
+        {
+            "m": record["m"],
+            "analysis_dt": record["analysis_dt"],
+            "visited_step": record["visited_step"],
+            "d0_kind": record["d0_kind"],
+            "iterations": record["actual_gmres"]["iterations"],
+            "final_relative_residual": record["actual_gmres"]["final_relative_residual"],
+            "disk_rate": record["disk_rate"],
+            "verdict": record["verdict"],
+        }
+        for record in records
+        if not record["actual_gmres"]["converged"]
+    ]
+    answer = "yes" if separates else "no"
+    return {
+        "description": (
+            "Identity-preconditioned cost defines hard states; all D0 variants are then "
+            "compared on the same state and candidate implicit step."
+        ),
+        "hard_label": "identity actual GMRES iterations >= median identity iterations",
+        "hard_identity_iteration_threshold": hard_threshold,
+        "identity_iteration_dynamic_range": {
+            "min": minimum,
+            "max": maximum,
+            "ratio": ratio,
+            "meets_tenfold_gate": ratio >= 10.0,
+        },
+        "identity_disk_rate_vs_iterations_pearson": identity_pearson,
+        "by_variant": by_variant,
+        "nonconvergence_cases": nonconvergence_cases,
+        "data_supported_separation": separates,
+        "answer": answer,
+        "summary": (
+            "yes: the identity disk rate rises from easy to hard states and the investigate "
+            "fraction does not fall."
+            if separates
+            else "no: the identity disk-rate and verdict statistics do not jointly separate "
+            "the hard-state label."
+        ),
+    }
+
+
 def _record_state(
     records: list[dict[str, Any]],
     state: jax.Array,
     grid: NodeCenteredDirichletGrid,
     m: int,
-    b: float | None,
     visited_step: int,
+    analysis_dt: float,
     config: BreakdownConfig,
     centering: dict[str, Any],
+    state_solver: dict[str, Any],
 ) -> None:
-    """Measure every D0 variant at one solver-visited state."""
+    """Measure every D0 variant at one state and candidate implicit step."""
     epsilon = 0.0 if m == 1 else config.epsilon
     visited_interior = interior_values(state, grid)
-    comparison = _exact_solution(grid, m, config.t0 + (visited_step + 1) * config.dt, b)
     front_gradient = float(jnp.max(jnp.abs(jnp.diff(visited_interior))) / grid.dx)
     for index, d0_kind in enumerate(config.d0_kinds):
         diagnostics = assess_pme_state(
             state,
             grid,
             float(m),
-            config.dt,
+            analysis_dt,
             epsilon,
             d0_kind,
             const_value=config.const_d0,
@@ -431,24 +543,24 @@ def _record_state(
             state,
             grid,
             float(m),
-            config.dt,
+            analysis_dt,
             epsilon,
             d0_kind,
             tol=config.krylov_tol,
             max_iters=config.max_krylov_iters,
             const_value=config.const_d0,
         )
-        next_state, solve = _solve_one_step(state, grid, m, config, d0_kind)
-        numerical = interior_values(next_state, grid)
         records.append(
             {
                 "m": m,
                 "visited_step": visited_step,
-                "visited_time": config.t0 + visited_step * config.dt,
+                "visited_time": config.t0 + visited_step * config.state_dt,
+                "reference_state_dt": config.state_dt,
+                "analysis_dt": analysis_dt,
                 "front_max_gradient": front_gradient,
                 "d0_kind": d0_kind,
                 "d0_used": diagnostics["d0"],
-                "sigma": float(diagnostics["d0"] * config.dt / grid.dx**2),
+                "sigma": float(diagnostics["d0"] * analysis_dt / grid.dx**2),
                 "adjoint_identity": diagnostics["adjoint_error"],
                 "adjoint_tolerance": diagnostics["adjoint_tolerance"],
                 "verdict": diagnostics["verdict"],
@@ -462,9 +574,8 @@ def _record_state(
                 "n_right_real_outliers": diagnostics["n_right_real_outliers"],
                 "rates": diagnostics["rates"],
                 "actual_gmres": actual_gmres,
-                "solver": solve,
+                "reference_state_solver": dict(state_solver),
                 "centering_mismatch_note": centering["decision"],
-                "exact_linf_error": float(jnp.max(jnp.abs(numerical - comparison))),
             }
         )
 
@@ -475,6 +586,8 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
         config = BreakdownConfig()
     if not config.visited_steps or min(config.visited_steps) < 1:
         raise ValueError("visited_steps must contain positive step indices")
+    if not config.analysis_dt_values or min(config.analysis_dt_values) <= 0.0:
+        raise ValueError("analysis_dt_values must contain positive step sizes")
 
     started_at = perf_counter()
     with jax.enable_x64(True):
@@ -483,30 +596,58 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
         records: list[dict[str, Any]] = []
         selected_steps = set(config.visited_steps)
         for m in config.m_values:
-            state, b = _initial_state(grid, m, config.t0)
+            state = _initial_state(grid, m, config.t0)
             for visited_step in range(1, max(selected_steps) + 1):
-                state, _ = _solve_one_step(state, grid, m, config, "frozen_bulk")
+                state, state_solver = _solve_one_step(state, grid, m, config, "frozen_bulk")
                 if visited_step in selected_steps:
-                    _record_state(records, state, grid, m, b, visited_step, config, centering)
+                    for analysis_dt in config.analysis_dt_values:
+                        _record_state(
+                            records,
+                            state,
+                            grid,
+                            m,
+                            visited_step,
+                            analysis_dt,
+                            config,
+                            centering,
+                            state_solver,
+                        )
 
     runtime_seconds = perf_counter() - started_at
+    decision = _verdict_on_decision_procedure(records)
+    dynamic_range = decision["identity_iteration_dynamic_range"]
+    if not dynamic_range["meets_tenfold_gate"]:
+        raise RuntimeError(
+            "Identity GMRES dynamic-range gate failed: "
+            f"min={dynamic_range['min']}, max={dynamic_range['max']}, "
+            f"ratio={dynamic_range['ratio']}"
+        )
     report = {
         "description": (
             "Experimental PME conditioning study. It evaluates a preconditioner decision "
             "procedure; it does not claim to fix stiffness degradation."
         ),
         "config": config._asdict(),
-        "metric": {"accuracy": "L_inf", "timing": "total runtime only"},
+        "metric": {
+            "accuracy": "not evaluated in this conditioning-only stress study",
+            "timing": "total runtime only",
+        },
         "runtime_seconds": runtime_seconds,
         "gmres_measurement_note": (
             "actual_gmres is an explicit residual-history count for the fixed system "
             "P^-1 J delta = P^-1 (-R), not NKStats.lin_iters."
+        ),
+        "state_schedule_note": (
+            "Each state is produced by the stable reference backward-Euler step size state_dt "
+            "with the frozen_bulk preconditioner.  Each analysis_dt then defines a separate "
+            "fixed linearized backward-Euler system at that genuinely visited state."
         ),
         "centering": centering,
         "regime_claim": _regime_claim(records),
         "rank_claim": _rank_claim(records),
         "predictor_quality": _predictor_quality(records),
         "correlation": _correlation_pairs(records),
+        "verdict_on_decision_procedure": decision,
         "records": records,
     }
     output = Path(config.output_path)
@@ -520,6 +661,7 @@ def _print_summary(report: dict[str, Any]) -> None:
     regime = report["regime_claim"]
     rank = report["rank_claim"]
     predictor = report["predictor_quality"]
+    decision = report["verdict_on_decision_procedure"]
     print(f"records={len(report['records'])} runtime_seconds={report['runtime_seconds']:.3f}")
     print("verdict       count  min  median  max")
     for verdict, values in regime["iteration_by_verdict"].items():
@@ -535,9 +677,17 @@ def _print_summary(report: dict[str, Any]) -> None:
     )
     print(
         "predictor: "
-        f"raw_pearson={predictor['raw_disk_rate_pearson']:.3f} "
-        f"envelope_pearson={predictor['envelope_predicted_pearson']:.3f} "
-        f"median_absolute_error={predictor['median_absolute_error']:.3f}"
+        f"raw_pearson={predictor['raw_disk_rate_pearson']} "
+        f"envelope_pearson={predictor['envelope_predicted_pearson']} "
+        f"median_absolute_error={predictor['median_absolute_error']}"
+    )
+    dynamic_range = decision["identity_iteration_dynamic_range"]
+    print(
+        "identity stress: "
+        f"min={dynamic_range['min']:.0f} max={dynamic_range['max']:.0f} "
+        f"ratio={dynamic_range['ratio']:.3f} "
+        f"pearson={decision['identity_disk_rate_vs_iterations_pearson']} "
+        f"answer={decision['answer']}"
     )
 
 
