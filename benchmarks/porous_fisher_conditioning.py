@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Reaction-axis conditioning study for the experimental Porous--Fisher equation."""
 
 from __future__ import annotations

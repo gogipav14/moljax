@@ -1,4 +1,5 @@
-"""Work--precision comparisons for experimental nonlinear diffusion problems.
+#!/usr/bin/env python3
+"""Work--precision comparisons for nonlinear diffusion models.
 
 This benchmark compares the local fixed-step backward-Euler JFNK path against
 Diffrax's adaptive Tsit5/PID integrator on identical node-centred spatial
@@ -76,7 +77,7 @@ class WorkPrecisionConfig(NamedTuple):
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
     max_diffrax_steps: int = 10_000
-    output_path: str = "benchmarks/results/pme_work_precision.json"
+    output_path: str = "benchmarks/results/work_precision_nonlinear_diffusion.json"
 
 
 class ProblemSetup(NamedTuple):
