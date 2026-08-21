@@ -1,0 +1,512 @@
+{
+  "config": {
+    "diffrax_atol_ratio": 0.01,
+    "diffrax_rtol_values": [
+      0.1,
+      0.0001,
+      1e-06
+    ],
+    "epsilon": 1e-05,
+    "krylov_tol": 1e-08,
+    "max_diffrax_steps": 10000,
+    "max_krylov_iters": 64,
+    "max_newton_iters": 8,
+    "newton_tol": 1e-08,
+    "nx": 64,
+    "output_path": "benchmarks/results/pme_work_precision.json",
+    "pme_b": 0.3,
+    "pme_be_dt_values": [
+      0.1,
+      0.05,
+      0.025
+    ],
+    "pme_t0": 1.0,
+    "pme_t1": 1.2,
+    "pme_x_max": 4.0,
+    "pme_x_min": -4.0,
+    "porous_fisher_be_dt_values": [
+      0.02,
+      0.01,
+      0.005
+    ],
+    "porous_fisher_r": 1.0,
+    "porous_fisher_t0": 0.25,
+    "porous_fisher_t1": 0.29,
+    "porous_fisher_x_max": 8.0,
+    "porous_fisher_x_min": -8.0,
+    "timing_runs": 50
+  },
+  "description": "Nonlinear work--precision data for frozen-bulk BE-JFNK versus Diffrax.",
+  "problems": {
+    "pme_m2": {
+      "be_jfnk_frozen_bulk": [
+        {
+          "dt": 0.1,
+          "error_inf": 0.001046525455318248,
+          "method": "be_jfnk_frozen_bulk",
+          "runtime": {
+            "iqr_seconds": 0.0008232332766056061,
+            "maximum_seconds": 0.03933555539697409,
+            "median_seconds": 0.03541946038603783,
+            "minimum_seconds": 0.034951141104102135
+          },
+          "work": {
+            "configured_krylov_budget_total": 512,
+            "d0": {
+              "max": 0.5690729783037475,
+              "median": 0.561498454559427,
+              "min": 0.5539239308151067
+            },
+            "final_residual_l2": 5.159104763902865e-16,
+            "newton_iterations": 8,
+            "nonlinear_rhs_evaluations": 34,
+            "steps": 2
+          }
+        },
+        {
+          "dt": 0.05,
+          "error_inf": 0.0005477323774012999,
+          "method": "be_jfnk_frozen_bulk",
+          "runtime": {
+            "iqr_seconds": 0.0008084550499916077,
+            "maximum_seconds": 0.063865190371871,
+            "median_seconds": 0.06206096429377794,
+            "minimum_seconds": 0.06120287999510765
+          },
+          "work": {
+            "configured_krylov_budget_total": 1024,
+            "d0": {
+              "max": 0.5690729783037475,
+              "median": 0.5573329935101039,
+              "min": 0.5464008146787737
+            },
+            "final_residual_l2": 2.7561228463709296e-16,
+            "newton_iterations": 16,
+            "nonlinear_rhs_evaluations": 68,
+            "steps": 4
+          }
+        },
+        {
+          "dt": 0.025,
+          "error_inf": 0.00027335766240152437,
+          "method": "be_jfnk_frozen_bulk",
+          "runtime": {
+            "iqr_seconds": 0.0010281205177307129,
+            "maximum_seconds": 0.057409838773310184,
+            "median_seconds": 0.05588267324492335,
+            "minimum_seconds": 0.055041903629899025
+          },
+          "work": {
+            "configured_krylov_budget_total": 1536,
+            "d0": {
+              "max": 0.5690729783037475,
+              "median": 0.5552475015769978,
+              "min": 0.5426537500398241
+            },
+            "final_residual_l2": 2.251080268087596e-16,
+            "newton_iterations": 24,
+            "nonlinear_rhs_evaluations": 104,
+            "steps": 8
+          }
+        }
+      ],
+      "diffrax_tsit5_pid": [
+        {
+          "atol": 0.001,
+          "error_inf": 0.00012119777187899472,
+          "method": "diffrax_tsit5_pid",
+          "rtol": 0.1,
+          "runtime": {
+            "iqr_seconds": 1.3105571269989014e-05,
+            "maximum_seconds": 0.0018210355192422867,
+            "median_seconds": 0.0003762785345315933,
+            "minimum_seconds": 0.00035880226641893387
+          },
+          "work": {
+            "accepted_steps": 2,
+            "atol": 0.001,
+            "attempted_steps": 2,
+            "nfe_estimate": 13,
+            "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+            "rejected_steps": 0,
+            "result": "completed",
+            "rtol": 0.1
+          }
+        },
+        {
+          "atol": 1.0000000000000002e-06,
+          "error_inf": 9.40418857171832e-05,
+          "method": "diffrax_tsit5_pid",
+          "rtol": 0.0001,
+          "runtime": {
+            "iqr_seconds": 1.4640390872955322e-05,
+            "maximum_seconds": 0.0020856186747550964,
+            "median_seconds": 0.0006617442704737186,
+            "minimum_seconds": 0.0006415145471692085
+          },
+          "work": {
+            "accepted_steps": 3,
+            "atol": 1.0000000000000002e-06,
+            "attempted_steps": 4,
+            "nfe_estimate": 25,
+            "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+            "rejected_steps": 1,
+            "result": "completed",
+            "rtol": 0.0001
+          }
+        },
+        {
+          "atol": 1e-08,
+          "error_inf": 3.443081845661e-05,
+          "method": "diffrax_tsit5_pid",
+          "rtol": 1e-06,
+          "runtime": {
+            "iqr_seconds": 7.536076009273529e-05,
+            "maximum_seconds": 0.0021341973915696144,
+            "median_seconds": 0.001109589822590351,
+            "minimum_seconds": 0.0010832855477929115
+          },
+          "work": {
+            "accepted_steps": 5,
+            "atol": 1e-08,
+            "attempted_steps": 7,
+            "nfe_estimate": 43,
+            "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+            "rejected_steps": 2,
+            "result": "completed",
+            "rtol": 1e-06
+          }
+        }
+      ],
+      "error_metric": {
+        "description": "max |u_numeric(t1)-u_exact(t1)| on the common smooth interior; the compact-support edge and the finite-domain left boundary layer are excluded identically for both methods.",
+        "masked_nodes": 24,
+        "name": "masked_linf",
+        "porous_fisher_left_boundary_exclusion": 1.5
+      },
+      "grid": {
+        "dx": 0.12307692307692308,
+        "nx": 64,
+        "x_max": 4.0,
+        "x_min": -4.0
+      },
+      "matched_accuracy_crossovers": [
+        {
+          "be_jfnk": {
+            "dt": 0.025,
+            "error_inf": 0.00027335766240152437,
+            "method": "be_jfnk_frozen_bulk",
+            "runtime": {
+              "iqr_seconds": 0.0010281205177307129,
+              "maximum_seconds": 0.057409838773310184,
+              "median_seconds": 0.05588267324492335,
+              "minimum_seconds": 0.055041903629899025
+            },
+            "work": {
+              "configured_krylov_budget_total": 1536,
+              "d0": {
+                "max": 0.5690729783037475,
+                "median": 0.5552475015769978,
+                "min": 0.5426537500398241
+              },
+              "final_residual_l2": 2.251080268087596e-16,
+              "newton_iterations": 24,
+              "nonlinear_rhs_evaluations": 104,
+              "steps": 8
+            }
+          },
+          "diffrax_tsit5_pid": {
+            "atol": 0.001,
+            "error_inf": 0.00012119777187899472,
+            "method": "diffrax_tsit5_pid",
+            "rtol": 0.1,
+            "runtime": {
+              "iqr_seconds": 1.3105571269989014e-05,
+              "maximum_seconds": 0.0018210355192422867,
+              "median_seconds": 0.0003762785345315933,
+              "minimum_seconds": 0.00035880226641893387
+            },
+            "work": {
+              "accepted_steps": 2,
+              "atol": 0.001,
+              "attempted_steps": 2,
+              "nfe_estimate": 13,
+              "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+              "rejected_steps": 0,
+              "result": "completed",
+              "rtol": 0.1
+            }
+          },
+          "speedup": 148.5141141906709,
+          "status": "matched",
+          "target_error": 0.001,
+          "winner": "diffrax_tsit5_pid"
+        },
+        {
+          "be_jfnk": null,
+          "diffrax_tsit5_pid": null,
+          "status": "unreached_by_one_or_both_methods",
+          "target_error": 1e-05
+        },
+        {
+          "be_jfnk": null,
+          "diffrax_tsit5_pid": null,
+          "status": "unreached_by_one_or_both_methods",
+          "target_error": 1e-06
+        },
+        {
+          "be_jfnk": null,
+          "diffrax_tsit5_pid": null,
+          "status": "unreached_by_one_or_both_methods",
+          "target_error": 1e-08
+        }
+      ],
+      "summary": "at error <= 1e-03, diffrax_tsit5_pid was 148.51x faster.",
+      "time_window": {
+        "t0": 1.0,
+        "t1": 1.2
+      }
+    },
+    "porous_fisher_r1": {
+      "be_jfnk_frozen_bulk": [
+        {
+          "dt": 0.02,
+          "error_inf": 0.0005373853561786435,
+          "method": "be_jfnk_frozen_bulk",
+          "runtime": {
+            "iqr_seconds": 0.0015066638588905334,
+            "maximum_seconds": 0.02170924562960863,
+            "median_seconds": 0.018824956845492125,
+            "minimum_seconds": 0.018422933295369148
+          },
+          "work": {
+            "configured_krylov_budget_total": 512,
+            "d0": {
+              "max": 1.9204822649200102,
+              "median": 1.9098804338366984,
+              "min": 1.8992786027533863
+            },
+            "final_residual_l2": 4.121746319980174e-16,
+            "newton_iterations": 8,
+            "nonlinear_rhs_evaluations": 34,
+            "steps": 2
+          }
+        },
+        {
+          "dt": 0.01,
+          "error_inf": 0.0002791502271405344,
+          "method": "be_jfnk_frozen_bulk",
+          "runtime": {
+            "iqr_seconds": 0.00035290420055389404,
+            "maximum_seconds": 0.0366645036265254,
+            "median_seconds": 0.03510174108669162,
+            "minimum_seconds": 0.03469046298414469
+          },
+          "work": {
+            "configured_krylov_budget_total": 1024,
+            "d0": {
+              "max": 1.9204822649200102,
+              "median": 1.9051501962802158,
+              "min": 1.8992950991746842
+            },
+            "final_residual_l2": 2.806974062540083e-16,
+            "newton_iterations": 16,
+            "nonlinear_rhs_evaluations": 68,
+            "steps": 4
+          }
+        },
+        {
+          "dt": 0.005,
+          "error_inf": 0.00016346983610160404,
+          "method": "be_jfnk_frozen_bulk",
+          "runtime": {
+            "iqr_seconds": 0.0013126656413078308,
+            "maximum_seconds": 0.05862435791641474,
+            "median_seconds": 0.05672865780070424,
+            "minimum_seconds": 0.055917391553521156
+          },
+          "work": {
+            "configured_krylov_budget_total": 1664,
+            "d0": {
+              "max": 1.9204822649200102,
+              "median": 1.9002043692434891,
+              "min": 1.897781139261396
+            },
+            "final_residual_l2": 2.091491104546492e-16,
+            "newton_iterations": 26,
+            "nonlinear_rhs_evaluations": 112,
+            "steps": 8
+          }
+        }
+      ],
+      "diffrax_tsit5_pid": [
+        {
+          "atol": 0.001,
+          "error_inf": 7.521225552442612e-05,
+          "method": "diffrax_tsit5_pid",
+          "rtol": 0.1,
+          "runtime": {
+            "iqr_seconds": 5.040690302848816e-05,
+            "maximum_seconds": 0.0011768555268645287,
+            "median_seconds": 0.0003902483731508255,
+            "minimum_seconds": 0.00035771727561950684
+          },
+          "work": {
+            "accepted_steps": 2,
+            "atol": 0.001,
+            "attempted_steps": 2,
+            "nfe_estimate": 13,
+            "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+            "rejected_steps": 0,
+            "result": "completed",
+            "rtol": 0.1
+          }
+        },
+        {
+          "atol": 1.0000000000000002e-06,
+          "error_inf": 6.743812379750302e-05,
+          "method": "diffrax_tsit5_pid",
+          "rtol": 0.0001,
+          "runtime": {
+            "iqr_seconds": 1.483876258134842e-05,
+            "maximum_seconds": 0.001297900453209877,
+            "median_seconds": 0.0005346238613128662,
+            "minimum_seconds": 0.0005007507279515266
+          },
+          "work": {
+            "accepted_steps": 3,
+            "atol": 1.0000000000000002e-06,
+            "attempted_steps": 3,
+            "nfe_estimate": 19,
+            "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+            "rejected_steps": 0,
+            "result": "completed",
+            "rtol": 0.0001
+          }
+        },
+        {
+          "atol": 1e-08,
+          "error_inf": 6.755096215316225e-05,
+          "method": "diffrax_tsit5_pid",
+          "rtol": 1e-06,
+          "runtime": {
+            "iqr_seconds": 2.8102658689022064e-05,
+            "maximum_seconds": 0.002789745107293129,
+            "median_seconds": 0.0011298628523945808,
+            "minimum_seconds": 0.0010848548263311386
+          },
+          "work": {
+            "accepted_steps": 6,
+            "atol": 1e-08,
+            "attempted_steps": 7,
+            "nfe_estimate": 43,
+            "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+            "rejected_steps": 1,
+            "result": "completed",
+            "rtol": 1e-06
+          }
+        }
+      ],
+      "error_metric": {
+        "description": "max |u_numeric(t1)-u_exact(t1)| on the common smooth interior; the compact-support edge and the finite-domain left boundary layer are excluded identically for both methods.",
+        "masked_nodes": 23,
+        "name": "masked_linf",
+        "porous_fisher_left_boundary_exclusion": 1.5
+      },
+      "grid": {
+        "dx": 0.24615384615384617,
+        "nx": 64,
+        "x_max": 8.0,
+        "x_min": -8.0
+      },
+      "matched_accuracy_crossovers": [
+        {
+          "be_jfnk": {
+            "dt": 0.02,
+            "error_inf": 0.0005373853561786435,
+            "method": "be_jfnk_frozen_bulk",
+            "runtime": {
+              "iqr_seconds": 0.0015066638588905334,
+              "maximum_seconds": 0.02170924562960863,
+              "median_seconds": 0.018824956845492125,
+              "minimum_seconds": 0.018422933295369148
+            },
+            "work": {
+              "configured_krylov_budget_total": 512,
+              "d0": {
+                "max": 1.9204822649200102,
+                "median": 1.9098804338366984,
+                "min": 1.8992786027533863
+              },
+              "final_residual_l2": 4.121746319980174e-16,
+              "newton_iterations": 8,
+              "nonlinear_rhs_evaluations": 34,
+              "steps": 2
+            }
+          },
+          "diffrax_tsit5_pid": {
+            "atol": 0.001,
+            "error_inf": 7.521225552442612e-05,
+            "method": "diffrax_tsit5_pid",
+            "rtol": 0.1,
+            "runtime": {
+              "iqr_seconds": 5.040690302848816e-05,
+              "maximum_seconds": 0.0011768555268645287,
+              "median_seconds": 0.0003902483731508255,
+              "minimum_seconds": 0.00035771727561950684
+            },
+            "work": {
+              "accepted_steps": 2,
+              "atol": 0.001,
+              "attempted_steps": 2,
+              "nfe_estimate": 13,
+              "nfe_note": "Diffrax reports attempted/accepted/rejected steps but not an exact RHS counter; this is the Tsit5 FSAL stage estimate of six new RHS calls per attempted step plus the initial evaluation.",
+              "rejected_steps": 0,
+              "result": "completed",
+              "rtol": 0.1
+            }
+          },
+          "speedup": 48.238399287872355,
+          "status": "matched",
+          "target_error": 0.001,
+          "winner": "diffrax_tsit5_pid"
+        },
+        {
+          "be_jfnk": null,
+          "diffrax_tsit5_pid": null,
+          "status": "unreached_by_one_or_both_methods",
+          "target_error": 1e-05
+        },
+        {
+          "be_jfnk": null,
+          "diffrax_tsit5_pid": null,
+          "status": "unreached_by_one_or_both_methods",
+          "target_error": 1e-06
+        },
+        {
+          "be_jfnk": null,
+          "diffrax_tsit5_pid": null,
+          "status": "unreached_by_one_or_both_methods",
+          "target_error": 1e-08
+        }
+      ],
+      "summary": "at error <= 1e-03, diffrax_tsit5_pid was 48.24x faster.",
+      "time_window": {
+        "t0": 0.25,
+        "t1": 0.29
+      }
+    }
+  },
+  "runtime_seconds": 21.99076912086457,
+  "scope": "This compares the local preconditioned BE-JFNK path with Diffrax adaptive Tsit5/PID on the same nonlinear node-centred spatial discretization. It differs from a linear FFT-Crank--Nicolson comparison: only the time integrator and nonlinear solver vary.",
+  "summary": {
+    "pme_m2": "at error <= 1e-03, diffrax_tsit5_pid was 148.51x faster.",
+    "porous_fisher_r1": "at error <= 1e-03, diffrax_tsit5_pid was 48.24x faster."
+  },
+  "timing_protocol": {
+    "block_until_ready": true,
+    "statistic": "median and IQR wall-clock seconds",
+    "timed_runs_per_configuration": 50,
+    "warmup_excluded": true
+  }
+}

@@ -56,6 +56,9 @@ dev = [
 viz = [
     "matplotlib>=3.7",
 ]
+bench = [
+    "diffrax==0.7.2",
+]
 all = [
     "moljax[dev,viz]",
 ]
