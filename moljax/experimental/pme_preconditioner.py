@@ -25,6 +25,14 @@ def d0_frozen_mean(u: jax.Array, m: float) -> float:
         return float(m * mean ** (m - 1.0))
 
 
+def _d0_frozen_bulk_value(u: jax.Array, m: float, *, quantile: float = 0.9) -> jax.Array:
+    """Return the frozen-bulk D0 as a JAX scalar for staged experimental use."""
+    if not 0.0 < quantile <= 1.0:
+        raise ValueError("quantile must lie in (0, 1]")
+    reference = jnp.quantile(jnp.abs(jnp.asarray(u, dtype=jnp.float64)), quantile)
+    return m * reference ** (m - 1.0)
+
+
 def d0_frozen_bulk(u: jax.Array, m: float, *, quantile: float = 0.9) -> float:
     """Return ``m * q(|u|)**(m - 1)`` using a robust bulk-state quantile.
 
@@ -34,8 +42,7 @@ def d0_frozen_bulk(u: jax.Array, m: float, *, quantile: float = 0.9) -> float:
     if not 0.0 < quantile <= 1.0:
         raise ValueError("quantile must lie in (0, 1]")
     with jax.enable_x64(True):
-        reference = jnp.quantile(jnp.abs(jnp.asarray(u, dtype=jnp.float64)), quantile)
-        return float(m * reference ** (m - 1.0))
+        return float(_d0_frozen_bulk_value(u, m, quantile=quantile))
 
 
 def d0_floor(m: float, epsilon: float) -> float:
