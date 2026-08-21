@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Decision-grade conditioning study for experimental porous-medium backward Euler."""
 
 from __future__ import annotations

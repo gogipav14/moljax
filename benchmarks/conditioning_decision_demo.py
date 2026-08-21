@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Decision-procedure demo for a diffusion-dominated periodic model.
 
 The demo integrates a small Gray--Scott system with backward Euler and the

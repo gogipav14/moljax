@@ -13,7 +13,7 @@
     "max_newton_iters": 8,
     "newton_tol": 1e-08,
     "nx": 64,
-    "output_path": "benchmarks/results/pme_work_precision.json",
+    "output_path": "benchmarks/results/work_precision_nonlinear_diffusion.json",
     "pme_b": 0.3,
     "pme_be_dt_values": [
       0.1,
@@ -45,10 +45,10 @@
           "error_inf": 0.001046525455318248,
           "method": "be_jfnk_frozen_bulk",
           "runtime": {
-            "iqr_seconds": 0.0008232332766056061,
-            "maximum_seconds": 0.03933555539697409,
-            "median_seconds": 0.03541946038603783,
-            "minimum_seconds": 0.034951141104102135
+            "iqr_seconds": 0.0007979338988661766,
+            "maximum_seconds": 0.03922358248382807,
+            "median_seconds": 0.035701057873666286,
+            "minimum_seconds": 0.03500296734273434
           },
           "work": {
             "configured_krylov_budget_total": 512,
@@ -68,10 +68,10 @@
           "error_inf": 0.0005477323774012999,
           "method": "be_jfnk_frozen_bulk",
           "runtime": {
-            "iqr_seconds": 0.0008084550499916077,
-            "maximum_seconds": 0.063865190371871,
-            "median_seconds": 0.06206096429377794,
-            "minimum_seconds": 0.06120287999510765
+            "iqr_seconds": 0.0012028589844703674,
+            "maximum_seconds": 0.0652718162164092,
+            "median_seconds": 0.06390991760417819,
+            "minimum_seconds": 0.062142036855220795
           },
           "work": {
             "configured_krylov_budget_total": 1024,
@@ -91,10 +91,10 @@
           "error_inf": 0.00027335766240152437,
           "method": "be_jfnk_frozen_bulk",
           "runtime": {
-            "iqr_seconds": 0.0010281205177307129,
-            "maximum_seconds": 0.057409838773310184,
-            "median_seconds": 0.05588267324492335,
-            "minimum_seconds": 0.055041903629899025
+            "iqr_seconds": 0.001669168472290039,
+            "maximum_seconds": 0.059690081514418125,
+            "median_seconds": 0.057019312866032124,
+            "minimum_seconds": 0.05569398123770952
           },
           "work": {
             "configured_krylov_budget_total": 1536,
@@ -117,10 +117,10 @@
           "method": "diffrax_tsit5_pid",
           "rtol": 0.1,
           "runtime": {
-            "iqr_seconds": 1.3105571269989014e-05,
-            "maximum_seconds": 0.0018210355192422867,
-            "median_seconds": 0.0003762785345315933,
-            "minimum_seconds": 0.00035880226641893387
+            "iqr_seconds": 2.288818359375e-05,
+            "maximum_seconds": 0.001150122843682766,
+            "median_seconds": 0.0003738598898053169,
+            "minimum_seconds": 0.0003503980115056038
           },
           "work": {
             "accepted_steps": 2,
@@ -139,10 +139,10 @@
           "method": "diffrax_tsit5_pid",
           "rtol": 0.0001,
           "runtime": {
-            "iqr_seconds": 1.4640390872955322e-05,
-            "maximum_seconds": 0.0020856186747550964,
-            "median_seconds": 0.0006617442704737186,
-            "minimum_seconds": 0.0006415145471692085
+            "iqr_seconds": 2.0815059542655945e-05,
+            "maximum_seconds": 0.0014689313247799873,
+            "median_seconds": 0.0006599733605980873,
+            "minimum_seconds": 0.0006345557048916817
           },
           "work": {
             "accepted_steps": 3,
@@ -161,10 +161,10 @@
           "method": "diffrax_tsit5_pid",
           "rtol": 1e-06,
           "runtime": {
-            "iqr_seconds": 7.536076009273529e-05,
-            "maximum_seconds": 0.0021341973915696144,
-            "median_seconds": 0.001109589822590351,
-            "minimum_seconds": 0.0010832855477929115
+            "iqr_seconds": 7.477309554815292e-05,
+            "maximum_seconds": 0.0025204941630363464,
+            "median_seconds": 0.0011334484443068504,
+            "minimum_seconds": 0.0010832631960511208
           },
           "work": {
             "accepted_steps": 5,
@@ -197,10 +197,10 @@
             "error_inf": 0.00027335766240152437,
             "method": "be_jfnk_frozen_bulk",
             "runtime": {
-              "iqr_seconds": 0.0010281205177307129,
-              "maximum_seconds": 0.057409838773310184,
-              "median_seconds": 0.05588267324492335,
-              "minimum_seconds": 0.055041903629899025
+              "iqr_seconds": 0.001669168472290039,
+              "maximum_seconds": 0.059690081514418125,
+              "median_seconds": 0.057019312866032124,
+              "minimum_seconds": 0.05569398123770952
             },
             "work": {
               "configured_krylov_budget_total": 1536,
@@ -221,10 +221,10 @@
             "method": "diffrax_tsit5_pid",
             "rtol": 0.1,
             "runtime": {
-              "iqr_seconds": 1.3105571269989014e-05,
-              "maximum_seconds": 0.0018210355192422867,
-              "median_seconds": 0.0003762785345315933,
-              "minimum_seconds": 0.00035880226641893387
+              "iqr_seconds": 2.288818359375e-05,
+              "maximum_seconds": 0.001150122843682766,
+              "median_seconds": 0.0003738598898053169,
+              "minimum_seconds": 0.0003503980115056038
             },
             "work": {
               "accepted_steps": 2,
@@ -237,7 +237,7 @@
               "rtol": 0.1
             }
           },
-          "speedup": 148.5141141906709,
+          "speedup": 152.51519197666337,
           "status": "matched",
           "target_error": 0.001,
           "winner": "diffrax_tsit5_pid"
@@ -261,7 +261,7 @@
           "target_error": 1e-08
         }
       ],
-      "summary": "at error <= 1e-03, diffrax_tsit5_pid was 148.51x faster.",
+      "summary": "at error <= 1e-03, diffrax_tsit5_pid was 152.52x faster.",
       "time_window": {
         "t0": 1.0,
         "t1": 1.2
@@ -274,10 +274,10 @@
           "error_inf": 0.0005373853561786435,
           "method": "be_jfnk_frozen_bulk",
           "runtime": {
-            "iqr_seconds": 0.0015066638588905334,
-            "maximum_seconds": 0.02170924562960863,
-            "median_seconds": 0.018824956845492125,
-            "minimum_seconds": 0.018422933295369148
+            "iqr_seconds": 0.0009617237374186516,
+            "maximum_seconds": 0.022174249403178692,
+            "median_seconds": 0.019378832075744867,
+            "minimum_seconds": 0.01867994572967291
           },
           "work": {
             "configured_krylov_budget_total": 512,
@@ -297,10 +297,10 @@
           "error_inf": 0.0002791502271405344,
           "method": "be_jfnk_frozen_bulk",
           "runtime": {
-            "iqr_seconds": 0.00035290420055389404,
-            "maximum_seconds": 0.0366645036265254,
-            "median_seconds": 0.03510174108669162,
-            "minimum_seconds": 0.03469046298414469
+            "iqr_seconds": 0.0007973518222570419,
+            "maximum_seconds": 0.0374744888395071,
+            "median_seconds": 0.03574230661615729,
+            "minimum_seconds": 0.03514763154089451
           },
           "work": {
             "configured_krylov_budget_total": 1024,
@@ -320,10 +320,10 @@
           "error_inf": 0.00016346983610160404,
           "method": "be_jfnk_frozen_bulk",
           "runtime": {
-            "iqr_seconds": 0.0013126656413078308,
-            "maximum_seconds": 0.05862435791641474,
-            "median_seconds": 0.05672865780070424,
-            "minimum_seconds": 0.055917391553521156
+            "iqr_seconds": 0.0017173048108816147,
+            "maximum_seconds": 0.059284113347530365,
+            "median_seconds": 0.057264345698058605,
+            "minimum_seconds": 0.05599725432693958
           },
           "work": {
             "configured_krylov_budget_total": 1664,
@@ -346,10 +346,10 @@
           "method": "diffrax_tsit5_pid",
           "rtol": 0.1,
           "runtime": {
-            "iqr_seconds": 5.040690302848816e-05,
-            "maximum_seconds": 0.0011768555268645287,
-            "median_seconds": 0.0003902483731508255,
-            "minimum_seconds": 0.00035771727561950684
+            "iqr_seconds": 4.26536425948143e-05,
+            "maximum_seconds": 0.0011752806603908539,
+            "median_seconds": 0.0003956258296966553,
+            "minimum_seconds": 0.00035872682929039
           },
           "work": {
             "accepted_steps": 2,
@@ -368,10 +368,10 @@
           "method": "diffrax_tsit5_pid",
           "rtol": 0.0001,
           "runtime": {
-            "iqr_seconds": 1.483876258134842e-05,
-            "maximum_seconds": 0.001297900453209877,
-            "median_seconds": 0.0005346238613128662,
-            "minimum_seconds": 0.0005007507279515266
+            "iqr_seconds": 6.949249655008316e-05,
+            "maximum_seconds": 0.001617499627172947,
+            "median_seconds": 0.0005232775583863258,
+            "minimum_seconds": 0.000496717169880867
           },
           "work": {
             "accepted_steps": 3,
@@ -390,10 +390,10 @@
           "method": "diffrax_tsit5_pid",
           "rtol": 1e-06,
           "runtime": {
-            "iqr_seconds": 2.8102658689022064e-05,
-            "maximum_seconds": 0.002789745107293129,
-            "median_seconds": 0.0011298628523945808,
-            "minimum_seconds": 0.0010848548263311386
+            "iqr_seconds": 0.00010922178626060486,
+            "maximum_seconds": 0.0026259906589984894,
+            "median_seconds": 0.0011315057054162025,
+            "minimum_seconds": 0.0010997829958796501
           },
           "work": {
             "accepted_steps": 6,
@@ -426,10 +426,10 @@
             "error_inf": 0.0005373853561786435,
             "method": "be_jfnk_frozen_bulk",
             "runtime": {
-              "iqr_seconds": 0.0015066638588905334,
-              "maximum_seconds": 0.02170924562960863,
-              "median_seconds": 0.018824956845492125,
-              "minimum_seconds": 0.018422933295369148
+              "iqr_seconds": 0.0009617237374186516,
+              "maximum_seconds": 0.022174249403178692,
+              "median_seconds": 0.019378832075744867,
+              "minimum_seconds": 0.01867994572967291
             },
             "work": {
               "configured_krylov_budget_total": 512,
@@ -450,10 +450,10 @@
             "method": "diffrax_tsit5_pid",
             "rtol": 0.1,
             "runtime": {
-              "iqr_seconds": 5.040690302848816e-05,
-              "maximum_seconds": 0.0011768555268645287,
-              "median_seconds": 0.0003902483731508255,
-              "minimum_seconds": 0.00035771727561950684
+              "iqr_seconds": 4.26536425948143e-05,
+              "maximum_seconds": 0.0011752806603908539,
+              "median_seconds": 0.0003956258296966553,
+              "minimum_seconds": 0.00035872682929039
             },
             "work": {
               "accepted_steps": 2,
@@ -466,7 +466,7 @@
               "rtol": 0.1
             }
           },
-          "speedup": 48.238399287872355,
+          "speedup": 48.982727165725045,
           "status": "matched",
           "target_error": 0.001,
           "winner": "diffrax_tsit5_pid"
@@ -490,18 +490,18 @@
           "target_error": 1e-08
         }
       ],
-      "summary": "at error <= 1e-03, diffrax_tsit5_pid was 48.24x faster.",
+      "summary": "at error <= 1e-03, diffrax_tsit5_pid was 48.98x faster.",
       "time_window": {
         "t0": 0.25,
         "t1": 0.29
       }
     }
   },
-  "runtime_seconds": 21.99076912086457,
+  "runtime_seconds": 22.16254998743534,
   "scope": "This compares the local preconditioned BE-JFNK path with Diffrax adaptive Tsit5/PID on the same nonlinear node-centred spatial discretization. It differs from a linear FFT-Crank--Nicolson comparison: only the time integrator and nonlinear solver vary.",
   "summary": {
-    "pme_m2": "at error <= 1e-03, diffrax_tsit5_pid was 148.51x faster.",
-    "porous_fisher_r1": "at error <= 1e-03, diffrax_tsit5_pid was 48.24x faster."
+    "pme_m2": "at error <= 1e-03, diffrax_tsit5_pid was 152.52x faster.",
+    "porous_fisher_r1": "at error <= 1e-03, diffrax_tsit5_pid was 48.98x faster."
   },
   "timing_protocol": {
     "block_until_ready": true,

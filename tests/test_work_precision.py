@@ -9,7 +9,10 @@ import pytest
 if importlib.util.find_spec("diffrax") is None:
     pytest.skip("diffrax benchmark extra is not installed", allow_module_level=True)
 
-from benchmarks.work_precision import WorkPrecisionConfig, run_work_precision
+from benchmarks.work_precision_nonlinear_diffusion import (
+    WorkPrecisionConfig,
+    run_work_precision,
+)
 
 
 @pytest.mark.slow
@@ -22,7 +25,7 @@ def test_work_precision_smoke_returns_finite_shared_reference_data(tmp_path) -> 
             porous_fisher_be_dt_values=(0.02, 0.01),
             diffrax_rtol_values=(1.0e-2, 1.0e-5),
             timing_runs=1,
-            output_path=str(tmp_path / "pme_work_precision.json"),
+            output_path=str(tmp_path / "work_precision_nonlinear_diffusion.json"),
         )
     )
 
@@ -46,7 +49,7 @@ def test_work_precision_time_refinement_has_nonincreasing_errors(tmp_path) -> No
             porous_fisher_be_dt_values=(0.02, 0.01, 0.005),
             diffrax_rtol_values=(1.0e-1, 1.0e-4, 1.0e-6),
             timing_runs=1,
-            output_path=str(tmp_path / "pme_work_precision_trends.json"),
+            output_path=str(tmp_path / "work_precision_nonlinear_diffusion_trends.json"),
         )
     )
     pme = report["problems"]["pme_m2"]
