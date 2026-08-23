@@ -1,4 +1,4 @@
-"""Smoke and trend checks for the nonlinear Diffrax work--precision harness."""
+"""Checks for the fixed-step BE-JFNK versus adaptive Diffrax comparison harness."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ import pytest
 if importlib.util.find_spec("diffrax") is None:
     pytest.skip("diffrax benchmark extra is not installed", allow_module_level=True)
 
-from benchmarks.work_precision_nonlinear_diffusion import (
+from moljax.experimental.work_precision_fixedstep_vs_adaptive_diffrax import (
     WorkPrecisionConfig,
     run_work_precision,
 )
 
 
 @pytest.mark.slow
-def test_work_precision_smoke_returns_finite_shared_reference_data(tmp_path) -> None:
+def test_fixedstep_vs_adaptive_diffrax_smoke_returns_finite_shared_reference_data(tmp_path) -> None:
     """Both solvers run on both nonlinear RHSs and return crossover structures."""
     report = run_work_precision(
         WorkPrecisionConfig(
@@ -25,7 +25,7 @@ def test_work_precision_smoke_returns_finite_shared_reference_data(tmp_path) -> 
             porous_fisher_be_dt_values=(0.02, 0.01),
             diffrax_rtol_values=(1.0e-2, 1.0e-5),
             timing_runs=1,
-            output_path=str(tmp_path / "work_precision_nonlinear_diffusion.json"),
+            output_path=str(tmp_path / "work_precision_fixedstep_vs_adaptive_diffrax.json"),
         )
     )
 
@@ -40,7 +40,7 @@ def test_work_precision_smoke_returns_finite_shared_reference_data(tmp_path) -> 
 
 
 @pytest.mark.slow
-def test_work_precision_time_refinement_has_nonincreasing_errors(tmp_path) -> None:
+def test_fixedstep_vs_adaptive_diffrax_time_refinement_has_nonincreasing_errors(tmp_path) -> None:
     """Smaller BE steps and tighter PID tolerances do not worsen the PME error."""
     report = run_work_precision(
         WorkPrecisionConfig(
@@ -49,7 +49,7 @@ def test_work_precision_time_refinement_has_nonincreasing_errors(tmp_path) -> No
             porous_fisher_be_dt_values=(0.02, 0.01, 0.005),
             diffrax_rtol_values=(1.0e-1, 1.0e-4, 1.0e-6),
             timing_runs=1,
-            output_path=str(tmp_path / "work_precision_nonlinear_diffusion_trends.json"),
+            output_path=str(tmp_path / "work_precision_fixedstep_vs_adaptive_diffrax_trends.json"),
         )
     )
     pme = report["problems"]["pme_m2"]

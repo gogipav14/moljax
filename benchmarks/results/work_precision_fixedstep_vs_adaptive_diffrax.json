@@ -13,7 +13,7 @@
     "max_newton_iters": 8,
     "newton_tol": 1e-08,
     "nx": 64,
-    "output_path": "benchmarks/results/work_precision_nonlinear_diffusion.json",
+    "output_path": "benchmarks/results/work_precision_fixedstep_vs_adaptive_diffrax.json",
     "pme_b": 0.3,
     "pme_be_dt_values": [
       0.1,
@@ -36,7 +36,7 @@
     "porous_fisher_x_min": -8.0,
     "timing_runs": 50
   },
-  "description": "Nonlinear work--precision data for frozen-bulk BE-JFNK versus Diffrax.",
+  "description": "Nonlinear work--precision data for first-order fixed-step frozen-bulk BE-JFNK versus fifth-order adaptive Diffrax Tsit5/PID.",
   "problems": {
     "pme_m2": {
       "be_jfnk_frozen_bulk": [

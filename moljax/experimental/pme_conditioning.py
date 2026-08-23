@@ -7,6 +7,8 @@ from math import hypot, log, sqrt
 from typing import Any, NamedTuple
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.conditioning import (
@@ -171,26 +173,25 @@ def build_pme_linearization(
     counted GMRES measurement use the same left-preconditioned linear system
     as a Newton update, without relying on the core solver's budget counter.
     """
-    with jax.enable_x64(True):
-        previous = interior_values(u_prev, grid)
-        residual = make_backward_euler_residual(previous, grid, m, dt, epsilon)
-        preconditioner, d0 = pme_preconditioner_variant(
-            previous,
-            grid,
-            m,
-            dt,
-            epsilon,
-            d0_kind,
-            const_value=const_value,
-        )
-        context = PrecondContext(grid=grid, dt=dt, params={})
-        operator = linearized_operator(
-            residual,
-            previous,
-            preconditioner=preconditioner,
-            context=context,
-        )
-        rhs = preconditioner.apply(-residual(previous), context)
+    previous = interior_values(u_prev, grid)
+    residual = make_backward_euler_residual(previous, grid, m, dt, epsilon)
+    preconditioner, d0 = pme_preconditioner_variant(
+        previous,
+        grid,
+        m,
+        dt,
+        epsilon,
+        d0_kind,
+        const_value=const_value,
+    )
+    context = PrecondContext(grid=grid, dt=dt, params={})
+    operator = linearized_operator(
+        residual,
+        previous,
+        preconditioner=preconditioner,
+        context=context,
+    )
+    rhs = preconditioner.apply(-residual(previous), context)
     return PMELinearization(operator, residual, preconditioner, context, d0, rhs)
 
 
@@ -214,62 +215,61 @@ def _counted_gmres(
     if max_iters <= 0:
         raise ValueError("max_iters must be positive")
 
-    with jax.enable_x64(True):
-        vector_rhs = jnp.asarray(rhs, dtype=jnp.float64)
-        norm_rhs = float(jnp.linalg.norm(vector_rhs))
-        if norm_rhs == 0.0:
-            return {"converged": True, "iterations": 0, "final_relative_residual": 0.0}
+    vector_rhs = jnp.asarray(rhs, dtype=jnp.float64)
+    norm_rhs = float(jnp.linalg.norm(vector_rhs))
+    if norm_rhs == 0.0:
+        return {"converged": True, "iterations": 0, "final_relative_residual": 0.0}
 
-        basis = [vector_rhs / norm_rhs]
-        cosines: list[float] = []
-        sines: list[float] = []
-        rotated_rhs = [norm_rhs] + [0.0] * max_iters
-        threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
-        final_relative_residual = 1.0
+    basis = [vector_rhs / norm_rhs]
+    cosines: list[float] = []
+    sines: list[float] = []
+    rotated_rhs = [norm_rhs] + [0.0] * max_iters
+    threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
+    final_relative_residual = 1.0
 
-        for column in range(max_iters):
-            candidate_vector = jnp.real(matvec(basis[column]))
-            coefficients: list[float] = []
-            for basis_vector in basis:
-                coefficient = float(jnp.vdot(basis_vector, candidate_vector))
-                coefficients.append(coefficient)
-                candidate_vector = candidate_vector - coefficient * basis_vector
-            for row, basis_vector in enumerate(basis):
-                correction = float(jnp.vdot(basis_vector, candidate_vector))
-                coefficients[row] = coefficients[row] + correction
-                candidate_vector = candidate_vector - correction * basis_vector
+    for column in range(max_iters):
+        candidate_vector = jnp.real(matvec(basis[column]))
+        coefficients: list[float] = []
+        for basis_vector in basis:
+            coefficient = float(jnp.vdot(basis_vector, candidate_vector))
+            coefficients.append(coefficient)
+            candidate_vector = candidate_vector - coefficient * basis_vector
+        for row, basis_vector in enumerate(basis):
+            correction = float(jnp.vdot(basis_vector, candidate_vector))
+            coefficients[row] = coefficients[row] + correction
+            candidate_vector = candidate_vector - correction * basis_vector
 
-            arnoldi_subdiagonal = float(jnp.linalg.norm(candidate_vector))
-            hessenberg_column = coefficients + [arnoldi_subdiagonal]
-            for row, (cosine, sine) in enumerate(zip(cosines, sines, strict=True)):
-                upper = cosine * hessenberg_column[row] + sine * hessenberg_column[row + 1]
-                hessenberg_column[row + 1] = (
-                    -sine * hessenberg_column[row] + cosine * hessenberg_column[row + 1]
-                )
-                hessenberg_column[row] = upper
+        arnoldi_subdiagonal = float(jnp.linalg.norm(candidate_vector))
+        hessenberg_column = coefficients + [arnoldi_subdiagonal]
+        for row, (cosine, sine) in enumerate(zip(cosines, sines, strict=True)):
+            upper = cosine * hessenberg_column[row] + sine * hessenberg_column[row + 1]
+            hessenberg_column[row + 1] = (
+                -sine * hessenberg_column[row] + cosine * hessenberg_column[row + 1]
+            )
+            hessenberg_column[row] = upper
 
-            diagonal = hessenberg_column[column]
-            subdiagonal = hessenberg_column[column + 1]
-            normalization = hypot(diagonal, subdiagonal)
-            if normalization <= threshold:
-                cosine, sine = 1.0, 0.0
-            else:
-                cosine, sine = diagonal / normalization, subdiagonal / normalization
-            cosines.append(cosine)
-            sines.append(sine)
-            previous_rhs = rotated_rhs[column]
-            rotated_rhs[column] = cosine * previous_rhs
-            rotated_rhs[column + 1] = -sine * previous_rhs
-            final_relative_residual = abs(rotated_rhs[column + 1]) / norm_rhs
-            if final_relative_residual <= tol:
-                return {
-                    "converged": True,
-                    "iterations": column + 1,
-                    "final_relative_residual": final_relative_residual,
-                }
-            if arnoldi_subdiagonal <= threshold:
-                break
-            basis.append(candidate_vector / arnoldi_subdiagonal)
+        diagonal = hessenberg_column[column]
+        subdiagonal = hessenberg_column[column + 1]
+        normalization = hypot(diagonal, subdiagonal)
+        if normalization <= threshold:
+            cosine, sine = 1.0, 0.0
+        else:
+            cosine, sine = diagonal / normalization, subdiagonal / normalization
+        cosines.append(cosine)
+        sines.append(sine)
+        previous_rhs = rotated_rhs[column]
+        rotated_rhs[column] = cosine * previous_rhs
+        rotated_rhs[column + 1] = -sine * previous_rhs
+        final_relative_residual = abs(rotated_rhs[column + 1]) / norm_rhs
+        if final_relative_residual <= tol:
+            return {
+                "converged": True,
+                "iterations": column + 1,
+                "final_relative_residual": final_relative_residual,
+            }
+        if arnoldi_subdiagonal <= threshold:
+            break
+        basis.append(candidate_vector / arnoldi_subdiagonal)
 
     return {
         "converged": False,
@@ -362,34 +362,33 @@ def assess_pme_state(
     :func:`moljax.conditioning.linearized_operator`.  The returned operator is
     the left-preconditioned ``P^-1 J`` action and its Euclidean adjoint.
     """
-    with jax.enable_x64(True):
-        linearization = build_pme_linearization(
-            u_prev,
-            grid,
-            m,
-            dt,
-            epsilon,
-            d0_kind,
-            const_value=const_value,
-        )
-        operator = linearization.operator
-        d0 = linearization.d0
-        adjoint_error = adjoint_identity(operator, jax.random.PRNGKey(seed), operator.n)
-        key_real, key_imag = jax.random.split(jax.random.PRNGKey(seed + 1))
-        start = jax.random.normal(key_real, (operator.n,), dtype=jnp.float64)
-        start = start + 1j * jax.random.normal(key_imag, (operator.n,), dtype=jnp.float64)
-        _, hessenberg = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
-        ritz = ritz_values(hessenberg)
-        epsilon_at_zero = epsilon_zero(hessenberg)
-        field_of_values = numerical_range(
-            operator.matvec,
-            operator.matvec_adjoint,
-            operator.n,
-            n_angles=n_angles,
-            max_iters=fov_max_iters,
-        )
-        rates = estimate_rates(field_of_values, ritz)
-        assessment = assess_preconditioner(field_of_values, ritz, epsilon_at_zero)
+    linearization = build_pme_linearization(
+        u_prev,
+        grid,
+        m,
+        dt,
+        epsilon,
+        d0_kind,
+        const_value=const_value,
+    )
+    operator = linearization.operator
+    d0 = linearization.d0
+    adjoint_error = adjoint_identity(operator, jax.random.PRNGKey(seed), operator.n)
+    key_real, key_imag = jax.random.split(jax.random.PRNGKey(seed + 1))
+    start = jax.random.normal(key_real, (operator.n,), dtype=jnp.float64)
+    start = start + 1j * jax.random.normal(key_imag, (operator.n,), dtype=jnp.float64)
+    _, hessenberg = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
+    ritz = ritz_values(hessenberg)
+    epsilon_at_zero = epsilon_zero(hessenberg)
+    field_of_values = numerical_range(
+        operator.matvec,
+        operator.matvec_adjoint,
+        operator.n,
+        n_angles=n_angles,
+        max_iters=fov_max_iters,
+    )
+    rates = estimate_rates(field_of_values, ritz)
+    assessment = assess_preconditioner(field_of_values, ritz, epsilon_at_zero)
 
     return {
         "d0_kind": d0_kind,

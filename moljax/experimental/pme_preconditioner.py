@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.core.fft_nonperiodic import laplacian_symbol_dirichlet, solve_helmholtz_dirichlet
@@ -20,9 +22,8 @@ PMEGrid = Grid1D | NodeCenteredDirichletGrid
 
 def d0_frozen_mean(u: jax.Array, m: float) -> float:
     """Return ``m * mean(u)**(m - 1)`` for an interior PME state."""
-    with jax.enable_x64(True):
-        mean = jnp.mean(jnp.asarray(u, dtype=jnp.float64))
-        return float(m * mean ** (m - 1.0))
+    mean = jnp.mean(jnp.asarray(u, dtype=jnp.float64))
+    return float(m * mean ** (m - 1.0))
 
 
 def _d0_frozen_bulk_value(u: jax.Array, m: float, *, quantile: float = 0.9) -> jax.Array:
@@ -41,8 +42,7 @@ def d0_frozen_bulk(u: jax.Array, m: float, *, quantile: float = 0.9) -> float:
     """
     if not 0.0 < quantile <= 1.0:
         raise ValueError("quantile must lie in (0, 1]")
-    with jax.enable_x64(True):
-        return float(_d0_frozen_bulk_value(u, m, quantile=quantile))
+    return float(_d0_frozen_bulk_value(u, m, quantile=quantile))
 
 
 def d0_floor(m: float, epsilon: float) -> float:
@@ -85,8 +85,7 @@ def pme_helmholtz_preconditioner(
     grid: PMEGrid,
 ) -> PMEHelmholtzPreconditioner:
     """Build the fixed-``d0`` DST Helmholtz preconditioner for one PME step."""
-    with jax.enable_x64(True):
-        symbol = laplacian_symbol_dirichlet(grid.nx, grid.dx, dtype=jnp.float64)
+    symbol = laplacian_symbol_dirichlet(grid.nx, grid.dx, dtype=jnp.float64)
     return PMEHelmholtzPreconditioner(d0=float(d0), dt=float(dt), laplacian_symbol=symbol)
 
 
@@ -120,12 +119,11 @@ def helmholtz_inverse_relative_residual(
     Laplacian diagonalizes in DST-I.  Passing a cell-centred :class:`Grid1D`
     deliberately quantifies the former centring mismatch instead.
     """
-    with jax.enable_x64(True):
-        rhs = jax.random.normal(key, (grid.nx,), dtype=jnp.float64)
-        solution = pme_helmholtz_preconditioner(d0, dt, grid).apply(rhs)
-        if isinstance(grid, Grid1D):
-            laplacian = cell_centered_dirichlet_laplacian(solution, grid)
-        else:
-            laplacian = node_centered_dirichlet_laplacian(solution, grid)
-        residual = solution - dt * d0 * laplacian - rhs
-        return float(jnp.linalg.norm(residual) / jnp.linalg.norm(rhs))
+    rhs = jax.random.normal(key, (grid.nx,), dtype=jnp.float64)
+    solution = pme_helmholtz_preconditioner(d0, dt, grid).apply(rhs)
+    if isinstance(grid, Grid1D):
+        laplacian = cell_centered_dirichlet_laplacian(solution, grid)
+    else:
+        laplacian = node_centered_dirichlet_laplacian(solution, grid)
+    residual = solution - dt * d0 * laplacian - rhs
+    return float(jnp.linalg.norm(residual) / jnp.linalg.norm(rhs))

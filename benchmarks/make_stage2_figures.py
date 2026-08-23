@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Stage-2 figures directly from the committed benchmark JSON files.
+"""Generate Stage-2 figures directly from benchmark result JSON files.
 
 This script contains no model evaluation and creates no synthetic measurements.
 Install the existing visualization extra before running it:
@@ -21,7 +21,7 @@ FIGURES_DIR = REPOSITORY_ROOT / "benchmarks" / "figures"
 
 
 def _load_json(filename: str) -> dict[str, Any]:
-    """Load one committed Stage-2 result file."""
+    """Load one Stage-2 result file."""
     return json.loads((RESULTS_DIR / filename).read_text())
 
 
@@ -244,14 +244,17 @@ def main() -> None:
     """Generate every ignored Stage-2 PNG from committed JSON data."""
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     plt = _pyplot()
-    pme = _load_json("pme_breakdown.json")
     reaction = _load_json("porous_fisher_conditioning.json")
-    work_precision = _load_json("work_precision_nonlinear_diffusion.json")
-    outputs = (
-        _plot_pme_regime_map(pme, plt),
+    work_precision = _load_json("work_precision_fixedstep_vs_adaptive_diffrax.json")
+    outputs = [
         _plot_reaction_axis(reaction, plt),
         _plot_work_precision(work_precision, plt),
-    )
+    ]
+    pme_path = RESULTS_DIR / "pme_breakdown.json"
+    if pme_path.exists():
+        outputs.insert(0, _plot_pme_regime_map(_load_json(pme_path.name), plt))
+    else:
+        print("pme_breakdown.json is regenerated with benchmarks/pme_breakdown.py; skipping map")
     for output in outputs:
         print(output.relative_to(REPOSITORY_ROOT))
 
