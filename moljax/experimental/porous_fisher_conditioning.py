@@ -6,6 +6,8 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.conditioning import (
@@ -101,32 +103,31 @@ def build_porous_fisher_linearization(
     ``2*u``.  The logistic reaction derivative remains in ``J`` and is not
     represented in the Helmholtz preconditioner.
     """
-    with jax.enable_x64(True):
-        previous = jnp.asarray(u_prev, dtype=jnp.float64)
-        residual = make_porous_fisher_residual(
-            previous,
-            grid,
-            r=r,
-            dt=dt,
-            epsilon=epsilon,
-        )
-        preconditioner, d0 = pme_preconditioner_variant(
-            previous,
-            grid,
-            2.0,
-            dt,
-            epsilon,
-            d0_kind,
-            const_value=const_value,
-        )
-        context = PrecondContext(grid=grid, dt=dt, params={})
-        operator = linearized_operator(
-            residual,
-            previous,
-            preconditioner=preconditioner,
-            context=context,
-        )
-        rhs = preconditioner.apply(-residual(previous), context)
+    previous = jnp.asarray(u_prev, dtype=jnp.float64)
+    residual = make_porous_fisher_residual(
+        previous,
+        grid,
+        r=r,
+        dt=dt,
+        epsilon=epsilon,
+    )
+    preconditioner, d0 = pme_preconditioner_variant(
+        previous,
+        grid,
+        2.0,
+        dt,
+        epsilon,
+        d0_kind,
+        const_value=const_value,
+    )
+    context = PrecondContext(grid=grid, dt=dt, params={})
+    operator = linearized_operator(
+        residual,
+        previous,
+        preconditioner=preconditioner,
+        context=context,
+    )
+    rhs = preconditioner.apply(-residual(previous), context)
     return PorousFisherLinearization(operator, residual, preconditioner, context, d0, rhs)
 
 
@@ -176,33 +177,32 @@ def assess_porous_fisher_state(
     seed: int = 20260821,
 ) -> dict[str, Any]:
     """Assess a Porous--Fisher state with the shared conditioning toolbox."""
-    with jax.enable_x64(True):
-        linearization = build_porous_fisher_linearization(
-            u_prev,
-            grid,
-            r=r,
-            dt=dt,
-            epsilon=epsilon,
-            d0_kind=d0_kind,
-            const_value=const_value,
-        )
-        operator = linearization.operator
-        adjoint_error = adjoint_identity(operator, jax.random.PRNGKey(seed), operator.n)
-        key_real, key_imag = jax.random.split(jax.random.PRNGKey(seed + 1))
-        start = jax.random.normal(key_real, (operator.n,), dtype=jnp.float64)
-        start = start + 1j * jax.random.normal(key_imag, (operator.n,), dtype=jnp.float64)
-        _, hessenberg = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
-        ritz = ritz_values(hessenberg)
-        epsilon_at_zero = epsilon_zero(hessenberg)
-        field_of_values = numerical_range(
-            operator.matvec,
-            operator.matvec_adjoint,
-            operator.n,
-            n_angles=n_angles,
-            max_iters=fov_max_iters,
-        )
-        rates = estimate_rates(field_of_values, ritz)
-        assessment = assess_preconditioner(field_of_values, ritz, epsilon_at_zero)
+    linearization = build_porous_fisher_linearization(
+        u_prev,
+        grid,
+        r=r,
+        dt=dt,
+        epsilon=epsilon,
+        d0_kind=d0_kind,
+        const_value=const_value,
+    )
+    operator = linearization.operator
+    adjoint_error = adjoint_identity(operator, jax.random.PRNGKey(seed), operator.n)
+    key_real, key_imag = jax.random.split(jax.random.PRNGKey(seed + 1))
+    start = jax.random.normal(key_real, (operator.n,), dtype=jnp.float64)
+    start = start + 1j * jax.random.normal(key_imag, (operator.n,), dtype=jnp.float64)
+    _, hessenberg = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
+    ritz = ritz_values(hessenberg)
+    epsilon_at_zero = epsilon_zero(hessenberg)
+    field_of_values = numerical_range(
+        operator.matvec,
+        operator.matvec_adjoint,
+        operator.n,
+        n_angles=n_angles,
+        max_iters=fov_max_iters,
+    )
+    rates = estimate_rates(field_of_values, ritz)
+    assessment = assess_preconditioner(field_of_values, ritz, epsilon_at_zero)
 
     return {
         "d0_kind": d0_kind,

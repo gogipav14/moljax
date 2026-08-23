@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
-"""Work--precision comparisons for nonlinear diffusion models.
+"""Experimental fixed-step BE-JFNK versus adaptive Diffrax work--precision study.
 
-This benchmark compares the local fixed-step backward-Euler JFNK path against
-Diffrax's adaptive Tsit5/PID integrator on identical node-centred spatial
-discretizations.  Diffrax is intentionally imported only in this benchmark:
-it is an external comparator rather than a moljax runtime dependency.
+This optional comparison measures first-order fixed-step backward-Euler JFNK
+against fifth-order adaptive Diffrax Tsit5 with PID control on identical
+node-centred spatial discretizations. Diffrax is a benchmark-only extra, not
+a moljax runtime dependency.
 """
 
 from __future__ import annotations
@@ -19,6 +18,8 @@ from typing import Any, NamedTuple
 
 import diffrax
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.core.fft_nonperiodic import laplacian_symbol_dirichlet
@@ -77,7 +78,7 @@ class WorkPrecisionConfig(NamedTuple):
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
     max_diffrax_steps: int = 10_000
-    output_path: str = "benchmarks/results/work_precision_nonlinear_diffusion.json"
+    output_path: str = "benchmarks/results/work_precision_fixedstep_vs_adaptive_diffrax.json"
 
 
 class ProblemSetup(NamedTuple):
@@ -625,7 +626,7 @@ def _problem_summary(crossovers: list[dict[str, Any]]) -> str:
 
 
 def run_work_precision(config: WorkPrecisionConfig | None = None) -> dict[str, Any]:
-    """Run both nonlinear exact-reference work--precision comparisons.
+    """Run both fixed-step-versus-adaptive exact-reference comparisons.
 
     The scope is deliberately narrow: it compares local preconditioned
     first-order BE-JFNK with an adaptive higher-order external integrator on
@@ -636,39 +637,41 @@ def run_work_precision(config: WorkPrecisionConfig | None = None) -> dict[str, A
         config = WorkPrecisionConfig()
     _validate_config(config)
     started_at = perf_counter()
-    with jax.enable_x64(True):
-        setups = (_pme_setup(config), _porous_fisher_setup(config))
-        problems: dict[str, dict[str, Any]] = {}
-        for setup in setups:
-            be_records = _be_records(setup, config)
-            adaptive_records = _diffrax_records(setup, config)
-            crossovers = _matched_accuracy_crossovers(be_records, adaptive_records)
-            problems[setup.name] = {
-                "time_window": {"t0": setup.t0, "t1": setup.t1},
-                "grid": {
-                    "nx": setup.grid.nx,
-                    "x_min": setup.grid.x_min,
-                    "x_max": setup.grid.x_max,
-                    "dx": setup.grid.dx,
-                },
-                "error_metric": {
-                    "name": "masked_linf",
-                    "description": (
-                        "max |u_numeric(t1)-u_exact(t1)| on the common smooth interior; "
-                        "the compact-support edge and the finite-domain left boundary layer "
-                        "are excluded identically for both methods."
-                    ),
-                    "porous_fisher_left_boundary_exclusion": 1.5,
-                    "masked_nodes": int(jnp.sum(setup.error_mask)),
-                },
-                "be_jfnk_frozen_bulk": be_records,
-                "diffrax_tsit5_pid": adaptive_records,
-                "matched_accuracy_crossovers": crossovers,
-                "summary": _problem_summary(crossovers),
-            }
+    setups = (_pme_setup(config), _porous_fisher_setup(config))
+    problems: dict[str, dict[str, Any]] = {}
+    for setup in setups:
+        be_records = _be_records(setup, config)
+        adaptive_records = _diffrax_records(setup, config)
+        crossovers = _matched_accuracy_crossovers(be_records, adaptive_records)
+        problems[setup.name] = {
+            "time_window": {"t0": setup.t0, "t1": setup.t1},
+            "grid": {
+                "nx": setup.grid.nx,
+                "x_min": setup.grid.x_min,
+                "x_max": setup.grid.x_max,
+                "dx": setup.grid.dx,
+            },
+            "error_metric": {
+                "name": "masked_linf",
+                "description": (
+                    "max |u_numeric(t1)-u_exact(t1)| on the common smooth interior; "
+                    "the compact-support edge and the finite-domain left boundary layer "
+                    "are excluded identically for both methods."
+                ),
+                "porous_fisher_left_boundary_exclusion": 1.5,
+                "masked_nodes": int(jnp.sum(setup.error_mask)),
+            },
+            "be_jfnk_frozen_bulk": be_records,
+            "diffrax_tsit5_pid": adaptive_records,
+            "matched_accuracy_crossovers": crossovers,
+            "summary": _problem_summary(crossovers),
+        }
 
     report = {
-        "description": "Nonlinear work--precision data for frozen-bulk BE-JFNK versus Diffrax.",
+        "description": (
+            "Nonlinear work--precision data for first-order fixed-step frozen-bulk BE-JFNK "
+            "versus fifth-order adaptive Diffrax Tsit5/PID."
+        ),
         "scope": (
             "This compares the local preconditioned BE-JFNK path with Diffrax adaptive Tsit5/PID "
             "on the same nonlinear node-centred spatial discretization. It differs from a linear "

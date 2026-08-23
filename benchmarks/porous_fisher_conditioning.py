@@ -13,6 +13,8 @@ from typing import Any, NamedTuple
 
 import jax
 
+jax.config.update("jax_enable_x64", True)
+
 from moljax.core.newton_krylov import NKParams, newton_krylov_solve
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 from moljax.experimental.pme_conditioning import pme_preconditioner_variant
@@ -265,70 +267,69 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
         raise ValueError("reaction_values must contain non-negative strengths")
 
     started_at = perf_counter()
-    with jax.enable_x64(True):
-        grid = NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
-        c = wave_speed(config.reference_wave_r)
-        initial_state = porous_fisher_traveling_wave(
-            grid.x_coords(),
-            config.initial_time,
-            r=config.reference_wave_r,
-            c=c,
-        )
-        records: list[dict[str, Any]] = []
-        for r in config.reaction_values:
-            state, state_solver = _advance_to_visited_state(initial_state, grid, r=r, config=config)
-            for analysis_dt in config.analysis_dt_values:
-                for index, d0_kind in enumerate(config.d0_kinds):
-                    diagnostics = assess_porous_fisher_state(
-                        state,
-                        grid,
-                        r=r,
-                        dt=analysis_dt,
-                        epsilon=config.epsilon,
-                        d0_kind=d0_kind,
-                        const_value=config.const_d0,
-                        n_angles=config.n_angles,
-                        fov_max_iters=config.fov_max_iters,
-                        arnoldi_steps=config.arnoldi_steps,
-                        seed=20260880 + 1000 * int(100 * r) + 10 * int(100 * analysis_dt) + index,
+    grid = NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
+    c = wave_speed(config.reference_wave_r)
+    initial_state = porous_fisher_traveling_wave(
+        grid.x_coords(),
+        config.initial_time,
+        r=config.reference_wave_r,
+        c=c,
+    )
+    records: list[dict[str, Any]] = []
+    for r in config.reaction_values:
+        state, state_solver = _advance_to_visited_state(initial_state, grid, r=r, config=config)
+        for analysis_dt in config.analysis_dt_values:
+            for index, d0_kind in enumerate(config.d0_kinds):
+                diagnostics = assess_porous_fisher_state(
+                    state,
+                    grid,
+                    r=r,
+                    dt=analysis_dt,
+                    epsilon=config.epsilon,
+                    d0_kind=d0_kind,
+                    const_value=config.const_d0,
+                    n_angles=config.n_angles,
+                    fov_max_iters=config.fov_max_iters,
+                    arnoldi_steps=config.arnoldi_steps,
+                    seed=20260880 + 1000 * int(100 * r) + 10 * int(100 * analysis_dt) + index,
+                )
+                if diagnostics["adjoint_error"] > diagnostics["adjoint_tolerance"]:
+                    raise RuntimeError(
+                        "Porous--Fisher adjoint gate failed: "
+                        f"r={r}, dt={analysis_dt}, d0_kind={d0_kind}, "
+                        f"error={diagnostics['adjoint_error']}"
                     )
-                    if diagnostics["adjoint_error"] > diagnostics["adjoint_tolerance"]:
-                        raise RuntimeError(
-                            "Porous--Fisher adjoint gate failed: "
-                            f"r={r}, dt={analysis_dt}, d0_kind={d0_kind}, "
-                            f"error={diagnostics['adjoint_error']}"
-                        )
-                    actual_gmres = measure_porous_fisher_gmres_iterations(
-                        state,
-                        grid,
-                        r=r,
-                        dt=analysis_dt,
-                        epsilon=config.epsilon,
-                        d0_kind=d0_kind,
-                        tol=config.krylov_tol,
-                        max_iters=config.max_krylov_iters,
-                        const_value=config.const_d0,
-                    )
-                    records.append(
-                        {
-                            "r": r,
-                            "analysis_dt": analysis_dt,
-                            "d0_kind": d0_kind,
-                            "d0_used": diagnostics["d0"],
-                            "sigma": float(diagnostics["d0"] * analysis_dt / grid.dx**2),
-                            "adjoint_identity": diagnostics["adjoint_error"],
-                            "adjoint_tolerance": diagnostics["adjoint_tolerance"],
-                            "verdict": diagnostics["verdict"],
-                            "disk_rate": diagnostics["disk_rate"],
-                            "epsilon_zero": diagnostics["epsilon_zero"],
-                            "predicted_gmres_factor": diagnostics["predicted_gmres_factor"],
-                            "origin_enclosed": diagnostics["origin_enclosed"],
-                            "n_right_real_outliers": diagnostics["n_right_real_outliers"],
-                            "rates": diagnostics["rates"],
-                            "actual_gmres": actual_gmres,
-                            "state_solver": dict(state_solver),
-                        }
-                    )
+                actual_gmres = measure_porous_fisher_gmres_iterations(
+                    state,
+                    grid,
+                    r=r,
+                    dt=analysis_dt,
+                    epsilon=config.epsilon,
+                    d0_kind=d0_kind,
+                    tol=config.krylov_tol,
+                    max_iters=config.max_krylov_iters,
+                    const_value=config.const_d0,
+                )
+                records.append(
+                    {
+                        "r": r,
+                        "analysis_dt": analysis_dt,
+                        "d0_kind": d0_kind,
+                        "d0_used": diagnostics["d0"],
+                        "sigma": float(diagnostics["d0"] * analysis_dt / grid.dx**2),
+                        "adjoint_identity": diagnostics["adjoint_error"],
+                        "adjoint_tolerance": diagnostics["adjoint_tolerance"],
+                        "verdict": diagnostics["verdict"],
+                        "disk_rate": diagnostics["disk_rate"],
+                        "epsilon_zero": diagnostics["epsilon_zero"],
+                        "predicted_gmres_factor": diagnostics["predicted_gmres_factor"],
+                        "origin_enclosed": diagnostics["origin_enclosed"],
+                        "n_right_real_outliers": diagnostics["n_right_real_outliers"],
+                        "rates": diagnostics["rates"],
+                        "actual_gmres": actual_gmres,
+                        "state_solver": dict(state_solver),
+                    }
+                )
 
     runtime_seconds = perf_counter() - started_at
     identity_records = [record for record in records if record["d0_kind"] == "identity"]

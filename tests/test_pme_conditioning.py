@@ -5,6 +5,8 @@ from __future__ import annotations
 from math import ceil, floor, isinf, sqrt
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -75,19 +77,18 @@ def _dense_gmres_iterations(matrix: np.ndarray, rhs: np.ndarray, tol: float, max
 @pytest.mark.slow
 def test_assess_pme_state_has_a_valid_adjoint_gate_and_verdict() -> None:
     """The experimental adapter exposes a valid matrix-free diagnostic state."""
-    with jax.enable_x64(True):
-        grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
-        result = assess_pme_state(
-            _barenblatt_state(grid),
-            grid,
-            2.0,
-            0.02,
-            1.0e-5,
-            "frozen_bulk",
-            n_angles=4,
-            fov_max_iters=16,
-            arnoldi_steps=6,
-        )
+    grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
+    result = assess_pme_state(
+        _barenblatt_state(grid),
+        grid,
+        2.0,
+        0.02,
+        1.0e-5,
+        "frozen_bulk",
+        n_angles=4,
+        fov_max_iters=16,
+        arnoldi_steps=6,
+    )
 
     assert result["adjoint_error"] <= 1.0e-8
     assert result["verdict"] in {"adequate", "investigate", "indeterminate"}
@@ -96,31 +97,30 @@ def test_assess_pme_state_has_a_valid_adjoint_gate_and_verdict() -> None:
 @pytest.mark.slow
 def test_frozen_mean_preconditioning_tightens_the_m2_numerical_range() -> None:
     """The frozen-D0 variant improves the disk-rate diagnostic over identity."""
-    with jax.enable_x64(True):
-        grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
-        state = _smooth_dirichlet_state(grid)
-        frozen = assess_pme_state(
-            state,
-            grid,
-            2.0,
-            0.1,
-            1.0e-5,
-            "frozen_mean",
-            n_angles=4,
-            fov_max_iters=16,
-            arnoldi_steps=6,
-        )
-        identity = assess_pme_state(
-            state,
-            grid,
-            2.0,
-            0.1,
-            1.0e-5,
-            "identity",
-            n_angles=4,
-            fov_max_iters=16,
-            arnoldi_steps=6,
-        )
+    grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
+    state = _smooth_dirichlet_state(grid)
+    frozen = assess_pme_state(
+        state,
+        grid,
+        2.0,
+        0.1,
+        1.0e-5,
+        "frozen_mean",
+        n_angles=4,
+        fov_max_iters=16,
+        arnoldi_steps=6,
+    )
+    identity = assess_pme_state(
+        state,
+        grid,
+        2.0,
+        0.1,
+        1.0e-5,
+        "identity",
+        n_angles=4,
+        fov_max_iters=16,
+        arnoldi_steps=6,
+    )
 
     assert d0_frozen_mean(state, 1.0) == pytest.approx(1.0)
     assert frozen["disk_rate"] < identity["disk_rate"]
@@ -129,28 +129,27 @@ def test_frozen_mean_preconditioning_tightens_the_m2_numerical_range() -> None:
 @pytest.mark.slow
 def test_counted_gmres_matches_an_independent_dense_reference() -> None:
     """The experimental residual-history count agrees with dense GMRES to one step."""
-    with jax.enable_x64(True):
-        grid = NodeCenteredDirichletGrid.uniform(24, -4.0, 4.0)
-        state = jnp.exp(-grid.x_coords() ** 2)
-        linearization = build_pme_linearization(state, grid, 1.0, 0.002, 0.0, "identity")
-        basis = jnp.eye(grid.nx, dtype=jnp.float64)
-        matrix = np.asarray(
-            jnp.column_stack(
-                [jnp.real(linearization.operator.matvec(basis[:, i])) for i in range(grid.nx)]
-            )
+    grid = NodeCenteredDirichletGrid.uniform(24, -4.0, 4.0)
+    state = jnp.exp(-grid.x_coords() ** 2)
+    linearization = build_pme_linearization(state, grid, 1.0, 0.002, 0.0, "identity")
+    basis = jnp.eye(grid.nx, dtype=jnp.float64)
+    matrix = np.asarray(
+        jnp.column_stack(
+            [jnp.real(linearization.operator.matvec(basis[:, i])) for i in range(grid.nx)]
         )
-        rhs = np.asarray(linearization.rhs)
-        measured = measure_gmres_iterations(
-            state,
-            grid,
-            1.0,
-            0.002,
-            0.0,
-            "identity",
-            tol=1.0e-10,
-            max_iters=24,
-        )
-        expected = _dense_gmres_iterations(matrix, rhs, 1.0e-10, 24)
+    )
+    rhs = np.asarray(linearization.rhs)
+    measured = measure_gmres_iterations(
+        state,
+        grid,
+        1.0,
+        0.002,
+        0.0,
+        "identity",
+        tol=1.0e-10,
+        max_iters=24,
+    )
+    expected = _dense_gmres_iterations(matrix, rhs, 1.0e-10, 24)
 
     assert measured["converged"]
     assert measured["iterations"] <= 24
@@ -159,12 +158,11 @@ def test_counted_gmres_matches_an_independent_dense_reference() -> None:
 
 def test_helmholtz_inverse_uses_matching_node_centering() -> None:
     """The legacy cell/DST pairing is material, while the node path is exact."""
-    with jax.enable_x64(True):
-        cell_grid = Grid1D.uniform(64, -4.0, 4.0)
-        node_grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
-        key = jax.random.PRNGKey(7)
-        legacy = helmholtz_inverse_relative_residual(1.0, 0.02, cell_grid, key)
-        node = helmholtz_inverse_relative_residual(1.0, 0.02, node_grid, key)
+    cell_grid = Grid1D.uniform(64, -4.0, 4.0)
+    node_grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
+    key = jax.random.PRNGKey(7)
+    legacy = helmholtz_inverse_relative_residual(1.0, 0.02, cell_grid, key)
+    node = helmholtz_inverse_relative_residual(1.0, 0.02, node_grid, key)
 
     assert legacy > 1.0e-3
     assert node < 1.0e-11
@@ -173,18 +171,17 @@ def test_helmholtz_inverse_uses_matching_node_centering() -> None:
 @pytest.mark.slow
 def test_helmholtz_variants_reduce_real_gmres_work_for_linear_control() -> None:
     """A matching frozen coefficient reduces actual iterations on the linear control."""
-    with jax.enable_x64(True):
-        grid = NodeCenteredDirichletGrid.uniform(24, -4.0, 4.0)
-        state = jnp.exp(-grid.x_coords() ** 2)
-        identity = measure_gmres_iterations(
-            state, grid, 1.0, 0.02, 0.0, "identity", tol=1.0e-8, max_iters=24
-        )
-        frozen_mean = measure_gmres_iterations(
-            state, grid, 1.0, 0.02, 0.0, "frozen_mean", tol=1.0e-8, max_iters=24
-        )
-        frozen_bulk = measure_gmres_iterations(
-            state, grid, 1.0, 0.02, 0.0, "frozen_bulk", tol=1.0e-8, max_iters=24
-        )
+    grid = NodeCenteredDirichletGrid.uniform(24, -4.0, 4.0)
+    state = jnp.exp(-grid.x_coords() ** 2)
+    identity = measure_gmres_iterations(
+        state, grid, 1.0, 0.02, 0.0, "identity", tol=1.0e-8, max_iters=24
+    )
+    frozen_mean = measure_gmres_iterations(
+        state, grid, 1.0, 0.02, 0.0, "frozen_mean", tol=1.0e-8, max_iters=24
+    )
+    frozen_bulk = measure_gmres_iterations(
+        state, grid, 1.0, 0.02, 0.0, "frozen_bulk", tol=1.0e-8, max_iters=24
+    )
 
     assert identity["converged"]
     assert frozen_mean["converged"]

@@ -36,7 +36,8 @@ their per-cell Pearson coefficient and easy-state group are undefined.
 | 8 | 2e-02 | 13--211 | 0.9375 | 0.9987 | 1.00 |
 | 8 | 2e+00 | 15--222 | 0.9993 | 1.0000 | 1.00 |
 
-Source: `benchmarks/results/pme_breakdown.json`, `regime_map.cells`.
+Source: `benchmarks/pme_breakdown.py` (the full raw sweep is regenerated rather than tracked),
+`regime_map.cells`.
 
 The 1.00 coefficients are endpoint monotonicity from two front samples per nonlinear cell, not
 statistical estimates. The breadth is the result: all 15 nonlinear cells separate their two
@@ -76,7 +77,7 @@ configuration from each method that reaches the stated target; no interpolation 
 | PME, m=2 | 1e-03 | 2.7336e-04 / 5.7019e-02 s / 104 | 1.2120e-04 / 3.7386e-04 s / 13 | Diffrax, 152.52x |
 | Porous--Fisher, r=1 | 1e-03 | 5.3739e-04 / 1.9379e-02 s / 34 | 7.5212e-05 / 3.9563e-04 s / 13 | Diffrax, 48.98x |
 
-Source: `benchmarks/results/work_precision_nonlinear_diffusion.json`,
+Source: `benchmarks/results/work_precision_fixedstep_vs_adaptive_diffrax.json`,
 `problems.*.matched_accuracy_crossovers`.
 
 The stored `1e-05`, `1e-06`, and `1e-08` crossover entries are unreached by one or both methods.
@@ -97,6 +98,6 @@ diagnostic that flags hard states, not a faster time integrator.
 - The work--precision comparison changes only the time integrator and nonlinear solver. It is not
   a reproduction of a linear FFT--Crank--Nicolson comparison.
 
-Sources: `benchmarks/results/pme_breakdown.json`,
+Sources: regenerated output from `benchmarks/pme_breakdown.py`,
 `benchmarks/results/porous_fisher_conditioning.json`, and
-`benchmarks/results/work_precision_nonlinear_diffusion.json`.
+`benchmarks/results/work_precision_fixedstep_vs_adaptive_diffrax.json`.

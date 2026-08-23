@@ -13,6 +13,8 @@ from time import perf_counter
 from typing import Any, NamedTuple
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.core.grid import Grid1D
@@ -699,27 +701,26 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
         raise ValueError("analysis_dt_values must contain positive step sizes")
 
     started_at = perf_counter()
-    with jax.enable_x64(True):
-        grid = NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
-        centering = _centering_report(config)
-        records: list[dict[str, Any]] = []
-        for m in config.m_values:
-            for front_case, target_halfwidth in enumerate(config.front_target_halfwidths, start=1):
-                state = _initial_state(grid, m, config.t0, target_halfwidth)
-                state, state_solver = _solve_one_step(state, grid, m, config, "frozen_bulk")
-                for analysis_dt in config.analysis_dt_values:
-                    _record_state(
-                        records,
-                        state,
-                        grid,
-                        m,
-                        front_case,
-                        target_halfwidth,
-                        analysis_dt,
-                        config,
-                        centering,
-                        state_solver,
-                    )
+    grid = NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
+    centering = _centering_report(config)
+    records: list[dict[str, Any]] = []
+    for m in config.m_values:
+        for front_case, target_halfwidth in enumerate(config.front_target_halfwidths, start=1):
+            state = _initial_state(grid, m, config.t0, target_halfwidth)
+            state, state_solver = _solve_one_step(state, grid, m, config, "frozen_bulk")
+            for analysis_dt in config.analysis_dt_values:
+                _record_state(
+                    records,
+                    state,
+                    grid,
+                    m,
+                    front_case,
+                    target_halfwidth,
+                    analysis_dt,
+                    config,
+                    centering,
+                    state_solver,
+                )
 
     runtime_seconds = perf_counter() - started_at
     decision = _verdict_on_decision_procedure(records)
