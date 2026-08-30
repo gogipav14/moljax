@@ -56,8 +56,12 @@ dev = [
 viz = [
     "matplotlib>=3.7",
 ]
+bench = [
+    "diffrax>=0.7",
+]
 all = [
     "moljax[dev,viz]",
+    # bench is intentionally excluded; it is an external comparator.
 ]
 
 [project.urls]
@@ -73,7 +77,7 @@ include = ["moljax*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not slow'"
 markers = [
     "slow: long-running test",
 ]
