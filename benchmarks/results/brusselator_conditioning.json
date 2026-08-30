@@ -1,0 +1,352 @@
+{
+  "schema_version": "brusselator_conditioning_v1",
+  "status": "completed",
+  "config": {
+    "nx": 64,
+    "ny": 64,
+    "n_states": 2,
+    "dt": 0.1,
+    "perturbation": 0.001,
+    "seed": 20260821,
+    "n_angles": 4,
+    "fov_max_iters": 8,
+    "arnoldi_steps": 6,
+    "max_newton_iters": 10,
+    "max_krylov_iters": 80,
+    "newton_tol": 1e-08,
+    "krylov_tol": 1e-08,
+    "output_path": "benchmarks/results/brusselator_conditioning.json"
+  },
+  "model": {
+    "name": "brusselator",
+    "grid": [
+      64,
+      64
+    ],
+    "boundary": "periodic",
+    "spatial_operator": "moljax shipped periodic FFT-preconditioned path",
+    "state_generation": "backward_euler_newton_krylov",
+    "diagnostic_preconditioners": [
+      "identity",
+      "fft_diffusion"
+    ],
+    "exact_solution_error": "not applicable: conditioning study"
+  },
+  "records": [
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 9.813077866773595e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.6908805016703867,
+      "epsilon_zero": 0.9275807578243905,
+      "predicted_gmres_factor": 0.5839043745785819,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.440076032411948,
+      "rates": {
+        "r1": 0.6908805016703867,
+        "r2": 0.6908805003746608,
+        "r3": 0.5839043745785819,
+        "predicted_gmres_factor": 0.5839043745785819,
+        "agree": false
+      },
+      "state_index": 0,
+      "time": 0.1,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 18,
+        "final_relative_residual": 4.23975665916882e-09,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 8.673617379884035e-19,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.43339176781749716,
+      "epsilon_zero": 0.8133591003470493,
+      "predicted_gmres_factor": 0.0690055295779346,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.4083421886608827,
+      "rates": {
+        "r1": 0.43339176781749716,
+        "r2": 0.4314256589443204,
+        "r3": 0.0690055295779346,
+        "predicted_gmres_factor": 0.0690055295779346,
+        "agree": false
+      },
+      "state_index": 0,
+      "time": 0.1,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 6,
+        "final_relative_residual": 9.038152567850157e-09,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 6.938893903907228e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.6908841451346381,
+      "epsilon_zero": 0.9204932702089019,
+      "predicted_gmres_factor": 0.5842368215840923,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.439900549930359,
+      "rates": {
+        "r1": 0.6908841451346381,
+        "r2": 0.6908841438343352,
+        "r3": 0.5842368215840923,
+        "predicted_gmres_factor": 0.5842368215840923,
+        "agree": false
+      },
+      "state_index": 1,
+      "time": 0.2,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 18,
+        "final_relative_residual": 5.107353433754649e-09,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 5.485677294651096e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.4332905248063915,
+      "epsilon_zero": 0.804251492413599,
+      "predicted_gmres_factor": 0.06965124952149392,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.40824108580833923,
+      "rates": {
+        "r1": 0.4332905248063915,
+        "r2": 0.43133032478349875,
+        "r3": 0.06965124952149392,
+        "predicted_gmres_factor": 0.06965124952149392,
+        "agree": false
+      },
+      "state_index": 1,
+      "time": 0.2,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 7,
+        "final_relative_residual": 5.376420408867713e-10,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 3.522172224755356e-17,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.8682711507674857,
+      "epsilon_zero": 1.2159269901704906,
+      "predicted_gmres_factor": 0.837141822903024,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.2506172252352569,
+      "rates": {
+        "r1": 0.8682711507674857,
+        "r2": 0.8682711507346923,
+        "r3": 0.837141822903024,
+        "predicted_gmres_factor": 0.837141822903024,
+        "agree": true
+      },
+      "state_index": 0,
+      "time": 0.1,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 34,
+        "final_relative_residual": 7.862487042510611e-09,
+        "regime": "turing",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 5.275955480050202e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.2228406557611056,
+      "epsilon_zero": 0.9512079358387131,
+      "predicted_gmres_factor": 0.09156523485198961,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.21915419275613618,
+      "rates": {
+        "r1": 0.2228406557611056,
+        "r2": 0.2216451473118468,
+        "r3": 0.09156523485198961,
+        "predicted_gmres_factor": 0.09156523485198961,
+        "agree": false
+      },
+      "state_index": 0,
+      "time": 0.1,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 7,
+        "final_relative_residual": 1.0950735631497534e-09,
+        "regime": "turing",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 6.938893903907228e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.8682725998787338,
+      "epsilon_zero": 1.213545012005913,
+      "predicted_gmres_factor": 0.8374956280994875,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.2505731415274216,
+      "rates": {
+        "r1": 0.8682725998787338,
+        "r2": 0.8682725998459446,
+        "r3": 0.8374956280994875,
+        "predicted_gmres_factor": 0.8374956280994875,
+        "agree": true
+      },
+      "state_index": 1,
+      "time": 0.2,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 35,
+        "final_relative_residual": 6.957168488214678e-09,
+        "regime": "turing",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 3.576224061345498e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.22282814408738907,
+      "epsilon_zero": 0.9529749456663572,
+      "predicted_gmres_factor": 0.09010608746315343,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.21912743997351988,
+      "rates": {
+        "r1": 0.22282814408738907,
+        "r2": 0.22163933244966572,
+        "r3": 0.09010608746315343,
+        "predicted_gmres_factor": 0.09010608746315343,
+        "agree": false
+      },
+      "state_index": 1,
+      "time": 0.2,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 7,
+        "final_relative_residual": 1.1797532576976419e-09,
+        "regime": "turing",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    }
+  ],
+  "regime_comparison": {
+    "hopf": {
+      "parameters": {
+        "name": "hopf",
+        "du": 0.01,
+        "dv": 0.02,
+        "a": 1.0,
+        "b": 3.4,
+        "domain_length": 5.0,
+        "reference_final_time": 50.0
+      },
+      "fft_records": 2,
+      "verdict_distribution": {
+        "adequate": 2,
+        "investigate": 0,
+        "indeterminate": 0,
+        "skipped": 0
+      },
+      "median_disk_rate": 0.4333411463119443,
+      "median_fov_imaginary_extent": 0.4082916372346109,
+      "origin_enclosed_fraction": 0.0,
+      "median_actual_fft_gmres_iterations": 6.5
+    },
+    "turing": {
+      "parameters": {
+        "name": "turing",
+        "du": 0.01,
+        "dv": 0.1,
+        "a": 1.0,
+        "b": 1.8,
+        "domain_length": 5.0,
+        "reference_final_time": 200.0
+      },
+      "fft_records": 2,
+      "verdict_distribution": {
+        "adequate": 2,
+        "investigate": 0,
+        "indeterminate": 0,
+        "skipped": 0
+      },
+      "median_disk_rate": 0.22283439992424733,
+      "median_fov_imaginary_extent": 0.21914081636482802,
+      "origin_enclosed_fraction": 0.0,
+      "median_actual_fft_gmres_iterations": 7.0
+    }
+  },
+  "hopf_vs_turing": {
+    "outcome": "both_adequate_under_fft",
+    "statement": "The FFT diffusion preconditioner is assessed adequate for both visited-state regimes; the larger Hopf imaginary extent is recorded, but it does not change the decision verdict.",
+    "hopf_nonadequate_fft_records": 0,
+    "turing_nonadequate_fft_records": 0,
+    "hopf_median_fov_imaginary_extent": 0.4082916372346109,
+    "turing_median_fov_imaginary_extent": 0.21914081636482802,
+    "hopf_origin_enclosed_fraction": 0.0,
+    "turing_origin_enclosed_fraction": 0.0,
+    "nonadequate_separation": false,
+    "larger_hopf_imaginary_extent": true,
+    "both_adequate": true
+  }
+}

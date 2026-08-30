@@ -1,0 +1,283 @@
+{
+  "schema_version": "brusselator_conditioning_hopf_continuation_v1",
+  "status": "completed",
+  "config": {
+    "nx": 256,
+    "ny": 256,
+    "dt": 0.05,
+    "perturbation": 0.001,
+    "seed": 20260823,
+    "n_angles": 4,
+    "fov_max_iters": 8,
+    "arnoldi_steps": 6,
+    "max_newton_iters": 15,
+    "max_krylov_iters": 100,
+    "newton_tol": 1e-08,
+    "krylov_tol": 1e-08,
+    "hopf_sample_steps": [
+      4,
+      400
+    ],
+    "turing_sample_steps": [],
+    "regimes": [
+      "hopf"
+    ],
+    "output_path": "benchmarks/results/brusselator_conditioning_hopf_continuation.json"
+  },
+  "model": {
+    "name": "brusselator",
+    "grid": [
+      256,
+      256
+    ],
+    "boundary": "periodic",
+    "spatial_operator": "moljax shipped periodic pseudo-spectral FFT path",
+    "state_generation": "FFT-preconditioned backward_euler_newton_krylov",
+    "diagnostic_preconditioners": [
+      "identity",
+      "fft_diffusion"
+    ],
+    "exact_solution_error": "not applicable: conditioning study",
+    "domain_length": 5.0
+  },
+  "records": [
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 133128,
+      "adjoint_error": 7.410741937918042e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "investigate",
+      "disk_rate": 0.9106468874445578,
+      "epsilon_zero": 1.4679191457716723,
+      "predicted_gmres_factor": 0.870555853297365,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.21955282282434244,
+      "rates": {
+        "r1": 0.9106468874445578,
+        "r2": 0.9106468874445532,
+        "r3": 0.870555853297365,
+        "predicted_gmres_factor": 0.870555853297365,
+        "agree": true
+      },
+      "time": 0.2,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 43,
+        "final_relative_residual": 7.233328239088182e-09,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 133128
+      },
+      "trajectory_step": 4,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.0005342396626835111,
+        "max_abs_v_minus_steady": 0.0002684711300298126
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 133128,
+      "adjoint_error": 2.335442953235085e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.19262580832749301,
+      "epsilon_zero": 0.9027697851911417,
+      "predicted_gmres_factor": 0.033485188067944135,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.19109455267742126,
+      "rates": {
+        "r1": 0.19262580832749301,
+        "r2": 0.1926237651654823,
+        "r3": 0.033485188067944135,
+        "predicted_gmres_factor": 0.033485188067944135,
+        "agree": false
+      },
+      "time": 0.2,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 5,
+        "final_relative_residual": 5.5057774685738344e-09,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 133128
+      },
+      "trajectory_step": 4,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.0005342396626835111,
+        "max_abs_v_minus_steady": 0.0002684711300298126
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 133128,
+      "adjoint_error": 3.469446951953614e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "investigate",
+      "disk_rate": 0.9102625720135321,
+      "epsilon_zero": 1.476067833129392,
+      "predicted_gmres_factor": 0.8700041058152352,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.6403970673519184,
+      "rates": {
+        "r1": 0.9102625720135321,
+        "r2": 0.9102625720135329,
+        "r3": 0.8700041058152352,
+        "predicted_gmres_factor": 0.8700041058152352,
+        "agree": true
+      },
+      "time": 20.00000000000015,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 43,
+        "final_relative_residual": 8.31416445011414e-09,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 133128
+      },
+      "trajectory_step": 400,
+      "developedness": {
+        "max_abs_u_minus_steady": 3.3553258709759373,
+        "max_abs_v_minus_steady": 2.501368070334886
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 133128,
+      "adjoint_error": 0.0,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "adequate",
+      "disk_rate": 0.5112646194665313,
+      "epsilon_zero": 0.70833185180289,
+      "predicted_gmres_factor": 0.3491542779139759,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 0.416542945656658,
+      "rates": {
+        "r1": 0.5112646194665313,
+        "r2": 0.5112437764265962,
+        "r3": 0.3491542779139759,
+        "predicted_gmres_factor": 0.3491542779139759,
+        "agree": false
+      },
+      "time": 20.00000000000015,
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 13,
+        "final_relative_residual": 2.937204663440903e-09,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 133128
+      },
+      "trajectory_step": 400,
+      "developedness": {
+        "max_abs_u_minus_steady": 3.3553258709759373,
+        "max_abs_v_minus_steady": 2.501368070334886
+      }
+    }
+  ],
+  "fixed_dt_transition": {
+    "outcome": "fft_verdict_stable_at_fixed_dt",
+    "statement": "At fixed backward-Euler dt, the FFT-preconditioned verdict is unchanged between the early and developed states.",
+    "fixed_dt": 0.05,
+    "same_discretized_operator_family": "Every early/developed pair uses the same periodic grid, shipped FFT preconditioner, and backward-Euler timestep. The state-dependent Jacobian changes between visited states by design; no comparison changes dt.",
+    "by_regime": {
+      "hopf": {
+        "identity": {
+          "early": {
+            "trajectory_step": 4,
+            "time": 0.2,
+            "developedness": {
+              "max_abs_u_minus_steady": 0.0005342396626835111,
+              "max_abs_v_minus_steady": 0.0002684711300298126
+            },
+            "verdict": "investigate",
+            "disk_rate": 0.9106468874445578,
+            "epsilon_zero": 1.4679191457716723,
+            "origin_enclosed": false,
+            "fov_imaginary_extent": 0.21955282282434244,
+            "n_right_real_outliers": 0,
+            "adjoint_error": 7.410741937918042e-18,
+            "actual_gmres_iterations": 43,
+            "actual_gmres_converged": true,
+            "actual_gmres_final_relative_residual": 7.233328239088182e-09
+          },
+          "developed": {
+            "trajectory_step": 400,
+            "time": 20.00000000000015,
+            "developedness": {
+              "max_abs_u_minus_steady": 3.3553258709759373,
+              "max_abs_v_minus_steady": 2.501368070334886
+            },
+            "verdict": "investigate",
+            "disk_rate": 0.9102625720135321,
+            "epsilon_zero": 1.476067833129392,
+            "origin_enclosed": false,
+            "fov_imaginary_extent": 0.6403970673519184,
+            "n_right_real_outliers": 0,
+            "adjoint_error": 3.469446951953614e-18,
+            "actual_gmres_iterations": 43,
+            "actual_gmres_converged": true,
+            "actual_gmres_final_relative_residual": 8.31416445011414e-09
+          },
+          "adequate_to_indeterminate": false
+        },
+        "fft_diffusion": {
+          "early": {
+            "trajectory_step": 4,
+            "time": 0.2,
+            "developedness": {
+              "max_abs_u_minus_steady": 0.0005342396626835111,
+              "max_abs_v_minus_steady": 0.0002684711300298126
+            },
+            "verdict": "adequate",
+            "disk_rate": 0.19262580832749301,
+            "epsilon_zero": 0.9027697851911417,
+            "origin_enclosed": false,
+            "fov_imaginary_extent": 0.19109455267742126,
+            "n_right_real_outliers": 0,
+            "adjoint_error": 2.335442953235085e-18,
+            "actual_gmres_iterations": 5,
+            "actual_gmres_converged": true,
+            "actual_gmres_final_relative_residual": 5.5057774685738344e-09
+          },
+          "developed": {
+            "trajectory_step": 400,
+            "time": 20.00000000000015,
+            "developedness": {
+              "max_abs_u_minus_steady": 3.3553258709759373,
+              "max_abs_v_minus_steady": 2.501368070334886
+            },
+            "verdict": "adequate",
+            "disk_rate": 0.5112646194665313,
+            "epsilon_zero": 0.70833185180289,
+            "origin_enclosed": false,
+            "fov_imaginary_extent": 0.416542945656658,
+            "n_right_real_outliers": 0,
+            "adjoint_error": 0.0,
+            "actual_gmres_iterations": 13,
+            "actual_gmres_converged": true,
+            "actual_gmres_final_relative_residual": 2.937204663440903e-09
+          },
+          "adequate_to_indeterminate": false
+        }
+      }
+    }
+  },
+  "scope": {
+    "grid_resolution": "256x256 physical periodic grid at L=5",
+    "hopf_developed_time": 20.0,
+    "same_dt_for_early_and_developed": true,
+    "caveat": "This Hopf-only continuation uses a smaller fixed BE timestep to reach a developed state beyond the previous dt=0.2 continuation limit."
+  }
+}

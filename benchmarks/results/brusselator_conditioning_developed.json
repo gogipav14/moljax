@@ -1,0 +1,645 @@
+{
+  "schema_version": "brusselator_conditioning_developed_v1",
+  "status": "completed",
+  "config": {
+    "nx": 64,
+    "ny": 64,
+    "dt": 1.0,
+    "perturbation": 0.001,
+    "hopf_sample_steps": [
+      1,
+      10,
+      20
+    ],
+    "turing_sample_steps": [
+      80,
+      120,
+      200
+    ],
+    "seed": 20260822,
+    "n_angles": 4,
+    "fov_max_iters": 8,
+    "arnoldi_steps": 6,
+    "max_newton_iters": 15,
+    "max_krylov_iters": 100,
+    "newton_tol": 1e-08,
+    "krylov_tol": 1e-08,
+    "output_path": "benchmarks/results/brusselator_conditioning_developed.json"
+  },
+  "model": {
+    "name": "brusselator",
+    "grid": [
+      64,
+      64
+    ],
+    "boundary": "periodic",
+    "spatial_operator": "moljax shipped periodic FFT-preconditioned path",
+    "state_generation": "backward_euler_newton_krylov",
+    "diagnostic_preconditioners": [
+      "identity",
+      "fft_diffusion"
+    ],
+    "exact_solution_error": "not applicable: conditioning study"
+  },
+  "records": [
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 6.938893903907228e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 1.1740804834936993,
+      "epsilon_zero": 0.34849795056611005,
+      "predicted_gmres_factor": 0.9715458912241192,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 4.392235492192712,
+      "rates": {
+        "r1": 1.1740804834936993,
+        "r2": 0.9999999999999929,
+        "r3": 0.9715458912241192,
+        "predicted_gmres_factor": 0.9715458912241192,
+        "agree": false
+      },
+      "trajectory_step": 1,
+      "time": 1.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.0039681782532778875,
+        "max_abs_v_minus_steady": 0.004632581893825982
+      },
+      "actual_gmres": {
+        "converged": false,
+        "iterations": 101,
+        "final_relative_residual": 9.398489646084196e-07,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 2.6020852139652106e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 4.992428833991401,
+      "epsilon_zero": 0.1907494056330407,
+      "predicted_gmres_factor": 0.9999999999999929,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 3.857684713780984,
+      "rates": {
+        "r1": 4.992428833991401,
+        "r2": 0.9999999999999929,
+        "r3": 1.9211141288966866,
+        "predicted_gmres_factor": 0.9999999999999929,
+        "agree": false
+      },
+      "trajectory_step": 1,
+      "time": 1.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.0039681782532778875,
+        "max_abs_v_minus_steady": 0.004632581893825982
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 37,
+        "final_relative_residual": 9.646338312642137e-09,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 4.3885418357208765e-17,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 1.1757617260403403,
+      "epsilon_zero": 0.5203312329077446,
+      "predicted_gmres_factor": 0.9576294919495169,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 5.783903620332153,
+      "rates": {
+        "r1": 1.1757617260403403,
+        "r2": 0.9999999999999893,
+        "r3": 0.9576294919495169,
+        "predicted_gmres_factor": 0.9576294919495169,
+        "agree": false
+      },
+      "trajectory_step": 10,
+      "time": 10.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.9331918446075416,
+        "max_abs_v_minus_steady": 1.2354257643536433
+      },
+      "actual_gmres": {
+        "converged": false,
+        "iterations": 101,
+        "final_relative_residual": 3.459953749871837e-07,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 1.868354362588068e-17,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 6.88837209928634,
+      "epsilon_zero": 0.3821214804409167,
+      "predicted_gmres_factor": 0.9999999999999929,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 4.211091681893066,
+      "rates": {
+        "r1": 6.88837209928634,
+        "r2": 0.9999999999999929,
+        "r3": 2.3566291915597173,
+        "predicted_gmres_factor": 0.9999999999999929,
+        "agree": false
+      },
+      "trajectory_step": 10,
+      "time": 10.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.9331918446075416,
+        "max_abs_v_minus_steady": 1.2354257643536433
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 50,
+        "final_relative_residual": 7.722847150116602e-09,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 8.777083671441753e-17,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "investigate",
+      "disk_rate": 0.9552007982156171,
+      "epsilon_zero": 0.5998486666834043,
+      "predicted_gmres_factor": 0.9512361586951492,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 6.301221191483537,
+      "rates": {
+        "r1": 0.9552007982156171,
+        "r2": 0.9552007975327612,
+        "r3": 0.9512361586951492,
+        "predicted_gmres_factor": 0.9512361586951492,
+        "agree": true
+      },
+      "trajectory_step": 20,
+      "time": 20.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 1.2019200043811016,
+        "max_abs_v_minus_steady": 1.4275218998301435
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 91,
+        "final_relative_residual": 8.799319243394624e-09,
+        "regime": "hopf",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "hopf",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 3.496446946337351e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 7.3377174106662,
+      "epsilon_zero": 0.42193164378936765,
+      "predicted_gmres_factor": 0.9999999999999929,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 4.666050432231625,
+      "rates": {
+        "r1": 7.3377174106662,
+        "r2": 0.9999999999999929,
+        "r3": 2.0238250552023227,
+        "predicted_gmres_factor": 0.9999999999999929,
+        "agree": false
+      },
+      "trajectory_step": 20,
+      "time": 20.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 1.2019200043811016,
+        "max_abs_v_minus_steady": 1.4275218998301435
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 39,
+        "final_relative_residual": 7.800349858304525e-09,
+        "regime": "hopf",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 1.1443916996305594e-16,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "investigate",
+      "disk_rate": 0.9861182217413234,
+      "epsilon_zero": 3.2245210866343457,
+      "predicted_gmres_factor": 0.950758776671786,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 2.4828105195893038,
+      "rates": {
+        "r1": 0.9861182217413234,
+        "r2": 0.9861182217353921,
+        "r3": 0.950758776671786,
+        "predicted_gmres_factor": 0.950758776671786,
+        "agree": true
+      },
+      "trajectory_step": 80,
+      "time": 80.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.017776101877081674,
+        "max_abs_v_minus_steady": 0.007574502722056176
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 80,
+        "final_relative_residual": 8.892496517807378e-09,
+        "regime": "turing",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 9.055522398700297e-18,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 2.2784033173847567,
+      "epsilon_zero": 0.7103781201782208,
+      "predicted_gmres_factor": 0.8561000405218152,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 2.0668379773594525,
+      "rates": {
+        "r1": 2.2784033173847567,
+        "r2": 0.9999999999999929,
+        "r3": 0.8561000405218152,
+        "predicted_gmres_factor": 0.8561000405218152,
+        "agree": false
+      },
+      "trajectory_step": 80,
+      "time": 80.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.017776101877081674,
+        "max_abs_v_minus_steady": 0.007574502722056176
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 18,
+        "final_relative_residual": 4.582921043913149e-09,
+        "regime": "turing",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 1.2738115944464653e-16,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "investigate",
+      "disk_rate": 0.9857745109833469,
+      "epsilon_zero": 3.1509705965744037,
+      "predicted_gmres_factor": 0.9520483853683844,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 2.573030155106947,
+      "rates": {
+        "r1": 0.9857745109833469,
+        "r2": 0.9857745109776594,
+        "r3": 0.9520483853683844,
+        "predicted_gmres_factor": 0.9520483853683844,
+        "agree": true
+      },
+      "trajectory_step": 120,
+      "time": 120.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.5405408248899521,
+        "max_abs_v_minus_steady": 0.23286406532651038
+      },
+      "actual_gmres": {
+        "converged": false,
+        "iterations": 101,
+        "final_relative_residual": 1.9673109449306147e-07,
+        "regime": "turing",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 1.4154548991548642e-17,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 2.081309299542748,
+      "epsilon_zero": 0.7191170660762152,
+      "predicted_gmres_factor": 0.9028548932362668,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 1.866549014226541,
+      "rates": {
+        "r1": 2.081309299542748,
+        "r2": 0.9999999999999929,
+        "r3": 0.9028548932362668,
+        "predicted_gmres_factor": 0.9028548932362668,
+        "agree": false
+      },
+      "trajectory_step": 120,
+      "time": 120.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.5405408248899521,
+        "max_abs_v_minus_steady": 0.23286406532651038
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 23,
+        "final_relative_residual": 5.216249609604898e-09,
+        "regime": "turing",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "identity",
+      "operator_dimension": 8712,
+      "adjoint_error": 1.7772239894833365e-16,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "investigate",
+      "disk_rate": 0.985278735222565,
+      "epsilon_zero": 3.3327100896328767,
+      "predicted_gmres_factor": 0.9498063921376731,
+      "origin_enclosed": false,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 9.454836739576724,
+      "rates": {
+        "r1": 0.985278735222565,
+        "r2": 0.9852787351921357,
+        "r3": 0.9498063921376731,
+        "predicted_gmres_factor": 0.9498063921376731,
+        "agree": true
+      },
+      "trajectory_step": 200,
+      "time": 200.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 2.3339616288580927,
+        "max_abs_v_minus_steady": 0.9181925206672319
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 73,
+        "final_relative_residual": 8.438252254633789e-09,
+        "regime": "turing",
+        "preconditioner": "identity",
+        "operator_dimension": 8712
+      }
+    },
+    {
+      "regime": "turing",
+      "preconditioner": "fft_diffusion",
+      "operator_dimension": 8712,
+      "adjoint_error": 1.2266347333466993e-17,
+      "adjoint_tolerance": 1e-08,
+      "status": "completed",
+      "verdict": "indeterminate",
+      "disk_rate": 8.380502205596642,
+      "epsilon_zero": 0.5634577083917471,
+      "predicted_gmres_factor": 0.9999999999999929,
+      "origin_enclosed": true,
+      "n_right_real_outliers": 0,
+      "fov_imaginary_extent": 6.9429060331992405,
+      "rates": {
+        "r1": 8.380502205596642,
+        "r2": 0.9999999999999929,
+        "r3": 1.154288078971745,
+        "predicted_gmres_factor": 0.9999999999999929,
+        "agree": false
+      },
+      "trajectory_step": 200,
+      "time": 200.0,
+      "developedness": {
+        "max_abs_u_minus_steady": 2.3339616288580927,
+        "max_abs_v_minus_steady": 0.9181925206672319
+      },
+      "actual_gmres": {
+        "converged": true,
+        "iterations": 20,
+        "final_relative_residual": 5.397391734603531e-09,
+        "regime": "turing",
+        "preconditioner": "fft_diffusion",
+        "operator_dimension": 8712
+      }
+    }
+  ],
+  "regime_comparison": {
+    "hopf": {
+      "parameters": {
+        "name": "hopf",
+        "du": 0.01,
+        "dv": 0.02,
+        "a": 1.0,
+        "b": 3.4,
+        "domain_length": 5.0,
+        "reference_final_time": 50.0
+      },
+      "fft_records": 3,
+      "verdict_distribution": {
+        "adequate": 0,
+        "investigate": 0,
+        "indeterminate": 3,
+        "skipped": 0
+      },
+      "median_disk_rate": 6.88837209928634,
+      "median_fov_imaginary_extent": 4.211091681893066,
+      "origin_enclosed_fraction": 1.0,
+      "median_actual_fft_gmres_iterations": 39.0,
+      "fov_imaginary_extent_by_time": [
+        {
+          "time": 1.0,
+          "fov_imaginary_extent": 3.857684713780984
+        },
+        {
+          "time": 10.0,
+          "fov_imaginary_extent": 4.211091681893066
+        },
+        {
+          "time": 20.0,
+          "fov_imaginary_extent": 4.666050432231625
+        }
+      ],
+      "fft_gmres_iterations_by_time": [
+        {
+          "time": 1.0,
+          "iterations": 37,
+          "converged": true
+        },
+        {
+          "time": 10.0,
+          "iterations": 50,
+          "converged": true
+        },
+        {
+          "time": 20.0,
+          "iterations": 39,
+          "converged": true
+        }
+      ],
+      "developedness_by_time": [
+        {
+          "time": 1.0,
+          "max_abs_u_minus_steady": 0.0039681782532778875,
+          "max_abs_v_minus_steady": 0.004632581893825982
+        },
+        {
+          "time": 10.0,
+          "max_abs_u_minus_steady": 0.9331918446075416,
+          "max_abs_v_minus_steady": 1.2354257643536433
+        },
+        {
+          "time": 20.0,
+          "max_abs_u_minus_steady": 1.2019200043811016,
+          "max_abs_v_minus_steady": 1.4275218998301435
+        }
+      ]
+    },
+    "turing": {
+      "parameters": {
+        "name": "turing",
+        "du": 0.01,
+        "dv": 0.1,
+        "a": 1.0,
+        "b": 1.8,
+        "domain_length": 5.0,
+        "reference_final_time": 200.0
+      },
+      "fft_records": 3,
+      "verdict_distribution": {
+        "adequate": 0,
+        "investigate": 0,
+        "indeterminate": 3,
+        "skipped": 0
+      },
+      "median_disk_rate": 2.2784033173847567,
+      "median_fov_imaginary_extent": 2.0668379773594525,
+      "origin_enclosed_fraction": 1.0,
+      "median_actual_fft_gmres_iterations": 20.0,
+      "fov_imaginary_extent_by_time": [
+        {
+          "time": 80.0,
+          "fov_imaginary_extent": 2.0668379773594525
+        },
+        {
+          "time": 120.0,
+          "fov_imaginary_extent": 1.866549014226541
+        },
+        {
+          "time": 200.0,
+          "fov_imaginary_extent": 6.9429060331992405
+        }
+      ],
+      "fft_gmres_iterations_by_time": [
+        {
+          "time": 80.0,
+          "iterations": 18,
+          "converged": true
+        },
+        {
+          "time": 120.0,
+          "iterations": 23,
+          "converged": true
+        },
+        {
+          "time": 200.0,
+          "iterations": 20,
+          "converged": true
+        }
+      ],
+      "developedness_by_time": [
+        {
+          "time": 80.0,
+          "max_abs_u_minus_steady": 0.017776101877081674,
+          "max_abs_v_minus_steady": 0.007574502722056176
+        },
+        {
+          "time": 120.0,
+          "max_abs_u_minus_steady": 0.5405408248899521,
+          "max_abs_v_minus_steady": 0.23286406532651038
+        },
+        {
+          "time": 200.0,
+          "max_abs_u_minus_steady": 2.3339616288580927,
+          "max_abs_v_minus_steady": 0.9181925206672319
+        }
+      ]
+    }
+  },
+  "hopf_vs_turing": {
+    "outcome": "both_regimes_indeterminate_on_developed_states",
+    "statement": "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state because their numerical ranges enclose the origin; Hopf still has the larger, growing imaginary extent.",
+    "hopf_nonadequate_fft_records": 3,
+    "turing_nonadequate_fft_records": 3,
+    "hopf_origin_enclosed_any": true,
+    "turing_origin_enclosed_any": true,
+    "both_regimes_indeterminate": true,
+    "hopf_fov_imaginary_extent_grows_over_samples": true,
+    "hopf_fov_imaginary_extent_by_time": [
+      {
+        "time": 1.0,
+        "fov_imaginary_extent": 3.857684713780984
+      },
+      {
+        "time": 10.0,
+        "fov_imaginary_extent": 4.211091681893066
+      },
+      {
+        "time": 20.0,
+        "fov_imaginary_extent": 4.666050432231625
+      }
+    ],
+    "scope_caveat": "This is a 64x64 screen with BE dt=1; Hopf reaches t=20 and Turing reaches t=200, below the paper's 256x256 scale. The FOV values use the dt=1 BE operator and therefore are not numerically interchangeable with the earlier dt=0.1 transient screen."
+  }
+}
