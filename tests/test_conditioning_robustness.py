@@ -13,6 +13,8 @@ failure modes worth gating in CI.
 
 from __future__ import annotations
 
+import math
+
 import jax
 
 jax.config.update("jax_enable_x64", True)
@@ -62,10 +64,51 @@ class TestSupportConvergenceIsChecked:
         diag = jnp.asarray(np.linspace(0.01, 1.2, n))
         return (lambda v: diag * v), (lambda v: jnp.conj(diag) * v)
 
-    def test_truncated_budget_raises(self) -> None:
+    def test_truncated_budget_is_reported_not_raised(self) -> None:
+        """Under-resolved supports return geometry, flagged, rather than raising.
+
+        Refusing to return anything would discard a measurement a regime sweep
+        can still use for relative comparison; what must not survive is the
+        certification.
+        """
         matvec, adjoint = self._diagonal(120)
-        with pytest.raises(RuntimeError, match="did not converge"):
-            numerical_range(matvec, adjoint, 120, n_angles=8, max_iters=1)
+        result = numerical_range(matvec, adjoint, 120, n_angles=8, max_iters=1)
+        assert not result.supports_converged
+        assert result.max_support_residual > 1.0e-3
+        assert math.isfinite(result.disk_rate)
+
+    def test_unconverged_supports_cannot_be_certified(self) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        matvec, adjoint = self._diagonal(120)
+        result = numerical_range(matvec, adjoint, 120, n_angles=8, max_iters=1)
+        ritz = jnp.asarray(np.linspace(0.01, 1.2, 8) + 0j)
+        assert (
+            assess_preconditioner(result, ritz, epsilon_zero=0.9).verdict
+            == "indeterminate"
+        )
+
+    def test_convergence_is_judged_against_the_requested_tolerance(self) -> None:
+        """A stricter request must not be overruled by a downstream default.
+
+        The convergence state is decided inside numerical_range, where the
+        caller's tolerance is known.  Were the assessment to apply its own
+        threshold instead, a caller asking for 1e-6 could be handed an
+        adequate verdict on a residual that failed their request.
+        """
+        matvec, adjoint = self._diagonal(60)
+        strict = numerical_range(
+            matvec, adjoint, 60, n_angles=8, max_iters=120, residual_tolerance=1.0e-14
+        )
+        lenient = numerical_range(
+            matvec, adjoint, 60, n_angles=8, max_iters=120, residual_tolerance=1.0e-2
+        )
+        # Same solve, same residual; only the requested tolerance differs.
+        assert strict.max_support_residual == pytest.approx(
+            lenient.max_support_residual, rel=1e-9
+        )
+        assert not strict.supports_converged
+        assert lenient.supports_converged
 
     @pytest.mark.slow
     def test_converged_budget_recovers_known_interval(self) -> None:

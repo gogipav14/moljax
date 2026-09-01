@@ -295,7 +295,14 @@ def assess_preconditioner(
     # there, the count is identically zero and max_right_real_outliers can
     # never reject anything.  The Ritz bulk disk is the model that can.
     n_outliers = real_bulk_outliers(ritz)
-    if not fov.supports_corroborated:
+    if not fov.supports_converged:
+        # Gate on the state numerical_range recorded against the tolerance the
+        # caller requested, never on a threshold chosen here: a local default
+        # would silently overrule a stricter request.  Under-resolved supports
+        # mean the half-plane intersection may not contain the numerical
+        # range, so nothing can be certified from it.
+        verdict = "indeterminate"
+    elif not fov.supports_corroborated:
         # The outer-bound property holds only if each support really is the
         # maximum in its direction.  Independent restarts disagreed, so that
         # condition is known to be unmet and nothing here can be certified.

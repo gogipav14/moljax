@@ -236,6 +236,11 @@ def _run_state_diagnostics(
         "status": "completed",
         "verdict": assessment.verdict,
         "field_of_values": {
+            # Persisted geometry outlives the run that produced it, so the
+            # certification state travels with it.
+            "supports_converged": bool(fov.supports_converged),
+            "supports_corroborated": bool(fov.supports_corroborated),
+            "max_support_residual": float(fov.max_support_residual),
             "center_real": float(np.real(fov.center)),
             "center_imag": float(np.imag(fov.center)),
             "radius": float(fov.radius),

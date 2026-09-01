@@ -52,6 +52,14 @@ class FieldOfValuesResult(NamedTuple):
             support directions.  Reports how well the boundary is resolved so
             that the disk rate can be read with its convergence quality in
             view, rather than trusting an unqualified number.
+        supports_converged: Whether every support solve met the
+            ``residual_tolerance`` requested of ``numerical_range``.  When
+            false the supports are under-resolved, so a half-plane may be
+            tighter than the true support and the intersection can cut into
+            the numerical range: ``center``, ``radius`` and ``disk_rate`` are
+            then not an outer bound and must not be read as a certificate.
+            They remain usable for relative comparison across runs that share
+            a configuration.
         supports_corroborated: Whether no eigensolver restart disagreed on a
             support value.  No fixed starting block can *prove* it found a
             global maximum, so the outer-bound property is conditional on the
@@ -68,6 +76,7 @@ class FieldOfValuesResult(NamedTuple):
     cp_prefactor: float
     max_support_residual: float = 0.0
     supports_corroborated: bool = True
+    supports_converged: bool = True
 
 
 def _complex_action(action: Matvec, value: jax.Array) -> jax.Array:
@@ -184,14 +193,20 @@ def _largest_hermitian_eigenvector(
     rayleigh = jnp.real(jnp.vdot(candidate, action_value))
     residual = float(jnp.linalg.norm(action_value - rayleigh * candidate))
     relative = residual / max(float(abs(rayleigh)), 1.0)
-    if not math.isfinite(relative) or relative > residual_tolerance:
+    if not math.isfinite(relative):
         raise RuntimeError(
-            "numerical-range support did not converge at theta="
-            f"{theta:.6f}: relative eigenpair residual {relative:.3e} exceeds "
-            f"{residual_tolerance:.3e} after {max_iters} LOBPCG iterations. "
-            "Increase max_iters, or loosen residual_tolerance only if an "
-            "approximate boundary is acceptable."
+            "numerical-range support produced a non-finite eigenpair residual "
+            f"at theta={theta:.6f}; the operator or its adjoint is returning "
+            "non-finite values."
         )
+    # Under-convergence is reported, not raised.  An underestimated support
+    # tightens its half-plane, so the intersection can cut into the numerical
+    # range and stop being an outer bound, which is the unsafe direction.  But
+    # refusing to return anything discards a measurement the caller may still
+    # want -- a regime sweep comparing cells is informative even when the
+    # absolute geometry is not certified.  The residual travels with the
+    # result and assess_preconditioner abstains on it, so the verdict path
+    # stays safe while the numbers remain available.
     real_vector = candidate[:real_dimension]
     vector = real_vector[:n] + 1j * real_vector[n:]
     return vector / jnp.linalg.norm(vector), relative
@@ -220,9 +235,10 @@ def numerical_range(
             ``complex128`` to provide float64 accuracy.
         max_iters: Maximum matrix-free LOBPCG iterations per direction.
         tolerance: Relative eigensolver tolerance.
-        residual_tolerance: Largest relative eigenpair residual accepted for a
-            support direction.  Exceeding it raises rather than returning a
-            boundary point that is not on the boundary.
+        residual_tolerance: Largest relative eigenpair residual the caller is
+            willing to treat as resolved.  Exceeding it does not raise; it
+            clears ``supports_converged``, which ``assess_preconditioner``
+            refuses to certify.
         n_restarts: Independent eigensolver starts per direction.  A single
             fixed start cannot establish that it found a global maximum;
             additional starts corroborate it, and disagreement clears
@@ -237,8 +253,7 @@ def numerical_range(
     Raises:
         ValueError: If the dimension, angle count, dtype, or iteration count
             is invalid.
-        RuntimeError: If a support direction fails to converge within
-            ``max_iters`` to ``residual_tolerance``.
+        RuntimeError: If the operator returns non-finite values.
     """
     if n < 1:
         raise ValueError("n must be positive")
@@ -327,4 +342,8 @@ def numerical_range(
         cp_prefactor=_CP_PREFACTOR,
         max_support_residual=worst_residual,
         supports_corroborated=corroborated,
+        # Decided here, against the tolerance the caller actually asked for.
+        # A downstream default cannot stand in for it: a caller requesting
+        # 1e-6 must not be judged against some other threshold.
+        supports_converged=bool(worst_residual <= residual_tolerance),
     )
