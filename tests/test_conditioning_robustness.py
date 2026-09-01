@@ -415,3 +415,71 @@ class TestSupportsAreCorroboratedNotCertified:
             assess_preconditioner(doubtful, ritz, epsilon_zero=0.8).verdict
             == "indeterminate"
         )
+
+
+class TestCertificationReachesEveryConsumer:
+    """Uncertified geometry must not appear authoritative anywhere.
+
+    Two independent conditions invalidate the outer bound: under-resolved
+    supports, and restart disagreement.  Consumers that check only one of them
+    let uncertified geometry through, which is how a rate derived from a
+    boundary that may cut into the numerical range escaped as a convergence
+    prediction.  ``geometry_certified`` is the single derived answer.
+    """
+
+    @staticmethod
+    def _resolved():
+        m = 24
+        diag = jnp.asarray(np.linspace(0.8, 1.2, m))
+        return numerical_range(
+            lambda v: diag * v, lambda v: jnp.conj(diag) * v, m,
+            n_angles=8, max_iters=150,
+        )
+
+    def test_both_conditions_are_required(self) -> None:
+        fov = self._resolved()
+        assert fov.geometry_certified
+        assert not fov._replace(supports_converged=False).geometry_certified
+        assert not fov._replace(supports_corroborated=False).geometry_certified
+
+    @pytest.mark.parametrize("flag", ["supports_converged", "supports_corroborated"])
+    def test_rates_withhold_the_prediction(self, flag: str) -> None:
+        from moljax.conditioning.non_normality import estimate_rates
+
+        fov = self._resolved()
+        ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
+        assert estimate_rates(fov, ritz).predicted_gmres_factor is not None
+
+        doubtful = fov._replace(**{flag: False})
+        rates = estimate_rates(doubtful, ritz)
+        # r1/r2 stay available for relative comparison; the prediction does not.
+        assert rates.predicted_gmres_factor is None
+        assert not rates.geometry_certified
+        assert math.isfinite(rates.r1)
+
+    @pytest.mark.parametrize("flag", ["supports_converged", "supports_corroborated"])
+    def test_assessment_abstains_for_either_condition(self, flag: str) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        fov = self._resolved()
+        ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
+        assert assess_preconditioner(fov, ritz, epsilon_zero=0.8).verdict == "adequate"
+
+        doubtful = fov._replace(**{flag: False})
+        assessment = assess_preconditioner(doubtful, ritz, epsilon_zero=0.8)
+        assert assessment.verdict == "indeterminate"
+        assert assessment.predicted_gmres_factor is None
+
+    @pytest.mark.parametrize("flag", ["supports_converged", "supports_corroborated"])
+    def test_plot_labels_uncertified_geometry(self, flag: str) -> None:
+        pytest.importorskip("matplotlib")
+        import matplotlib
+        matplotlib.use("Agg")
+        from moljax.conditioning.figures import plot_numerical_range
+
+        doubtful = self._resolved()._replace(**{flag: False})
+        figure = plot_numerical_range(doubtful)
+        axis = figure.axes[0]
+        assert "uncertified" in axis.get_title().lower()
+        labels = [text.get_text().lower() for text in axis.get_legend().get_texts()]
+        assert not any(label == "enclosing disk" for label in labels)

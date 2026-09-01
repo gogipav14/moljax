@@ -79,7 +79,7 @@ class FigureData(NamedTuple):
     real_grid: jax.Array
     imag_grid: jax.Array
     sigma_min: jax.Array
-    predicted_gmres_factor: float
+    predicted_gmres_factor: float | None
 
 
 def _ready_state(state: dict[str, jax.Array]) -> dict[str, jax.Array]:
@@ -238,6 +238,7 @@ def _run_state_diagnostics(
         "field_of_values": {
             # Persisted geometry outlives the run that produced it, so the
             # certification state travels with it.
+            "geometry_certified": bool(fov.geometry_certified),
             "supports_converged": bool(fov.supports_converged),
             "supports_corroborated": bool(fov.supports_corroborated),
             "max_support_residual": float(fov.max_support_residual),
@@ -321,13 +322,17 @@ def _render_figures(data: list[FigureData], figure_dir: str | None) -> list[str]
                 directory / f"{stem}_pseudospectrum.png",
             )
         )
-        residuals = item.predicted_gmres_factor ** np.arange(0, 9)
-        paths.append(
-            _save_figure(
-                plot_residual_envelope(residuals, item.fov.disk_rate),
-                directory / f"{stem}_residual_envelope.png",
+        # The envelope is drawn from a rate the geometry has to justify.  With
+        # an uncertified boundary there is no rate to draw, and inventing one
+        # would put the least defensible number on the most persuasive plot.
+        if item.predicted_gmres_factor is not None:
+            residuals = item.predicted_gmres_factor ** np.arange(0, 9)
+            paths.append(
+                _save_figure(
+                    plot_residual_envelope(residuals, item.fov.disk_rate),
+                    directory / f"{stem}_residual_envelope.png",
+                )
             )
-        )
     return paths
 
 

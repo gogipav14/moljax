@@ -32,15 +32,23 @@ class RateEstimates(NamedTuple):
         r2: Traced-boundary minimax estimate.
         r3: Bulk Ritz-clustering estimate after self-consistent outlier removal.
         predicted_gmres_factor: The smallest finite estimate among ``r1``,
-            ``r2``, and ``r3``.
+            ``r2``, and ``r3``, or ``None`` when the geometry is not certified.
+            ``r1`` and ``r2`` derive from the numerical range, so an
+            under-resolved or uncorroborated boundary makes them optimistically
+            small; offering their minimum as a convergence prediction would
+            present exactly the number a caller is most likely to act on.
         agree: Whether the finite estimates agree within a relative tolerance.
+        geometry_certified: Whether ``r1`` and ``r2`` rest on a certified outer
+            bound.  When false they remain usable for relative comparison
+            between runs sharing a configuration, but not as absolute rates.
     """
 
     r1: float
     r2: float
     r3: float
-    predicted_gmres_factor: float
+    predicted_gmres_factor: float | None
     agree: bool
+    geometry_certified: bool = True
 
 
 class PreconditionerAssessment(NamedTuple):
@@ -56,7 +64,7 @@ class PreconditionerAssessment(NamedTuple):
     disk_rate: float
     epsilon_zero: float
     n_right_real_outliers: int
-    predicted_gmres_factor: float
+    predicted_gmres_factor: float | None
     rate_threshold: float
     eps_zero_threshold: float
     max_right_real_outliers: int
@@ -261,14 +269,19 @@ def estimate_rates(fov: FieldOfValuesResult, ritz: jax.Array) -> RateEstimates:
     r1 = enclosing_disk_rate(fov)
     r2 = traced_boundary_rate(fov.boundary)
     r3 = clustering_rate(ritz)
+    certified = fov.geometry_certified
     finite = [rate for rate in (r1, r2, r3) if math.isfinite(rate)]
-    predicted_gmres_factor = min(finite) if finite else math.inf
+    # r1 and r2 are read off the numerical-range geometry, so without a
+    # certified outer bound their minimum is not a convergence prediction and
+    # must not be offered as one.
+    predicted_gmres_factor = (min(finite) if finite else math.inf) if certified else None
     return RateEstimates(
         r1=r1,
         r2=r2,
         r3=r3,
         predicted_gmres_factor=predicted_gmres_factor,
         agree=_rate_agreement((r1, r2, r3)),
+        geometry_certified=certified,
     )
 
 
@@ -295,17 +308,12 @@ def assess_preconditioner(
     # there, the count is identically zero and max_right_real_outliers can
     # never reject anything.  The Ritz bulk disk is the model that can.
     n_outliers = real_bulk_outliers(ritz)
-    if not fov.supports_converged:
-        # Gate on the state numerical_range recorded against the tolerance the
-        # caller requested, never on a threshold chosen here: a local default
-        # would silently overrule a stricter request.  Under-resolved supports
-        # mean the half-plane intersection may not contain the numerical
-        # range, so nothing can be certified from it.
-        verdict = "indeterminate"
-    elif not fov.supports_corroborated:
-        # The outer-bound property holds only if each support really is the
-        # maximum in its direction.  Independent restarts disagreed, so that
-        # condition is known to be unmet and nothing here can be certified.
+    if not fov.geometry_certified:
+        # One derived condition, so this cannot drift out of step with the
+        # other consumers.  It covers both under-resolved supports, judged
+        # against the tolerance the caller requested rather than a default
+        # chosen here, and restart disagreement.  Either way the half-plane
+        # intersection may not contain the numerical range.
         verdict = "indeterminate"
     elif fov.origin_enclosed:
         verdict = "indeterminate"

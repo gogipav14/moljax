@@ -78,6 +78,19 @@ class FieldOfValuesResult(NamedTuple):
     supports_corroborated: bool = True
     supports_converged: bool = True
 
+    @property
+    def geometry_certified(self) -> bool:
+        """Whether the disk may be read as an outer bound of the range.
+
+        Both conditions are necessary and neither implies the other:
+        under-resolved supports can tighten a half-plane so the intersection
+        cuts into the range, and restart disagreement shows a support is not
+        the maximum in its direction.  Exposing a single derived answer keeps
+        consumers from checking one flag and forgetting the other, which is
+        exactly how uncertified geometry escaped as an authoritative rate.
+        """
+        return bool(self.supports_converged and self.supports_corroborated)
+
 
 def _complex_action(action: Matvec, value: jax.Array) -> jax.Array:
     """Apply a real or complex linear action to a complex vector."""

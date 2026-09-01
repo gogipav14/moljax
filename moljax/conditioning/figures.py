@@ -100,8 +100,8 @@ def plot_numerical_range(fov: FieldOfValuesResult, *, ax: Any | None = None) -> 
             color="tab:orange",
             label=(
                 "enclosing disk"
-                if fov.supports_converged
-                else "disk (supports unresolved)"
+                if fov.geometry_certified
+                else "disk (uncertified: not an outer bound)"
             ),
         )
     )
@@ -117,9 +117,10 @@ def plot_numerical_range(fov: FieldOfValuesResult, *, ax: Any | None = None) -> 
     _set_visible_limits(axis, view_real, view_imag)
     axis.set_xlabel("Re z")
     axis.set_ylabel("Im z")
-    # An under-resolved boundary is not an outer bound, so the plot must not
-    # present its disk as though it were one.
-    caveat = "" if fov.supports_converged else "  [supports unresolved]"
+    # Restart disagreement invalidates the outer bound just as under-resolution
+    # does, so the caveat tracks the single derived condition rather than one
+    # of its halves.
+    caveat = "" if fov.geometry_certified else "  [uncertified geometry]"
     axis.set_title(f"Numerical range (rho / |c| = {fov.disk_rate:.3e}){caveat}")
     axis.grid(True, alpha=0.25)
     axis.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
