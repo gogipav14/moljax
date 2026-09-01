@@ -2,6 +2,51 @@
 
 All notable changes to moljax are documented here.
 
+## [1.2.0] - 2026-09-01
+
+### Added
+
+- **`moljax.conditioning`**: matrix-free conditioning diagnostics, contributed
+  by **Georgios Vakis (Vourvachakis)** (IACM and IESL, Foundation for Research
+  and Technology Hellas), who is added to `CITATION.cff` as a software author
+  and joins the project as a maintainer.
+
+  The subpackage provides a numerical range traced by the Johnson support
+  construction, forward-only Arnoldi pseudospectra, non-normality rate
+  estimates with the Crouzeix-Palencia envelope, a JFNK linearization adapter
+  built from public `jvp`/`vjp` actions, and `assess_preconditioner`, which
+  answers whether further preconditioner work is warranted on the states a
+  solver actually visits.
+
+  It imports nothing from moljax internals, so it cannot break when they
+  change, and it adds no runtime dependency: matplotlib remains lazily
+  imported behind the existing `viz` extra.
+
+  The origin of the work is a defect he found in this package: moljax
+  documented DCT-I for Neumann boundaries while implementing the cell-centred
+  DCT-II symbol, fixed in v1.1.0.
+
+### Fixed
+
+- **Importing moljax no longer changes process-wide JAX precision.**
+  `moljax/core/gpu_benchmarks.py` called
+  `jax.config.update("jax_enable_x64", True)` at module scope, and because
+  `moljax.core` imports it eagerly, merely importing moljax overrode
+  caller-owned configuration for the remainder of the process, affecting
+  unrelated arrays, compilation, accelerator memory and performance. Callers
+  that need float64 must now enable it themselves. The full suite passes
+  without the implicit enable, so nothing in the package depended on it.
+
+### Notes
+
+- The diagnostics report an outer bound on the numerical range that is
+  conditional, not certified: it holds only if each sampled support is the
+  true maximum in its direction, which no fixed eigensolver start can prove.
+  `FieldOfValuesResult.supports_corroborated` records whether independent
+  restarts disagreed, and `assess_preconditioner` abstains when they do.
+  `numerical_range(..., n_restarts=n)` raises the number of starts when a
+  verdict is load bearing; the default of one attempts no corroboration.
+
 ## [1.1.1] - 2026-08-03
 
 ### Fixed

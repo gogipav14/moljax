@@ -16,7 +16,14 @@ authors:
     affiliation: >-
       Lehigh University, Department of Chemical and Biomolecular
       Engineering & Bioengineering
-version: 1.1.1
+  - family-names: Vakis
+    given-names: Georgios
+    alias: Vourvachakis
+    affiliation: >-
+      Institute of Applied and Computational Mathematics and Institute of
+      Electronic Structure and Laser, Foundation for Research and Technology
+      Hellas
+version: 1.2.0
 date-released: "2026-08-03"
 license: MIT
 repository-code: "https://github.com/gogipav14/moljax"

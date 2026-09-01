@@ -19,8 +19,11 @@ from typing import List, Optional, Dict, Any
 import jax
 import jax.numpy as jnp
 
-# Enable float64 for precision
-jax.config.update("jax_enable_x64", True)
+# This module is imported eagerly by moljax.core, so enabling x64 here would
+# silently change process-wide JAX precision for anyone who merely imports
+# moljax, affecting unrelated arrays, compilation, accelerator memory and
+# performance for the rest of the process.  Benchmarks that need float64 must
+# enable it themselves before importing; that is the caller's decision.
 
 
 @dataclass
