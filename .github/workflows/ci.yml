@@ -77,4 +77,4 @@ jobs:
           python -m pip install "ruff>=0.14"
 
       - name: Lint
-        run: ruff check . --output-format=github --statistics
+        run: ruff check . --output-format=github
