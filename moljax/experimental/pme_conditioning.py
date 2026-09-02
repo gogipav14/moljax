@@ -351,8 +351,10 @@ def assess_pme_state(
     d0_kind: str,
     *,
     const_value: float = 1.0,
-    n_angles: int = 6,
-    fov_max_iters: int = 30,
+    n_angles: int = 180,
+    fov_max_iters: int = 120,
+    fov_residual_tolerance: float = 1.0e-3,
+    fov_n_restarts: int = 2,
     arnoldi_steps: int = 8,
     seed: int = 20260820,
 ) -> dict[str, Any]:
@@ -386,6 +388,8 @@ def assess_pme_state(
         operator.n,
         n_angles=n_angles,
         max_iters=fov_max_iters,
+        residual_tolerance=fov_residual_tolerance,
+        n_restarts=fov_n_restarts,
     )
     rates = estimate_rates(field_of_values, ritz)
     assessment = assess_preconditioner(field_of_values, ritz, epsilon_at_zero)
@@ -399,8 +403,16 @@ def assess_pme_state(
         "verdict": assessment.verdict,
         "disk_rate": float(assessment.disk_rate),
         "epsilon_zero": float(assessment.epsilon_zero),
-        "predicted_gmres_factor": float(assessment.predicted_gmres_factor),
+        "predicted_gmres_factor": (
+            None
+            if assessment.predicted_gmres_factor is None
+            else float(assessment.predicted_gmres_factor)
+        ),
         "origin_enclosed": bool(field_of_values.origin_enclosed),
         "n_right_real_outliers": int(assessment.n_right_real_outliers),
+        "max_support_residual": float(field_of_values.max_support_residual),
+        "supports_converged": bool(field_of_values.supports_converged),
+        "supports_corroborated": bool(field_of_values.supports_corroborated),
+        "geometry_certified": bool(field_of_values.geometry_certified),
         "rates": {name: value for name, value in rates._asdict().items()},
     }

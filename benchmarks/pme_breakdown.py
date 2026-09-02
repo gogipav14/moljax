@@ -50,8 +50,10 @@ class BreakdownConfig(NamedTuple):
     analysis_dt_values: tuple[float, ...] = (2.0e-4, 2.0e-2, 2.0)
     epsilon: float = 1.0e-5
     front_target_halfwidths: tuple[float, ...] = (0.25, 0.75, 3.0)
-    n_angles: int = 3
-    fov_max_iters: int = 10
+    n_angles: int = 180
+    fov_max_iters: int = 120
+    fov_residual_tolerance: float = 1.0e-3
+    fov_n_restarts: int = 2
     arnoldi_steps: int = 6
     const_d0: float = 1.0
     max_newton_iters: int = 8
@@ -645,6 +647,8 @@ def _record_state(
             const_value=config.const_d0,
             n_angles=config.n_angles,
             fov_max_iters=config.fov_max_iters,
+            fov_residual_tolerance=config.fov_residual_tolerance,
+            fov_n_restarts=config.fov_n_restarts,
             arnoldi_steps=config.arnoldi_steps,
             seed=20260900 + 1000 * m + 10 * front_case + index,
         )
@@ -683,6 +687,10 @@ def _record_state(
                 "predicted_gmres_factor": diagnostics["predicted_gmres_factor"],
                 "origin_enclosed": diagnostics["origin_enclosed"],
                 "n_right_real_outliers": diagnostics["n_right_real_outliers"],
+                "max_support_residual": diagnostics["max_support_residual"],
+                "supports_converged": diagnostics["supports_converged"],
+                "supports_corroborated": diagnostics["supports_corroborated"],
+                "geometry_certified": diagnostics["geometry_certified"],
                 "rates": diagnostics["rates"],
                 "actual_gmres": actual_gmres,
                 "reference_state_solver": dict(state_solver),
