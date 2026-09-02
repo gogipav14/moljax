@@ -40,8 +40,10 @@ class ReactionStudyConfig(NamedTuple):
     epsilon: float = 1.0e-5
     d0_kinds: tuple[str, ...] = ("frozen_mean", "frozen_bulk", "floor", "const", "identity")
     const_d0: float = 1.0
-    n_angles: int = 3
-    fov_max_iters: int = 10
+    n_angles: int = 180
+    fov_max_iters: int = 120
+    fov_residual_tolerance: float = 1.0e-3
+    fov_n_restarts: int = 2
     arnoldi_steps: int = 6
     max_newton_iters: int = 8
     max_krylov_iters: int = 400
@@ -290,6 +292,8 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
                     const_value=config.const_d0,
                     n_angles=config.n_angles,
                     fov_max_iters=config.fov_max_iters,
+                    fov_residual_tolerance=config.fov_residual_tolerance,
+                    fov_n_restarts=config.fov_n_restarts,
                     arnoldi_steps=config.arnoldi_steps,
                     seed=20260880 + 1000 * int(100 * r) + 10 * int(100 * analysis_dt) + index,
                 )
@@ -325,6 +329,10 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
                         "predicted_gmres_factor": diagnostics["predicted_gmres_factor"],
                         "origin_enclosed": diagnostics["origin_enclosed"],
                         "n_right_real_outliers": diagnostics["n_right_real_outliers"],
+                        "max_support_residual": diagnostics["max_support_residual"],
+                        "supports_converged": diagnostics["supports_converged"],
+                        "supports_corroborated": diagnostics["supports_corroborated"],
+                        "geometry_certified": diagnostics["geometry_certified"],
                         "rates": diagnostics["rates"],
                         "actual_gmres": actual_gmres,
                         "state_solver": dict(state_solver),
