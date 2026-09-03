@@ -38,15 +38,19 @@ class FieldOfValuesResult(NamedTuple):
 
     Attributes:
         boundary: Johnson support points ordered by their sweep direction.
-        center: Centre of the minimum disk enclosing the support half-plane
-            intersection, which contains the numerical range.
-        radius: Radius of that disk.  This is an outer bound, so it never
-            understates the range.
-        disk_rate: ``radius / abs(center)``; infinity when the centre is zero.
-        origin_enclosed: Whether the origin fails to be certified outside the
-            numerical range.  ``False`` means a sampled support direction
-            separates the origin from the range, which is a proof; ``True``
-            means no such certificate was found and the caller should abstain.
+        center: Center of the minimum disk enclosing the support half-plane
+            intersection, which contains the numerical range whenever the
+            sampled supports are true maxima.
+        radius: Radius of that disk.  Under the same condition it is an outer
+            bound and never understates the range.
+        disk_rate: ``radius / abs(center)``; infinity when the center is zero.
+        origin_enclosed: Whether no sampled support separates the origin from
+            the numerical range.  ``False`` means some direction's support
+            value is negative, so its half-plane excludes the origin; because
+            each sampled support is a Rayleigh quotient, and therefore a lower
+            bound on the true support, this separates the origin only under
+            the same condition as the outer bound.  ``True`` means no
+            separating direction was found and the caller should abstain.
         cp_prefactor: The Crouzeix--Palencia spectral-set prefactor.
         max_support_residual: Largest relative eigenpair residual over the
             support directions.  Reports how well the boundary is resolved so
@@ -60,6 +64,10 @@ class FieldOfValuesResult(NamedTuple):
             then not an outer bound and must not be read as a certificate.
             They remain usable for relative comparison across runs that share
             a configuration.
+        corroboration_attempted: Whether ``n_restarts`` was at least two, so a
+            disagreement between independent starts could have been detected.
+            When false, ``supports_corroborated`` is vacuously true and the
+            outer-bound property rests on the residual gate alone.
         supports_corroborated: Whether no eigensolver restart disagreed on a
             support value.  No fixed starting block can *prove* it found a
             global maximum, so the outer-bound property is conditional on the
@@ -77,17 +85,23 @@ class FieldOfValuesResult(NamedTuple):
     max_support_residual: float = 0.0
     supports_corroborated: bool = True
     supports_converged: bool = True
+    corroboration_attempted: bool = False
 
     @property
-    def geometry_certified(self) -> bool:
-        """Whether the disk may be read as an outer bound of the range.
+    def supports_consistent(self) -> bool:
+        """Whether every check that was actually run on the supports passed.
 
-        Both conditions are necessary and neither implies the other:
-        under-resolved supports can tighten a half-plane so the intersection
-        cuts into the range, and restart disagreement shows a support is not
-        the maximum in its direction.  Exposing a single derived answer keeps
-        consumers from checking one flag and forgetting the other, which is
-        exactly how uncertified geometry escaped as an authoritative rate.
+        This is not a certificate.  A fixed eigensolver start cannot prove it
+        found a global maximum, so ``supports_corroborated`` is vacuously true
+        when no restart was run (the default), and even agreeing restarts can
+        all miss a dominant eigenspace.  What this flag says is precisely:
+        "no defect was detected".  Whether the checks were strong enough to
+        detect one is separately observable via ``corroboration_attempted``.
+
+        The single derived property exists so that downstream consumers cannot
+        drift out of step by each checking a different subset of the flags,
+        which is exactly how an uncertified boundary previously escaped as an
+        authoritative rate prediction.
         """
         return bool(self.supports_converged and self.supports_corroborated)
 
@@ -133,10 +147,13 @@ def _largest_hermitian_eigenvector(
     theta: float,
     max_iters: int,
     tolerance: float,
-    residual_tolerance: float,
     restart: int,
 ) -> tuple[jax.Array, float]:
-    """Find a dominant eigenvector and its relative eigenpair residual."""
+    """Find a dominant eigenvector and its relative eigenpair residual.
+
+    The residual is returned, not judged: ``numerical_range`` compares it
+    against the tolerance the caller requested.
+    """
     real_dimension = 2 * n
     # Realification represents every complex eigenvector by two real vectors,
     # so the block needs two columns to resolve that unavoidable multiplicity,
@@ -173,9 +190,7 @@ def _largest_hermitian_eigenvector(
     # longer contain the numerical range, breaking the outer-bound guarantee.
     # A third pseudo-random direction, seeded from the sweep angle so runs stay
     # reproducible, makes such an alignment a probability-zero event.
-    probe_key = jax.random.PRNGKey(
-        (int(theta * 1_000_003) + 7_919 * restart) & 0x7FFFFFFF
-    )
+    probe_key = jax.random.PRNGKey((int(theta * 1_000_003) + 7_919 * restart) & 0x7FFFFFFF)
     random_column = jax.random.normal(probe_key, (padded_dimension,), dtype=jnp.float64)
     if restart == 0:
         initial_block = jnp.column_stack(
@@ -280,6 +295,7 @@ def numerical_range(
         raise ValueError("residual_tolerance must be positive")
     if n_restarts < 1:
         raise ValueError("n_restarts must be positive")
+    corroboration_attempted = n_restarts >= 2
     if not jax.config.jax_enable_x64:
         raise RuntimeError(
             "conditioning diagnostics require 64-bit precision; enable it with "
@@ -305,7 +321,6 @@ def numerical_range(
                 theta,
                 max_iters,
                 tolerance,
-                residual_tolerance,
                 restart,
             )
             worst_residual = max(worst_residual, support_residual)
@@ -330,21 +345,25 @@ def numerical_range(
     # The sampled boundary points are an inscribed approximation of the
     # numerical range, so a disk fitted to them can be smaller than the range
     # itself and the origin can fall outside their hull while lying inside the
-    # range.  Both errors push the verdict toward a false certificate.  Fit the
-    # disk to the half-plane intersection instead, which provably contains the
-    # range, and certify the origin only when a sampled direction separates it.
+    # range.  Both errors push the verdict toward a false positive.  Fit the
+    # disk to the half-plane intersection instead, which contains the range
+    # whenever the supports are true maxima, and separate the origin only when
+    # a sampled direction does so.
     supports = np.real(np.exp(1j * theta_host) * boundary_host)
     outer = _support_outer_polygon(theta_host, supports)
     center, radius = _smallest_enclosing_disk(outer)
     center_magnitude = abs(center)
     disk_rate = math.inf if center_magnitude == 0.0 else radius / center_magnitude
-    # A negative support value is a separating half-plane and therefore a
-    # certificate that the origin lies outside.  Without one, report the origin
-    # as enclosed so the caller abstains rather than certifies.
-    origin_outside_certified = bool(np.min(supports) < 0.0)
-    origin_enclosed = not origin_outside_certified
+    # A negative support value gives a half-plane that excludes the origin.
+    # Each sampled support is a Rayleigh quotient and so a lower bound on the
+    # true support, which means this separates the origin under the same
+    # condition as the outer bound: the eigensolve found the dominant pair.
+    # Without such a direction, report the origin as enclosed so the caller
+    # abstains rather than concludes.
+    origin_separated = bool(np.min(supports) < 0.0)
+    origin_enclosed = not origin_separated
     if not origin_enclosed:
-        # Sanity: an inscribed-hull enclosure would contradict the certificate.
+        # Sanity: an inscribed-hull enclosure would contradict the separation.
         origin_enclosed = bool(_origin_enclosed(boundary_host))
     return FieldOfValuesResult(
         boundary=boundary_array,
@@ -359,4 +378,5 @@ def numerical_range(
         # A downstream default cannot stand in for it: a caller requesting
         # 1e-6 must not be judged against some other threshold.
         supports_converged=bool(worst_residual <= residual_tolerance),
+        corroboration_attempted=corroboration_attempted,
     )

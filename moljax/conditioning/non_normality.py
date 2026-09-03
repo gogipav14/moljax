@@ -32,15 +32,26 @@ class RateEstimates(NamedTuple):
         r2: Traced-boundary minimax estimate.
         r3: Bulk Ritz-clustering estimate after self-consistent outlier removal.
         predicted_gmres_factor: The smallest finite estimate among ``r1``,
-            ``r2``, and ``r3``, or ``None`` when the geometry is not certified.
-            ``r1`` and ``r2`` derive from the numerical range, so an
-            under-resolved or uncorroborated boundary makes them optimistically
-            small; offering their minimum as a convergence prediction would
-            present exactly the number a caller is most likely to act on.
+            ``r2``, and ``r3``, or ``None`` when a defect in the supports was
+            detected.  ``r1`` and ``r2`` derive from the numerical range, so
+            an under-resolved or disagreeing boundary makes them
+            optimistically small; offering their minimum as a convergence
+            prediction would present exactly the number a caller is most
+            likely to act on.  Read it together with
+            ``corroboration_attempted``: a value produced without restarts
+            rests on the residual gate alone.
         agree: Whether the finite estimates agree within a relative tolerance.
-        geometry_certified: Whether ``r1`` and ``r2`` rest on a certified outer
-            bound.  When false they remain usable for relative comparison
-            between runs sharing a configuration, but not as absolute rates.
+        supports_consistent: Whether ``r1`` and ``r2`` rest on a boundary that
+            passed every check that was actually run.  This is not a
+            certificate: see ``FieldOfValuesResult.supports_consistent``.
+            When false, ``r1`` and ``r2`` remain usable for relative
+            comparison between runs sharing a configuration, but not as
+            absolute rates.
+        corroboration_attempted: Whether the boundary behind ``r1`` and
+            ``r2`` was traced with independent eigensolver restarts, so a
+            missed dominant support could have been detected.  Carried here
+            so the estimate remains self-describing once it is serialized or
+            passed on without the ``FieldOfValuesResult`` it came from.
     """
 
     r1: float
@@ -48,7 +59,8 @@ class RateEstimates(NamedTuple):
     r3: float
     predicted_gmres_factor: float | None
     agree: bool
-    geometry_certified: bool = True
+    supports_consistent: bool = True
+    corroboration_attempted: bool = False
 
 
 class PreconditionerAssessment(NamedTuple):
@@ -58,16 +70,48 @@ class PreconditionerAssessment(NamedTuple):
     particular problem.  Apply the procedure to states actually visited by a
     solver; synthetic stress states can be useful diagnostics but do not by
     themselves establish a production preconditioner's behavior.
+
+    Verdict values:
+
+    ``adequate``
+        Every threshold gate passed, and the supports were corroborated by
+        independent eigensolver restarts.  This is the strongest verdict the
+        procedure emits; use as a positive signal that further preconditioner
+        work is unlikely to change the picture on the assessed state.
+
+    ``provisional``
+        Every threshold gate passed, but corroboration was not attempted
+        (``n_restarts`` was one).  The picture is consistent as far as the
+        checks that were run go; a missed dominant support could still change
+        it.  Raise ``n_restarts`` on ``numerical_range`` to promote a
+        provisional verdict to ``adequate``.
+
+    ``investigate``
+        A threshold gate failed.  Further preconditioner work is likely
+        warranted on this state.
+
+    ``indeterminate``
+        No gate was evaluated.  Either the geometry is not a valid outer
+        bound (the supports failed their checks, or the origin is enclosed by
+        the numerical range, so the disk-rate reading is not a convergence
+        factor), or a diagnostic input was unusable: fewer than four Ritz
+        values, a non-finite Ritz value, or a NaN ``disk_rate`` or
+        ``epsilon_zero``.  In the second case ``n_right_real_outliers`` and
+        ``predicted_gmres_factor`` are ``None``.  Unusable inputs abstain
+        rather than raise because they are the signature of a degraded
+        upstream computation, which must never read as a passed gate.
     """
 
     verdict: str
     disk_rate: float
     epsilon_zero: float
-    n_right_real_outliers: int
+    n_right_real_outliers: int | None
     predicted_gmres_factor: float | None
     rate_threshold: float
     eps_zero_threshold: float
     max_right_real_outliers: int
+    supports_consistent: bool = True
+    corroboration_attempted: bool = False
 
 
 def enclosing_disk_rate(fov: FieldOfValuesResult) -> float:
@@ -227,9 +271,34 @@ def right_real_outliers(
 
 
 _REAL_BULK_RELATIVE_FLOOR = 1.0e-6
+# An outlier must sit more than this many bulk widths beyond the bulk's top.
+# Measured on clean symmetric clusters of eight values, a 3 x IQR rule flags a
+# spurious outlier roughly 8% of the time and this rule roughly 0.3%; the
+# width of a handful of values is a steadier scale than their quartiles.
+_REAL_BULK_WIDTH_FACTOR = 2.0
+_MIN_REAL_BULK_SIZE = 3
 
 
-def real_bulk_outliers(ritz: jax.Array, *, factor: float = _BULK_OUTLIER_FACTOR) -> int:
+def _ritz_defect(ritz: jax.Array) -> str | None:
+    """Return why ``ritz`` cannot support an outlier count, or ``None``.
+
+    A wrong shape is a programming error and raises.  Too few values or a
+    non-finite value are the signature of a degraded upstream computation,
+    so they are reported rather than raised, and the caller decides whether
+    to raise or to abstain.
+    """
+    values = jnp.asarray(ritz, dtype=jnp.complex128)
+    if values.ndim != 1:
+        raise ValueError("ritz must be a one-dimensional array")
+    minimum = _MIN_REAL_BULK_SIZE + 1
+    if values.size < minimum:
+        return f"at least {minimum} Ritz values are needed, got {values.size}"
+    if not bool(jnp.all(jnp.isfinite(values))):
+        return "ritz contains a non-finite value"
+    return None
+
+
+def real_bulk_outliers(ritz: jax.Array, *, factor: float = _REAL_BULK_WIDTH_FACTOR) -> int:
     """Count Ritz values whose real part sits beyond a robust real-part bulk.
 
     This deliberately ignores imaginary parts and does not reuse ``_bulk_disk``.
@@ -241,17 +310,47 @@ def real_bulk_outliers(ritz: jax.Array, *, factor: float = _BULK_OUTLIER_FACTOR)
     roundoff-sized imaginary parts, whose bulk radius is zero, and a real
     outlier accompanied by a farther complex pair.
 
-    An interquartile threshold on the real parts has neither failure mode.  The
-    relative floor keeps a numerically degenerate bulk, where the quartiles
-    coincide, from flagging its own roundoff.
+    The bulk is estimated with the candidate outliers left out.  The real parts
+    are sorted, and for each admissible outlier count ``k`` (at most 20% of the
+    values, always at least one, always leaving a bulk of at least three) the
+    remaining values set the threshold ``top + factor * max(width, floor)``,
+    where ``top`` and ``width`` are the largest value and the range of the
+    bulk; the largest ``k`` whose ``k``-th value exceeds it is returned.  A
+    scale estimated from a sample that includes the candidate lets a single far
+    value inflate its own threshold: for ``[1, 1, 1, 6]`` a plain interquartile
+    rule lands exactly on 6 and a strict comparison reports nothing, and
+    Arnoldi does produce spectra that short after an early Krylov breakdown.
+    The width is used rather than the interquartile range because Arnoldi
+    projections are small samples, on which quartiles are too noisy a scale.
+    The relative floor keeps a numerically degenerate bulk, whose width is
+    roundoff, from flagging its own roundoff.
+
+    A spread of values without a cluster, such as the spectrum of an
+    unpreconditioned operator, is not an outlier pattern and is left to the
+    disk-rate gate.
+
+    Fewer than four values leave no bulk to measure against, and a non-finite
+    value makes every comparison vacuous; both raise ``ValueError`` here.
+    ``assess_preconditioner`` turns the same conditions into an
+    ``indeterminate`` verdict instead.
     """
+    defect = _ritz_defect(ritz)
+    if defect is not None:
+        raise ValueError(defect)
     values = jnp.asarray(ritz, dtype=jnp.complex128)
-    if values.ndim != 1 or values.size == 0:
-        raise ValueError("ritz must be a nonempty one-dimensional array")
-    reals = np.asarray(jnp.real(values), dtype=np.float64)
-    lower, middle, upper = (float(v) for v in np.percentile(reals, [25.0, 50.0, 75.0]))
-    spread = max(upper - lower, _REAL_BULK_RELATIVE_FLOOR * max(abs(middle), 1.0))
-    return int(np.count_nonzero(reals > upper + factor * spread))
+    reals = np.sort(np.asarray(jnp.real(values), dtype=np.float64))[::-1]
+    count = reals.size
+    maximum_outliers = min(
+        max(1, int(math.floor(_MAX_OUTLIER_FRACTION * count))),
+        count - _MIN_REAL_BULK_SIZE,
+    )
+    for n_outliers in range(maximum_outliers, 0, -1):
+        bulk = reals[n_outliers:]
+        top, bottom = float(bulk[0]), float(bulk[-1])
+        width = max(top - bottom, _REAL_BULK_RELATIVE_FLOOR * max(abs(top), abs(bottom), 1.0))
+        if reals[n_outliers - 1] > top + factor * width:
+            return n_outliers
+    return 0
 
 
 def _rate_agreement(rates: tuple[float, float, float]) -> bool:
@@ -269,19 +368,22 @@ def estimate_rates(fov: FieldOfValuesResult, ritz: jax.Array) -> RateEstimates:
     r1 = enclosing_disk_rate(fov)
     r2 = traced_boundary_rate(fov.boundary)
     r3 = clustering_rate(ritz)
-    certified = fov.geometry_certified
+    consistent = fov.supports_consistent
     finite = [rate for rate in (r1, r2, r3) if math.isfinite(rate)]
-    # r1 and r2 are read off the numerical-range geometry, so without a
-    # certified outer bound their minimum is not a convergence prediction and
-    # must not be offered as one.
-    predicted_gmres_factor = (min(finite) if finite else math.inf) if certified else None
+    # r1 and r2 are read off the numerical-range geometry, so without an
+    # outer bound their minimum is not a convergence prediction and must not
+    # be offered as one.  We withhold it on any detected inconsistency.  What
+    # evidence backs the number when it is offered travels with it as
+    # corroboration_attempted, so a serialized estimate stays self-describing.
+    predicted_gmres_factor = (min(finite) if finite else math.inf) if consistent else None
     return RateEstimates(
         r1=r1,
         r2=r2,
         r3=r3,
         predicted_gmres_factor=predicted_gmres_factor,
         agree=_rate_agreement((r1, r2, r3)),
-        geometry_certified=certified,
+        supports_consistent=consistent,
+        corroboration_attempted=bool(fov.corroboration_attempted),
     )
 
 
@@ -300,20 +402,34 @@ def assess_preconditioner(
     assessed on states a solver actually visits; synthetic stress states are
     diagnostic complements rather than a standalone performance verdict.
     """
-    rates = estimate_rates(fov, ritz)
+    # A degraded upstream computation shows up here as a short or non-finite
+    # Ritz spectrum or a NaN reading.  None of these is a measurement, yet
+    # each would be scored as one: a NaN reading fails its gate, which is at
+    # least conservative, while a short or non-finite spectrum counted as zero
+    # outliers would pass.  Any of them abstains before any gate is evaluated.
+    inputs_usable = (
+        _ritz_defect(ritz) is None
+        and not math.isnan(float(fov.disk_rate))
+        and not math.isnan(float(epsilon_zero))
+    )
+    rates = estimate_rates(fov, ritz) if inputs_usable else None
     # The outlier count must be measured against an independent cluster model.
-    # fov.center/fov.radius now describe a disk that provably contains the whole
-    # numerical range, and Ritz values of an Arnoldi compression always lie in
-    # that range, so no Ritz value can ever exceed its right edge: measured
-    # there, the count is identically zero and max_right_real_outliers can
-    # never reject anything.  The Ritz bulk disk is the model that can.
-    n_outliers = real_bulk_outliers(ritz)
-    if not fov.geometry_certified:
+    # fov.center/fov.radius describe a disk enclosing the traced outer bound,
+    # and Ritz values of an Arnoldi compression lie in the numerical range, so
+    # whenever that bound holds no Ritz value can exceed its right edge:
+    # measured there, the count is identically zero and max_right_real_outliers
+    # can never reject anything.  The Ritz bulk is the model that can.
+    n_outliers = real_bulk_outliers(ritz) if inputs_usable else None
+    if not inputs_usable:
+        verdict = "indeterminate"
+    elif not fov.supports_consistent:
         # One derived condition, so this cannot drift out of step with the
         # other consumers.  It covers both under-resolved supports, judged
         # against the tolerance the caller requested rather than a default
-        # chosen here, and restart disagreement.  Either way the half-plane
-        # intersection may not contain the numerical range.
+        # chosen here, and any detected restart disagreement.  Either way the
+        # half-plane intersection may not contain the numerical range.  This
+        # is not proof that it does contain it when the flag is True; that is
+        # what corroboration_attempted is for.
         verdict = "indeterminate"
     elif fov.origin_enclosed:
         verdict = "indeterminate"
@@ -322,7 +438,12 @@ def assess_preconditioner(
         and epsilon_zero >= eps_zero_threshold
         and n_outliers <= max_right_real_outliers
     ):
-        verdict = "adequate"
+        # Passing every threshold gate is only a strong claim when the
+        # corroboration check that could have caught a missed dominant support
+        # was actually run.  Without it the verdict is honest but weak: the
+        # caller must see the qualification in the action they take, not only
+        # in a side field they might skip.  Raise n_restarts to promote it.
+        verdict = "adequate" if fov.corroboration_attempted else "provisional"
     else:
         verdict = "investigate"
     return PreconditionerAssessment(
@@ -330,8 +451,10 @@ def assess_preconditioner(
         disk_rate=float(fov.disk_rate),
         epsilon_zero=float(epsilon_zero),
         n_right_real_outliers=n_outliers,
-        predicted_gmres_factor=rates.predicted_gmres_factor,
+        predicted_gmres_factor=None if rates is None else rates.predicted_gmres_factor,
         rate_threshold=float(rate_threshold),
         eps_zero_threshold=float(eps_zero_threshold),
         max_right_real_outliers=max_right_real_outliers,
+        supports_consistent=bool(fov.supports_consistent),
+        corroboration_attempted=bool(fov.corroboration_attempted),
     )

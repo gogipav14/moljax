@@ -237,8 +237,11 @@ def _run_state_diagnostics(
         "verdict": assessment.verdict,
         "field_of_values": {
             # Persisted geometry outlives the run that produced it, so the
-            # certification state travels with it.
-            "geometry_certified": bool(fov.geometry_certified),
+            # observability travels with it.  The naming is deliberately not
+            # "certified": with n_restarts=1 no corroboration is attempted, so
+            # a True flag means "no defect detected", not "proven correct".
+            "supports_consistent": bool(fov.supports_consistent),
+            "corroboration_attempted": bool(fov.corroboration_attempted),
             "supports_converged": bool(fov.supports_converged),
             "supports_corroborated": bool(fov.supports_corroborated),
             "max_support_residual": float(fov.max_support_residual),
@@ -439,7 +442,7 @@ def run_decision_demo(config: DemoConfig | None = None) -> dict[str, Any]:
     else:
         status = "completed"
     return {
-        "schema_version": "conditioning_decision_demo_v1",
+        "schema_version": "conditioning_decision_demo_v2",
         "status": status,
         "implicit_step_failures": failures,
         "config": config._asdict(),

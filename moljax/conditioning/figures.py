@@ -100,8 +100,8 @@ def plot_numerical_range(fov: FieldOfValuesResult, *, ax: Any | None = None) -> 
             color="tab:orange",
             label=(
                 "enclosing disk"
-                if fov.geometry_certified
-                else "disk (uncertified: not an outer bound)"
+                if fov.supports_consistent
+                else "disk (unresolved: not an outer bound)"
             ),
         )
     )
@@ -119,8 +119,10 @@ def plot_numerical_range(fov: FieldOfValuesResult, *, ax: Any | None = None) -> 
     axis.set_ylabel("Im z")
     # Restart disagreement invalidates the outer bound just as under-resolution
     # does, so the caveat tracks the single derived condition rather than one
-    # of its halves.
-    caveat = "" if fov.geometry_certified else "  [uncertified geometry]"
+    # of its halves.  The label is deliberately not "certified": with the
+    # default n_restarts=1 no corroboration is attempted, so a passing check
+    # is the absence of a detected defect rather than a proof.
+    caveat = "" if fov.supports_consistent else "  [supports unresolved]"
     axis.set_title(f"Numerical range (rho / |c| = {fov.disk_rate:.3e}){caveat}")
     axis.grid(True, alpha=0.25)
     axis.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)

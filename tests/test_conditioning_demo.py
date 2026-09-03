@@ -12,7 +12,19 @@ from benchmarks.conditioning_decision_demo import DemoConfig, run_decision_demo
 
 @pytest.mark.slow
 def test_small_diffusion_decision_demo(tmp_path):
-    """Visited states pass the adjoint gate and cover both decision verdicts."""
+    """Visited states pass the adjoint gate and cover both decision verdicts.
+
+    The demo uses ``n_restarts=1`` (its default), so the strong verdict a
+    diffusion-preconditioned state earns here is ``provisional`` rather than
+    ``adequate``.  Raising ``n_restarts`` promotes it, at double the
+    eigensolver cost per direction; the demo does not, on the argument that a
+    smoke test should reflect the default configuration.
+
+    ``arnoldi_steps`` is likewise left at the demo default.  The outlier gate
+    abstains below four Ritz values, and with four the diffusion-preconditioned
+    state's rightmost value sits about 1.6 bulk widths out against a threshold
+    of two, too close to pin a verdict on.
+    """
     result = run_decision_demo(
         DemoConfig(
             nx=8,
@@ -21,7 +33,7 @@ def test_small_diffusion_decision_demo(tmp_path):
             n_states=1,
             n_angles=4,
             fov_max_iters=60,
-            arnoldi_steps=3,
+            arnoldi_steps=8,
             pseudospectrum_points=3,
             overhead_runs=5,
             max_newton_iters=10,
@@ -34,7 +46,7 @@ def test_small_diffusion_decision_demo(tmp_path):
     assert all(record["implicit_step"]["converged"] is True for record in result["states"])
     assert all(record["adjoint_identity"] <= 1.0e-8 for record in result["states"])
     assert {record["assessment"]["verdict"] for record in result["states"]} == {
-        "adequate",
+        "provisional",
         "investigate",
     }
     assert len(result["figures"]) == 6

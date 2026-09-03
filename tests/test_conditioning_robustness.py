@@ -1,14 +1,15 @@
 """Regression tests for conditioning-diagnostic failure modes.
 
 Each test here pins a defect that would otherwise return a confident but
-wrong answer:
+wrong answer: an enclosing disk that does not enclose its own boundary at
+small scale, an unconverged eigensolve accepted as a support point, a run
+that reports success after the implicit solve failed, an inscribed boundary
+read as an outer bound, an outlier gate that cannot reject or that a short
+spectrum slips past, a start block orthogonal to the dominant mode, and a
+verdict that hides which checks were actually run.
 
-  1. an enclosing disk that does not enclose its own boundary at small scale,
-  2. an unconverged eigensolve accepted as a numerical-range support point,
-  3. a diagnostic run that reports success after the implicit solve failed.
-
-All three corrupt the adequacy verdict rather than raising, so they are the
-failure modes worth gating in CI.
+All of them corrupt the verdict rather than raising, so they are the failure
+modes worth gating in CI.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from benchmarks.conditioning_decision_demo import (  # noqa: E402
     run_decision_demo,
 )
 from moljax.conditioning._geometry import _smallest_enclosing_disk  # noqa: E402
-from moljax.conditioning.field_of_values import numerical_range  # noqa: E402
+from moljax.conditioning.field_of_values import FieldOfValuesResult, numerical_range  # noqa: E402
 
 
 class TestEnclosingDiskScaleInvariance:
@@ -57,7 +58,7 @@ class TestEnclosingDiskScaleInvariance:
 
 
 class TestSupportConvergenceIsChecked:
-    """An unconverged support point must be refused, not returned."""
+    """An unconverged support point must be flagged, and never certified."""
 
     @staticmethod
     def _diagonal(n: int):
@@ -77,7 +78,7 @@ class TestSupportConvergenceIsChecked:
         assert result.max_support_residual > 1.0e-3
         assert math.isfinite(result.disk_rate)
 
-    def test_unconverged_supports_cannot_be_certified(self) -> None:
+    def test_unconverged_supports_force_abstention(self) -> None:
         from moljax.conditioning.non_normality import assess_preconditioner
 
         matvec, adjoint = self._diagonal(120)
@@ -164,13 +165,13 @@ class TestSampledBoundaryIsNotTreatedAsEnclosure:
 
     @staticmethod
     def _origin_containing_operator(m: int = 24):
-        # Eigenvalues on a circle of radius 1 about a centre of modulus 0.9, so
-        # the origin lies strictly inside W(A).  The centre sits at -45 degrees
+        # Eigenvalues on a circle of radius 1 about a center of modulus 0.9, so
+        # the origin lies strictly inside W(A).  The center sits at -45 degrees
         # so the closest approach to the origin falls between the directions a
         # four-angle sweep samples.
-        centre = 0.9 * np.exp(-1j * np.pi / 4)
-        diag = jnp.asarray(centre + np.exp(2j * np.pi * np.arange(m) / m))
-        return (lambda v: diag * v), (lambda v: jnp.conj(diag) * v), centre
+        center = 0.9 * np.exp(-1j * np.pi / 4)
+        diag = jnp.asarray(center + np.exp(2j * np.pi * np.arange(m) / m))
+        return (lambda v: diag * v), (lambda v: jnp.conj(diag) * v), center
 
     @pytest.mark.slow
     @pytest.mark.parametrize("n_angles", [4, 6, 8, 32])
@@ -179,11 +180,11 @@ class TestSampledBoundaryIsNotTreatedAsEnclosure:
         from moljax.conditioning.pseudospectra import arnoldi, ritz_values
 
         m = 24
-        matvec, adjoint, centre = self._origin_containing_operator(m)
+        matvec, adjoint, center = self._origin_containing_operator(m)
         result = numerical_range(matvec, adjoint, m, n_angles=n_angles, max_iters=150)
         v0 = jnp.asarray(np.random.default_rng(0).standard_normal(m) + 0j)
         ritz = ritz_values(arnoldi(matvec, v0, 12)[1])
-        assessment = assess_preconditioner(result, ritz, epsilon_zero=float(abs(centre)))
+        assessment = assess_preconditioner(result, ritz, epsilon_zero=float(abs(center)))
         # The outer bound must never understate a range that contains zero.
         assert result.disk_rate >= 1.0
         assert assessment.verdict != "adequate"
@@ -198,7 +199,7 @@ class TestSampledBoundaryIsNotTreatedAsEnclosure:
         assert coarse.disk_rate >= fine.disk_rate
 
     @pytest.mark.slow
-    def test_origin_outside_is_still_certified(self) -> None:
+    def test_origin_outside_is_still_separated(self) -> None:
         """The conservative rule must not destroy true negatives."""
         m = 24
         diag = jnp.asarray(np.linspace(0.8, 1.2, m))
@@ -323,6 +324,9 @@ class TestRealBulkOutlierDetection:
             ("identical bulk with roundoff imag", np.full(20, 1.0) + 1e-16j, False),
             ("identical bulk with roundoff real",
              1.0 + 1e-14 * np.arange(20) + 0j, False),
+            # A spread without a cluster is the disk-rate gate's business.
+            ("spread spectrum without a bulk",
+             np.array([23.86, 11.19, 1.59, 0.5]) + 0j, False),
         ],
     )
     def test_detects_real_outliers_without_false_alarms(
@@ -406,7 +410,7 @@ class TestSupportsAreCorroboratedNotCertified:
         diag = jnp.asarray(np.linspace(0.8, 1.2, m))
         good = numerical_range(
             lambda v: diag * v, lambda v: jnp.conj(diag) * v, m,
-            n_angles=8, max_iters=150,
+            n_angles=8, max_iters=150, n_restarts=2,
         )
         ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
         assert assess_preconditioner(good, ritz, epsilon_zero=0.8).verdict == "adequate"
@@ -424,7 +428,7 @@ class TestCertificationReachesEveryConsumer:
     supports, and restart disagreement.  Consumers that check only one of them
     let uncertified geometry through, which is how a rate derived from a
     boundary that may cut into the numerical range escaped as a convergence
-    prediction.  ``geometry_certified`` is the single derived answer.
+    prediction.  ``supports_consistent`` is the single derived answer.
     """
 
     @staticmethod
@@ -438,9 +442,9 @@ class TestCertificationReachesEveryConsumer:
 
     def test_both_conditions_are_required(self) -> None:
         fov = self._resolved()
-        assert fov.geometry_certified
-        assert not fov._replace(supports_converged=False).geometry_certified
-        assert not fov._replace(supports_corroborated=False).geometry_certified
+        assert fov.supports_consistent
+        assert not fov._replace(supports_converged=False).supports_consistent
+        assert not fov._replace(supports_corroborated=False).supports_consistent
 
     @pytest.mark.parametrize("flag", ["supports_converged", "supports_corroborated"])
     def test_rates_withhold_the_prediction(self, flag: str) -> None:
@@ -454,8 +458,30 @@ class TestCertificationReachesEveryConsumer:
         rates = estimate_rates(doubtful, ritz)
         # r1/r2 stay available for relative comparison; the prediction does not.
         assert rates.predicted_gmres_factor is None
-        assert not rates.geometry_certified
+        assert not rates.supports_consistent
         assert math.isfinite(rates.r1)
+
+    def test_rates_carry_corroboration_provenance(self) -> None:
+        """A serialized estimate must say what evidence backs its prediction.
+
+        With the default single start the prediction is offered, but it rests
+        on the residual gate alone.  Once the estimate is passed on without
+        the ``FieldOfValuesResult`` it came from, that qualification has to be
+        readable from the estimate itself, or a provisional number is
+        indistinguishable from a corroborated one.
+        """
+        from moljax.conditioning.non_normality import estimate_rates
+
+        fov = self._resolved()
+        ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
+        single = estimate_rates(fov, ritz)
+        assert single.predicted_gmres_factor is not None
+        assert single.corroboration_attempted is False
+        assert "corroboration_attempted" in single._asdict()
+
+        restarted = estimate_rates(fov._replace(corroboration_attempted=True), ritz)
+        assert restarted.corroboration_attempted is True
+        assert restarted.predicted_gmres_factor == single.predicted_gmres_factor
 
     @pytest.mark.parametrize("flag", ["supports_converged", "supports_corroborated"])
     def test_assessment_abstains_for_either_condition(self, flag: str) -> None:
@@ -463,12 +489,28 @@ class TestCertificationReachesEveryConsumer:
 
         fov = self._resolved()
         ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
-        assert assess_preconditioner(fov, ritz, epsilon_zero=0.8).verdict == "adequate"
+        assert assess_preconditioner(fov, ritz, epsilon_zero=0.8).verdict == "provisional"
 
         doubtful = fov._replace(**{flag: False})
         assessment = assess_preconditioner(doubtful, ritz, epsilon_zero=0.8)
         assert assessment.verdict == "indeterminate"
         assert assessment.predicted_gmres_factor is None
+        assert assessment.supports_consistent is False
+
+    def test_assessment_records_whether_corroboration_ran(self) -> None:
+        """A caller reading the assessment must be able to see what backed it."""
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        fov = self._resolved()
+        ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
+        a1 = assess_preconditioner(fov, ritz, epsilon_zero=0.8)
+        assert a1.supports_consistent is True
+        assert a1.corroboration_attempted is False  # default n_restarts=1
+
+        a2 = assess_preconditioner(
+            fov._replace(corroboration_attempted=True), ritz, epsilon_zero=0.8
+        )
+        assert a2.corroboration_attempted is True
 
     @pytest.mark.parametrize("flag", ["supports_converged", "supports_corroborated"])
     def test_plot_labels_uncertified_geometry(self, flag: str) -> None:
@@ -480,6 +522,157 @@ class TestCertificationReachesEveryConsumer:
         doubtful = self._resolved()._replace(**{flag: False})
         figure = plot_numerical_range(doubtful)
         axis = figure.axes[0]
-        assert "uncertified" in axis.get_title().lower()
+        assert "unresolved" in axis.get_title().lower()
         labels = [text.get_text().lower() for text in axis.get_legend().get_texts()]
         assert not any(label == "enclosing disk" for label in labels)
+
+
+class TestProvisionalVerdictReflectsCorroboration:
+    """A verdict must not hide missing evidence in a side field.
+
+    With ``n_restarts=1`` no restart is run, so the corroboration check that
+    could have caught a missed dominant support was not attempted.  The
+    threshold gates may still pass, but the strong claim "adequate" is not
+    warranted.  The verdict itself has to carry that qualification -- most
+    callers act on it and do not read the metadata.
+    """
+
+    @pytest.mark.slow
+    def test_default_run_yields_provisional_not_adequate(self) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        m = 24
+        diag = jnp.asarray(np.linspace(0.8, 1.2, m))
+        # Default n_restarts=1: no corroboration attempted.
+        fov = numerical_range(
+            lambda v: diag * v, lambda v: jnp.conj(diag) * v, m,
+            n_angles=8, max_iters=150,
+        )
+        assert fov.supports_consistent  # vacuously
+        assert not fov.corroboration_attempted
+
+        ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
+        assessment = assess_preconditioner(fov, ritz, epsilon_zero=0.8)
+        # The verdict itself, not only a flag, must show that adequate is not
+        # earned when the corroboration branch was never tested.
+        assert assessment.verdict == "provisional"
+
+    @pytest.mark.slow
+    def test_corroborated_run_promotes_to_adequate(self) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        m = 24
+        diag = jnp.asarray(np.linspace(0.8, 1.2, m))
+        fov = numerical_range(
+            lambda v: diag * v, lambda v: jnp.conj(diag) * v, m,
+            n_angles=8, max_iters=150, n_restarts=2,
+        )
+        assert fov.corroboration_attempted
+        assessment = assess_preconditioner(
+            fov, jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j), epsilon_zero=0.8,
+        )
+        assert assessment.verdict == "adequate"
+
+    def test_investigate_dominates_provisional(self) -> None:
+        """A failing threshold gate is a stronger signal than uncorroboration."""
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        # Uncorroborated, but disk_rate above threshold: still "investigate".
+        fov = FieldOfValuesResult(
+            boundary=jnp.asarray([1.0 + 0.0j, 2.0 + 0.0j], dtype=jnp.complex128),
+            center=1.5 + 0.0j, radius=0.9,
+            disk_rate=0.6, origin_enclosed=False,
+            cp_prefactor=1.0 + math.sqrt(2.0),
+            corroboration_attempted=False,
+        )
+        result = assess_preconditioner(
+            fov, jnp.asarray([1.4, 1.5, 1.6, 1.7]) + 0j, epsilon_zero=0.5,
+            rate_threshold=0.5,  # tighter than 0.6 disk_rate -> fails
+        )
+        assert result.verdict == "investigate"
+
+
+class TestOutlierGateFailsClosed:
+    """A short or degraded Ritz spectrum must not read as "no outliers".
+
+    Arnoldi trims its projection after a Krylov breakdown, so a handful of
+    Ritz values is a real path.  Quartiles taken over a sample that includes
+    the candidate let it inflate its own threshold: for ``[1, 1, 1, 6]`` the
+    plain interquartile rule lands exactly on 6 and a strict comparison
+    reports nothing.  A corroborated field of values spanning ``[1, 6]`` has
+    ``disk_rate ~ 0.71``, so that spectrum would then pass every gate.
+    """
+
+    @staticmethod
+    def _fov_on(left: float, right: float) -> FieldOfValuesResult:
+        center = 0.5 * (left + right)
+        radius = 0.5 * (right - left)
+        return FieldOfValuesResult(
+            boundary=jnp.asarray([left, right], dtype=jnp.complex128),
+            center=center + 0.0j, radius=radius,
+            disk_rate=radius / abs(center), origin_enclosed=False,
+            cp_prefactor=1.0 + math.sqrt(2.0),
+            corroboration_attempted=True,
+        )
+
+    def test_candidate_cannot_inflate_its_own_threshold(self) -> None:
+        from moljax.conditioning.non_normality import real_bulk_outliers
+
+        assert real_bulk_outliers(jnp.asarray([1.0, 1.0, 1.0, 6.0]) + 0j) == 1
+
+    @pytest.mark.parametrize("ritz", [[1.0, 1.0, 1.0, 6.0], [1.0, 1.0, 1.0, 1.0, 6.0]])
+    def test_short_spectrum_with_outlier_is_rejected(self, ritz: list[float]) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        fov = self._fov_on(1.0, 6.0)
+        values = jnp.asarray(ritz) + 0j
+        # Every other gate passes; the outlier gate is the only one that can
+        # reject this spectrum.
+        assert assess_preconditioner(
+            fov, values, epsilon_zero=0.9, max_right_real_outliers=1
+        ).verdict == "adequate"
+        assessment = assess_preconditioner(fov, values, epsilon_zero=0.9)
+        assert assessment.n_right_real_outliers == 1
+        assert assessment.verdict == "investigate"
+
+    @pytest.mark.parametrize("ritz", [[6.0], [1.0, 6.0], [1.0, 1.0, 6.0]])
+    def test_too_few_values_abstain(self, ritz: list[float]) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner, real_bulk_outliers
+
+        values = jnp.asarray(ritz) + 0j
+        with pytest.raises(ValueError, match="at least 4"):
+            real_bulk_outliers(values)
+        assessment = assess_preconditioner(self._fov_on(1.0, 6.0), values, epsilon_zero=0.9)
+        assert assessment.verdict == "indeterminate"
+        assert assessment.n_right_real_outliers is None
+        assert assessment.predicted_gmres_factor is None
+
+    @pytest.mark.parametrize(
+        "bad", [math.nan, math.inf, -math.inf, complex(1.0, math.nan)]
+    )
+    def test_non_finite_values_abstain(self, bad: complex) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner, real_bulk_outliers
+
+        values = jnp.asarray([1.0, 1.0, 1.0, bad], dtype=jnp.complex128)
+        with pytest.raises(ValueError, match="non-finite"):
+            real_bulk_outliers(values)
+        assessment = assess_preconditioner(self._fov_on(1.0, 6.0), values, epsilon_zero=0.9)
+        assert assessment.verdict == "indeterminate"
+        assert assessment.n_right_real_outliers is None
+
+    @pytest.mark.parametrize("reading", ["disk_rate", "epsilon_zero"])
+    def test_nan_reading_abstains(self, reading: str) -> None:
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        fov = self._fov_on(1.0, 1.5)
+        epsilon = 0.9
+        if reading == "disk_rate":
+            fov = fov._replace(disk_rate=math.nan)
+        else:
+            epsilon = math.nan
+        assessment = assess_preconditioner(
+            fov, jnp.asarray([1.0, 1.1, 1.2, 1.4]) + 0j, epsilon_zero=epsilon
+        )
+        assert assessment.verdict == "indeterminate"
+        assert assessment.n_right_real_outliers is None
+

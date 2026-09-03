@@ -147,11 +147,12 @@ def _support_outer_polygon(
 ) -> np.ndarray:
     """Return vertices of the half-plane intersection implied by support values.
 
-    Johnson sampling yields, for each direction ``theta``, the exact support
-    value ``h(theta) = max Re(e^{i theta} z)`` over the numerical range.  The
-    sampled boundary points themselves form an *inscribed* polygon, which
-    under-states the range; the half-planes ``Re(e^{i theta} z) <= h(theta)``
-    instead intersect in a polygon that provably *contains* it.
+    Johnson sampling yields, for each direction ``theta``, the support value
+    ``h(theta) = max Re(e^{i theta} z)`` over the numerical range whenever the
+    eigensolve finds the dominant pair.  The sampled boundary points
+    themselves form an *inscribed* polygon, which under-states the range; the
+    half-planes ``Re(e^{i theta} z) <= h(theta)`` instead intersect in a
+    polygon that *contains* it under that same condition.
 
     The distinction decides verdict soundness.  If ``0`` lies in the numerical
     range and the enclosing disk is a genuine outer bound ``(c, R)``, then

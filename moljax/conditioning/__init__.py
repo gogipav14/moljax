@@ -16,6 +16,7 @@ from .non_normality import (
     crouzeix_palencia_envelope,
     enclosing_disk_rate,
     estimate_rates,
+    real_bulk_outliers,
     right_real_outliers,
     traced_boundary_rate,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "plot_residual_envelope",
     "linearized_operator",
     "pseudospectrum_dense",
+    "real_bulk_outliers",
     "reduced_pseudospectrum",
     "right_real_outliers",
     "ritz_values",

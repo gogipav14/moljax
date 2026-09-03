@@ -23,7 +23,7 @@ All notable changes to moljax are documented here.
   imported behind the existing `viz` extra.
 
   The origin of the work is a defect he found in this package: moljax
-  documented DCT-I for Neumann boundaries while implementing the cell-centred
+  documented DCT-I for Neumann boundaries while implementing the cell-centered
   DCT-II symbol, fixed in v1.1.0.
 
 ### Fixed
@@ -42,8 +42,17 @@ All notable changes to moljax are documented here.
 - The diagnostics report an outer bound on the numerical range that is
   conditional, not certified: it holds only if each sampled support is the
   true maximum in its direction, which no fixed eigensolver start can prove.
-  `FieldOfValuesResult.supports_corroborated` records whether independent
-  restarts disagreed, and `assess_preconditioner` abstains when they do.
+  The same condition governs `origin_enclosed`, since each sampled support
+  is a Rayleigh quotient and so a lower bound on the true one.
+  `FieldOfValuesResult.supports_consistent` records that every check that
+  was run passed, `corroboration_attempted` records whether independent
+  restarts were among them, and `RateEstimates` and
+  `PreconditionerAssessment` carry both so a serialized result stays
+  self-describing. `assess_preconditioner` abstains with `indeterminate`
+  when a check failed or a diagnostic input is unusable (fewer than four
+  Ritz values, a non-finite Ritz value, a NaN reading), and answers
+  `provisional` rather than `adequate` when every gate passed but no
+  restart was run.
   `numerical_range(..., n_restarts=n)` raises the number of starts when a
   verdict is load bearing; the default of one attempts no corroboration.
 
@@ -116,16 +125,16 @@ the paper and is unchanged.
 
 ### Fixed
 
-- **Neumann boundary conditions now use the node-centred DCT-I described
+- **Neumann boundary conditions now use the node-centered DCT-I described
   in Section 3.1.1 of the paper.** The code previously implemented the
-  cell-centred DCT-II symbol, `-4/dx² sin²(πk/(2N))`, while the paper
+  cell-centered DCT-II symbol, `-4/dx² sin²(πk/(2N))`, while the paper
   specified DCT-I. This was also internally inconsistent: the Dirichlet
-  path uses the node-centred DST-I symbol, so a mixed Dirichlet/Neumann
+  path uses the node-centered DST-I symbol, so a mixed Dirichlet/Neumann
   problem combined two different grid layouts.
 
-  `BCType.NEUMANN` now selects the node-centred DCT-I form,
+  `BCType.NEUMANN` now selects the node-centered DCT-I form,
   `-4/dx² sin²(πk/(2(N-1)))`, whose eigenvectors exactly diagonalize the
-  `[-2, 2]/dx²` end-row stencil. The previous behaviour is available as
+  `[-2, 2]/dx²` end-row stencil. The previous behavior is available as
   `BCType.NEUMANN_CELL`, or via `centering='cell'` on the affected
   functions.
 
@@ -200,18 +209,18 @@ the paper and is unchanged.
   integrates tens of thousands of ETDRK4 steps through an eager Python
   loop and runs for many minutes to hours. A third test in
   `test_option_a_vs_b.py` carried a `slow` marker that was never
-  registered or honoured before, and is now deselected too.
+  registered or honored before, and is now deselected too.
 
 ### Notes
 
 - `use_rfft=True` changes floating-point output at the round-off level
   relative to v1.0.0 for 2D periodic problems. Pass `use_rfft=False` for
-  bit-comparable behaviour.
+  bit-comparable behavior.
 
 - The default Neumann layout change alters results for code that relied
-  on `BCType.NEUMANN` meaning cell-centred. The domain length implied by
-  `N` and `dx` differs between layouts: `(N-1)·dx` for node-centred
-  versus `N·dx` for cell-centred.
+  on `BCType.NEUMANN` meaning cell-centered. The domain length implied by
+  `N` and `dx` differs between layouts: `(N-1)·dx` for node-centered
+  versus `N·dx` for cell-centered.
 
 ## [1.0.0] - 2026-03
 

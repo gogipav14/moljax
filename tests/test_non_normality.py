@@ -220,7 +220,12 @@ def test_right_real_outliers_counts_planted_values():
 def _assessment_fov(
     boundary: list[complex], center: complex, radius: float, origin_enclosed: bool
 ) -> FieldOfValuesResult:
-    """Create a small numerical-range result for decision-procedure tests."""
+    """Create a small numerical-range result for decision-procedure tests.
+
+    The fixture marks corroboration as attempted so the verdict reflects the
+    threshold logic under test rather than the corroboration gate.  Coverage
+    for the corroboration path lives in ``test_conditioning_robustness.py``.
+    """
     return FieldOfValuesResult(
         boundary=jnp.asarray(boundary, dtype=jnp.complex128),
         center=center,
@@ -228,6 +233,7 @@ def _assessment_fov(
         disk_rate=radius / abs(center) if center else math.inf,
         origin_enclosed=origin_enclosed,
         cp_prefactor=1.0 + math.sqrt(2.0),
+        corroboration_attempted=True,
     )
 
 
@@ -236,7 +242,7 @@ def test_assess_preconditioner_verdicts_cover_all_branches():
     adequate = _assessment_fov([1.9 + 0.0j, 2.1 + 0.0j], 2.0 + 0.0j, 0.1, False)
     broad = _assessment_fov([0.1 + 0.0j, 3.9 + 0.0j], 2.0 + 0.0j, 1.9, False)
     enclosing = _assessment_fov([1.0 + 0.0j, -1.0 + 0.0j], 0.0 + 0.0j, 1.0, True)
-    ritz = jnp.asarray([1.95 + 0.0j, 2.05 + 0.0j])
+    ritz = jnp.asarray([1.9 + 0.0j, 1.95 + 0.0j, 2.05 + 0.0j, 2.1 + 0.0j])
 
     assert assess_preconditioner(adequate, ritz, epsilon_zero=0.2).verdict == "adequate"
     assert assess_preconditioner(broad, ritz, epsilon_zero=0.2).verdict == "investigate"
