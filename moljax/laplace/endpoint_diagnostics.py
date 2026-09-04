@@ -78,7 +78,7 @@ def compute_ivt(F_eval, method='large_s', s_large=1e6):
             return float(f_0)
         else:
             return None
-    except:
+    except Exception:
         return None
 
 

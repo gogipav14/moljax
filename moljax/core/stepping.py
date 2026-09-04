@@ -604,9 +604,11 @@ def estimate_error_imex_doubling(
         Tuple of (y_new, error_estimate)
     """
     if use_strang:
-        step_fn = lambda m, y, t, dt: imex_strang_step(m, y, t, dt, fft_cache, diffusivities)
+        def step_fn(m, y, t, dt):
+            return imex_strang_step(m, y, t, dt, fft_cache, diffusivities)
     else:
-        step_fn = lambda m, y, t, dt: imex_euler_step(m, y, t, dt, fft_cache, diffusivities)
+        def step_fn(m, y, t, dt):
+            return imex_euler_step(m, y, t, dt, fft_cache, diffusivities)
 
     # Full step
     y_full = step_fn(model, y, t, dt)
@@ -1075,11 +1077,8 @@ def integrate_fixed_dt(
         nk_params = NKParams()
 
     n_steps = int((t_end - t0) / dt) + 1
-    n_saves = n_steps // save_every + 1
 
     # Allocate output
-    t_history = allocate_scalar_history(n_saves, model.dtype)
-    y_history = allocate_state_history(y0, model.grid, n_saves, interior_only=True, dtype=model.dtype)
 
     class ScanState(NamedTuple):
         t: jnp.ndarray
@@ -1134,7 +1133,6 @@ def integrate_fixed_dt(
         )
 
         # Output for saving
-        should_save = (carry.step % save_every) == 0
         t_out = carry.t + dt
         y_out = y_new
 
@@ -1414,11 +1412,8 @@ def integrate_imex_fixed_dt(
         Tuple of (t_history, y_history, final_state)
     """
     n_steps = int((t_end - t0) / dt) + 1
-    n_saves = n_steps // save_every + 1
 
     # Allocate output
-    t_history = allocate_scalar_history(n_saves, model.dtype)
-    y_history = allocate_state_history(y0, model.grid, n_saves, interior_only=True, dtype=model.dtype)
 
     class ScanState(NamedTuple):
         t: jnp.ndarray

@@ -146,7 +146,6 @@ class TestBC2D:
         state = apply_bc(state, grid, bc_spec)
         f_out = state['f']
 
-        ng = grid.n_ghost
 
         # For zero gradient: ghost = interior
         # All values should remain 2.0
@@ -201,7 +200,6 @@ class TestBCGradient:
 
         # Compute gradient at boundaries using central difference
         # Left boundary gradient: (f[2] - f[0]) / (2*dx)
-        grad_left = (f_out[2] - f_out[0]) / (2 * grid.dx)
         # Should be close to 0 for Neumann BC with zero flux
         # But since we're mirroring a linear function, it won't be exactly 0
         # The test is mainly that the BC is applied consistently

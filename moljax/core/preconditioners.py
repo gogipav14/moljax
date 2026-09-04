@@ -180,10 +180,12 @@ class DiffusionPreconditioner:
         """
         if isinstance(grid, Grid1D):
             diag = 1.0 + dt * D * 2.0 / grid.dx ** 2
-            lap_fn = lambda x: laplacian_1d(x, grid)
+            def lap_fn(x):
+                return laplacian_1d(x, grid)
         else:
             diag = 1.0 + dt * D * (2.0 / grid.dx ** 2 + 2.0 / grid.dy ** 2)
-            lap_fn = lambda x: laplacian_2d(x, grid)
+            def lap_fn(x):
+                return laplacian_2d(x, grid)
 
         def iteration(x, _):
             # x_new = omega * (rhs + dt*D*Laplacian(x)) / diag + (1-omega)*x

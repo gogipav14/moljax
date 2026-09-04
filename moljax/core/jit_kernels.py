@@ -166,15 +166,12 @@ def etdrk4_kernel_1d(
     """
     N_a, N_b, N_c, N_d = N_func_vals
     z = dt * eigenvalues
-    z2 = z / 2.0
 
     exp_z = jnp.exp(z)
-    exp_z2 = jnp.exp(z2)
 
     phi1_z = phi1(z)
     phi2_z = phi2(z)
     phi3_z = phi3(z)
-    phi1_z2 = phi1(z2)
 
     # Coefficients
     b1 = phi1_z - 3*phi2_z + 4*phi3_z

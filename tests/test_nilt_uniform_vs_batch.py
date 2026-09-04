@@ -22,7 +22,8 @@ class TestBatchImplementation:
     def test_batch_returns_valid_structure(self):
         """Batch version returns properly shaped results."""
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha).reshape(1, -1)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha).reshape(1, -1)
 
         dt = 0.05
         N = 1024
@@ -54,7 +55,7 @@ class TestBatchImplementation:
         assert result_batch.f.shape == (3, N), f"Expected (3, {N}), got {result_batch.f.shape}"
 
         # Verify qualitative behavior: each transform should decay
-        for i, alpha in enumerate(alphas):
+        for i, _alpha in enumerate(alphas):
             early_mean = jnp.mean(jnp.abs(result_batch.f[i, 10:50]))
             late_mean = jnp.mean(jnp.abs(result_batch.f[i, 100:200]))
             assert early_mean > late_mean, f"Batch[{i}] doesn't show decay behavior"
@@ -67,8 +68,10 @@ class TestBatchImplementation:
     def test_batch_qualitative_accuracy(self, dtype):
         """Batch version produces qualitatively correct output."""
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha).reshape(1, -1)
-        f_true = lambda t: exponential_decay_f(t, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha).reshape(1, -1)
+        def f_true(t):
+            return exponential_decay_f(t, alpha=alpha)
 
         # Use parameters that give better accuracy (matching test_nilt_pairs.py style)
         dt = 0.05

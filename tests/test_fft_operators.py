@@ -121,7 +121,6 @@ class TestDiffusionManufactured:
         D = 1.0
 
         x = get_interior_coords(grid)
-        dx = grid.dx
 
         # u = sin(2πx) → Δu = -4π²*sin(2πx)
         u = jnp.sin(2 * jnp.pi * x)
@@ -918,7 +917,6 @@ class TestFFTPreconditioner:
         print(f"\nStiffness parameter: dt*D/dx² = {stiffness:.1f}")
 
         fft_cache = create_fft_cache_1d(grid)
-        k = fft_cache.k
         lam = D * fft_cache.laplacian_symbol
 
         # Original system eigenvalues: 1 - dt*λ

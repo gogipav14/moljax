@@ -15,7 +15,7 @@ Design decisions:
 """
 
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -25,6 +25,9 @@ from jax.flatten_util import ravel_pytree
 from moljax.core.grid import GridType
 from moljax.core.preconditioners import IdentityPreconditioner, PrecondContext, Preconditioner
 from moljax.core.state import StateDict, tree_add, tree_scale, tree_sub
+
+if TYPE_CHECKING:
+    from moljax.core.model import MOLModel
 
 
 class NKParams(NamedTuple):
@@ -216,7 +219,6 @@ def newton_krylov_solve(
 
     # Get flattening structure from x0
     flat_x0, unravel = ravel_pytree(x0)
-    n_dof = flat_x0.shape[0]
 
     # Define matvec for Krylov solver (operates on flat vectors)
     def krylov_matvec(x_flat: StateDict, v_flat: jnp.ndarray) -> jnp.ndarray:

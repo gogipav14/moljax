@@ -415,7 +415,7 @@ def compute_spectral_bounds(ctx: BoundContext) -> SpectralBounds:
     # Gershgorin bound from explicit stencil if available
     if ctx.stencil_coeffs is not None and jnp.isnan(rho):
         gershgorin_bounds = []
-        for name, coeffs in ctx.stencil_coeffs.items():
+        for _name, coeffs in ctx.stencil_coeffs.items():
             gershgorin_bounds.append(gershgorin_bound_from_stencil(coeffs))
         if gershgorin_bounds:
             rho = max(gershgorin_bounds)

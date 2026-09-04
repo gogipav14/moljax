@@ -223,7 +223,7 @@ def tune_nilt_params(
 
     # Emit warnings
     for w in warnings:
-        _warnings.warn(w, UserWarning)
+        _warnings.warn(w, UserWarning, stacklevel=2)
 
     return TunedNILTParams(
         dt=dt,

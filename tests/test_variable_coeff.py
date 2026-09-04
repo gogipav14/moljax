@@ -314,7 +314,6 @@ class TestETDVariableCoeff:
         u1 = etd1_varcoeff_approx_1d(u0, N_u, approx.fft_symbol, dt)
 
         # For pure diffusion of sin(x), decay is exp(-D * k^2 * dt) = exp(-D * dt)
-        expected_decay = jnp.exp(-approx.D_mean * 1.0 * dt)  # k=1, but symbol includes dx
 
         # Check amplitude decreased
         assert jnp.max(jnp.abs(u1)) < jnp.max(jnp.abs(u0))
@@ -356,7 +355,7 @@ class TestIntegration:
 
         # Solve Helmholtz
         rhs = jnp.sin(2 * x)
-        u_approx = solve_helmholtz_circulant_1d(rhs, approx.fft_symbol, dt=0.01)
+        solve_helmholtz_circulant_1d(rhs, approx.fft_symbol, dt=0.01)
 
         # Refine with iteration
         u_refined, residuals = richardson_iteration_varcoeff_1d(

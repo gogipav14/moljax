@@ -14,7 +14,10 @@ Design decisions:
 """
 
 from dataclasses import dataclass
-from typing import Union
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import jax
 
 
 @dataclass(frozen=True)
@@ -260,4 +263,4 @@ class Grid2D:
 
 
 # Type alias for grid union
-GridType = Union[Grid1D, Grid2D]
+GridType = Grid1D | Grid2D

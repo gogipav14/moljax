@@ -8,7 +8,6 @@ Verifies:
 """
 
 import jax.numpy as jnp
-import numpy as np
 import pytest
 
 from moljax.core.dt_policy import (
@@ -157,7 +156,6 @@ class TestWaveCFL:
         dxs = []
 
         K, rho = 1.0, 1.0
-        c = np.sqrt(K / rho)
 
         for nx in [50, 100, 200]:
             grid = Grid1D.uniform(nx, 0.0, 1.0)
@@ -170,9 +168,7 @@ class TestWaveCFL:
 
         # Check linear scaling
         ratio1 = dts[0] / dts[1]
-        ratio2 = dts[1] / dts[2]
         dx_ratio1 = dxs[0] / dxs[1]
-        dx_ratio2 = dxs[1] / dxs[2]
 
         assert abs(ratio1 - dx_ratio1) < 0.1, f"Wave CFL not scaling: {ratio1} vs {dx_ratio1}"
 
@@ -205,7 +201,7 @@ class Test2DCFL:
 
         # Both have same dx, but 2D should have smaller dt
         # due to the 2D Laplacian having larger spectral radius
-        dt1d = heisenberg_cfl_dt(grid1d, params, cfl_params)
+        heisenberg_cfl_dt(grid1d, params, cfl_params)
         dt2d = heisenberg_cfl_dt(grid2d, params, cfl_params)
 
         # In principle they should be similar since we use same CFL number

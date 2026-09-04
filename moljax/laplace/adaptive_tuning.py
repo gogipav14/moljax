@@ -348,7 +348,7 @@ def tune_nilt_adaptive(
             _warnings.warn(
                 f"NILT quality remains poor after {max_iterations} retuning attempts. "
                 f"Reason: {quality.reason}. Consider time-domain splitting.",
-                UserWarning
+                UserWarning, stacklevel=2
             )
             return AdaptiveTuningResult(
                 params=params,
@@ -515,7 +515,7 @@ def tune_nilt_adaptive_cfl(
                 _warnings.warn(
                     f"NILT CFL conditions not fully satisfied after {max_iterations} iterations. "
                     f"Violations: {cfl.violated_conditions}",
-                    UserWarning
+                    UserWarning, stacklevel=2
                 )
             return AdaptiveTuningResult(
                 params=params,

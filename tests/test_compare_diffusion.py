@@ -23,7 +23,8 @@ class TestDiffusionNILT:
         D = 1.0
         x = 1.0
 
-        F = lambda s: diffusion_semi_infinite_F(s, D=D, x=x)
+        def F(s):
+            return diffusion_semi_infinite_F(s, D=D, x=x)
 
         # Use manual parameters for stability
         # Semi-infinite diffusion has exp(-x*sqrt(s/D))/s behavior
@@ -83,7 +84,8 @@ class TestNILTvsMOLConcept:
         D = 0.01
         x = 0.5
 
-        F = lambda s: diffusion_semi_infinite_F(s, D=D, x=x)
+        def F(s):
+            return diffusion_semi_infinite_F(s, D=D, x=x)
 
         # Run with different N values
         result_N1024 = nilt_fft_uniform(F, dt=0.05, N=1024, a=0.3)
@@ -108,8 +110,10 @@ class TestNILTvsMOLConcept:
         D = 0.1
         x = 0.5
 
-        F = lambda s: diffusion_semi_infinite_F(s, D=D, x=x)
-        f_true = lambda t: diffusion_semi_infinite_f(t, D=D, x=x)
+        def F(s):
+            return diffusion_semi_infinite_F(s, D=D, x=x)
+        def f_true(t):
+            return diffusion_semi_infinite_f(t, D=D, x=x)
 
         # Coarse sampling
         result_coarse = nilt_fft_uniform(F, dt=0.1, N=512, a=0.3)
@@ -147,8 +151,10 @@ class TestTunedDiffusionNILT:
 
         # Simple test: exponential decay (represents diffusion eigenmode)
         alpha = D * (jnp.pi / 1.0)**2  # First eigenvalue for L=1
-        F = lambda s: 1.0 / (s + alpha)
-        f_true = lambda t: jnp.exp(-alpha * t)
+        def F(s):
+            return 1.0 / (s + alpha)
+        def f_true(t):
+            return jnp.exp(-alpha * t)
 
         result = nilt_fft_uniform(
             F, dt=params.dt, N=params.N, a=params.a

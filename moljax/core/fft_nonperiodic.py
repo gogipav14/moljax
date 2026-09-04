@@ -108,11 +108,8 @@ def dst_I(x: jnp.ndarray) -> jnp.ndarray:
     N = len(x)
     # Embed in a larger array for scipy dct
     # DST-I can be computed via DCT-I of antisymmetric extension
-    x_ext = jnp.concatenate([jnp.array([0.0]), x, jnp.array([0.0])])
     # Use relationship: DST-I(x) = -imag(FFT(antisym_ext))
-    n = jnp.arange(N + 2)
     # Direct computation
-    k = jnp.arange(1, N + 1)
     result = jnp.zeros(N, dtype=x.dtype)
     for ki in range(N):
         result = result.at[ki].set(

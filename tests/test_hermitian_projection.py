@@ -144,7 +144,8 @@ class TestNILTWithProjection:
         This test validates that eps_sym ≈ 0 (previously it was ~1.0 before Fix B).
         """
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
 
         dt = 0.05
         N = 1024
@@ -167,14 +168,15 @@ class TestNILTWithProjection:
     def test_projection_reduces_eps_sym(self, dtype):
         """Projection should reduce or maintain eps_sym."""
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
 
         dt = 0.05
         N = 1024
         a = 0.3
 
         # Without projection
-        result_no_proj = nilt_fft_uniform(
+        nilt_fft_uniform(
             F, dt=dt, N=N, a=a, dtype=dtype,
             apply_projection=False,
             return_diagnostics=True
@@ -244,7 +246,8 @@ class TestNILTWithProjection:
 
     def test_diagnostics_structure(self):
         """Diagnostics should have expected structure."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
 
         result = nilt_fft_uniform(
             F, dt=0.05, N=1024, a=0.3,
@@ -274,7 +277,8 @@ class TestDiagnosticsOnly:
 
     def test_diagnostics_without_projection(self):
         """Can request diagnostics without applying projection."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
 
         result = nilt_fft_uniform(
             F, dt=0.05, N=1024, a=0.3,
@@ -290,7 +294,8 @@ class TestDiagnosticsOnly:
 
     def test_no_diagnostics_by_default(self):
         """Default behavior should not include diagnostics."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
 
         result = nilt_fft_uniform(
             F, dt=0.05, N=1024, a=0.3

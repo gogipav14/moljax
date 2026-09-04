@@ -106,7 +106,6 @@ class TestPoissonSolver:
     def test_poisson_neumann_compatibility(self):
         """Neumann Poisson requires compatible RHS."""
         N = 32
-        dx = 0.1
 
         # Incompatible RHS (non-zero integral)
         rhs_bad = jnp.ones(N)
@@ -192,7 +191,6 @@ class TestETD:
 
         # Expected: exp(λ₁·dt) decay for mode 1
         # λ₁ ≈ -D·π²/L² for continuous case
-        expected_decay = jnp.exp(D * lam[0] * dt)
 
         # First mode should decay
         rel_change = jnp.linalg.norm(u1) / jnp.linalg.norm(u0)
@@ -207,7 +205,6 @@ class TestETD:
 
         # Constant initial condition
         u0 = jnp.ones(N) * 5.0
-        N_term = jnp.zeros_like(u0)
 
         lam = laplacian_symbol_neumann(N, dx)
         eigenvalues = D * lam

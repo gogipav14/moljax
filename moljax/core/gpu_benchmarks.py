@@ -106,7 +106,7 @@ class ScalingBenchmark:
         print("-" * 60)
         print(f"{'Grid Size':>10} | {'First Call (ms)':>15} | {'Avg (ms)':>12} | {'Ops/sec':>10}")
         print("-" * 60)
-        for n, first, avg in zip(self.grid_sizes, self.first_call_ms, self.times_ms):
+        for n, first, avg in zip(self.grid_sizes, self.first_call_ms, self.times_ms, strict=True):
             ops = 1000.0 / avg if avg > 0 else 0
             print(f"{n:>10} | {first:>15.2f} | {avg:>12.4f} | {ops:>10.1f}")
 
@@ -405,7 +405,7 @@ def run_full_benchmark(
     print("-" * 70)
     results_1d = benchmark_fft_scaling(grid_sizes_1d, n_iterations=n_iterations)
 
-    for name, bench in results_1d.items():
+    for _name, bench in results_1d.items():
         bench.print_table()
 
     # 2D benchmarks
@@ -415,7 +415,7 @@ def run_full_benchmark(
     print("-" * 70)
     results_2d = benchmark_2d_scaling(grid_sizes_2d, n_iterations=n_iterations)
 
-    for name, bench in results_2d.items():
+    for _name, bench in results_2d.items():
         bench.print_table()
 
     # Summary

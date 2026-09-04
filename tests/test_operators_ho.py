@@ -129,7 +129,7 @@ class TestFourthOrder1D:
         x = grid.x_coords(include_ghost=True)
         f = jnp.sin(x)
 
-        df = d1_ho_1d(f, grid)
+        d1_ho_1d(f, grid)
         d2f = d2_ho_1d(f, grid)
         lap_f = laplacian_ho_1d(f, grid)
 

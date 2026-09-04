@@ -102,11 +102,9 @@ def _etdrk4_coefficients(z: jnp.ndarray) -> tuple:
     phi3_z = _phi3(z)
 
     phi1_z2 = _phi1(z / 2.0)
-    phi2_z2 = _phi2(z / 2.0)
 
     # Stage coefficients (simplified Cox-Matthews)
     # a coefficients for stages
-    a21 = phi1_z2  # dt/2 * phi1(z/2)
 
     # b coefficients for final combination
     # Using the standard ETDRK4 formula
@@ -317,14 +315,17 @@ def etdrk4_step(
             is_rfft = getattr(op, '_is_rfft', False)
             if u_field.ndim == 1:
                 fft_func = jnp.fft.fft
-                ifft_func = lambda x: jnp.real(jnp.fft.ifft(x))
+                def ifft_func(x):
+                    return jnp.real(jnp.fft.ifft(x))
             elif is_rfft:
                 ny, nx = u_field.shape
                 fft_func = jnp.fft.rfft2
-                ifft_func = lambda x: jnp.fft.irfft2(x, s=(ny, nx))
+                def ifft_func(x, ny=ny, nx=nx):
+                    return jnp.fft.irfft2(x, s=(ny, nx))
             else:
                 fft_func = jnp.fft.fft2
-                ifft_func = lambda x: jnp.real(jnp.fft.ifft2(x))
+                def ifft_func(x):
+                    return jnp.real(jnp.fft.ifft2(x))
 
             u_hat = fft_func(u_field)
             N_n_hat = fft_func(N_n[name])

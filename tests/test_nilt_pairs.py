@@ -32,7 +32,8 @@ class TestExponentialDecay:
 
     def test_exp_decay_returns_valid_result(self):
         """Test that NILT returns a valid result structure."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
         result = nilt_fft_uniform(F, dt=0.05, N=1024, a=0.5)
 
         assert result.t is not None
@@ -43,7 +44,8 @@ class TestExponentialDecay:
 
     def test_exp_decay_qualitative_behavior(self):
         """Test that decay behavior is captured qualitatively."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
         result = nilt_fft_uniform(F, dt=0.05, N=1024, a=0.5)
 
         # Early values should be larger than late values (decay)
@@ -54,8 +56,10 @@ class TestExponentialDecay:
 
     def test_exp_decay_different_alpha(self):
         """Test that different decay rates produce different results."""
-        F_slow = lambda s: exponential_decay_F(s, alpha=0.5)
-        F_fast = lambda s: exponential_decay_F(s, alpha=2.0)
+        def F_slow(s):
+            return exponential_decay_F(s, alpha=0.5)
+        def F_fast(s):
+            return exponential_decay_F(s, alpha=2.0)
 
         result_slow = nilt_fft_uniform(F_slow, dt=0.05, N=1024, a=0.3)
         result_fast = nilt_fft_uniform(F_fast, dt=0.05, N=1024, a=0.3)
@@ -73,8 +77,10 @@ class TestOscillatory:
     def test_cosine_omega1(self):
         """Test L^{-1}[s/(s^2+1)] = cos(t)."""
         omega = 1.0
-        F = lambda s: cosine_F(s, omega=omega)
-        f_true = lambda t: cosine_f(t, omega=omega)
+        def F(s):
+            return cosine_F(s, omega=omega)
+        def f_true(t):
+            return cosine_f(t, omega=omega)
 
         # Oscillatory functions need good frequency resolution
         result = nilt_fft_uniform(F, dt=0.05, N=2048, a=0.2)
@@ -90,8 +96,10 @@ class TestOscillatory:
     def test_sine_omega1(self):
         """Test L^{-1}[1/(s^2+1)] = sin(t)."""
         omega = 1.0
-        F = lambda s: sine_F(s, omega=omega)
-        f_true = lambda t: sine_f(t, omega=omega)
+        def F(s):
+            return sine_F(s, omega=omega)
+        def f_true(t):
+            return sine_f(t, omega=omega)
 
         result = nilt_fft_uniform(F, dt=0.05, N=2048, a=0.2)
 
@@ -107,8 +115,10 @@ class TestOscillatory:
         """Test damped sinusoidal: exp(-alpha*t)*sin(omega*t)."""
         alpha = 0.5
         omega = 2.0
-        F = lambda s: damped_sine_F(s, alpha=alpha, omega=omega)
-        f_true = lambda t: damped_sine_f(t, alpha=alpha, omega=omega)
+        def F(s):
+            return damped_sine_F(s, alpha=alpha, omega=omega)
+        def f_true(t):
+            return damped_sine_f(t, alpha=alpha, omega=omega)
 
         result = nilt_fft_uniform(F, dt=0.02, N=2048, a=0.3)
 
@@ -124,8 +134,10 @@ class TestOscillatory:
         """Test damped cosinusoidal: exp(-alpha*t)*cos(omega*t)."""
         alpha = 0.3
         omega = 1.5
-        F = lambda s: damped_cosine_F(s, alpha=alpha, omega=omega)
-        f_true = lambda t: damped_cosine_f(t, alpha=alpha, omega=omega)
+        def F(s):
+            return damped_cosine_F(s, alpha=alpha, omega=omega)
+        def f_true(t):
+            return damped_cosine_f(t, alpha=alpha, omega=omega)
 
         result = nilt_fft_uniform(F, dt=0.03, N=2048, a=0.2)
 
@@ -164,7 +176,8 @@ class TestPoleAtOrigin:
         # For F(s) = 1/(s*(s+1)), we have G(s) = s*F(s) = 1/(s+1)
         # g(t) = exp(-t), and f(t) = integral of exp(-t) = 1 - exp(-t)
 
-        F = lambda s: 1.0 / (s * (s + 1.0))
+        def F(s):
+            return 1.0 / (s * (s + 1.0))
 
         result = nilt_fft_with_pole_at_origin(F, dt=0.05, N=1024, a=0.5)
 
@@ -180,7 +193,8 @@ class TestHighLevelInterface:
 
     def test_auto_parameters(self):
         """Test automatic parameter selection."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
 
         result = invert_laplace(F, t_end=10.0)
 
@@ -195,7 +209,8 @@ class TestHighLevelInterface:
     def test_with_pole_at_origin_flag(self):
         """Test has_pole_at_origin flag routes to convolution method."""
         # Use F(s) = 1/(s*(s+1)) which has a simple pole at origin
-        F = lambda s: 1.0 / (s * (s + 1.0))
+        def F(s):
+            return 1.0 / (s * (s + 1.0))
 
         result = invert_laplace(
             F, t_end=10.0, has_pole_at_origin=True
@@ -246,9 +261,12 @@ class TestNILTProperties:
     def test_linearity(self):
         """Test that NILT is linear: L^{-1}[aF + bG] = aL^{-1}[F] + bL^{-1}[G]."""
         a, b = 2.0, 0.5
-        F1 = lambda s: exponential_decay_F(s, alpha=1.0)
-        F2 = lambda s: exponential_decay_F(s, alpha=2.0)
-        F_combined = lambda s: a * F1(s) + b * F2(s)
+        def F1(s):
+            return exponential_decay_F(s, alpha=1.0)
+        def F2(s):
+            return exponential_decay_F(s, alpha=2.0)
+        def F_combined(s):
+            return a * F1(s) + b * F2(s)
 
         # Compute individual inversions
         result1 = nilt_fft_uniform(F1, dt=0.05, N=1024, a=0.5)
@@ -277,7 +295,8 @@ class TestNILTProperties:
         # exp(-(t-a)) for t > a, 0 for t < a
 
         shift = 2.0
-        F_shifted = lambda s: jnp.exp(-shift * s) * exponential_decay_F(s, alpha=1.0)
+        def F_shifted(s):
+            return jnp.exp(-shift * s) * exponential_decay_F(s, alpha=1.0)
 
         result = nilt_fft_uniform(F_shifted, dt=0.05, N=2048, a=0.5)
 
@@ -294,11 +313,15 @@ class TestNILTProperties:
     def test_scaling(self):
         """Test that L^{-1}[F(as)] = (1/a)f(t/a) for a > 0."""
         scale = 2.0
-        F_orig = lambda s: exponential_decay_F(s, alpha=1.0)
-        F_scaled = lambda s: F_orig(scale * s)
+        def F_orig(s):
+            return exponential_decay_F(s, alpha=1.0)
+        def F_scaled(s):
+            return F_orig(scale * s)
 
-        f_orig = lambda t: exponential_decay_f(t, alpha=1.0)
-        f_scaled_true = lambda t: (1.0 / scale) * f_orig(t / scale)
+        def f_orig(t):
+            return exponential_decay_f(t, alpha=1.0)
+        def f_scaled_true(t):
+            return (1.0 / scale) * f_orig(t / scale)
 
         result = nilt_fft_uniform(F_scaled, dt=0.05, N=1024, a=0.5)
 

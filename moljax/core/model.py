@@ -14,7 +14,7 @@ Design decisions:
 - Periodic models can optionally include precomputed FFT symbols
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -450,7 +450,7 @@ def create_brusselator_model(
 
 def create_advection_diffusion_model(
     grid: Grid2D,
-    field_names: list[str] = ['c1', 'c2'],
+    field_names: Sequence[str] = ('c1', 'c2'),
     D: float = 0.01,
     vx: float = 1.0,
     vy: float = 0.0,
@@ -825,7 +825,7 @@ def create_brusselator_periodic_fft(
 
 def create_advdiff_periodic_fft(
     grid: Grid2D,
-    field_names: list[str] = ['c1', 'c2'],
+    field_names: Sequence[str] = ('c1', 'c2'),
     D: float = 0.01,
     vx: float = 1.0,
     vy: float = 0.0,

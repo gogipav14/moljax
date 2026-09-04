@@ -649,7 +649,7 @@ def nilt_fft_halfstep(
             warnings.warn(
                 f"Hermitian symmetry violation: ε_H = {hermitian_residual:.3e} > {expected_eps_H:.3e}. "
                 f"This may indicate a phase computation or spectrum construction error.",
-                RuntimeWarning
+                RuntimeWarning, stacklevel=2
             )
 
     # Compute f(0+) using Initial Value Theorem (if possible)
@@ -661,7 +661,7 @@ def nilt_fft_halfstep(
         try:
             s_large = 1e6
             f_0_ivt = float(s_large * F_eval(s_large))
-        except:
+        except Exception:
             f_0_ivt = None
 
         # Determine t_end for diagnostics
@@ -1001,7 +1001,6 @@ def integrate_discrete(
     Returns:
         Cumulative integral values at same grid points
     """
-    n = g.shape[0]
 
     if rule == "trapezoid":
         # Cumulative trapezoidal rule

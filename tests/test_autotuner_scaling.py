@@ -237,8 +237,6 @@ class TestOmegaCoverage:
         )
 
         # Should have warnings about N clamping
-        has_warning = any('clamp' in w.lower() or 'split' in w.lower()
-                          for w in params.warnings)
         # May or may not trigger depending on exact constraints
         # Just check the params are returned
         assert params.dt > 0

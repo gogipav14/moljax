@@ -17,7 +17,6 @@ Main components:
 from .adaptive_tuning import (
     AdaptiveTuningResult,
     QualityTier,
-    classify_quality,
     retune_based_on_diagnostics,
     tune_nilt_adaptive,
     tune_nilt_adaptive_cfl,
@@ -203,7 +202,6 @@ __all__ = [
     # Adaptive tuning (closed-loop)
     'QualityTier',
     'AdaptiveTuningResult',
-    'classify_quality',
     'retune_based_on_diagnostics',
     'tune_nilt_adaptive',
     'tune_nilt_adaptive_cfl',

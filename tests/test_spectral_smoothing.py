@@ -220,7 +220,7 @@ class TestCompareSmoothing:
             dt=0.01, N=256, a=1.0
         )
 
-        for method, data in comparison.items():
+        for _method, data in comparison.items():
             assert 'max_error' in data
             assert 'rms_error' in data
             assert data['max_error'] >= 0

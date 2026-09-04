@@ -58,7 +58,6 @@ class TestLaplacianSymbol1D:
         """FFT Laplacian should match FD Laplacian for sine mode."""
         nx = 64
         dx = 2.0 * jnp.pi / nx
-        grid = Grid1D.uniform(nx, 0.0, 2.0 * jnp.pi, n_ghost=1)
 
         # Create a single Fourier mode: sin(k*x)
         k_mode = 3
@@ -138,7 +137,6 @@ class TestHelmholtzSolver1D:
     def test_solve_correctness(self):
         """Verify (I - dt*D*Δ)u = rhs."""
         nx = 64
-        dx = 2*jnp.pi / nx
         grid = Grid1D.uniform(nx, 0, 2*jnp.pi, n_ghost=1)
         cache = create_fft_cache_1d(grid)
 
@@ -180,7 +178,7 @@ class TestHelmholtzSolver2D:
         """Verify (I - dt*D*Δ)u = rhs."""
         ny, nx = 32, 32
         Ly, Lx = 2*jnp.pi, 2*jnp.pi
-        dy, dx = Ly/ny, Lx/nx
+        _dy, _dx = Ly/ny, Lx/nx
         grid = Grid2D.uniform(nx, ny, 0, Lx, 0, Ly, n_ghost=1)
         cache = create_fft_cache_2d(grid)
 

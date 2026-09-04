@@ -393,7 +393,6 @@ def generate_autotuner_feedback(
 
         dt = current_params.get('dt', 0.01)
         N = current_params.get('N', 256)
-        a = current_params.get('a', 0.0)
         T = current_params.get('T', N * dt)
 
         if metrics.dominant_issue == 'bandwidth':
@@ -459,12 +458,6 @@ def integrate_with_adaptive_tuner(
     # Get IFFT result (need to recompute with complex output)
     # This assumes result has the raw complex values available
     ifft_result = result.f.astype(jnp.complex128)
-    if hasattr(result, 'diagnostics') and result.diagnostics:
-        # Use pre-computed diagnostics if available
-        diag = result.diagnostics
-        eps_im = diag.get('eps_im', 0.0)
-        eps_sym = diag.get('eps_sym', 0.0)
-
     # Assess quality
     metrics = assess_nilt_quality(
         ifft_result=ifft_result,

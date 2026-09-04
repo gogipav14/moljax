@@ -90,7 +90,6 @@ class TestExactSpectralBounds:
 
         # For advection-diffusion: complex eigenvalues
         # Re(λ) from diffusion (≤ 0), Im(λ) from advection
-        D = 0.01
         v = 1.0
         dx = advdiff_op.grid.dx
 

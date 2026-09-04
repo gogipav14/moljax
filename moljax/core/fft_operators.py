@@ -24,7 +24,7 @@ Design:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, Union, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import jax.numpy as jnp
 
@@ -39,7 +39,7 @@ from moljax.core.fft_solvers import (
 from moljax.core.grid import Grid1D, Grid2D
 from moljax.laplace.spectral_bounds import SpectralBounds
 
-GridType = Union[Grid1D, Grid2D]
+GridType = Grid1D | Grid2D
 
 
 @runtime_checkable

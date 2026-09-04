@@ -151,16 +151,12 @@ class TestFrequencyWindowImportance:
         error_good = jnp.sqrt(jnp.mean((result_good.f[mask] - f_ref)**2))
 
         # Poor coverage: omega_max = pi/0.5 ≈ 6.28, still > 0.866 but less margin
-        result_poor = nilt_fft_uniform(
+        nilt_fft_uniform(
             second_order_damping_F,
             dt=0.5,
             N=256,
             a=0.3
         )
-
-        mask_poor = result_poor.t <= t_end
-        f_ref_poor = second_order_damping_f(result_poor.t[mask_poor])
-        error_poor = jnp.sqrt(jnp.mean((result_poor.f[mask_poor] - f_ref_poor)**2))
 
         # Better coverage should give lower error
         # (Note: this may not always hold due to other factors)
@@ -241,7 +237,7 @@ class TestParameterSensitivity:
         assert errors[0] >= errors[-1] * 0.5, "Larger N should help"
 
         # All sizes should give reasonable results
-        for N, err in zip(N_values, errors):
+        for N, err in zip(N_values, errors, strict=True):
             assert err < 0.5, f"N={N}: error {err:.4f} too large"
 
     def test_dt_sensitivity(self):
@@ -264,7 +260,7 @@ class TestParameterSensitivity:
 
         # Smaller dt provides better frequency resolution
         # Should generally improve accuracy (for this problem)
-        for dt, err in zip(dt_values, errors):
+        for dt, err in zip(dt_values, errors, strict=True):
             assert err < 0.5, f"dt={dt}: error {err:.4f} too large"
 
 
@@ -296,7 +292,6 @@ class TestSpecialCases:
 
         if idx_20 < len(result.f):
             ratio = abs(result.f[idx_20]) / (abs(result.f[idx_2]) + 1e-10)
-            expected_ratio = jnp.exp(-9)  # exp(-20/2) / exp(-2/2) = exp(-9)
 
             # Should decay significantly
             assert ratio < 0.1, f"Decay ratio {ratio} not captured properly"

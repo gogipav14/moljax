@@ -74,8 +74,10 @@ class TestAdaptiveTuningImprovement:
         are reasonable (period_factor=4.0). Used as reference for other tests.
         """
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
-        f_true_func = lambda t: exponential_decay_f(t, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
+        def f_true_func(t):
+            return exponential_decay_f(t, alpha=alpha)
         t_end = 20.0
 
         bounds = SpectralBounds(rho=10.0, re_max=-alpha, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
@@ -130,8 +132,10 @@ class TestAdaptiveTuningImprovement:
         QUANTITATIVE VALIDATION: Error reduction vs analytical solution.
         """
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
-        f_true_func = lambda t: exponential_decay_f(t, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
+        def f_true_func(t):
+            return exponential_decay_f(t, alpha=alpha)
         t_end = 20.0
 
         # Deliberately poor parameters: dt too large for frequency content
@@ -230,8 +234,10 @@ class TestAdaptiveTuningImprovement:
         QUANTITATIVE VALIDATION: Error reduction vs analytical sine solution.
         """
         omega = 5.0  # High frequency oscillator
-        F = lambda s: sine_F(s, omega=omega)
-        f_true_func = lambda t: sine_f(t, omega=omega)
+        def F(s):
+            return sine_F(s, omega=omega)
+        def f_true_func(t):
+            return sine_f(t, omega=omega)
         t_end = 10.0
 
         # Bounds for oscillator (purely imaginary eigenvalues)
@@ -318,8 +324,10 @@ class TestAdaptiveTuningImprovement:
         alpha_val = 50.0  # Decay rate (positive in exp(-alpha*t))
         alpha = -alpha_val  # Spectral abscissa (negative for stability)
         rho = 50.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha_val)  # F(s) = 1/(s+50)
-        f_true_func = lambda t: exponential_decay_f(t, alpha=alpha_val)  # f(t) = exp(-50*t)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha_val)  # F(s) = 1/(s+50)
+        def f_true_func(t):
+            return exponential_decay_f(t, alpha=alpha_val)  # f(t) = exp(-50*t)
         t_end = 5.0
 
         bounds = SpectralBounds(rho=rho, re_max=alpha, im_max=25.0, methods_used={'analytic': 'test'}, warnings=[])
@@ -397,7 +405,8 @@ class TestAdaptiveTuningImprovement:
         """
         # Unstable operator (positive real part)
         alpha = 2.0  # Unstable
-        F = lambda s: 1.0 / (s - alpha)  # Pole at s=+2.0
+        def F(s):
+            return 1.0 / (s - alpha)  # Pole at s=+2.0
 
         bounds = SpectralBounds(rho=10.0, re_max=alpha, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
 
@@ -432,8 +441,10 @@ class TestAdaptiveTuningImprovement:
         QUANTITATIVE VALIDATION: Error over long time horizon vs analytical solution.
         """
         alpha = 0.5  # Slow decay
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
-        f_true_func = lambda t: exponential_decay_f(t, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
+        def f_true_func(t):
+            return exponential_decay_f(t, alpha=alpha)
         t_end = 50.0  # Long time horizon
 
         bounds = SpectralBounds(rho=5.0, re_max=-alpha, im_max=2.0, methods_used={'analytic': 'test'}, warnings=[])
@@ -506,7 +517,8 @@ class TestAdaptiveRetuningActions:
         """Verify retuning detects early-time leakage and reduces dt."""
         # Create scenario with bandwidth issue (coarse dt)
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
 
         bounds = SpectralBounds(rho=20.0, re_max=-alpha, im_max=10.0, methods_used={'analytic': 'test'}, warnings=[])
 
@@ -521,7 +533,6 @@ class TestAdaptiveRetuningActions:
         )
 
         # Check if retuning actions were taken
-        actions_str = " ".join(result.actions).lower()
 
         print("\nRetuning actions test:")
         print(f"  Actions: {result.actions}")
@@ -541,7 +552,8 @@ class TestAdaptiveRetuningActions:
         """Verify retuning detects late-time leakage and increases T."""
         # Create scenario with wraparound issue (small T)
         alpha = 0.2  # Very slow decay
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
 
         bounds = SpectralBounds(rho=5.0, re_max=-alpha, im_max=2.0, methods_used={'analytic': 'test'}, warnings=[])
 
@@ -554,7 +566,6 @@ class TestAdaptiveRetuningActions:
             period_factor=2.0,  # Start small → wraparound risk
         )
 
-        actions_str = " ".join(result.actions).lower()
 
         print("\nWraparound retuning test:")
         print(f"  Actions: {result.actions}")
@@ -572,7 +583,8 @@ class TestProjectionFallback:
     def test_projection_fallback_on_poor_quality(self):
         """Verify projection is offered when retuning doesn't fix quality."""
         alpha = 1.0
-        F = lambda s: exponential_decay_F(s, alpha=alpha)
+        def F(s):
+            return exponential_decay_F(s, alpha=alpha)
 
         # Very constrained bounds → may not be able to retune sufficiently
         bounds = SpectralBounds(rho=5.0, re_max=-alpha, im_max=2.0, methods_used={'analytic': 'test'}, warnings=[])
@@ -639,11 +651,11 @@ class TestQualityClassification:
         assert quality_poor.tier == 'poor'
 
         # Conservative policy should be stricter
-        quality_conservative = classify_quality(diagnostics_good, tier='conservative')
+        classify_quality(diagnostics_good, tier='conservative')
         # (may classify as acceptable rather than good)
 
         # Aggressive policy should be more lenient
-        quality_aggressive = classify_quality(diagnostics_poor, tier='aggressive')
+        classify_quality(diagnostics_poor, tier='aggressive')
         # (may classify as acceptable rather than poor)
 
 

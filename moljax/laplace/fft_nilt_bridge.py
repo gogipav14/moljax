@@ -306,7 +306,6 @@ def nilt_solve_linear_pde(
 
     # Find closest time to t_end
     t_idx = jnp.argmin(jnp.abs(nilt_result.t - t_end))
-    t_actual = float(nilt_result.t[t_idx])
 
     result = {
         'u_final': u_final,

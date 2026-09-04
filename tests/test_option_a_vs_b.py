@@ -52,7 +52,8 @@ class TestOptionASymmetry:
     @pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])
     def test_signed_omega_has_low_eps_sym(self, dtype):
         """Signed ω grid should produce nearly Hermitian spectra."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
 
         result = nilt_fft_signed_omega(
             F, dt=0.05, N=1024, a=0.3, dtype=dtype,
@@ -197,7 +198,8 @@ class TestPerformanceComparison:
     @pytest.mark.slow
     def test_timing_comparison(self, test_params):
         """Compare execution time for all three implementations."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
         dt = test_params['dt']
         N = test_params['N']
         a = test_params['a']
@@ -243,7 +245,8 @@ class TestRobustnessAcrossParameters:
     @pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])
     def test_robustness_shift_and_dtype(self, a_value, dtype):
         """Test all implementations across different shifts and dtypes."""
-        F = lambda s: exponential_decay_F(s, alpha=1.0)
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
         dt = 0.05
         N = 1024
 

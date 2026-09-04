@@ -460,9 +460,6 @@ def adaptive_chebyshev_nilt(
 
     # Auto-detect sigma if not provided
     if sigma is None:
-        # Probe F(s) to estimate decay
-        s_probe = jnp.array([0.1, 1.0, 10.0])
-        F_probe = jnp.array([jnp.abs(F_eval(s)) for s in s_probe])
         # Simple heuristic: sigma should make F decay sufficiently
         sigma = 1.0 / t_max
 
