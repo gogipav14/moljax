@@ -50,7 +50,8 @@ All notable changes to moljax are documented here.
   `PreconditionerAssessment` carry both so a serialized result stays
   self-describing. `assess_preconditioner` abstains with `indeterminate`
   when a check failed or a diagnostic input is unusable (fewer than four
-  Ritz values, a non-finite Ritz value, a NaN reading), and answers
+  Ritz values, a non-finite Ritz value, a NaN or negative reading, an
+  infinite `epsilon_zero`), and answers
   `provisional` rather than `adequate` when every gate passed but no
   restart was run.
   `numerical_range(..., n_restarts=n)` raises the number of starts when a

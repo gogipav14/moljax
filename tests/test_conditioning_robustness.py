@@ -5,8 +5,9 @@ wrong answer: an enclosing disk that does not enclose its own boundary at
 small scale, an unconverged eigensolve accepted as a support point, a run
 that reports success after the implicit solve failed, an inscribed boundary
 read as an outer bound, an outlier gate that cannot reject or that a short
-spectrum slips past, a start block orthogonal to the dominant mode, and a
-verdict that hides which checks were actually run.
+spectrum slips past, a reading outside its domain scored as a measurement,
+a start block orthogonal to the dominant mode, and a verdict that hides
+which checks were actually run.
 
 All of them corrupt the verdict rather than raising, so they are the failure
 modes worth gating in CI.
@@ -660,19 +661,53 @@ class TestOutlierGateFailsClosed:
         assert assessment.verdict == "indeterminate"
         assert assessment.n_right_real_outliers is None
 
-    @pytest.mark.parametrize("reading", ["disk_rate", "epsilon_zero"])
-    def test_nan_reading_abstains(self, reading: str) -> None:
+    @pytest.mark.parametrize(
+        ("reading", "value"),
+        [
+            ("disk_rate", math.nan),
+            ("disk_rate", -math.inf),
+            ("disk_rate", -0.5),
+            ("epsilon_zero", math.nan),
+            ("epsilon_zero", math.inf),
+            ("epsilon_zero", -math.inf),
+            ("epsilon_zero", -1e-3),
+        ],
+    )
+    def test_unusable_reading_abstains(self, reading: str, value: float) -> None:
+        """A reading outside its domain is not scored.
+
+        Before this gate, an infinite ``epsilon_zero`` satisfied its lower
+        bound and a negative ``disk_rate`` its upper bound, so either
+        corrupted reading produced ``adequate`` on an otherwise sound input.
+        """
         from moljax.conditioning.non_normality import assess_preconditioner
 
         fov = self._fov_on(1.0, 1.5)
+        ritz = jnp.asarray([1.0, 1.1, 1.2, 1.4]) + 0j
+        assert assess_preconditioner(fov, ritz, epsilon_zero=0.9).verdict == "adequate"
         epsilon = 0.9
         if reading == "disk_rate":
-            fov = fov._replace(disk_rate=math.nan)
+            fov = fov._replace(disk_rate=value)
         else:
-            epsilon = math.nan
-        assessment = assess_preconditioner(
-            fov, jnp.asarray([1.0, 1.1, 1.2, 1.4]) + 0j, epsilon_zero=epsilon
-        )
+            epsilon = value
+        assessment = assess_preconditioner(fov, ritz, epsilon_zero=epsilon)
         assert assessment.verdict == "indeterminate"
         assert assessment.n_right_real_outliers is None
+        assert assessment.predicted_gmres_factor is None
+
+    def test_infinite_disk_rate_is_a_reading(self) -> None:
+        """``numerical_range`` reports ``inf`` for a disk centered on the origin.
+
+        That is a measurement, not a defect, and it fails the rate gate like
+        any rate of one or more; the gate answers ``investigate``, not
+        ``indeterminate``.
+        """
+        from moljax.conditioning.non_normality import assess_preconditioner
+
+        fov = self._fov_on(1.0, 1.5)._replace(disk_rate=math.inf)
+        assessment = assess_preconditioner(
+            fov, jnp.asarray([1.0, 1.1, 1.2, 1.4]) + 0j, epsilon_zero=0.9
+        )
+        assert assessment.verdict == "investigate"
+        assert assessment.n_right_real_outliers == 0
 

@@ -95,8 +95,11 @@ class PreconditionerAssessment(NamedTuple):
         bound (the supports failed their checks, or the origin is enclosed by
         the numerical range, so the disk-rate reading is not a convergence
         factor), or a diagnostic input was unusable: fewer than four Ritz
-        values, a non-finite Ritz value, or a NaN ``disk_rate`` or
-        ``epsilon_zero``.  In the second case ``n_right_real_outliers`` and
+        values, a non-finite Ritz value, a NaN or negative ``disk_rate`` or
+        ``epsilon_zero``, or an infinite ``epsilon_zero``.  (An infinite
+        ``disk_rate`` is a reading: ``numerical_range`` reports it for a disk
+        centered on the origin, and it fails the rate gate like any rate of
+        one or more.)  In the second case ``n_right_real_outliers`` and
         ``predicted_gmres_factor`` are ``None``.  Unusable inputs abstain
         rather than raise because they are the signature of a degraded
         upstream computation, which must never read as a passed gate.
@@ -298,6 +301,26 @@ def _ritz_defect(ritz: jax.Array) -> str | None:
     return None
 
 
+def _reading_defect(disk_rate: float, epsilon_zero: float) -> str | None:
+    """Return why a scalar reading cannot be gated, or ``None``.
+
+    Both readings are non-negative by construction, and a finite matrix has
+    a finite smallest singular value, so a NaN, a negative value or an
+    infinite ``epsilon_zero`` is not a measurement.  Scored as one, an
+    infinite ``epsilon_zero`` or a negative ``disk_rate`` would pass its
+    gate.  An infinite ``disk_rate`` is different: ``numerical_range``
+    reports it for a disk centered on the origin, and it fails the rate gate
+    like any rate of one or more, so it is left to the gate.
+    """
+    rate = float(disk_rate)
+    if math.isnan(rate) or rate < 0.0:
+        return f"disk_rate must be a non-negative number, got {rate}"
+    eps = float(epsilon_zero)
+    if not math.isfinite(eps) or eps < 0.0:
+        return f"epsilon_zero must be a finite non-negative number, got {eps}"
+    return None
+
+
 def real_bulk_outliers(ritz: jax.Array, *, factor: float = _REAL_BULK_WIDTH_FACTOR) -> int:
     """Count Ritz values whose real part sits beyond a robust real-part bulk.
 
@@ -403,14 +426,14 @@ def assess_preconditioner(
     diagnostic complements rather than a standalone performance verdict.
     """
     # A degraded upstream computation shows up here as a short or non-finite
-    # Ritz spectrum or a NaN reading.  None of these is a measurement, yet
-    # each would be scored as one: a NaN reading fails its gate, which is at
-    # least conservative, while a short or non-finite spectrum counted as zero
-    # outliers would pass.  Any of them abstains before any gate is evaluated.
+    # Ritz spectrum or a reading outside its domain.  None of these is a
+    # measurement, yet each would be scored as one: a NaN reading fails its
+    # gate, which is at least conservative, while a short or non-finite
+    # spectrum counted as zero outliers, an infinite epsilon_zero or a
+    # negative disk_rate would pass.  Any of them abstains before any gate
+    # is evaluated.
     inputs_usable = (
-        _ritz_defect(ritz) is None
-        and not math.isnan(float(fov.disk_rate))
-        and not math.isnan(float(epsilon_zero))
+        _ritz_defect(ritz) is None and _reading_defect(fov.disk_rate, epsilon_zero) is None
     )
     rates = estimate_rates(fov, ritz) if inputs_usable else None
     # The outlier count must be measured against an independent cluster model.
