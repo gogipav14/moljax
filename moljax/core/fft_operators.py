@@ -24,23 +24,20 @@ Design:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable, Union
+from typing import Protocol, Union, runtime_checkable
 
 import jax.numpy as jnp
-from jax import jit
 
-from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.fft_solvers import (
     FFTCache1D,
     FFTCache2D,
+    build_wavenumbers_1d,
     create_fft_cache_1d,
     create_fft_cache_2d,
     create_fft_cache_2d_rfft,
-    build_wavenumbers_1d,
-    build_wavenumbers_2d,
 )
+from moljax.core.grid import Grid1D, Grid2D
 from moljax.laplace.spectral_bounds import SpectralBounds
-
 
 GridType = Union[Grid1D, Grid2D]
 

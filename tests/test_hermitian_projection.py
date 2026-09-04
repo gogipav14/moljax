@@ -7,22 +7,22 @@ Validates that the projection:
 3. Preserves or improves accuracy
 4. Provides useful diagnostics
 """
-import pytest
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from moljax.laplace import (
-    nilt_fft_uniform,
-    exponential_decay_F,
-    exponential_decay_f,
-    sine_F,
-    sine_f,
     cosine_F,
     cosine_f,
+    exponential_decay_F,
+    exponential_decay_f,
+    nilt_fft_uniform,
+    sine_F,
+    sine_f,
 )
 from moljax.laplace.nilt_fft import (
-    compute_symmetry_residual,
     apply_hermitian_projection,
+    compute_symmetry_residual,
 )
 
 

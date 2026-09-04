@@ -6,20 +6,18 @@ operator/grid properties (CFL-like scaling).
 """
 
 import jax.numpy as jnp
-import pytest
 
 from moljax.laplace import (
-    tune_nilt_params,
-    tune_for_diffusion,
+    BoundContext,
+    SpectralBounds,
+    diagnose_tuning,
+    fd_advection_upwind_bounds,
+    fd_laplacian_bounds,
+    next_power_of_two,
     tune_for_advection,
     tune_for_advection_diffusion,
-    diagnose_tuning,
-    next_power_of_two,
-    SpectralBounds,
-    BoundContext,
-    compute_spectral_bounds,
-    fd_laplacian_bounds,
-    fd_advection_upwind_bounds,
+    tune_for_diffusion,
+    tune_nilt_params,
 )
 
 

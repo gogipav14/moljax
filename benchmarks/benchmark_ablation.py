@@ -13,21 +13,23 @@ Uses Gray-Scott reaction-diffusion as the test problem.
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
+
 import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import (
+    add_benchmark_args,
+    check_finite_tree,
+    compute_stats,
+    setup_benchmark,
+)
 from jax import lax
 from jax.scipy.sparse.linalg import gmres
-from functools import partial
-
-from benchmark_utils import (
-    setup_benchmark, check_finite_tree, compute_stats,
-    add_benchmark_args, DEFAULT_N_REPS
-)
 
 # Parse CLI arguments
 parser = add_benchmark_args()

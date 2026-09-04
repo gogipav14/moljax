@@ -15,15 +15,14 @@ Key features:
 
 from __future__ import annotations
 
-from typing import NamedTuple, Literal
 import warnings as _warnings
+from typing import Literal, NamedTuple
 
 import jax.numpy as jnp
 
-from .tuning import tune_nilt_params, TunedNILTParams, next_power_of_two
-from .nilt_fft import nilt_fft_uniform, NILTResult
-from .spectral_bounds import SpectralBounds, BoundContext
-
+from .nilt_fft import NILTResult, nilt_fft_uniform
+from .spectral_bounds import BoundContext, SpectralBounds
+from .tuning import TunedNILTParams, next_power_of_two, tune_nilt_params
 
 # =============================================================================
 # Quality classification
@@ -425,7 +424,7 @@ def tune_nilt_adaptive_cfl(
         AdaptiveTuningResult with CFL-based diagnostics
     """
     from .endpoint_diagnostics import check_spectral_cfl_conditions, suggest_parameter_adjustments
-    from .nilt_fft import nilt_fft_uniform, nilt_fft_halfstep_ivt
+    from .nilt_fft import nilt_fft_halfstep_ivt, nilt_fft_uniform
 
     actions = []
 

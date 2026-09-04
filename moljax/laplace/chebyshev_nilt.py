@@ -29,12 +29,10 @@ References:
 
 from __future__ import annotations
 
-from functools import partial
-from typing import Callable, NamedTuple, Optional, Tuple, List
+from collections.abc import Callable
+from typing import NamedTuple
 
-import jax
 import jax.numpy as jnp
-from jax import lax
 
 
 class ChebyshevNILTResult(NamedTuple):
@@ -237,7 +235,7 @@ def talbot_contour(
     t: float,
     n_points: int,
     sigma: float = 0.0
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Generate Talbot contour points and weights.
 
@@ -438,7 +436,7 @@ def adaptive_chebyshev_nilt(
     method: str = 'auto',
     tol: float = 1e-6,
     max_terms: int = 64,
-    sigma: Optional[float] = None
+    sigma: float | None = None
 ) -> ChebyshevNILTResult:
     """
     Adaptive Chebyshev-based NILT with automatic method selection.
@@ -508,7 +506,7 @@ def adaptive_chebyshev_nilt(
 
 def compare_chebyshev_vs_fft(
     F_eval: Callable,
-    f_exact: Optional[Callable] = None,
+    f_exact: Callable | None = None,
     t_end: float = 10.0,
     n_points: int = 64
 ) -> dict:

@@ -15,10 +15,7 @@ Output: results/da_pe_robustness.json
 """
 
 import json
-import os
-import time
 from pathlib import Path
-from collections import defaultdict
 
 import jax
 import jax.numpy as jnp

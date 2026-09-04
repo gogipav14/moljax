@@ -13,15 +13,15 @@ Problem: 1D advection-dispersion-reaction (tubular reactor)
     - Outlet (z=1): dc/dz = 0
 """
 
-import time
 import json
+import time
 from pathlib import Path
-import numpy as np
 
+import diffrax
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import jit
-import diffrax
 
 print("=" * 70)
 print("Benchmark: moljax vs Diffrax for Tubular Reactor")
@@ -112,6 +112,7 @@ def solve_reactor_cn(N, Pe, Da, dt, T_final):
 
 
 from functools import partial
+
 
 @partial(jit, static_argnums=(0, 4))
 def solve_reactor_cn_jit(N, Pe, Da, dt, n_steps):

@@ -9,15 +9,16 @@ Purpose: Evidence-based method selection guide
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
-import jax.numpy as jnp
 
-from benchmark_utils import setup_benchmark, add_benchmark_args
+import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import add_benchmark_args, setup_benchmark
 
 parser = add_benchmark_args()
 args = parser.parse_args()
@@ -284,6 +285,7 @@ for i, D in enumerate(D_VALUES):
         winner_matrix[i, j] = method_to_num[exp['winner']]
 
 from matplotlib.colors import ListedColormap
+
 colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728']  # Blue, Green, Orange, Red
 cmap = ListedColormap(colors)
 

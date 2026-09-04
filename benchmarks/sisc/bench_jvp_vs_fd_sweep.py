@@ -11,16 +11,17 @@ Purpose: Shows FD stagnation regime, validates AD advantage
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
-import jax.numpy as jnp
-from jax.scipy.sparse.linalg import gmres
 
-from benchmark_utils import setup_benchmark, add_benchmark_args
+import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import add_benchmark_args, setup_benchmark
+from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
@@ -190,7 +191,7 @@ results['gmres_comparison'] = {'ad': {'iterations': iters_ad}}
 
 # FD-based GMRES at different epsilons
 test_epsilons = [1e-4, 1e-6, 1e-8, 1e-10]
-print(f"  FD-JVP GMRES at various ε:")
+print("  FD-JVP GMRES at various ε:")
 
 for eps in test_epsilons:
     def fd_matvec(v_flat, eps_val=eps):

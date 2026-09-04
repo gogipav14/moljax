@@ -14,6 +14,7 @@ Example usage at top of benchmark scripts:
 """
 import argparse
 import time
+
 import numpy as np
 
 # NOTE: Do NOT import jax.numpy here at module scope!

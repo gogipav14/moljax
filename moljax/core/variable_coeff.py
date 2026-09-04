@@ -22,14 +22,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, NamedTuple, Optional, Tuple
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 from jax import lax
-
-from moljax.core.grid import Grid1D, Grid2D
-
 
 # =============================================================================
 # Variable Coefficient Data Structures
@@ -354,7 +351,7 @@ def richardson_iteration_varcoeff_1d(
     n_iters: int,
     dt: float = 1.0,
     omega: float = 1.0
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Richardson iteration with FFT preconditioner for variable-coefficient diffusion.
 
@@ -411,7 +408,7 @@ def richardson_iteration_varcoeff_2d(
     n_iters: int,
     dt: float = 1.0,
     omega: float = 1.0
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     2D Richardson iteration with FFT preconditioner.
     """
@@ -440,8 +437,8 @@ def richardson_iteration_varcoeff_2d(
 
 def assess_circulant_quality(
     approx: CirculantApprox,
-    test_u: Optional[jnp.ndarray] = None,
-    D: Optional[jnp.ndarray] = None,
+    test_u: jnp.ndarray | None = None,
+    D: jnp.ndarray | None = None,
     dx: float = 0.1
 ) -> dict:
     """

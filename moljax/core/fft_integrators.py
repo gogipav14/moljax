@@ -20,7 +20,8 @@ All methods work with FFTLinearOperator instances for efficient computation.
 
 from __future__ import annotations
 
-from typing import Callable, Dict, NamedTuple, Optional
+from collections.abc import Callable
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -121,7 +122,7 @@ def etd1_step(
     state: StateDict,
     t: float,
     dt: float,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     nonlinear_rhs: Callable[[StateDict, float], StateDict],
 ) -> StateDict:
     """ETD1 (Exponential Euler) step for u_t = L*u + N(u).
@@ -189,9 +190,9 @@ def etd2_step(
     state: StateDict,
     t: float,
     dt: float,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     nonlinear_rhs: Callable[[StateDict, float], StateDict],
-    N_prev: Optional[StateDict] = None,
+    N_prev: StateDict | None = None,
 ) -> tuple[StateDict, StateDict]:
     """ETD2 (Exponential Adams-Bashforth 2) step.
 
@@ -273,7 +274,7 @@ def etdrk4_step(
     state: StateDict,
     t: float,
     dt: float,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     nonlinear_rhs: Callable[[StateDict, float], StateDict],
 ) -> StateDict:
     """ETDRK4 (Cox-Matthews) 4th order exponential integrator.
@@ -370,7 +371,7 @@ def etd_integrate(
     u0: StateDict,
     t_span: tuple[float, float],
     dt: float,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     nonlinear_rhs: Callable[[StateDict, float], StateDict],
     method: str = 'etd1',
     save_every: int = 1,
@@ -485,7 +486,7 @@ def etd_integrate(
 
 def batched_fft_matvec(
     state: StateDict,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
 ) -> StateDict:
     """Apply L*u for all fields using batched FFT when operators are shared.
 
@@ -508,7 +509,7 @@ def batched_fft_matvec(
 
 def batched_fft_solve(
     rhs: StateDict,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     dt: float,
 ) -> StateDict:
     """Solve (I - dt*L)*u = rhs for all fields.
@@ -533,7 +534,7 @@ def batched_fft_solve(
 
 def batched_fft_exp_matvec(
     state: StateDict,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     dt: float,
 ) -> StateDict:
     """Apply exp(dt*L)*u for all fields.
@@ -638,7 +639,7 @@ def imex_euler_step(
     state: StateDict,
     t: float,
     dt: float,
-    linear_ops: Dict[str, FFTLinearOperator],
+    linear_ops: dict[str, FFTLinearOperator],
     nonlinear_rhs: Callable[[StateDict, float], StateDict],
 ) -> StateDict:
     """IMEX-Euler step: implicit diffusion, explicit reaction.

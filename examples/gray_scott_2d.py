@@ -17,25 +17,27 @@ Run: python -m moljax.examples.gray_scott_2d
 """
 
 import time
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-from pathlib import Path
 
-from moljax.core.grid import Grid2D
 from moljax.core.bc import BCType
-from moljax.core.model import create_gray_scott_model, create_gray_scott_periodic_fft
-from moljax.core.stepping import (
-    IntegratorType, adaptive_integrate, integrate_fixed_dt,
-    adaptive_integrate_imex, integrate_imex_fixed_dt
-)
-from moljax.core.preconditioners import (
-    create_gray_scott_preconditioner,
-    create_gray_scott_fft_preconditioner
-)
 from moljax.core.dt_policy import CFLParams, PIDParams
-from moljax.core.newton_krylov import NKParams
 from moljax.core.fft_solvers import create_fft_cache
+from moljax.core.grid import Grid2D
+from moljax.core.model import create_gray_scott_model, create_gray_scott_periodic_fft
+from moljax.core.newton_krylov import NKParams
+from moljax.core.preconditioners import (
+    create_gray_scott_fft_preconditioner,
+    create_gray_scott_preconditioner,
+)
+from moljax.core.stepping import (
+    IntegratorType,
+    adaptive_integrate,
+    adaptive_integrate_imex,
+)
 from moljax.core.utils import get_interior
 
 

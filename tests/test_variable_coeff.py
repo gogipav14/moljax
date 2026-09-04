@@ -2,24 +2,20 @@
 Tests for variable coefficient operators with FFT-based preconditioning.
 """
 
-import pytest
 import jax.numpy as jnp
-import numpy as np
+import pytest
 
 from moljax.core.variable_coeff import (
+    apply_variable_diffusion_1d,
+    apply_variable_diffusion_2d,
+    assess_circulant_quality,
     compute_coeff_stats,
     create_circulant_approx_1d,
     create_circulant_approx_2d,
-    apply_variable_diffusion_1d,
-    apply_variable_diffusion_2d,
+    etd1_varcoeff_approx_1d,
+    richardson_iteration_varcoeff_1d,
     solve_helmholtz_circulant_1d,
     solve_helmholtz_circulant_2d,
-    richardson_iteration_varcoeff_1d,
-    richardson_iteration_varcoeff_2d,
-    assess_circulant_quality,
-    etd1_varcoeff_approx_1d,
-    CirculantApprox,
-    VariableCoeffStats,
 )
 
 

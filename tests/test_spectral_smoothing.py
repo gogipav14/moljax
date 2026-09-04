@@ -2,7 +2,6 @@
 Tests for spectral smoothing methods (Gibbs artifact reduction).
 """
 
-import pytest
 import jax
 import jax.numpy as jnp
 
@@ -10,17 +9,17 @@ jax.config.update("jax_enable_x64", True)
 
 from moljax.laplace.spectral_smoothing import (
     SmoothingMethod,
-    fejer_sigma,
-    lanczos_sigma,
-    hamming_window,
-    raised_cosine_sigma,
-    exponential_sigma,
-    get_sigma_factors,
     apply_spectral_smoothing,
-    nilt_with_smoothing,
     compare_smoothing_methods,
+    exponential_sigma,
+    fejer_sigma,
+    get_sigma_factors,
+    hamming_window,
+    lanczos_sigma,
+    nilt_with_smoothing,
+    raised_cosine_sigma,
 )
-from moljax.laplace.transfer_functions import step_F, step_f
+from moljax.laplace.transfer_functions import step_F
 
 
 class TestSigmaFactors:

@@ -18,16 +18,16 @@ CFL condition: dt <= dx / c.
 Run: python -m moljax.examples.acoustics_1d
 """
 
-import jax
-import jax.numpy as jnp
-import numpy as np
 from pathlib import Path
 
-from moljax.core.grid import Grid1D
+import jax.numpy as jnp
+import numpy as np
+
 from moljax.core.bc import BCType
+from moljax.core.dt_policy import CFLParams, PIDParams
+from moljax.core.grid import Grid1D
 from moljax.core.model import create_acoustics_1d_model
 from moljax.core.stepping import IntegratorType, adaptive_integrate
-from moljax.core.dt_policy import CFLParams, PIDParams
 from moljax.core.utils import get_interior
 
 
@@ -136,7 +136,7 @@ def test_cfl_scaling():
         print(f"{nx:>6} {dx:>10.6f} {dt_cfl:>12.6e} {ratio_str:>10}")
 
     print("-" * 50)
-    print(f"Expected scaling: dt ~ dx (ratio doubles with nx)")
+    print("Expected scaling: dt ~ dx (ratio doubles with nx)")
 
 
 def main():

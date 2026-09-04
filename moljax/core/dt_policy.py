@@ -16,12 +16,12 @@ Design decisions:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Tuple, Optional, NamedTuple
-import jax
+from typing import Any, NamedTuple
+
 import jax.numpy as jnp
 from jax import lax
 
-from moljax.core.grid import Grid1D, Grid2D, GridType
+from moljax.core.grid import GridType
 from moljax.core.state import StateDict
 
 
@@ -103,7 +103,7 @@ def create_initial_controller_state(dtype: jnp.dtype = jnp.float64) -> Controlle
 
 def heisenberg_cfl_dt(
     grid: GridType,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     cfl_params: CFLParams
 ) -> jnp.ndarray:
     """
@@ -181,7 +181,7 @@ def pid_controller_dt(
     controller_state: ControllerState,
     pid_params: PIDParams,
     order: int = 4
-) -> Tuple[jnp.ndarray, ControllerState]:
+) -> tuple[jnp.ndarray, ControllerState]:
     """
     PID/PI controller for adaptive time step.
 
@@ -233,7 +233,7 @@ def handle_rejected_step(
     controller_state: ControllerState,
     pid_params: PIDParams,
     order: int = 4
-) -> Tuple[jnp.ndarray, ControllerState]:
+) -> tuple[jnp.ndarray, ControllerState]:
     """
     Handle a rejected step by reducing dt more aggressively.
 
@@ -324,17 +324,17 @@ def implicit_robustness_dt(
 def propose_dt(
     method: int,
     grid: GridType,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     state: StateDict,
     t: jnp.ndarray,
     dt_old: jnp.ndarray,
     err_ratio: jnp.ndarray,
     controller_state: ControllerState,
-    nk_stats: Optional[NKStats] = None,
-    cfl_params: Optional[CFLParams] = None,
-    pid_params: Optional[PIDParams] = None,
+    nk_stats: NKStats | None = None,
+    cfl_params: CFLParams | None = None,
+    pid_params: PIDParams | None = None,
     order: int = 4
-) -> Tuple[jnp.ndarray, ControllerState]:
+) -> tuple[jnp.ndarray, ControllerState]:
     """
     Unified dt proposal function for all methods.
 
@@ -429,7 +429,7 @@ def compute_error_order(method: int) -> int:
 
 def imex_cfl_dt(
     grid,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     cfl_params: CFLParams
 ) -> jnp.ndarray:
     """
@@ -504,7 +504,7 @@ def imex_cfl_dt(
 
 def estimate_reaction_stiffness(
     state: StateDict,
-    params: Dict[str, Any]
+    params: dict[str, Any]
 ) -> jnp.ndarray:
     """
     Estimate reaction stiffness for dt limiting.
@@ -543,16 +543,16 @@ def estimate_reaction_stiffness(
 
 def propose_dt_imex(
     grid,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     state: StateDict,
     t: jnp.ndarray,
     dt_old: jnp.ndarray,
     err_ratio: jnp.ndarray,
     controller_state: ControllerState,
-    cfl_params: Optional[CFLParams] = None,
-    pid_params: Optional[PIDParams] = None,
+    cfl_params: CFLParams | None = None,
+    pid_params: PIDParams | None = None,
     order: int = 2
-) -> Tuple[jnp.ndarray, ControllerState]:
+) -> tuple[jnp.ndarray, ControllerState]:
     """
     Propose dt for IMEX methods.
 

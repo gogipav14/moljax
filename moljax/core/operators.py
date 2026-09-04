@@ -19,14 +19,14 @@ Design decisions:
 - FFT symbol functions match finite difference Laplacian for periodic BCs
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional, Dict, Tuple, Any, Union, List
-import jax
+from typing import Any
+
 import jax.numpy as jnp
 
 from moljax.core.grid import Grid1D, Grid2D, GridType
-from moljax.core.state import StateDict, tree_add, tree_scale, tree_zeros_like
-
+from moljax.core.state import StateDict, tree_add, tree_zeros_like
 
 # =============================================================================
 # 1D Operators
@@ -63,7 +63,7 @@ def d1_central_1d(f: jnp.ndarray, grid: Grid1D) -> jnp.ndarray:
 
 def d1_upwind_1d(
     f: jnp.ndarray,
-    v: Union[float, jnp.ndarray],
+    v: float | jnp.ndarray,
     grid: Grid1D
 ) -> jnp.ndarray:
     """
@@ -199,7 +199,7 @@ def d1_central_2d(f: jnp.ndarray, grid: Grid2D, axis: int) -> jnp.ndarray:
 
 def d1_upwind_2d(
     f: jnp.ndarray,
-    v: Union[float, jnp.ndarray],
+    v: float | jnp.ndarray,
     grid: Grid2D,
     axis: int
 ) -> jnp.ndarray:
@@ -340,8 +340,8 @@ class LinearOp:
         dt_bound: Optional function (grid, params) -> float giving CFL/stability bound
     """
     name: str
-    apply: Callable[[StateDict, GridType, float, Dict[str, Any]], StateDict]
-    dt_bound: Optional[Callable[[GridType, Dict[str, Any]], float]] = None
+    apply: Callable[[StateDict, GridType, float, dict[str, Any]], StateDict]
+    dt_bound: Callable[[GridType, dict[str, Any]], float] | None = None
 
 
 @dataclass(frozen=True)
@@ -357,11 +357,11 @@ class NonlinearOp:
         dt_bound: Optional function (grid, state, params) -> float giving stiffness bound
     """
     name: str
-    apply: Callable[[StateDict, GridType, float, Dict[str, Any]], StateDict]
-    dt_bound: Optional[Callable[[GridType, StateDict, Dict[str, Any]], float]] = None
+    apply: Callable[[StateDict, GridType, float, dict[str, Any]], StateDict]
+    dt_bound: Callable[[GridType, StateDict, dict[str, Any]], float] | None = None
 
 
-def op_sum(ops: List[Union[LinearOp, NonlinearOp]]) -> Callable:
+def op_sum(ops: list[LinearOp | NonlinearOp]) -> Callable:
     """
     Create a combined operator that sums the results of multiple operators.
 
@@ -371,7 +371,7 @@ def op_sum(ops: List[Union[LinearOp, NonlinearOp]]) -> Callable:
     Returns:
         Function (state, grid, t, params) -> StateDict that applies sum of all ops
     """
-    def combined_apply(state: StateDict, grid: GridType, t: float, params: Dict[str, Any]) -> StateDict:
+    def combined_apply(state: StateDict, grid: GridType, t: float, params: dict[str, Any]) -> StateDict:
         result = ops[0].apply(state, grid, t, params)
         for op in ops[1:]:
             result = tree_add(result, op.apply(state, grid, t, params))
@@ -400,7 +400,7 @@ def make_diffusion_op_1d(field_name: str, D_param: str = 'D') -> LinearOp:
     Returns:
         LinearOp that applies D * Laplacian to the field
     """
-    def apply_diffusion(state: StateDict, grid: Grid1D, t: float, params: Dict) -> StateDict:
+    def apply_diffusion(state: StateDict, grid: Grid1D, t: float, params: dict) -> StateDict:
         D = params.get(D_param, 1.0)
         f = state[field_name]
         lap_f = laplacian_1d(f, grid)
@@ -409,7 +409,7 @@ def make_diffusion_op_1d(field_name: str, D_param: str = 'D') -> LinearOp:
         result[field_name] = D * lap_f
         return result
 
-    def dt_bound(grid: Grid1D, params: Dict) -> float:
+    def dt_bound(grid: Grid1D, params: dict) -> float:
         D = params.get(D_param, 1.0)
         # Diffusion CFL: dt <= 0.5 * dx^2 / D for 1D
         return 0.5 * grid.min_dx2 / (D + 1e-14)
@@ -428,7 +428,7 @@ def make_diffusion_op_2d(field_name: str, D_param: str = 'D') -> LinearOp:
     Returns:
         LinearOp that applies D * Laplacian to the field
     """
-    def apply_diffusion(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def apply_diffusion(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         D = params.get(D_param, 1.0)
         f = state[field_name]
         lap_f = laplacian_2d(f, grid)
@@ -436,7 +436,7 @@ def make_diffusion_op_2d(field_name: str, D_param: str = 'D') -> LinearOp:
         result[field_name] = D * lap_f
         return result
 
-    def dt_bound(grid: Grid2D, params: Dict) -> float:
+    def dt_bound(grid: Grid2D, params: dict) -> float:
         D = params.get(D_param, 1.0)
         # Diffusion CFL: dt <= 0.25 * dx^2 / D for 2D (more restrictive)
         return 0.25 * grid.min_dx2 / (D + 1e-14)
@@ -460,7 +460,7 @@ def make_advection_op_1d(
     Returns:
         LinearOp that applies -vx * df/dx
     """
-    def apply_advection(state: StateDict, grid: Grid1D, t: float, params: Dict) -> StateDict:
+    def apply_advection(state: StateDict, grid: Grid1D, t: float, params: dict) -> StateDict:
         vx = params.get(vx_param, 0.0)
         f = state[field_name]
 
@@ -473,7 +473,7 @@ def make_advection_op_1d(
         result[field_name] = -vx * df_dx
         return result
 
-    def dt_bound(grid: Grid1D, params: Dict) -> float:
+    def dt_bound(grid: Grid1D, params: dict) -> float:
         vx = params.get(vx_param, 0.0)
         v_max = jnp.abs(vx) if jnp.ndim(vx) == 0 else jnp.max(jnp.abs(vx))
         return grid.min_dx / (v_max + 1e-14)
@@ -499,7 +499,7 @@ def make_advection_op_2d(
     Returns:
         LinearOp that applies -(vx * df/dx + vy * df/dy)
     """
-    def apply_advection(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def apply_advection(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         vx = params.get(vx_param, 0.0)
         vy = params.get(vy_param, 0.0)
         f = state[field_name]
@@ -515,7 +515,7 @@ def make_advection_op_2d(
         result[field_name] = -vx * df_dx - vy * df_dy
         return result
 
-    def dt_bound(grid: Grid2D, params: Dict) -> float:
+    def dt_bound(grid: Grid2D, params: dict) -> float:
         vx = params.get(vx_param, 0.0)
         vy = params.get(vy_param, 0.0)
         vx_max = jnp.abs(vx) if jnp.ndim(vx) == 0 else jnp.max(jnp.abs(vx))
@@ -547,7 +547,7 @@ def acoustics_1d_linear_op() -> LinearOp:
 
     State must have fields: 'p' (pressure) and 'v' (velocity)
     """
-    def apply_acoustics(state: StateDict, grid: Grid1D, t: float, params: Dict) -> StateDict:
+    def apply_acoustics(state: StateDict, grid: Grid1D, t: float, params: dict) -> StateDict:
         K = params.get('K', 1.0)
         rho = params.get('rho', 1.0)
 
@@ -565,7 +565,7 @@ def acoustics_1d_linear_op() -> LinearOp:
             'v': -(1.0 / rho) * dp_dx
         }
 
-    def dt_bound(grid: Grid1D, params: Dict) -> float:
+    def dt_bound(grid: Grid1D, params: dict) -> float:
         K = params.get('K', 1.0)
         rho = params.get('rho', 1.0)
         c = jnp.sqrt(K / rho)  # Wave speed
@@ -586,7 +586,7 @@ def acoustics_2d_linear_op() -> LinearOp:
 
     State must have fields: 'p', 'vx', 'vy'
     """
-    def apply_acoustics(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def apply_acoustics(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         K = params.get('K', 1.0)
         rho = params.get('rho', 1.0)
 
@@ -606,7 +606,7 @@ def acoustics_2d_linear_op() -> LinearOp:
             'vy': -(1.0 / rho) * dp_dy
         }
 
-    def dt_bound(grid: Grid2D, params: Dict) -> float:
+    def dt_bound(grid: Grid2D, params: dict) -> float:
         K = params.get('K', 1.0)
         rho = params.get('rho', 1.0)
         c = jnp.sqrt(K / rho)
@@ -621,7 +621,7 @@ def acoustics_2d_linear_op() -> LinearOp:
 # =============================================================================
 
 def make_reaction_op(
-    reactions: Dict[str, Callable[[StateDict, Dict], jnp.ndarray]]
+    reactions: dict[str, Callable[[StateDict, dict], jnp.ndarray]]
 ) -> NonlinearOp:
     """
     Create a nonlinear reaction operator from a dict of reaction functions.
@@ -632,7 +632,7 @@ def make_reaction_op(
     Returns:
         NonlinearOp that applies the reaction terms
     """
-    def apply_reaction(state: StateDict, grid: GridType, t: float, params: Dict) -> StateDict:
+    def apply_reaction(state: StateDict, grid: GridType, t: float, params: dict) -> StateDict:
         result = {k: jnp.zeros_like(v) for k, v in state.items()}
         for field_name, reaction_fn in reactions.items():
             result[field_name] = reaction_fn(state, params)
@@ -652,7 +652,7 @@ def gray_scott_reaction_op() -> NonlinearOp:
         'F': feed rate (default 0.04)
         'k': kill rate (default 0.06)
     """
-    def apply_reaction(state: StateDict, grid: GridType, t: float, params: Dict) -> StateDict:
+    def apply_reaction(state: StateDict, grid: GridType, t: float, params: dict) -> StateDict:
         F = params.get('F', 0.04)
         k = params.get('k', 0.06)
 
@@ -666,7 +666,7 @@ def gray_scott_reaction_op() -> NonlinearOp:
             'v': uvv - (F + k) * v
         }
 
-    def dt_bound(grid: GridType, state: StateDict, params: Dict) -> float:
+    def dt_bound(grid: GridType, state: StateDict, params: dict) -> float:
         # Estimate reaction stiffness from Jacobian eigenvalues
         # For Gray-Scott: |df/du| ~ v^2 + F, |df/dv| ~ 2*u*v + (F+k)
         F = params.get('F', 0.04)
@@ -689,7 +689,7 @@ def schnakenberg_reaction_op() -> NonlinearOp:
         'b': kinetic parameter (default 0.9)
         'gamma': Gierer-Meinhardt scaling (default 1000)
     """
-    def apply_reaction(state: StateDict, grid: GridType, t: float, params: Dict) -> StateDict:
+    def apply_reaction(state: StateDict, grid: GridType, t: float, params: dict) -> StateDict:
         a = params.get('a', 0.1)
         b = params.get('b', 0.9)
         gamma = params.get('gamma', 1000.0)
@@ -704,7 +704,7 @@ def schnakenberg_reaction_op() -> NonlinearOp:
             'v': gamma * (b - u2v)
         }
 
-    def dt_bound(grid: GridType, state: StateDict, params: Dict) -> float:
+    def dt_bound(grid: GridType, state: StateDict, params: dict) -> float:
         gamma = params.get('gamma', 1000.0)
         return 0.5 / (gamma + 1e-14)
 
@@ -722,7 +722,7 @@ def brusselator_reaction_op() -> NonlinearOp:
         'a': kinetic parameter (default 1.0)
         'b': kinetic parameter (default 3.4, above Hopf threshold b > 1+a^2 = 2)
     """
-    def apply_reaction(state: StateDict, grid: GridType, t: float, params: Dict) -> StateDict:
+    def apply_reaction(state: StateDict, grid: GridType, t: float, params: dict) -> StateDict:
         a = params.get('a', 1.0)
         b = params.get('b', 3.4)
 
@@ -736,7 +736,7 @@ def brusselator_reaction_op() -> NonlinearOp:
             'v': b * u - u2v
         }
 
-    def dt_bound(grid: GridType, state: StateDict, params: Dict) -> float:
+    def dt_bound(grid: GridType, state: StateDict, params: dict) -> float:
         b = params.get('b', 3.4)
         return 0.5 / (b + 1.0 + 1e-14)
 
@@ -751,7 +751,7 @@ def fisher_kpp_reaction_op(field_name: str = 'u', r_param: str = 'r') -> Nonline
         field_name: Field to apply reaction to
         r_param: Key in params for growth rate
     """
-    def apply_reaction(state: StateDict, grid: GridType, t: float, params: Dict) -> StateDict:
+    def apply_reaction(state: StateDict, grid: GridType, t: float, params: dict) -> StateDict:
         r = params.get(r_param, 1.0)
         u = state[field_name]
 
@@ -759,7 +759,7 @@ def fisher_kpp_reaction_op(field_name: str = 'u', r_param: str = 'r') -> Nonline
         result[field_name] = r * u * (1.0 - u)
         return result
 
-    def dt_bound(grid: GridType, state: StateDict, params: Dict) -> float:
+    def dt_bound(grid: GridType, state: StateDict, params: dict) -> float:
         r = params.get(r_param, 1.0)
         # |df/du| = r * |1 - 2u| <= r
         return 0.5 / (r + 1e-14)

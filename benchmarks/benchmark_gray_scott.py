@@ -19,12 +19,13 @@ IMPORTANT: This benchmark runs to ACTUAL t=10000. No scaling or extrapolation.
 All reported times are actual wallclock times to complete the full simulation.
 """
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
 
 import jax
+import numpy as np
+
 jax.config.update("jax_enable_x64", True)  # Enable float64 precision
 import jax.numpy as jnp
 
@@ -484,6 +485,6 @@ for m in results['methods']:
     print(f"{m['name']:<20} {m['steps']:>12,} {time_str:>14} {m['dt']:>10.4f}")
 print("=" * 80)
 print(f"\nNote: ALL times are ACTUAL wallclock to reach t={T_FINAL}")
-print(f"      NO SCALING/EXTRAPOLATION - these are measured times")
+print("      NO SCALING/EXTRAPOLATION - these are measured times")
 print(f"      {N_REPS} runs, median ± IQR reported")
-print(f"      Laplacian: pseudo-spectral (-k²)")
+print("      Laplacian: pseudo-spectral (-k²)")

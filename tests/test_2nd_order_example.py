@@ -6,16 +6,15 @@ autotuned parameters.
 """
 
 import jax.numpy as jnp
-import pytest
 
 from moljax.laplace import (
+    SpectralBounds,
+    compare_to_reference,
+    compute_nilt_diagnostics,
     nilt_fft_uniform,
-    tune_nilt_params,
     second_order_damping_F,
     second_order_damping_f,
-    compute_nilt_diagnostics,
-    compare_to_reference,
-    SpectralBounds,
+    tune_nilt_params,
 )
 
 

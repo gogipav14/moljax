@@ -15,17 +15,19 @@ Reference solution: ETDRK4 with dt=0.1 (100,000 steps for t=10000).
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
-import time
 import json
+import time
 from pathlib import Path
+
+import jax.numpy as jnp
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 from benchmark_utils import setup_benchmark
 
 print("=" * 70)

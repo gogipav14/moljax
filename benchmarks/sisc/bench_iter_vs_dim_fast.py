@@ -9,16 +9,17 @@ Output format: median [IQR] (max)
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
-import jax.numpy as jnp
-from jax.scipy.sparse.linalg import gmres
 
-from benchmark_utils import setup_benchmark, add_benchmark_args
+import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import add_benchmark_args, setup_benchmark
+from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()

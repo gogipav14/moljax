@@ -17,22 +17,29 @@ Grid: 256x256, t in [0, 10000]
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
 import json
 import time
 from pathlib import Path
-import numpy as np
+
 import jax.numpy as jnp
-from benchmark_utils import setup_benchmark, compute_stats, check_finite_tree
+import numpy as np
+from benchmark_utils import compute_stats, setup_benchmark
 
 # Try to import Diffrax
 try:
     import diffrax
     from diffrax import (
-        diffeqsolve, ODETerm, SaveAt,
-        Tsit5, Kvaerno5, Dopri5,
-        PIDController, ConstantStepSize
+        ConstantStepSize,
+        Dopri5,
+        Kvaerno5,
+        ODETerm,
+        PIDController,
+        SaveAt,
+        Tsit5,
+        diffeqsolve,
     )
     HAS_DIFFRAX = True
 except ImportError:

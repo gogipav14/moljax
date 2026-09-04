@@ -14,7 +14,7 @@ Design decisions:
 """
 
 from dataclasses import dataclass
-from typing import Tuple, Union
+from typing import Union
 
 
 @dataclass(frozen=True)
@@ -200,7 +200,7 @@ class Grid2D:
         return self.ny + 2 * self.n_ghost
 
     @property
-    def interior_slice(self) -> Tuple[slice, slice]:
+    def interior_slice(self) -> tuple[slice, slice]:
         """Tuple of slices for extracting interior from padded arrays."""
         return (
             slice(self.n_ghost, self.n_ghost + self.ny),
@@ -217,7 +217,7 @@ class Grid2D:
         """Minimum grid spacing squared."""
         return self.min_dx ** 2
 
-    def meshgrid(self, include_ghost: bool = False) -> Tuple["jax.Array", "jax.Array"]:
+    def meshgrid(self, include_ghost: bool = False) -> tuple["jax.Array", "jax.Array"]:
         """
         Get 2D coordinate arrays.
 

@@ -12,8 +12,9 @@ Used to determine:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp

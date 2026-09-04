@@ -8,33 +8,30 @@ Newton-Krylov solvers, and FFT preconditioners.
 Grid: 256x256, t ∈ [0, 10000] (scaled from t=100 benchmark)
 """
 
-import time
 import json
 import sys
+import time
 from pathlib import Path
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-import numpy as np
 
 # Add moljax to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "moljax_public"))
 
-from moljax.core.grid import Grid2D
 from moljax.core.bc import BCType
-from moljax.core.model import create_gray_scott_model, create_gray_scott_periodic_fft
-from moljax.core.stepping import (
-    IntegratorType, adaptive_integrate, integrate_fixed_dt,
-    adaptive_integrate_imex, integrate_imex_fixed_dt
-)
-from moljax.core.preconditioners import (
-    create_gray_scott_fft_preconditioner
-)
 from moljax.core.dt_policy import CFLParams, PIDParams
+from moljax.core.grid import Grid2D
+from moljax.core.model import create_gray_scott_model, create_gray_scott_periodic_fft
 from moljax.core.newton_krylov import NKParams
-from moljax.core.fft_solvers import create_fft_cache
-from moljax.core.fft_integrators import etdrk4_step, etd_integrate
+from moljax.core.preconditioners import create_gray_scott_fft_preconditioner
+from moljax.core.stepping import (
+    IntegratorType,
+    adaptive_integrate,
+    adaptive_integrate_imex,
+)
 
 print("=" * 70)
 print("Gray-Scott Benchmark (moljax library)")

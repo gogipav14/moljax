@@ -13,15 +13,15 @@ Problem: 2D diffusion equation
     Analytical: exp(-8π²Dt) * sin(2πx) * sin(2πy)
 """
 
-import time
 import json
+import time
 from pathlib import Path
-import numpy as np
 
+import diffrax
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import jit
-import diffrax
 
 print("=" * 70)
 print("Benchmark: moljax FFT-CN vs Diffrax")

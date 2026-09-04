@@ -11,14 +11,16 @@ Brusselator uses b=1.8 (Turing regime; b=3.4 from benchmarks is Hopf/oscillatory
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import jax.numpy as jnp
-import numpy as np
 from functools import partial
 from pathlib import Path
 
+import jax.numpy as jnp
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 

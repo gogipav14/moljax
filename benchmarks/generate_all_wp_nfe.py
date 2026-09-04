@@ -21,15 +21,18 @@ NFE counting:
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
-import time
 import json
-from pathlib import Path
+import time
 from functools import partial
+from pathlib import Path
+
+import jax.numpy as jnp
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -481,7 +484,7 @@ def run_gray_scott_wp():
     lambda_max = float(np.max(-lap_eig))
     dt_rk4_max = 2.8 / (max(Du_gs, Dv_gs) * lambda_max)
     print(f"  RK4 stability limit: dt_max = {dt_rk4_max:.4f}")
-    print(f"  Reaction eigenvalues: mild (~0.1), no reaction stability issue")
+    print("  Reaction eigenvalues: mild (~0.1), no reaction stability issue")
 
     # --- Reference: ETDRK4 dt=0.01 ---
     ref_dt = 0.01

@@ -15,16 +15,16 @@ The advection-diffusion equation for each species:
 Run: python -m moljax.examples.advdiff_multispecies
 """
 
-import jax
-import jax.numpy as jnp
-import numpy as np
 from pathlib import Path
 
-from moljax.core.grid import Grid2D
+import jax.numpy as jnp
+import numpy as np
+
 from moljax.core.bc import BCType
+from moljax.core.dt_policy import CFLParams, PIDParams
+from moljax.core.grid import Grid2D
 from moljax.core.model import create_advection_diffusion_model
 from moljax.core.stepping import IntegratorType, adaptive_integrate
-from moljax.core.dt_policy import CFLParams, PIDParams
 from moljax.core.utils import get_interior
 
 
@@ -149,7 +149,7 @@ def test_dt_scaling():
         print(f"{nx:>6} {dx:>10.6f} {dt_adv:>12.6e} {dt_diff:>12.6e} {ratio_str:>10}")
 
     print("-" * 50)
-    print(f"Expected scaling: dt_adv ~ dx (ratio ~2x), dt_diff ~ dx^2 (ratio ~4x)")
+    print("Expected scaling: dt_adv ~ dx (ratio ~2x), dt_diff ~ dx^2 (ratio ~4x)")
 
 
 def main():

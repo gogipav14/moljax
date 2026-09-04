@@ -8,28 +8,26 @@ Validates:
 - dt policy for IMEX (no diffusion limit)
 """
 
-import pytest
 import jax
 import jax.numpy as jnp
 
-from moljax.core.grid import Grid2D
 from moljax.core.bc import BCType
+from moljax.core.dt_policy import (
+    CFLParams,
+    heisenberg_cfl_dt,
+    imex_cfl_dt,
+)
+from moljax.core.fft_solvers import create_fft_cache
+from moljax.core.grid import Grid2D
 from moljax.core.model import (
     create_gray_scott_model,
     create_gray_scott_periodic_fft,
 )
-from moljax.core.fft_solvers import create_fft_cache
 from moljax.core.stepping import (
+    adaptive_integrate_imex,
     imex_euler_step,
     imex_strang_step,
-    imex_ssprk2_step,
-    adaptive_integrate_imex,
     integrate_imex_fixed_dt,
-)
-from moljax.core.dt_policy import (
-    imex_cfl_dt,
-    heisenberg_cfl_dt,
-    CFLParams,
 )
 
 

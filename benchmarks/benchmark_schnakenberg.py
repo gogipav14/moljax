@@ -19,12 +19,13 @@ This problem is STIFFER than Gray-Scott: gamma=1000 drives reaction eigenvalues
 ~1000x larger, requiring much smaller explicit time steps.
 """
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
 
 import jax
+import numpy as np
+
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 

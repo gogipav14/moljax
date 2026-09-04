@@ -16,23 +16,18 @@ Each test demonstrates QUANTITATIVE improvement:
 - Error reduction ratio (quantitative proof of improvement)
 - Quality metrics (ε_Im, localization) as supporting evidence
 """
-import pytest
+
 import jax.numpy as jnp
-import warnings
+import pytest
 
 from moljax.laplace import (
-    tune_nilt_adaptive,
-    tune_nilt_params,
-    nilt_fft_uniform,
-    classify_quality,
     exponential_decay_F,
     exponential_decay_f,
+    nilt_fft_uniform,
     sine_F,
     sine_f,
-    cosine_F,
-    cosine_f,
-    second_order_damping_F,
-    second_order_damping_f,
+    tune_nilt_adaptive,
+    tune_nilt_params,
 )
 from moljax.laplace.spectral_bounds import SpectralBounds
 
@@ -190,14 +185,14 @@ class TestAdaptiveTuningImprovement:
         print(f"  Initial params: dt={params_initial.dt:.4f}, N={params_initial.N}, T={params_initial.T:.2f}")
         print(f"  Initial total error (inc. t=0):   {error_initial_total:.6f} ({error_initial_total*100:.1f}%)")
         print(f"  Initial tunable error (t>0 only): {error_initial_tunable:.6f} ({error_initial_tunable*100:.1f}%)")
-        print(f"")
+        print("")
         print(f"  Final params: dt={result_adaptive.params.dt:.4f}, N={result_adaptive.params.N}, T={result_adaptive.params.T:.2f}")
         print(f"  Final total error (inc. t=0):     {error_adaptive_total:.6f} ({error_adaptive_total*100:.1f}%)")
         print(f"  Final tunable error (t>0 only):   {error_adaptive_tunable:.6f} ({error_adaptive_tunable*100:.1f}%)")
-        print(f"")
+        print("")
         print(f"  Total error reduction:   {error_reduction_pct_total:+.1f}% (ratio: {improvement_ratio_total:.2f}x)")
         print(f"  Tunable error reduction: {error_reduction_pct_tunable:+.1f}% (ratio: {improvement_ratio_tunable:.2f}x)")
-        print(f"")
+        print("")
         print(f"  Quality: {result_adaptive.quality.tier} - {result_adaptive.quality.reason}")
         print(f"  ε_Im_valid: {result_adaptive.quality.eps_im_valid:.3f}")
         print(f"  Iterations: {result_adaptive.iterations}")
@@ -528,7 +523,7 @@ class TestAdaptiveRetuningActions:
         # Check if retuning actions were taken
         actions_str = " ".join(result.actions).lower()
 
-        print(f"\nRetuning actions test:")
+        print("\nRetuning actions test:")
         print(f"  Actions: {result.actions}")
         print(f"  Final params: dt={result.params.dt:.4f}, T={result.params.T:.2f}")
         print(f"  Quality: {result.quality.tier} - {result.quality.reason}")
@@ -561,7 +556,7 @@ class TestAdaptiveRetuningActions:
 
         actions_str = " ".join(result.actions).lower()
 
-        print(f"\nWraparound retuning test:")
+        print("\nWraparound retuning test:")
         print(f"  Actions: {result.actions}")
         print(f"  Final T: {result.params.T:.2f}")
         print(f"  tail_ratio: {result.quality.tail_ratio:.4f}")
@@ -592,7 +587,7 @@ class TestProjectionFallback:
             N_max=512,  # Constrain N → limit retuning options
         )
 
-        print(f"\nProjection fallback test:")
+        print("\nProjection fallback test:")
         print(f"  Quality: {result.quality.tier}")
         print(f"  Actions: {result.actions}")
 
@@ -636,7 +631,7 @@ class TestQualityClassification:
         quality_good = classify_quality(diagnostics_good, tier='balanced')
         quality_poor = classify_quality(diagnostics_poor, tier='balanced')
 
-        print(f"\nQuality classification test:")
+        print("\nQuality classification test:")
         print(f"  Good case: {quality_good.tier} - {quality_good.reason}")
         print(f"  Poor case: {quality_poor.tier} - {quality_poor.reason}")
 

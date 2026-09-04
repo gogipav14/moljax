@@ -18,16 +18,17 @@ FFT preconditioner: M = (I - dt*D_mean*L_FFT)^{-1}
 
 # Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
 import json
-import matplotlib.pyplot as plt
 from pathlib import Path
-from scipy.sparse.linalg import gmres as scipy_gmres, LinearOperator
 
-from benchmark_utils import setup_benchmark, add_benchmark_args
+import matplotlib.pyplot as plt
+import numpy as np
+from benchmark_utils import add_benchmark_args, setup_benchmark
+from scipy.sparse.linalg import LinearOperator
+from scipy.sparse.linalg import gmres as scipy_gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()

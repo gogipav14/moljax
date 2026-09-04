@@ -16,14 +16,14 @@ Design decisions:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Callable, Protocol, Optional
-import jax
+from typing import Any, Protocol
+
 import jax.numpy as jnp
 from jax import lax
 
-from moljax.core.grid import Grid1D, Grid2D, GridType
-from moljax.core.state import StateDict
+from moljax.core.grid import Grid1D, GridType
 from moljax.core.operators import laplacian_1d, laplacian_2d
+from moljax.core.state import StateDict
 
 
 class PrecondContext:
@@ -33,7 +33,7 @@ class PrecondContext:
         self,
         grid: GridType,
         dt: float,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         **kwargs
     ):
         self.grid = grid
@@ -82,8 +82,8 @@ class BlockJacobiPreconditioner:
         advection_keys: Dict mapping field name to velocity param key
     """
     name: str = "block_jacobi"
-    diffusion_keys: Dict[str, str] = None
-    advection_keys: Dict[str, str] = None
+    diffusion_keys: dict[str, str] = None
+    advection_keys: dict[str, str] = None
 
     def apply(self, r: StateDict, context: PrecondContext) -> StateDict:
         """Apply block Jacobi scaling to each field."""
@@ -135,7 +135,7 @@ class DiffusionPreconditioner:
         omega: Relaxation parameter (default 2/3 for 2D Jacobi)
     """
     name: str = "diffusion"
-    field_diffusivities: Dict[str, str] = None
+    field_diffusivities: dict[str, str] = None
     n_iterations: int = 5
     omega: float = 0.6667
 
@@ -213,9 +213,9 @@ class FFTDiffusionPreconditioner:
         fallback: Optional fallback preconditioner for non-FFT compatible fields
     """
     name: str = "fft_diffusion"
-    field_diffusivity_keys: Dict[str, str] = None
+    field_diffusivity_keys: dict[str, str] = None
     fft_cache: Any = None  # FFTCache1D or FFTCache2D
-    fallback: Optional[Any] = None  # Fallback preconditioner
+    fallback: Any | None = None  # Fallback preconditioner
 
     def apply(self, r: StateDict, context: PrecondContext) -> StateDict:
         """
@@ -313,10 +313,10 @@ class FFTAdvectionDiffusionPreconditioner:
         fallback: Optional fallback preconditioner
     """
     name: str = "fft_advection_diffusion"
-    field_diffusivity_keys: Dict[str, str] = None
-    field_velocity_keys: Dict[str, str] = None
+    field_diffusivity_keys: dict[str, str] = None
+    field_velocity_keys: dict[str, str] = None
     fft_cache: Any = None  # FFTCache1D or FFTCache2D
-    fallback: Optional[Any] = None
+    fallback: Any | None = None
 
     def apply(self, r: StateDict, context: PrecondContext) -> StateDict:
         """
@@ -332,7 +332,6 @@ class FFTAdvectionDiffusionPreconditioner:
         Returns:
             Preconditioned residual
         """
-        from moljax.core.fft_solvers import build_wavenumbers_1d, build_wavenumbers_2d
 
         grid = context.grid
         dt = context.dt
@@ -438,7 +437,7 @@ def create_advdiff_preconditioner(field_names: list) -> BlockJacobiPreconditione
 
 
 def create_diffusion_preconditioner(
-    field_diffusivities: Dict[str, str],
+    field_diffusivities: dict[str, str],
     n_iterations: int = 5
 ) -> DiffusionPreconditioner:
     """
@@ -458,9 +457,9 @@ def create_diffusion_preconditioner(
 
 
 def create_fft_preconditioner(
-    field_diffusivity_keys: Dict[str, str],
+    field_diffusivity_keys: dict[str, str],
     fft_cache,
-    fallback: Optional[Any] = None
+    fallback: Any | None = None
 ) -> FFTDiffusionPreconditioner:
     """
     Create FFT-based diffusion preconditioner for periodic domains.
@@ -489,10 +488,10 @@ def create_gray_scott_fft_preconditioner(fft_cache) -> FFTDiffusionPreconditione
 
 
 def create_advdiff_fft_preconditioner(
-    field_diffusivity_keys: Dict[str, str],
-    field_velocity_keys: Dict[str, str],
+    field_diffusivity_keys: dict[str, str],
+    field_velocity_keys: dict[str, str],
     fft_cache,
-    fallback: Optional[Any] = None
+    fallback: Any | None = None
 ) -> FFTAdvectionDiffusionPreconditioner:
     """
     Create FFT-based advection-diffusion preconditioner.

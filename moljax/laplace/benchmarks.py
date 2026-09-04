@@ -8,17 +8,17 @@ performance reports saved as NPZ files.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import jax
 import jax.numpy as jnp
 
-from .nilt_fft import nilt_fft_uniform, NILTResult
-from .tuning import tune_nilt_params, TunedNILTParams
-from .diagnostics import compute_nilt_diagnostics, compare_to_reference
+from .diagnostics import compare_to_reference, compute_nilt_diagnostics
+from .nilt_fft import NILTResult, nilt_fft_uniform
 from .spectral_bounds import BoundContext, compute_spectral_bounds
+from .tuning import TunedNILTParams, tune_nilt_params
 
 
 @dataclass
@@ -401,9 +401,12 @@ def run_standard_benchmark_suite(
         Dict with all benchmark results
     """
     from .transfer_functions import (
-        second_order_damping_F, second_order_damping_f,
-        exponential_decay_F, exponential_decay_f,
-        damped_sine_F, damped_sine_f
+        damped_sine_F,
+        damped_sine_f,
+        exponential_decay_F,
+        exponential_decay_f,
+        second_order_damping_F,
+        second_order_damping_f,
     )
 
     output_dir = Path(output_dir)

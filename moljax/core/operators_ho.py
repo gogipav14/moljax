@@ -18,15 +18,14 @@ Reference: Fornberg, "Generation of Finite Difference Formulas" (1988)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, Dict, Any, Union, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
 
-from moljax.core.grid import Grid1D, Grid2D, GridType
-
+from moljax.core.grid import Grid1D, Grid2D
 
 # =============================================================================
 # 4th-Order 1D Operators
@@ -488,7 +487,7 @@ def test_convergence_order_d1(
     x_range: tuple = (0.0, 2 * jnp.pi),
     n_values: tuple = (32, 64, 128, 256),
     order: int = 4
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test convergence order of first derivative operator.
 

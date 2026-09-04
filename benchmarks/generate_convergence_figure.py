@@ -12,12 +12,11 @@ Tests 2D diffusion with PERIODIC manufactured solution:
 This completes exactly one period over [0,1]^2, matching periodic BC.
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 import jax
-import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 
 print("Generating convergence verification figure...")
 print(f"JAX devices: {jax.devices()}")
@@ -129,7 +128,7 @@ if spectral_rate and spectral_rate > 0:
     ref_N = np.linspace(grid_sizes[0], grid_sizes[-1], 100)
     ref_err = spatial_errors[0] * np.exp(-spectral_rate * (ref_N - grid_sizes[0]))
     ax1.semilogy(ref_N, ref_err, '--', color='gray', linewidth=2,
-                 label=f'Exponential decay')
+                 label='Exponential decay')
 
 # Machine precision line
 ax1.axhline(y=1e-14, color='red', linestyle=':', linewidth=1.5,
@@ -150,7 +149,7 @@ ax2.loglog(dt_values, temporal_errors, 's-', color='#2ca02c', linewidth=2,
 ref_dt = np.array([dt_values[0], dt_values[-1]])
 ref_err_t = temporal_errors[0] * (ref_dt / dt_values[0])**2
 ax2.loglog(ref_dt, ref_err_t, '--', color='gray', linewidth=2,
-           label=f'Slope = 2 (reference)')
+           label='Slope = 2 (reference)')
 
 ax2.set_xlabel(r'Time step $\Delta t$', fontsize=12)
 ax2.set_ylabel(r'Max error $\|e\|_\infty$', fontsize=12)
@@ -176,7 +175,7 @@ ax1.semilogy(grid_sizes, spatial_errors, 'o-', color='#1f77b4', linewidth=2,
              markersize=10, label='Measured error')
 if spectral_rate and spectral_rate > 0:
     ax1.semilogy(ref_N, ref_err, '--', color='gray', linewidth=2,
-                 label=f'Exponential decay')
+                 label='Exponential decay')
 ax1.axhline(y=1e-14, color='red', linestyle=':', linewidth=1.5,
             label='Machine precision')
 ax1.set_xlabel(r'Grid points $N$', fontsize=12)
@@ -189,7 +188,7 @@ ax1.set_ylim(1e-16, 1e0)
 ax2.loglog(dt_values, temporal_errors, 's-', color='#2ca02c', linewidth=2,
            markersize=10, label='Measured error')
 ax2.loglog(ref_dt, ref_err_t, '--', color='gray', linewidth=2,
-           label=f'Slope = 2 (reference)')
+           label='Slope = 2 (reference)')
 ax2.set_xlabel(r'Time step $\Delta t$', fontsize=12)
 ax2.set_ylabel(r'Max error $\|e\|_\infty$', fontsize=12)
 ax2.set_title(f'Temporal Convergence (Crank-Nicolson)\nFitted order: {temporal_slope:.2f}', fontsize=14)
@@ -204,9 +203,9 @@ plt.close()
 print("\n" + "="*70)
 print("CONVERGENCE SUMMARY")
 print("="*70)
-print(f"SPATIAL (pseudo-spectral FFT): Exponential decay (spectral accuracy)")
+print("SPATIAL (pseudo-spectral FFT): Exponential decay (spectral accuracy)")
 print(f"  - Error drops from {spatial_errors[0]:.2e} to {spatial_errors[-1]:.2e}")
 print(f"  - Reaches near-machine precision at N={grid_sizes[-1]}")
 print(f"\nTEMPORAL (Crank-Nicolson): Order {temporal_slope:.2f} (expected: 2)")
-print(f"  - Error ~ O(dt^2) as expected for CN")
+print("  - Error ~ O(dt^2) as expected for CN")
 print("="*70)

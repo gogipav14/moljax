@@ -10,16 +10,16 @@ This produces reviewer-proof evidence by showing:
 Problem: 2D diffusion, periodic BC, D=0.1, t=[0, 0.1]
 """
 
-import time
 import json
+import time
 from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
 
+import diffrax
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
 from jax import jit
-import diffrax
 
 print("=" * 70)
 print("Work-Precision Benchmark: FFT-CN vs Diffrax")

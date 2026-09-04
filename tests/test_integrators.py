@@ -7,21 +7,24 @@ Verifies:
 - Explicit methods blow up at large dt for diffusion
 """
 
-import pytest
-import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
-from moljax.core.grid import Grid1D, Grid2D
-from moljax.core.bc import FieldBCSpec, BCType
-from moljax.core.model import MOLModel, create_gray_scott_model
+from moljax.core.bc import FieldBCSpec
+from moljax.core.dt_policy import CFLParams, PIDParams
+from moljax.core.grid import Grid1D
+from moljax.core.model import MOLModel
 from moljax.core.operators import LinearOp
 from moljax.core.stepping import (
-    IntegratorType, euler_step, ssprk3_step, rk4_step,
-    be_step, cn_step, step_explicit, adaptive_integrate
+    IntegratorType,
+    adaptive_integrate,
+    be_step,
+    cn_step,
+    euler_step,
+    rk4_step,
+    ssprk3_step,
 )
-from moljax.core.dt_policy import CFLParams, PIDParams
-from moljax.core.utils import get_interior
 
 
 class TestExplicitIntegrators:
@@ -109,8 +112,8 @@ class TestExplicitIntegrators:
         v = 1.0
 
         def advection_rhs(state, grid, t, params):
-            from moljax.core.operators import d1_upwind_1d
             from moljax.core.bc import apply_bc
+            from moljax.core.operators import d1_upwind_1d
             state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
             du_dx = d1_upwind_1d(state['u'], v, grid)
             return {'u': -v * du_dx}
@@ -227,8 +230,8 @@ class TestStability:
         D = 1.0
 
         def diffusion_rhs(state, grid, t, params):
-            from moljax.core.operators import laplacian_1d
             from moljax.core.bc import apply_bc
+            from moljax.core.operators import laplacian_1d
             state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
             return {'u': D * laplacian_1d(state['u'], grid)}
 
@@ -272,8 +275,8 @@ class TestAdaptive:
         grid = Grid1D.uniform(nx, 0.0, 1.0)
 
         def diffusion_rhs(state, grid, t, params):
-            from moljax.core.operators import laplacian_1d
             from moljax.core.bc import apply_bc
+            from moljax.core.operators import laplacian_1d
             state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
             D = params.get('D', 0.1)
             return {'u': D * laplacian_1d(state['u'], grid)}

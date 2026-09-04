@@ -14,16 +14,17 @@ Design decisions:
 - Flatten/unflatten bridges PyTree to flat vector for Krylov
 """
 
-from dataclasses import dataclass
-from typing import Callable, Tuple, Dict, Any, Optional, NamedTuple
+from collections.abc import Callable
+from typing import Any, NamedTuple
+
 import jax
 import jax.numpy as jnp
 from jax import lax
 from jax.flatten_util import ravel_pytree
 
-from moljax.core.state import StateDict, tree_add, tree_scale, tree_sub, tree_norm2
 from moljax.core.grid import GridType
-from moljax.core.preconditioners import Preconditioner, PrecondContext, IdentityPreconditioner
+from moljax.core.preconditioners import IdentityPreconditioner, PrecondContext, Preconditioner
+from moljax.core.state import StateDict, tree_add, tree_scale, tree_sub
 
 
 class NKParams(NamedTuple):
@@ -52,7 +53,7 @@ class NKResult(NamedTuple):
     stats: NKStats
 
 
-def _flatten_state(state: StateDict) -> Tuple[jnp.ndarray, Callable]:
+def _flatten_state(state: StateDict) -> tuple[jnp.ndarray, Callable]:
     """Flatten StateDict to 1D vector and get unravel function."""
     flat, unravel = ravel_pytree(state)
     return flat, unravel
@@ -86,8 +87,8 @@ def _gmres_solve(
     x0: jnp.ndarray,
     tol: float,
     max_iters: int,
-    M: Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None
-) -> Tuple[jnp.ndarray, int]:
+    M: Callable[[jnp.ndarray], jnp.ndarray] | None = None
+) -> tuple[jnp.ndarray, int]:
     """
     GMRES solver wrapper.
 
@@ -138,8 +139,8 @@ def _bicgstab_solve(
     x0: jnp.ndarray,
     tol: float,
     max_iters: int,
-    M: Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None
-) -> Tuple[jnp.ndarray, int]:
+    M: Callable[[jnp.ndarray], jnp.ndarray] | None = None
+) -> tuple[jnp.ndarray, int]:
     """
     BiCGSTAB solver using jax.scipy.sparse.linalg.
 
@@ -172,9 +173,9 @@ def newton_krylov_solve(
     residual_fn: Callable[[StateDict], StateDict],
     x0: StateDict,
     grid: GridType,
-    params: Dict[str, Any],
-    preconditioner: Optional[Preconditioner] = None,
-    nk_params: Optional[NKParams] = None,
+    params: dict[str, Any],
+    preconditioner: Preconditioner | None = None,
+    nk_params: NKParams | None = None,
     dt: float = 1.0
 ) -> NKResult:
     """

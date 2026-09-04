@@ -10,16 +10,17 @@ Purpose: Precision guidance for practitioners
 """
 
 import jax
+
 # Start with FP64, will also test FP32
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
-import jax.numpy as jnp
 
-from benchmark_utils import setup_benchmark, compute_stats
+import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import compute_stats, setup_benchmark
 
 print("E11: FP32 vs FP64 Work-Precision")
 print("=" * 60)

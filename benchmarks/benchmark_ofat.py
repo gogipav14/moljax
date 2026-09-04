@@ -16,17 +16,17 @@ OFAT-3: Hardware  (hold: PS-FFT spatial, FFT-CN time stepper, JIT on)
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import sys
-import os
-import numpy as np
-import time
 import json
+import sys
+import time
 from pathlib import Path
-import jax.numpy as jnp
 
-from benchmark_utils import compute_stats, ps_fft_stability_limit, add_benchmark_args
+import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import add_benchmark_args, compute_stats, ps_fft_stability_limit
 
 # Add parent dir to path for moljax imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))

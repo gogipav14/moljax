@@ -10,14 +10,13 @@ Output: results/reaction_dominant.json, figures/fig_reaction_dominant.pdf
 """
 
 import json
-import os
 import time
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Ensure 64-bit precision
 jax.config.update("jax_enable_x64", True)

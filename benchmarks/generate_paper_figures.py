@@ -7,11 +7,12 @@ CRITICAL: ALL benchmark data must be loaded from JSON result files.
          NO HARDCODED VALUES ALLOWED.
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from pathlib import Path
 import json
+from pathlib import Path
+
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Elsevier style settings
 plt.rcParams.update({
@@ -590,7 +591,7 @@ def generate_solution_validation():
     # Initial condition
     im0 = axes[0].imshow(u0.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
                          vmin=-vmax, vmax=vmax)
-    axes[0].set_title(f'(a) Initial Condition\nt = 0', fontweight='bold')
+    axes[0].set_title('(a) Initial Condition\nt = 0', fontweight='bold')
     axes[0].set_xlabel('x')
     axes[0].set_ylabel('y')
 

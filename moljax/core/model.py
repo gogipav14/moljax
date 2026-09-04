@@ -14,23 +14,25 @@ Design decisions:
 - Periodic models can optionally include precomputed FFT symbols
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, Optional, Any, Callable, List
-import jax
+from typing import Any
+
 import jax.numpy as jnp
 
+from moljax.core.bc import BCSpec, BCType, FieldBCSpec, apply_bc
 from moljax.core.grid import Grid1D, Grid2D, GridType
-from moljax.core.state import StateDict, tree_add, tree_zeros_like
-from moljax.core.bc import BCSpec, FieldBCSpec, BCType, apply_bc
 from moljax.core.operators import (
-    LinearOp, NonlinearOp,
-    laplacian_1d, laplacian_2d,
-    d1_upwind_1d, d1_upwind_2d,
-    gray_scott_reaction_op,
-    schnakenberg_reaction_op,
-    brusselator_reaction_op,
+    LinearOp,
+    NonlinearOp,
     acoustics_1d_linear_op,
+    brusselator_reaction_op,
+    d1_upwind_2d,
+    gray_scott_reaction_op,
+    laplacian_2d,
+    schnakenberg_reaction_op,
 )
+from moljax.core.state import StateDict, tree_add, tree_zeros_like
 
 
 @dataclass(frozen=True)
@@ -60,10 +62,10 @@ class MOLModel:
     """
     grid: GridType
     bc_spec: BCSpec
-    params: Dict[str, Any]
-    linear_ops: Tuple[LinearOp, ...] = field(default_factory=tuple)
-    nonlinear_ops: Tuple[NonlinearOp, ...] = field(default_factory=tuple)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any]
+    linear_ops: tuple[LinearOp, ...] = field(default_factory=tuple)
+    nonlinear_ops: tuple[NonlinearOp, ...] = field(default_factory=tuple)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def dtype(self) -> jnp.dtype:
@@ -71,7 +73,7 @@ class MOLModel:
         return self.params.get('dtype', jnp.float64)
 
     @property
-    def field_names(self) -> List[str]:
+    def field_names(self) -> list[str]:
         """List of field names in the model."""
         return list(self.bc_spec.keys())
 
@@ -121,7 +123,7 @@ class MOLModel:
 
     def create_padded_field(
         self,
-        init_fn: Optional[Callable] = None,
+        init_fn: Callable | None = None,
         fill_value: float = 0.0
     ) -> jnp.ndarray:
         """
@@ -151,8 +153,8 @@ class MOLModel:
 
     def create_initial_state(
         self,
-        init_fns: Optional[Dict[str, Callable]] = None,
-        fill_values: Optional[Dict[str, float]] = None
+        init_fns: dict[str, Callable] | None = None,
+        fill_values: dict[str, float] | None = None
     ) -> StateDict:
         """
         Create initial state for all fields.
@@ -180,7 +182,7 @@ class MOLModel:
 
         return state
 
-    def cfl_dt(self, state: Optional[StateDict] = None) -> float:
+    def cfl_dt(self, state: StateDict | None = None) -> float:
         """
         Compute CFL-limited time step from operator bounds.
 
@@ -256,7 +258,7 @@ def create_gray_scott_model(
     }
 
     # Linear operators (diffusion)
-    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         Du = params['Du']
         Dv = params['Dv']
         return {
@@ -264,7 +266,7 @@ def create_gray_scott_model(
             'v': Dv * laplacian_2d(state['v'], grid)
         }
 
-    def diffusion_dt_bound(grid: Grid2D, params: Dict) -> float:
+    def diffusion_dt_bound(grid: Grid2D, params: dict) -> float:
         D_max = max(params['Du'], params['Dv'])
         return 0.25 * grid.min_dx2 / (D_max + 1e-14)
 
@@ -335,7 +337,7 @@ def create_schnakenberg_model(
         'dtype': dtype
     }
 
-    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         Du = params['Du']
         Dv = params['Dv']
         return {
@@ -343,7 +345,7 @@ def create_schnakenberg_model(
             'v': Dv * laplacian_2d(state['v'], grid)
         }
 
-    def diffusion_dt_bound(grid: Grid2D, params: Dict) -> float:
+    def diffusion_dt_bound(grid: Grid2D, params: dict) -> float:
         D_max = max(params['Du'], params['Dv'])
         return 0.25 * grid.min_dx2 / (D_max + 1e-14)
 
@@ -410,7 +412,7 @@ def create_brusselator_model(
         'dtype': dtype
     }
 
-    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         Du = params['Du']
         Dv = params['Dv']
         return {
@@ -418,7 +420,7 @@ def create_brusselator_model(
             'v': Dv * laplacian_2d(state['v'], grid)
         }
 
-    def diffusion_dt_bound(grid: Grid2D, params: Dict) -> float:
+    def diffusion_dt_bound(grid: Grid2D, params: dict) -> float:
         D_max = max(params['Du'], params['Dv'])
         return 0.25 * grid.min_dx2 / (D_max + 1e-14)
 
@@ -448,7 +450,7 @@ def create_brusselator_model(
 
 def create_advection_diffusion_model(
     grid: Grid2D,
-    field_names: List[str] = ['c1', 'c2'],
+    field_names: list[str] = ['c1', 'c2'],
     D: float = 0.01,
     vx: float = 1.0,
     vy: float = 0.0,
@@ -487,7 +489,7 @@ def create_advection_diffusion_model(
     }
 
     # Linear operators
-    def advdiff_apply(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def advdiff_apply(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         D = params['D']
         vx = params['vx']
         vy = params['vy']
@@ -509,7 +511,7 @@ def create_advection_diffusion_model(
 
         return result
 
-    def advdiff_dt_bound(grid: Grid2D, params: Dict) -> float:
+    def advdiff_dt_bound(grid: Grid2D, params: dict) -> float:
         D = params['D']
         vx = params['vx']
         vy = params['vy']
@@ -642,11 +644,11 @@ def create_fisher_kpp_model(
     }
 
     # Diffusion operator
-    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: Dict) -> StateDict:
+    def diffusion_apply(state: StateDict, grid: Grid2D, t: float, params: dict) -> StateDict:
         D = params['D']
         return {'u': D * laplacian_2d(state['u'], grid)}
 
-    def diffusion_dt_bound(grid: Grid2D, params: Dict) -> float:
+    def diffusion_dt_bound(grid: Grid2D, params: dict) -> float:
         D = params['D']
         return 0.25 * grid.min_dx2 / (D + 1e-14)
 
@@ -687,7 +689,7 @@ def create_gray_scott_periodic_fft(
     F: float = 0.04,
     k: float = 0.06,
     dtype: jnp.dtype = jnp.float64
-) -> Tuple[MOLModel, Any, Dict[str, float]]:
+) -> tuple[MOLModel, Any, dict[str, float]]:
     """
     Create Gray-Scott model with periodic BCs and precomputed FFT cache.
 
@@ -746,7 +748,7 @@ def create_schnakenberg_periodic_fft(
     b: float = 0.9,
     gamma: float = 1000.0,
     dtype: jnp.dtype = jnp.float64
-) -> Tuple[MOLModel, Any, Dict[str, float]]:
+) -> tuple[MOLModel, Any, dict[str, float]]:
     """
     Create Schnakenberg model with periodic BCs and precomputed FFT cache.
 
@@ -787,7 +789,7 @@ def create_brusselator_periodic_fft(
     a: float = 1.0,
     b: float = 3.4,
     dtype: jnp.dtype = jnp.float64
-) -> Tuple[MOLModel, Any, Dict[str, float]]:
+) -> tuple[MOLModel, Any, dict[str, float]]:
     """
     Create Brusselator model with periodic BCs and precomputed FFT cache.
 
@@ -823,13 +825,13 @@ def create_brusselator_periodic_fft(
 
 def create_advdiff_periodic_fft(
     grid: Grid2D,
-    field_names: List[str] = ['c1', 'c2'],
+    field_names: list[str] = ['c1', 'c2'],
     D: float = 0.01,
     vx: float = 1.0,
     vy: float = 0.0,
     use_upwind: bool = True,
     dtype: jnp.dtype = jnp.float64
-) -> Tuple[MOLModel, Any, Dict[str, float]]:
+) -> tuple[MOLModel, Any, dict[str, float]]:
     """
     Create advection-diffusion model with periodic BCs and FFT cache.
 
@@ -884,7 +886,7 @@ def get_fft_cache(model: MOLModel):
     return model.metadata.get('fft_cache', None)
 
 
-def get_diffusivities(model: MOLModel) -> Dict[str, float]:
+def get_diffusivities(model: MOLModel) -> dict[str, float]:
     """Extract diffusivities from model metadata or params."""
     if 'diffusivities' in model.metadata:
         return model.metadata['diffusivities']

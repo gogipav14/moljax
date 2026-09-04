@@ -7,16 +7,12 @@ Verifies:
 - Preconditioner improves convergence
 """
 
-import pytest
-import jax
 import jax.numpy as jnp
-import numpy as np
+import pytest
 
-from moljax.core.grid import Grid1D, Grid2D
-from moljax.core.newton_krylov import (
-    newton_krylov_solve, NKParams, _jvp_matvec
-)
-from moljax.core.preconditioners import IdentityPreconditioner, BlockJacobiPreconditioner
+from moljax.core.grid import Grid1D
+from moljax.core.newton_krylov import NKParams, _jvp_matvec, newton_krylov_solve
+from moljax.core.preconditioners import BlockJacobiPreconditioner, IdentityPreconditioner
 
 
 class TestNKConvergence:
@@ -150,8 +146,8 @@ class TestPreconditioner:
 
         r = {'u': jnp.array([1.0, 2.0, 3.0])}
 
-        from moljax.core.preconditioners import PrecondContext
         from moljax.core.grid import Grid1D
+        from moljax.core.preconditioners import PrecondContext
 
         grid = Grid1D.uniform(3, 0.0, 1.0)
         context = PrecondContext(grid=grid, dt=0.1, params={})
@@ -168,8 +164,8 @@ class TestPreconditioner:
 
         r = {'u': jnp.ones(5) * 10.0}
 
-        from moljax.core.preconditioners import PrecondContext
         from moljax.core.grid import Grid1D
+        from moljax.core.preconditioners import PrecondContext
 
         grid = Grid1D.uniform(3, 0.0, 1.0)
         context = PrecondContext(grid=grid, dt=0.1, params={'D': 1.0})

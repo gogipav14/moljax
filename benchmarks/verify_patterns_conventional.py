@@ -15,12 +15,13 @@ Methods used:
 All implementations are pure numpy/scipy.
 """
 
-import numpy as np
-from scipy.fft import fft2, ifft2, fftfreq
 import time
 from pathlib import Path
 
 import matplotlib
+import numpy as np
+from scipy.fft import fft2, fftfreq, ifft2
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec

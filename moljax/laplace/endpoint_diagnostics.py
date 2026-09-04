@@ -16,7 +16,8 @@ Bromwich integral with periodic extension (Hsu & Dranoff 1987, Weeks 1966).
 
 from __future__ import annotations
 
-from typing import NamedTuple, Optional
+from typing import NamedTuple
+
 import jax.numpy as jnp
 import numpy as np
 
@@ -26,7 +27,7 @@ class SpectralCFLConditions(NamedTuple):
 
     # CFL-1: Endpoint compatibility
     endpoint_jump: float  # J = |f(0+) - f(2T-)|
-    f_0_ivt: Optional[float]  # f(0+) from Initial Value Theorem
+    f_0_ivt: float | None  # f(0+) from Initial Value Theorem
     f_2T: float  # f(2T-) from last sample
     endpoint_compatible: bool  # J ≤ threshold
 
@@ -300,29 +301,29 @@ def print_cfl_diagnostic_report(cfl: SpectralCFLConditions):
     print("SPECTRAL CFL CONDITIONS (Quantitative Guardrails)")
     print("="*70)
 
-    print(f"\nCFL-1: Endpoint Compatibility (Periodization Jump)")
+    print("\nCFL-1: Endpoint Compatibility (Periodization Jump)")
     print(f"  Endpoint jump J:        {cfl.endpoint_jump:.3e}")
     print(f"  f(0+) from IVT:         {cfl.f_0_ivt:.6f}" if cfl.f_0_ivt else "  f(0+) from IVT:         N/A")
     print(f"  f(2T-) from last sample: {cfl.f_2T:.6f}")
     print(f"  Status: {'✓ PASS' if cfl.endpoint_compatible else '✗ FAIL'}")
 
-    print(f"\nCFL-2: Bandwidth Coverage (Spectral Tail Energy)")
+    print("\nCFL-2: Bandwidth Coverage (Spectral Tail Energy)")
     print(f"  Tail energy ratio R_tail: {cfl.tail_energy_ratio:.3e}")
     print(f"  ω_max (Nyquist):          {cfl.omega_max:.2f}")
     print(f"  Status: {'✓ PASS' if cfl.bandwidth_sufficient else '✗ FAIL'}")
 
-    print(f"\nCFL-3: Quadrature Resolution (Phase Step)")
+    print("\nCFL-3: Quadrature Resolution (Phase Step)")
     print(f"  Phase step χ:           {cfl.phase_step:.3f}")
     print(f"  Status: {'✓ PASS' if cfl.quadrature_stable else '✗ FAIL'}")
 
-    print(f"\nConditioning Guard (Exponential Amplification)")
+    print("\nConditioning Guard (Exponential Amplification)")
     print(f"  A_exp = exp(a·t_end):   {cfl.exp_amplification:.2e}")
     print(f"  Status: {'✓ PASS' if cfl.conditioning_safe else '✗ FAIL'}")
 
     print(f"\n{'='*70}")
     print(f"Overall: {'ALL CONDITIONS MET ✓' if cfl.all_conditions_met else 'VIOLATIONS DETECTED ✗'}")
     if cfl.violated_conditions:
-        print(f"\nViolated conditions:")
+        print("\nViolated conditions:")
         for v in cfl.violated_conditions:
             print(f"  - {v}")
     print("="*70)

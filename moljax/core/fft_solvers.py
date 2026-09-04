@@ -19,11 +19,9 @@ The discrete Laplacian symbol for second-order central differences:
 This matches the finite difference stencil: (u[i+1] - 2*u[i] + u[i-1]) / dx^2
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple, NamedTuple
-import jax
+from typing import NamedTuple
+
 import jax.numpy as jnp
-from jax import lax
 
 from moljax.core.grid import Grid1D, Grid2D, GridType
 from moljax.core.state import StateDict
@@ -71,7 +69,7 @@ def build_wavenumbers_2d(
     dy: float,
     dx: float,
     dtype: jnp.dtype = jnp.float64
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Build wavenumbers for 2D FFT.
 
@@ -101,7 +99,7 @@ def build_wavenumbers_2d_rfft(
     dy: float,
     dx: float,
     dtype: jnp.dtype = jnp.float64
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     Build wavenumbers for 2D rfft (real FFT).
 
@@ -500,7 +498,7 @@ def apply_diffusion_inverse_fft(
     state_rhs: StateDict,
     grid: GridType,
     dt: float,
-    diffusivities: Dict[str, float],
+    diffusivities: dict[str, float],
     fft_cache
 ) -> StateDict:
     """
@@ -542,7 +540,7 @@ def apply_diffusion_fft(
     state: StateDict,
     grid: GridType,
     dt: float,
-    diffusivities: Dict[str, float],
+    diffusivities: dict[str, float],
     fft_cache
 ) -> StateDict:
     """
@@ -686,7 +684,7 @@ def apply_spectral_filter_state(
     state: StateDict,
     grid: GridType,
     filter_kernel: jnp.ndarray,
-    filter_fields: Optional[Dict[str, bool]] = None
+    filter_fields: dict[str, bool] | None = None
 ) -> StateDict:
     """
     Apply spectral filter to selected fields in state.
@@ -720,7 +718,7 @@ def apply_spectral_filter_state(
 def diffusion_rhs_fft(
     state: StateDict,
     grid: GridType,
-    diffusivities: Dict[str, float],
+    diffusivities: dict[str, float],
     fft_cache
 ) -> StateDict:
     """

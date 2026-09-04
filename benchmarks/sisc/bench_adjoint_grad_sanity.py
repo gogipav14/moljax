@@ -11,15 +11,16 @@ Purpose: Validates AD sensitivity claims for reactor application
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
-import jax.numpy as jnp
 
-from benchmark_utils import setup_benchmark, add_benchmark_args
+import jax.numpy as jnp
+import numpy as np
+from benchmark_utils import add_benchmark_args, setup_benchmark
 
 parser = add_benchmark_args()
 args = parser.parse_args()

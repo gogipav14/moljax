@@ -15,49 +15,49 @@ Key Features:
 - Automatic dt policy: CFL limiter + PID controller
 """
 
+from moljax.core.bc import BCType, FieldBCSpec, apply_bc
+from moljax.core.dt_policy import CFLParams, PIDParams, propose_dt
 from moljax.core.grid import Grid1D, Grid2D
+from moljax.core.model import MOLModel
+from moljax.core.newton_krylov import newton_krylov_solve
+from moljax.core.operators import (
+    LinearOp,
+    NonlinearOp,
+    d1_central_1d,
+    d1_central_2d,
+    d1_upwind_1d,
+    d1_upwind_2d,
+    d2_central_1d,
+    d2_central_2d,
+    laplacian_1d,
+    laplacian_2d,
+)
+from moljax.core.preconditioners import (
+    BlockJacobiPreconditioner,
+    DiffusionPreconditioner,
+    IdentityPreconditioner,
+)
 from moljax.core.state import (
     StateDict,
+    flatten_to_vec,
     tree_add,
-    tree_sub,
-    tree_scale,
     tree_axpy,
     tree_norm2,
     tree_norm_inf,
+    tree_scale,
+    tree_sub,
     tree_vdot,
-    flatten_to_vec,
 )
-from moljax.core.bc import BCType, FieldBCSpec, apply_bc
-from moljax.core.operators import (
-    d1_central_1d,
-    d1_upwind_1d,
-    d2_central_1d,
-    laplacian_1d,
-    d1_central_2d,
-    d1_upwind_2d,
-    d2_central_2d,
-    laplacian_2d,
-    LinearOp,
-    NonlinearOp,
-)
-from moljax.core.model import MOLModel
 from moljax.core.stepping import (
     IntegratorType,
-    euler_step,
-    ssprk3_step,
-    rk4_step,
+    adaptive_integrate,
+    bdf2_step,
     be_step,
     cn_step,
-    bdf2_step,
-    adaptive_integrate,
+    euler_step,
+    rk4_step,
+    ssprk3_step,
 )
-from moljax.core.newton_krylov import newton_krylov_solve
-from moljax.core.preconditioners import (
-    IdentityPreconditioner,
-    BlockJacobiPreconditioner,
-    DiffusionPreconditioner,
-)
-from moljax.core.dt_policy import propose_dt, CFLParams, PIDParams
 
 __version__ = "1.2.0"
 __all__ = [

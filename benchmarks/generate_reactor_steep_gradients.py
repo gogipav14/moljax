@@ -12,17 +12,20 @@ This is the "hard physics" figure: concentration profiles, not just errors.
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
-from jax import jit
 from functools import partial
+
+import jax.numpy as jnp
 import matplotlib
+import numpy as np
+from jax import jit
+
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 from benchmark_utils import setup_benchmark
 
 print("=" * 70)

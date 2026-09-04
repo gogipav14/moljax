@@ -13,8 +13,8 @@ spectral bounds of the underlying operator.
 
 from __future__ import annotations
 
-from typing import Literal, NamedTuple
 import warnings as _warnings
+from typing import Literal, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np

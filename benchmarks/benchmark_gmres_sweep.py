@@ -21,19 +21,20 @@ Now both use consistent dt (Backward Euler formulation).
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
+
 import jax.numpy as jnp
-from scipy.sparse.linalg import gmres as scipy_gmres, LinearOperator
+import numpy as np
 
 # Import benchmark utilities
-from benchmark_utils import (
-    setup_benchmark, compute_stats, add_benchmark_args
-)
+from benchmark_utils import add_benchmark_args, compute_stats, setup_benchmark
+from scipy.sparse.linalg import LinearOperator
+from scipy.sparse.linalg import gmres as scipy_gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
@@ -59,7 +60,7 @@ print(f"Grid: {N}x{N} (Matrix-free FD discretization)")
 print(f"Problem: 2D diffusion-reaction (k={REACTION_K})")
 print(f"Stiffness ratios: {STIFFNESS_RATIOS}")
 print(f"GMRES tolerance: {GMRES_TOL}")
-print(f"Method: SciPy GMRES for iter counts, JAX GMRES for GPU timing")
+print("Method: SciPy GMRES for iter counts, JAX GMRES for GPU timing")
 print("=" * 70)
 
 # ============================================================================

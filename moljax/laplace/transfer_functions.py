@@ -6,7 +6,8 @@ Provides test oracles for validating NILT implementations.
 
 from __future__ import annotations
 
-from typing import Callable, NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple
 
 import jax.numpy as jnp
 

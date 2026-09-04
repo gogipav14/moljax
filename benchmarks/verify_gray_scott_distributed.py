@@ -4,12 +4,13 @@ Gray-Scott with distributed initial perturbation to produce domain-filling patte
 Tests two initialization strategies and F,k parameter sets.
 """
 
-import numpy as np
-from scipy.fft import fft2, ifft2, fftfreq
 import time
 from pathlib import Path
 
 import matplotlib
+import numpy as np
+from scipy.fft import fft2, fftfreq, ifft2
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 

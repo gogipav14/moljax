@@ -7,13 +7,11 @@ Verifies that ghost cells are filled correctly for:
 - Neumann: enforces zero gradient
 """
 
-import pytest
 import jax.numpy as jnp
-import numpy as np
+import pytest
 
+from moljax.core.bc import FieldBCSpec, apply_bc
 from moljax.core.grid import Grid1D, Grid2D
-from moljax.core.bc import FieldBCSpec, BCType, apply_bc
-from moljax.core.utils import get_interior
 
 
 class TestBC1D:

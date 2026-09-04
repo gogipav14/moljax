@@ -7,34 +7,31 @@ Tests verify:
 3. Comparison with 2nd-order operators
 """
 
-import pytest
+
 import jax.numpy as jnp
-import numpy as np
-from functools import partial
+import pytest
 
 from moljax.core.grid import Grid1D, Grid2D
-from moljax.core.operators_ho import (
-    d1_fourth_order_1d,
-    d2_fourth_order_1d,
-    d1_ho_1d,
-    d2_ho_1d,
-    laplacian_ho_1d,
-    d1_ho_2d,
-    d2_ho_2d,
-    laplacian_ho_2d,
-    fd_laplacian_symbol_ho_1d,
-    fd_laplacian_symbol_ho_2d,
-    fd_d1_symbol_ho_1d,
-    d2_sixth_order_1d,
-    fd_laplacian_symbol_6th_1d,
-    get_laplacian_symbol_1d,
-    get_laplacian_symbol_2d,
-    OperatorOrder,
-)
 from moljax.core.operators import (
-    d1_central_1d,
     d2_central_1d,
     fd_laplacian_symbol_1d,
+)
+from moljax.core.operators_ho import (
+    OperatorOrder,
+    d1_fourth_order_1d,
+    d1_ho_1d,
+    d1_ho_2d,
+    d2_fourth_order_1d,
+    d2_ho_1d,
+    d2_sixth_order_1d,
+    fd_d1_symbol_ho_1d,
+    fd_laplacian_symbol_6th_1d,
+    fd_laplacian_symbol_ho_1d,
+    fd_laplacian_symbol_ho_2d,
+    get_laplacian_symbol_1d,
+    get_laplacian_symbol_2d,
+    laplacian_ho_1d,
+    laplacian_ho_2d,
 )
 
 
@@ -353,7 +350,7 @@ class TestComparisonWithSecondOrder:
         err_2nd = jnp.abs(lam_2nd[mid] - lam_exact[mid])
         err_4th = jnp.abs(lam_4th[mid] - lam_exact[mid])
 
-        assert err_4th < err_2nd, f"4th-order symbol not better at mid-k"
+        assert err_4th < err_2nd, "4th-order symbol not better at mid-k"
 
 
 class TestSixthOrder:

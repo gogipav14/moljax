@@ -20,18 +20,19 @@ Measures: wall-clock time, L2 error vs exact, memory footprint
 
 # Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
 import json
-import matplotlib.pyplot as plt
 from pathlib import Path
 from time import perf_counter
+
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
+import numpy as np
+from benchmark_utils import add_benchmark_args, setup_benchmark
 from scipy import sparse
 from scipy.sparse.linalg import splu
-
-from benchmark_utils import setup_benchmark, add_benchmark_args
 
 parser = add_benchmark_args()
 args = parser.parse_args()
@@ -51,7 +52,7 @@ device_str = setup_benchmark(expected_backend="gpu")
 print(f"Diffusion coefficient: D = {D}")
 print(f"Time: t_final = {T_FINAL}, dt = {DT}")
 print(f"Grid sizes: {GRID_SIZES}")
-print(f"BCs: periodic in x, Dirichlet in y")
+print("BCs: periodic in x, Dirichlet in y")
 print(f"Timing: median of {N_TIMING_REPS} reps (excluding warmup)")
 print("=" * 70)
 
@@ -252,7 +253,7 @@ for N in GRID_SIZES:
     u_exact = np.exp(-lam_exact * T_FINAL) * u0_np
 
     # ---- Method 1: FFT-DST (tensor product) ----
-    print(f"  [FFT-DST] Tensor product solve...")
+    print("  [FFT-DST] Tensor product solve...")
     try:
         # Warmup
         u_fft_dst = solve_fft_dst(u0_jax, D, DT, n_steps, Nx, Ny, dx, dy)
@@ -274,7 +275,7 @@ for N in GRID_SIZES:
         error_fft_dst = float('nan')
 
     # ---- Method 2: FD sparse ----
-    print(f"  [FD sparse] Sparse matrix solve...")
+    print("  [FD sparse] Sparse matrix solve...")
     if N <= 256:  # Skip large grids (too slow / too much memory)
         try:
             # Warmup

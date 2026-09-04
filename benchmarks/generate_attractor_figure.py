@@ -12,15 +12,17 @@ different pattern attractor branch during the transient growth phase.
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import jax.numpy as jnp
-import numpy as np
 import time
 from functools import partial
 from pathlib import Path
 
+import jax.numpy as jnp
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -316,9 +318,9 @@ for si, sys in enumerate(systems):
                     transform=ax.transAxes, fontsize=16, fontweight='bold',
                     color='#cc0000')
             ax.text(0.5, 0.35, (
-                f'Stable dt ≤ 2.2×10⁻⁵\n'
-                f'→ 25M steps, 100M NFE\n'
-                f'→ ~75 min wall time'),
+                'Stable dt ≤ 2.2×10⁻⁵\n'
+                '→ 25M steps, 100M NFE\n'
+                '→ ~75 min wall time'),
                 ha='center', va='center', transform=ax.transAxes,
                 fontsize=8.5, color='#444444', linespacing=1.4)
             ax.set_xlim(0, sys['L']); ax.set_ylim(0, sys['L'])

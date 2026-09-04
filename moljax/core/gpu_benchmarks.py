@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -33,10 +33,10 @@ class DeviceInfo:
     gpu_count: int
     tpu_count: int
     default_backend: str
-    gpu_names: List[str]
+    gpu_names: list[str]
 
     @classmethod
-    def detect(cls) -> "DeviceInfo":
+    def detect(cls) -> DeviceInfo:
         """Detect available JAX devices."""
         cpus = jax.devices("cpu")
         try:
@@ -96,9 +96,9 @@ class ScalingBenchmark:
     """Benchmark results across multiple grid sizes."""
     operation: str
     device: str
-    grid_sizes: List[int]
-    times_ms: List[float]
-    first_call_ms: List[float]
+    grid_sizes: list[int]
+    times_ms: list[float]
+    first_call_ms: list[float]
 
     def print_table(self):
         """Print scaling table."""
@@ -117,7 +117,7 @@ def _benchmark_operation(
     grid_size: int,
     n_warmup: int = 5,
     n_iterations: int = 50,
-    device: Optional[str] = None,
+    device: str | None = None,
 ) -> BenchmarkResult:
     """Benchmark a single operation.
 
@@ -172,10 +172,10 @@ def _benchmark_operation(
 
 
 def benchmark_fft_scaling(
-    grid_sizes: List[int] = None,
+    grid_sizes: list[int] = None,
     n_warmup: int = 3,
     n_iterations: int = 20,
-) -> Dict[str, ScalingBenchmark]:
+) -> dict[str, ScalingBenchmark]:
     """Benchmark FFT operations across grid sizes.
 
     Args:
@@ -186,8 +186,8 @@ def benchmark_fft_scaling(
     Returns:
         Dictionary of operation name -> ScalingBenchmark
     """
-    from moljax.core.jit_kernels import helmholtz_solve_1d, etd1_kernel_1d
     from moljax.core.fft_solvers import laplacian_symbol_1d
+    from moljax.core.jit_kernels import etd1_kernel_1d, helmholtz_solve_1d
 
     if grid_sizes is None:
         grid_sizes = [64, 128, 256, 512, 1024, 2048, 4096]
@@ -290,10 +290,10 @@ def benchmark_fft_scaling(
 
 
 def benchmark_2d_scaling(
-    grid_sizes: List[int] = None,
+    grid_sizes: list[int] = None,
     n_warmup: int = 3,
     n_iterations: int = 20,
-) -> Dict[str, ScalingBenchmark]:
+) -> dict[str, ScalingBenchmark]:
     """Benchmark 2D FFT operations.
 
     Args:
@@ -304,8 +304,8 @@ def benchmark_2d_scaling(
     Returns:
         Dictionary of operation name -> ScalingBenchmark
     """
-    from moljax.core.jit_kernels import helmholtz_solve_2d, etd1_kernel_2d
     from moljax.core.fft_solvers import laplacian_symbol_2d
+    from moljax.core.jit_kernels import helmholtz_solve_2d
 
     if grid_sizes is None:
         grid_sizes = [32, 64, 128, 256, 512]
@@ -379,10 +379,10 @@ def benchmark_2d_scaling(
 
 
 def run_full_benchmark(
-    grid_sizes_1d: List[int] = None,
-    grid_sizes_2d: List[int] = None,
+    grid_sizes_1d: list[int] = None,
+    grid_sizes_2d: list[int] = None,
     n_iterations: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run full benchmark suite.
 
     Returns:
@@ -439,7 +439,7 @@ def run_full_benchmark(
     }
 
 
-def print_benchmark_report(results: Dict[str, Any]):
+def print_benchmark_report(results: dict[str, Any]):
     """Print formatted benchmark report."""
     device_info = results['device_info']
 

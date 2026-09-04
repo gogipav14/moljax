@@ -11,13 +11,15 @@ Tests: fft2 and rfft2, grid sizes 64-1024, float64/complex128.
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
+
 import jax.numpy as jnp
+import numpy as np
 
 try:
     import cupy as cp
@@ -26,7 +28,7 @@ except ImportError:
     HAS_CUPY = False
     print("WARNING: CuPy not installed. Install with: pip install cupy-cuda12x")
 
-from benchmark_utils import compute_stats, add_benchmark_args
+from benchmark_utils import add_benchmark_args, compute_stats
 
 parser = add_benchmark_args()
 args = parser.parse_args()

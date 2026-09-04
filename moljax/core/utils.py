@@ -8,11 +8,9 @@ This module provides helper functions for:
 - Safe norm computation
 """
 
-from typing import Dict, Tuple, Any, Union
-import jax
 import jax.numpy as jnp
 
-from moljax.core.grid import Grid1D, Grid2D, GridType
+from moljax.core.grid import Grid1D, GridType
 from moljax.core.state import StateDict
 
 
@@ -75,7 +73,7 @@ def allocate_scalar_history(max_steps: int, dtype: jnp.dtype = jnp.float64) -> j
 
 
 def allocate_field_history(
-    field_shape: Tuple[int, ...],
+    field_shape: tuple[int, ...],
     max_steps: int,
     dtype: jnp.dtype = jnp.float64
 ) -> jnp.ndarray:
@@ -99,7 +97,7 @@ def allocate_state_history(
     max_steps: int,
     interior_only: bool = True,
     dtype: jnp.dtype = jnp.float64
-) -> Dict[str, jnp.ndarray]:
+) -> dict[str, jnp.ndarray]:
     """
     Allocate history buffers for all fields in state.
 
@@ -124,12 +122,12 @@ def allocate_state_history(
 
 
 def save_to_history(
-    history: Dict[str, jnp.ndarray],
+    history: dict[str, jnp.ndarray],
     state: StateDict,
     grid: GridType,
     idx: int,
     interior_only: bool = True
-) -> Dict[str, jnp.ndarray]:
+) -> dict[str, jnp.ndarray]:
     """
     Save current state to history buffers at given index.
 

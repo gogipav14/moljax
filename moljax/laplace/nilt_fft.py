@@ -8,7 +8,8 @@ to preserve accuracy over the valid interval.
 
 from __future__ import annotations
 
-from typing import Callable, Literal, NamedTuple
+from collections.abc import Callable
+from typing import Literal, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -766,7 +767,7 @@ def nilt_fft_halfstep_ivt(
         else:  # 'large_s'
             f_0_ivt = float(s_large * F_eval(s_large))
         ivt_computed = True
-    except Exception as e:
+    except Exception:
         # Fallback: use first half-step sample (less accurate)
         f_0_ivt = None
         ivt_computed = False

@@ -6,13 +6,12 @@ established FFT-implicit diffusion solver from Step 2.
 """
 
 import jax.numpy as jnp
-import pytest
 
 from moljax.laplace import (
-    nilt_fft_uniform,
-    tune_for_diffusion,
     diffusion_semi_infinite_F,
     diffusion_semi_infinite_f,
+    nilt_fft_uniform,
+    tune_for_diffusion,
 )
 
 

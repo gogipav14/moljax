@@ -12,16 +12,16 @@ Design decisions:
 - PyTree structure (keys) must remain invariant across all code paths
 """
 
-from typing import Callable, Tuple, Union, Dict
+from collections.abc import Callable
+
 import jax
 import jax.numpy as jnp
 from jax.flatten_util import ravel_pytree
 
-from moljax.core.grid import Grid1D, Grid2D, GridType
-
+from moljax.core.grid import Grid1D, GridType
 
 # Type alias for multi-field state
-StateDict = Dict[str, jnp.ndarray]
+StateDict = dict[str, jnp.ndarray]
 
 
 def tree_add(a: StateDict, b: StateDict) -> StateDict:
@@ -189,7 +189,7 @@ def tree_vdot(
     return total
 
 
-def flatten_to_vec(state: StateDict) -> Tuple[jnp.ndarray, Callable[[jnp.ndarray], StateDict]]:
+def flatten_to_vec(state: StateDict) -> tuple[jnp.ndarray, Callable[[jnp.ndarray], StateDict]]:
     """
     Flatten state PyTree to 1D vector for Krylov solvers.
 
@@ -266,7 +266,7 @@ def state_interior_size(state: StateDict, grid: GridType) -> int:
 
 
 def create_state_from_interior(
-    interior_arrays: Dict[str, jnp.ndarray],
+    interior_arrays: dict[str, jnp.ndarray],
     grid: GridType,
     dtype: jnp.dtype = jnp.float64
 ) -> StateDict:

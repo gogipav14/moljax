@@ -5,15 +5,19 @@ Verifies that D1 and D2 operators give expected results on sine waves
 for periodic BCs (known derivatives).
 """
 
-import pytest
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
+from moljax.core.bc import BCType, FieldBCSpec, apply_bc
 from moljax.core.grid import Grid1D, Grid2D
-from moljax.core.bc import FieldBCSpec, BCType, apply_bc
 from moljax.core.operators import (
-    d1_central_1d, d1_upwind_1d, d2_central_1d, laplacian_1d,
-    d1_central_2d, d1_upwind_2d, d2_central_2d, laplacian_2d
+    d1_central_1d,
+    d1_central_2d,
+    d1_upwind_1d,
+    d1_upwind_2d,
+    d2_central_1d,
+    laplacian_2d,
 )
 from moljax.core.utils import get_interior
 

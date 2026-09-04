@@ -14,22 +14,23 @@ This test quantifies:
 Goal: Determine if Option A or Option B improves accuracy while preserving
 the validated implementation's known-good behavior.
 """
-import pytest
-import jax.numpy as jnp
-import numpy as np
 import time
 
+import jax.numpy as jnp
+import numpy as np
+import pytest
+
 from moljax.laplace import (
-    nilt_fft_uniform,
-    nilt_fft_signed_omega,
-    exponential_decay_F,
-    exponential_decay_f,
-    sine_F,
-    sine_f,
     cosine_F,
     cosine_f,
+    exponential_decay_F,
+    exponential_decay_f,
+    nilt_fft_signed_omega,
+    nilt_fft_uniform,
     second_order_damping_F,
     second_order_damping_f,
+    sine_F,
+    sine_f,
 )
 
 

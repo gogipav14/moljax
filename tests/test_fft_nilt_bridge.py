@@ -8,26 +8,23 @@ Verifies:
 4. NILT faster for long time horizons (t_end > 100 dt_cfl)
 """
 
-import pytest
 import jax
 import jax.numpy as jnp
-from jax import random
+import pytest
 
 # Enable float64 for precision
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core.fft_operators import AdvectionDiffusionOperator, DiffusionOperator
 from moljax.core.grid import Grid1D
-from moljax.core.fft_operators import DiffusionOperator, AdvectionDiffusionOperator
-from moljax.core.fft_integrators import etd_integrate
 from moljax.laplace.fft_nilt_bridge import (
+    compare_nilt_vs_timestepping,
     exact_spectral_bounds_from_fft,
     fft_bounds_to_spectral_bounds,
-    tune_nilt_for_fft_operator,
     nilt_solve_linear_pde,
-    compare_nilt_vs_timestepping,
     print_comparison_table,
+    tune_nilt_for_fft_operator,
 )
-
 
 # =============================================================================
 # Test Fixtures
@@ -100,7 +97,7 @@ class TestExactSpectralBounds:
         # Expected im_max: v * k_max where k_max = π/dx
         expected_im_max = abs(v) * jnp.pi / dx
 
-        assert bounds.re_max <= 0, f"AdvDiff should have re_max <= 0"
+        assert bounds.re_max <= 0, "AdvDiff should have re_max <= 0"
         assert abs(bounds.im_max - expected_im_max) / expected_im_max < 0.01, \
             f"im_max mismatch: {bounds.im_max} vs {expected_im_max}"
 

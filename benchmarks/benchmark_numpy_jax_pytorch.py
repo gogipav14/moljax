@@ -11,9 +11,9 @@ Key findings:
 - JAX advantage: JIT-compiled control flow (lax.while_loop)
 """
 
-import numpy as np
 import time
-from pathlib import Path
+
+import numpy as np
 
 # Try to import JAX
 try:

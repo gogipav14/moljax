@@ -15,17 +15,19 @@ RK4 at 2,053,380 NFE — a >1000x reduction in algorithmic work.
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
-import time
 import json
+import time
 from pathlib import Path
+
+import jax.numpy as jnp
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 from benchmark_utils import setup_benchmark
 
 print("=" * 70)

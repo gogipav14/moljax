@@ -16,32 +16,46 @@ Design decisions:
 - IMEX integrators use FFT for implicit diffusion, explicit RK for reactions
 """
 
+from collections.abc import Callable
 from enum import IntEnum
-from typing import Dict, Any, Optional, Tuple, Callable, NamedTuple
-import jax
+from typing import NamedTuple
+
 import jax.numpy as jnp
 from jax import lax
 
-from moljax.core.grid import GridType
-from moljax.core.state import (
-    StateDict, tree_add, tree_sub, tree_scale, tree_axpy,
-    tree_zeros_like, scaled_error_norm
+from moljax.core.dt_policy import (
+    CFLParams,
+    ControllerState,
+    PIDParams,
+    compute_error_order,
+    create_initial_controller_state,
+    heisenberg_cfl_dt,
+    propose_dt,
 )
-from moljax.core.bc import apply_bc
 from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import (
-    newton_krylov_solve, create_implicit_residual, create_bdf2_residual,
-    NKParams, NKStats, NKResult
+    NKParams,
+    NKStats,
+    create_bdf2_residual,
+    create_implicit_residual,
+    newton_krylov_solve,
 )
-from moljax.core.preconditioners import Preconditioner, IdentityPreconditioner
-from moljax.core.dt_policy import (
-    CFLParams, PIDParams, ControllerState,
-    create_initial_controller_state, propose_dt, compute_error_order,
-    heisenberg_cfl_dt
+from moljax.core.preconditioners import IdentityPreconditioner, Preconditioner
+from moljax.core.state import (
+    StateDict,
+    scaled_error_norm,
+    tree_add,
+    tree_axpy,
+    tree_scale,
+    tree_sub,
+    tree_zeros_like,
 )
 from moljax.core.utils import (
-    StatusCode, allocate_scalar_history, allocate_state_history,
-    save_to_history, is_finite, get_interior
+    StatusCode,
+    allocate_scalar_history,
+    allocate_state_history,
+    is_finite,
+    save_to_history,
 )
 
 
@@ -172,9 +186,9 @@ def be_step(
     y: StateDict,
     t: float,
     dt: float,
-    preconditioner: Optional[Preconditioner] = None,
-    nk_params: Optional[NKParams] = None
-) -> Tuple[StateDict, NKStats]:
+    preconditioner: Preconditioner | None = None,
+    nk_params: NKParams | None = None
+) -> tuple[StateDict, NKStats]:
     """
     Backward Euler step: y_{n+1} = y_n + dt * F(y_{n+1}, t_{n+1}).
 
@@ -219,9 +233,9 @@ def cn_step(
     y: StateDict,
     t: float,
     dt: float,
-    preconditioner: Optional[Preconditioner] = None,
-    nk_params: Optional[NKParams] = None
-) -> Tuple[StateDict, NKStats]:
+    preconditioner: Preconditioner | None = None,
+    nk_params: NKParams | None = None
+) -> tuple[StateDict, NKStats]:
     """
     Crank-Nicolson step: y_{n+1} = y_n + dt/2 * (F(y_n, t_n) + F(y_{n+1}, t_{n+1})).
 
@@ -267,9 +281,9 @@ def bdf2_step(
     t: float,
     dt: float,
     dt_prev: float,
-    preconditioner: Optional[Preconditioner] = None,
-    nk_params: Optional[NKParams] = None
-) -> Tuple[StateDict, NKStats]:
+    preconditioner: Preconditioner | None = None,
+    nk_params: NKParams | None = None
+) -> tuple[StateDict, NKStats]:
     """
     BDF2 step (variable step size).
 
@@ -320,7 +334,7 @@ def imex_euler_step(
     t: float,
     dt: float,
     fft_cache,
-    diffusivities: Dict[str, float]
+    diffusivities: dict[str, float]
 ) -> StateDict:
     """
     IMEX Euler step: diffusion implicit (FFT), reaction explicit.
@@ -373,7 +387,7 @@ def imex_strang_step(
     t: float,
     dt: float,
     fft_cache,
-    diffusivities: Dict[str, float]
+    diffusivities: dict[str, float]
 ) -> StateDict:
     """
     IMEX Strang splitting step (2nd order).
@@ -441,7 +455,7 @@ def imex_ssprk2_step(
     t: float,
     dt: float,
     fft_cache,
-    diffusivities: Dict[str, float]
+    diffusivities: dict[str, float]
 ) -> StateDict:
     """
     IMEX SSP-RK2 step (2nd order).
@@ -505,7 +519,7 @@ def estimate_error_doubling(
     t: float,
     dt: float,
     step_fn: Callable
-) -> Tuple[StateDict, StateDict]:
+) -> tuple[StateDict, StateDict]:
     """
     Estimate error using step doubling.
 
@@ -569,9 +583,9 @@ def estimate_error_imex_doubling(
     t: float,
     dt: float,
     fft_cache,
-    diffusivities: Dict[str, float],
+    diffusivities: dict[str, float],
     use_strang: bool = True
-) -> Tuple[StateDict, StateDict]:
+) -> tuple[StateDict, StateDict]:
     """
     Estimate error for IMEX methods using step doubling.
 
@@ -649,7 +663,7 @@ def step_explicit_with_error(
     t: float,
     dt: float,
     method: int
-) -> Tuple[StateDict, StateDict]:
+) -> tuple[StateDict, StateDict]:
     """
     Take explicit step with error estimation via step doubling.
 
@@ -697,7 +711,7 @@ class AdaptiveState(NamedTuple):
 
     # Output buffers (pre-allocated)
     t_history: jnp.ndarray
-    y_history: Dict[str, jnp.ndarray]
+    y_history: dict[str, jnp.ndarray]
     dt_history: jnp.ndarray
     write_idx: jnp.ndarray
 
@@ -712,7 +726,7 @@ class AdaptiveResult(NamedTuple):
     t_final: jnp.ndarray
     y_final: StateDict
     t_history: jnp.ndarray
-    y_history: Dict[str, jnp.ndarray]
+    y_history: dict[str, jnp.ndarray]
     dt_history: jnp.ndarray
     n_steps: jnp.ndarray
     n_accepted: jnp.ndarray
@@ -728,10 +742,10 @@ def adaptive_integrate(
     dt0: float,
     method: int = IntegratorType.RK4,
     max_steps: int = 10000,
-    cfl_params: Optional[CFLParams] = None,
-    pid_params: Optional[PIDParams] = None,
-    preconditioner: Optional[Preconditioner] = None,
-    nk_params: Optional[NKParams] = None,
+    cfl_params: CFLParams | None = None,
+    pid_params: PIDParams | None = None,
+    preconditioner: Preconditioner | None = None,
+    nk_params: NKParams | None = None,
     save_every: int = 1
 ) -> AdaptiveResult:
     """
@@ -1033,9 +1047,9 @@ def integrate_fixed_dt(
     dt: float,
     method: int = IntegratorType.RK4,
     save_every: int = 1,
-    preconditioner: Optional[Preconditioner] = None,
-    nk_params: Optional[NKParams] = None
-) -> Tuple[jnp.ndarray, Dict[str, jnp.ndarray], StateDict]:
+    preconditioner: Preconditioner | None = None,
+    nk_params: NKParams | None = None
+) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], StateDict]:
     """
     Fixed time step integration using lax.scan.
 
@@ -1074,7 +1088,7 @@ def integrate_fixed_dt(
         dt_prev: jnp.ndarray
         step: jnp.ndarray
 
-    def scan_body(carry: ScanState, _) -> Tuple[ScanState, Tuple[jnp.ndarray, StateDict]]:
+    def scan_body(carry: ScanState, _) -> tuple[ScanState, tuple[jnp.ndarray, StateDict]]:
         """Single fixed step."""
 
         def explicit():
@@ -1150,11 +1164,11 @@ def adaptive_integrate_imex(
     t_end: float,
     dt0: float,
     fft_cache,
-    diffusivities: Dict[str, float],
+    diffusivities: dict[str, float],
     use_strang: bool = True,
     max_steps: int = 10000,
-    cfl_params: Optional[CFLParams] = None,
-    pid_params: Optional[PIDParams] = None,
+    cfl_params: CFLParams | None = None,
+    pid_params: PIDParams | None = None,
     save_every: int = 1
 ) -> AdaptiveResult:
     """
@@ -1180,7 +1194,7 @@ def adaptive_integrate_imex(
     Returns:
         AdaptiveResult with final state and histories
     """
-    from moljax.core.dt_policy import propose_dt_imex, imex_cfl_dt
+    from moljax.core.dt_policy import imex_cfl_dt, propose_dt_imex
 
     dtype = model.dtype
 
@@ -1378,10 +1392,10 @@ def integrate_imex_fixed_dt(
     t_end: float,
     dt: float,
     fft_cache,
-    diffusivities: Dict[str, float],
+    diffusivities: dict[str, float],
     use_strang: bool = True,
     save_every: int = 1
-) -> Tuple[jnp.ndarray, Dict[str, jnp.ndarray], StateDict]:
+) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], StateDict]:
     """
     Fixed time step IMEX integration using lax.scan.
 
@@ -1411,7 +1425,7 @@ def integrate_imex_fixed_dt(
         y: StateDict
         step: jnp.ndarray
 
-    def scan_body(carry: ScanState, _) -> Tuple[ScanState, Tuple[jnp.ndarray, StateDict]]:
+    def scan_body(carry: ScanState, _) -> tuple[ScanState, tuple[jnp.ndarray, StateDict]]:
         if use_strang:
             y_new = imex_strang_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
         else:

@@ -21,12 +21,13 @@ oscillatory instability + diffusion-driven pattern formation creates doubly stif
 dynamics — both eigenvalue magnitudes AND imaginary parts are large.
 """
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
 
 import jax
+import numpy as np
+
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 

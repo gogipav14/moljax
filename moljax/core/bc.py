@@ -13,10 +13,11 @@ Design decisions:
 - 2nd-order accurate ghost cell formulas for Dirichlet BCs
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Dict, Optional, Callable, Any
-import jax
+from typing import Any
+
 import jax.numpy as jnp
 from jax import lax
 
@@ -49,8 +50,8 @@ class FieldBCSpec:
           or a single scalar applied to all boundaries
     """
     kind: BCType
-    value: Optional[Callable] = None
-    flux: Optional[Callable] = None
+    value: Callable | None = None
+    flux: Callable | None = None
 
     @classmethod
     def periodic(cls) -> "FieldBCSpec":
@@ -58,7 +59,7 @@ class FieldBCSpec:
         return cls(kind=BCType.PERIODIC)
 
     @classmethod
-    def dirichlet(cls, value: Optional[Callable] = None) -> "FieldBCSpec":
+    def dirichlet(cls, value: Callable | None = None) -> "FieldBCSpec":
         """
         Create Dirichlet BC spec.
 
@@ -68,7 +69,7 @@ class FieldBCSpec:
         return cls(kind=BCType.DIRICHLET, value=value)
 
     @classmethod
-    def neumann(cls, flux: Optional[Callable] = None) -> "FieldBCSpec":
+    def neumann(cls, flux: Callable | None = None) -> "FieldBCSpec":
         """
         Create Neumann BC spec.
 
@@ -79,7 +80,7 @@ class FieldBCSpec:
 
 
 # Type alias for full BC specification
-BCSpec = Dict[str, FieldBCSpec]
+BCSpec = dict[str, FieldBCSpec]
 
 
 def _apply_bc_1d_periodic(field: jnp.ndarray, grid: Grid1D) -> jnp.ndarray:
@@ -163,7 +164,7 @@ def _apply_bc_field_1d(
     grid: Grid1D,
     bc_spec: FieldBCSpec,
     t: float,
-    params: Dict[str, Any]
+    params: dict[str, Any]
 ) -> jnp.ndarray:
     """Apply BC to a single 1D field using lax.switch for JIT compatibility."""
 
@@ -218,7 +219,7 @@ def _apply_bc_2d_periodic(field: jnp.ndarray, grid: Grid2D) -> jnp.ndarray:
 def _apply_bc_2d_dirichlet(
     field: jnp.ndarray,
     grid: Grid2D,
-    bc_values: Dict[str, float]
+    bc_values: dict[str, float]
 ) -> jnp.ndarray:
     """
     Apply Dirichlet BC in 2D.
@@ -263,7 +264,7 @@ def _apply_bc_2d_dirichlet(
 def _apply_bc_2d_neumann(
     field: jnp.ndarray,
     grid: Grid2D,
-    flux_values: Dict[str, float]
+    flux_values: dict[str, float]
 ) -> jnp.ndarray:
     """
     Apply Neumann BC in 2D.
@@ -312,7 +313,7 @@ def _apply_bc_field_2d(
     grid: Grid2D,
     bc_spec: FieldBCSpec,
     t: float,
-    params: Dict[str, Any]
+    params: dict[str, Any]
 ) -> jnp.ndarray:
     """Apply BC to a single 2D field using lax.switch for JIT compatibility."""
 
@@ -356,12 +357,12 @@ def _apply_bc_field_2d(
 
 
 def apply_bc(
-    state: Dict[str, jnp.ndarray],
+    state: dict[str, jnp.ndarray],
     grid: GridType,
     bc_spec: BCSpec,
     t: float = 0.0,
-    params: Optional[Dict[str, Any]] = None
-) -> Dict[str, jnp.ndarray]:
+    params: dict[str, Any] | None = None
+) -> dict[str, jnp.ndarray]:
     """
     Apply boundary conditions to all fields in state.
 

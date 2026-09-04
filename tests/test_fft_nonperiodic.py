@@ -2,7 +2,6 @@
 Tests for non-periodic FFT solvers (Dirichlet/Neumann BCs).
 """
 
-import pytest
 import jax
 import jax.numpy as jnp
 
@@ -10,19 +9,18 @@ jax.config.update("jax_enable_x64", True)
 
 from moljax.core.fft_nonperiodic import (
     BCType,
+    check_compatibility_neumann,
+    create_nonperiodic_fft_cache,
     dst_I_fast,
+    etd1_dirichlet,
+    etd1_neumann,
     idst_I_fast,
     laplacian_symbol_dirichlet,
     laplacian_symbol_neumann,
-    create_nonperiodic_fft_cache,
-    solve_poisson_dirichlet,
-    solve_poisson_neumann,
+    project_to_compatible,
     solve_helmholtz_dirichlet,
     solve_helmholtz_neumann,
-    etd1_dirichlet,
-    etd1_neumann,
-    check_compatibility_neumann,
-    project_to_compatible,
+    solve_poisson_dirichlet,
 )
 
 

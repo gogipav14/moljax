@@ -7,38 +7,35 @@ Verifies:
 3. Batched operations efficiency
 """
 
-import pytest
 import jax
 import jax.numpy as jnp
-from jax import random
+import pytest
 
 # Enable float64 for precision
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core.fft_solvers import laplacian_symbol_1d, laplacian_symbol_2d
 from moljax.core.jit_kernels import (
-    phi1,
-    phi2,
-    phi3,
+    advdiff_solve_1d,
+    # Multi-field batched operations
+    batched_etd1_kernel_1d,
+    batched_etd1_kernel_2d,
+    batched_etd2_kernel_1d,
+    batched_exp_matvec_1d,
+    batched_fft_solve_1d,
+    batched_helmholtz_solve_2d,
+    benchmark_jit_speedup,
     etd1_kernel_1d,
     etd1_kernel_2d,
     etd2_kernel_1d,
-    etdrk4_kernel_1d,
     helmholtz_solve_1d,
     helmholtz_solve_2d,
-    advdiff_solve_1d,
-    batched_fft_solve_1d,
-    batched_exp_matvec_1d,
     make_etd1_integrator,
-    benchmark_jit_speedup,
-    # Multi-field batched operations
-    batched_etd1_kernel_1d,
-    batched_etd2_kernel_1d,
     multi_operator_etd1_1d,
-    batched_etd1_kernel_2d,
-    batched_helmholtz_solve_2d,
+    phi1,
+    phi2,
+    phi3,
 )
-from moljax.core.fft_solvers import laplacian_symbol_1d, laplacian_symbol_2d
-
 
 # =============================================================================
 # Test Fixtures

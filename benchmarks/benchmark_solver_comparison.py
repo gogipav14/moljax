@@ -16,20 +16,22 @@ Note: Julia/DifferentialEquations.jl removed - no Julia code available.
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
-from scipy.integrate import solve_ivp
+
 import jax.numpy as jnp
+import numpy as np
 
 # Import benchmark utilities
 from benchmark_utils import (
-    setup_benchmark, check_finite_tree, compute_stats,
-    add_benchmark_args, DEFAULT_N_REPS
+    add_benchmark_args,
+    setup_benchmark,
 )
+from scipy.integrate import solve_ivp
 
 # Parse CLI arguments
 parser = add_benchmark_args()

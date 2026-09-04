@@ -12,18 +12,22 @@ Measures:
 
 # CRITICAL: Set x64 BEFORE any jax.numpy imports
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import time
 import json
+import time
 from pathlib import Path
+
 import jax.numpy as jnp
+import numpy as np
 
 # Import benchmark utilities
 from benchmark_utils import (
-    setup_benchmark, check_finite_tree, compute_stats,
-    add_benchmark_args, DEFAULT_N_REPS
+    add_benchmark_args,
+    check_finite_tree,
+    compute_stats,
+    setup_benchmark,
 )
 
 # Parse CLI arguments
@@ -41,7 +45,7 @@ dx = 1.0 / N
 dt = 0.0001
 N_WARMUP = 3
 
-print(f"JIT Speedup Benchmark")
+print("JIT Speedup Benchmark")
 print("=" * 60)
 device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N}x{N}, Steps: {N_STEPS}")

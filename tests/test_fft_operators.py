@@ -13,30 +13,28 @@ Test categories:
 - C1: Runtime benchmarks
 """
 
-import pytest
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
+import pytest
 from jax import random
 
 # Enable float64 for better precision in tests
 jax.config.update("jax_enable_x64", True)
 
-from moljax.core.grid import Grid1D
-from moljax.core.fft_operators import (
-    DiffusionOperator,
-    AdvectionDiffusionOperator,
-    exact_cfl_dt,
-)
 from moljax.core.fft_integrators import (
-    etd1_step,
-    etd2_step,
-    etdrk4_step,
-    etd_integrate,
-    diffusion_only_etd1,
     batched_fft_solve,
+    diffusion_only_etd1,
+    etd1_step,
+    etd_integrate,
     stacked_fft_solve_shared_op,
 )
-from moljax.core.fft_solvers import solve_helmholtz_1d, laplacian_symbol_1d
+from moljax.core.fft_operators import (
+    AdvectionDiffusionOperator,
+    DiffusionOperator,
+    exact_cfl_dt,
+)
+from moljax.core.fft_solvers import laplacian_symbol_1d, solve_helmholtz_1d
+from moljax.core.grid import Grid1D
 
 
 def get_interior_coords(grid: Grid1D) -> jnp.ndarray:
@@ -227,7 +225,7 @@ class TestAdvectionDiffusion:
         assert bounds.re_max <= 0.0, f"re_max should be ≤ 0, got {bounds.re_max}"
 
         # im_max should be 0 for pure diffusion
-        assert bounds.im_max < 1e-10, f"im_max should be 0 for diffusion"
+        assert bounds.im_max < 1e-10, "im_max should be 0 for diffusion"
 
 
 # =============================================================================
@@ -828,11 +826,11 @@ class TestFFTPreconditioner:
         Hermitian symmetry, causing ~1-2% error when taking real(ifft(...)). This is
         acceptable for a preconditioner which doesn't need to be exact.
         """
+        from moljax.core.fft_solvers import create_fft_cache_1d
         from moljax.core.preconditioners import (
             FFTAdvectionDiffusionPreconditioner,
             PrecondContext,
         )
-        from moljax.core.fft_solvers import create_fft_cache_1d
 
         grid = grid_128
         D = 0.01
@@ -876,8 +874,8 @@ class TestFFTPreconditioner:
 
     def test_fft_diffusion_preconditioner_matches_solve(self, grid_256):
         """Verify FFT diffusion preconditioner matches direct FFT solve."""
-        from moljax.core.preconditioners import FFTDiffusionPreconditioner, PrecondContext
         from moljax.core.fft_solvers import create_fft_cache_1d, solve_helmholtz_1d
+        from moljax.core.preconditioners import FFTDiffusionPreconditioner, PrecondContext
 
         grid = grid_256
         D = 0.01
@@ -938,7 +936,7 @@ class TestFFTPreconditioner:
 
         # For stiff problems, FFT precond should dramatically reduce iterations
         assert iteration_reduction_factor > 10, \
-            f"FFT precond should offer >10x iteration reduction for stiff problems"
+            "FFT precond should offer >10x iteration reduction for stiff problems"
 
     def test_fft_advdiff_precond_handles_pure_advection(self, grid_128):
         """Verify FFT advdiff preconditioner handles pure advection (D=0).
@@ -946,11 +944,11 @@ class TestFFTPreconditioner:
         Note: Pure advection with complex eigenvalues has the same Nyquist aliasing
         issue as advection-diffusion, causing a few percent error.
         """
+        from moljax.core.fft_solvers import create_fft_cache_1d
         from moljax.core.preconditioners import (
             FFTAdvectionDiffusionPreconditioner,
             PrecondContext,
         )
-        from moljax.core.fft_solvers import create_fft_cache_1d
 
         grid = grid_128
         D = 0.0  # Pure advection
@@ -1023,4 +1021,4 @@ class TestFFTPreconditioner:
             # FFT should be dramatically better for stiff problems
             if stiffness > 10:
                 assert cond_identity > 10 * cond_fft, \
-                    f"FFT should be much better conditioned for stiff problems"
+                    "FFT should be much better conditioned for stiff problems"

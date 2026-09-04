@@ -19,18 +19,19 @@ This benchmark answers: "What is the speedup from FFT diagonalization alone?"
 """
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
-import numpy as np
-import jax.numpy as jnp
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
-from scipy.fft import dst, idst
-import time
 import json
+import time
 from pathlib import Path
 
-from benchmark_utils import setup_benchmark, compute_stats
+import jax.numpy as jnp
+import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+from benchmark_utils import compute_stats, setup_benchmark
+from scipy.fft import dst
 
 # Configuration
 GRID_SIZES = [64, 128, 256]  # Test multiple grid sizes
@@ -250,7 +251,7 @@ for N in GRID_SIZES:
         'note': 'Periodic BC (timing comparison only)',
     }
     print(f"  Time: {time_jax_median*1000:.2f} ± {time_jax_iqr*1000:.2f} ms")
-    print(f"  (Periodic BC - timing only, error not comparable)")
+    print("  (Periodic BC - timing only, error not comparable)")
 
     # Speedups
     speedup_dst_vs_sparse = time_sparse_median / time_dst_median

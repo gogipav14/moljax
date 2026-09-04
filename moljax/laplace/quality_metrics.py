@@ -20,11 +20,10 @@ Reference:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable, Dict, List, NamedTuple, Optional, Tuple, Any
+from typing import Any, NamedTuple
 
-import jax
 import jax.numpy as jnp
 
 
@@ -71,17 +70,17 @@ class QualityMetrics(NamedTuple):
     spike_detected: bool           # p95 >> p50
 
     # Recommended actions
-    actions: List[str]             # List of RetuningAction values
+    actions: list[str]             # List of RetuningAction values
 
 
 class AutotunerFeedback(NamedTuple):
     """Feedback for autotuner iteration."""
     should_retune: bool
     priority_action: str           # Most important action
-    all_actions: List[str]         # All recommended actions
+    all_actions: list[str]         # All recommended actions
     confidence: float              # Confidence in recommendation (0-1)
     reason: str                    # Human-readable explanation
-    suggested_params: Dict[str, float]  # Suggested parameter changes
+    suggested_params: dict[str, float]  # Suggested parameter changes
 
 
 # =============================================================================
@@ -90,9 +89,9 @@ class AutotunerFeedback(NamedTuple):
 
 def compute_eps_im(
     ifft_result: jnp.ndarray,
-    t: Optional[jnp.ndarray] = None,
-    t_end: Optional[float] = None
-) -> Tuple[float, Dict[str, float]]:
+    t: jnp.ndarray | None = None,
+    t_end: float | None = None
+) -> tuple[float, dict[str, float]]:
     """
     Compute imaginary leakage metrics.
 
@@ -211,9 +210,9 @@ def compute_eps_sym(F_vals: jnp.ndarray) -> float:
 def classify_quality(
     eps_im: float,
     eps_im_valid: float,
-    localization: Dict[str, float],
-    thresholds: Optional[Dict[str, float]] = None
-) -> Tuple[QualityLevel, List[RetuningAction], str]:
+    localization: dict[str, float],
+    thresholds: dict[str, float] | None = None
+) -> tuple[QualityLevel, list[RetuningAction], str]:
     """
     Classify quality and determine retuning actions.
 
@@ -293,10 +292,10 @@ def classify_quality(
 
 def assess_nilt_quality(
     ifft_result: jnp.ndarray,
-    F_vals: Optional[jnp.ndarray] = None,
-    t: Optional[jnp.ndarray] = None,
-    t_end: Optional[float] = None,
-    params: Optional[Dict[str, Any]] = None
+    F_vals: jnp.ndarray | None = None,
+    t: jnp.ndarray | None = None,
+    t_end: float | None = None,
+    params: dict[str, Any] | None = None
 ) -> QualityMetrics:
     """
     Comprehensive quality assessment for NILT result.
@@ -350,7 +349,7 @@ def assess_nilt_quality(
 
 def generate_autotuner_feedback(
     metrics: QualityMetrics,
-    current_params: Dict[str, float],
+    current_params: dict[str, float],
     iteration: int = 0,
     max_iterations: int = 3
 ) -> AutotunerFeedback:
@@ -437,10 +436,10 @@ def generate_autotuner_feedback(
 def integrate_with_adaptive_tuner(
     result,
     F_eval: Callable,
-    params: Dict[str, float],
+    params: dict[str, float],
     t_end: float,
     iteration: int = 0
-) -> Tuple[QualityMetrics, AutotunerFeedback, bool]:
+) -> tuple[QualityMetrics, AutotunerFeedback, bool]:
     """
     Integrate quality metrics with the adaptive tuner.
 

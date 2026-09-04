@@ -22,15 +22,16 @@ where in Fourier space this becomes:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, NamedTuple
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 
+from moljax.laplace.nilt_fft import nilt_fft_uniform
 from moljax.laplace.spectral_bounds import SpectralBounds
-from moljax.laplace.tuning import TunedNILTParams, tune_nilt_params, next_power_of_two
-from moljax.laplace.nilt_fft import nilt_fft_uniform, NILTResult
+from moljax.laplace.tuning import TunedNILTParams, tune_nilt_params
 
 
 class FFTSpectralBounds(NamedTuple):
@@ -384,7 +385,7 @@ def compare_nilt_vs_timestepping(
         NILTvsTSSComparison with accuracy and timing results
     """
     import time
-    from moljax.core.fft_operators import DiffusionOperator
+
     from moljax.core.fft_integrators import etd_integrate
 
     N = len(eigenvalues)

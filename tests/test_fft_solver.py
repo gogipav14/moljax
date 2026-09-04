@@ -8,26 +8,24 @@ Validates:
 - Spectral filters
 """
 
-import pytest
 import jax
 import jax.numpy as jnp
-import numpy as np
 
-from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.bc import BCType, FieldBCSpec, apply_bc
-from moljax.core.operators import laplacian_1d, laplacian_2d
 from moljax.core.fft_solvers import (
-    laplacian_symbol_1d,
-    laplacian_symbol_2d,
+    apply_diffusion_inverse_fft,
+    apply_spectral_filter_interior,
     create_fft_cache_1d,
     create_fft_cache_2d,
-    solve_helmholtz_1d,
-    solve_helmholtz_2d,
-    apply_diffusion_inverse_fft,
     exponential_filter_1d,
     exponential_filter_2d,
-    apply_spectral_filter_interior,
+    laplacian_symbol_1d,
+    laplacian_symbol_2d,
+    solve_helmholtz_1d,
+    solve_helmholtz_2d,
 )
+from moljax.core.grid import Grid1D, Grid2D
+from moljax.core.operators import laplacian_2d
 
 
 class TestLaplacianSymbol1D:

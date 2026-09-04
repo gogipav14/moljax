@@ -14,12 +14,10 @@ Key optimizations:
 from __future__ import annotations
 
 from functools import partial
-from typing import Tuple
 
 import jax
 import jax.numpy as jnp
 from jax import lax
-
 
 # =============================================================================
 # φ-functions (JIT-compiled)
@@ -159,7 +157,7 @@ def etdrk4_kernel_1d(
     u: jnp.ndarray,
     eigenvalues: jnp.ndarray,
     dt: float,
-    N_func_vals: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    N_func_vals: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
 ) -> jnp.ndarray:
     """JIT-compiled ETDRK4 kernel for 1D fields.
 

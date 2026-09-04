@@ -7,15 +7,18 @@ Verifies:
 - PID controller adjusts dt based on error
 """
 
-import pytest
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
-from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.dt_policy import (
-    CFLParams, PIDParams, ControllerState,
-    heisenberg_cfl_dt, pid_controller_dt, create_initial_controller_state
+    CFLParams,
+    PIDParams,
+    create_initial_controller_state,
+    heisenberg_cfl_dt,
+    pid_controller_dt,
 )
+from moljax.core.grid import Grid1D, Grid2D
 
 
 class TestCFLLimiter:
