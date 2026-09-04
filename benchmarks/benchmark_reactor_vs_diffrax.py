@@ -70,9 +70,9 @@ def make_reactor_cn_solver(N, Pe, Da, dt):
     L = build_fd_laplacian_neumann(N, dx)
 
     # CN matrices: (I - 0.5*dt/Pe*L) c^{n+1} = (I + 0.5*dt/Pe*L) c^n + explicit_terms
-    I = jnp.eye(N)
-    A = I - 0.5 * dt / Pe * L
-    B = I + 0.5 * dt / Pe * L
+    eye = jnp.eye(N)
+    A = eye - 0.5 * dt / Pe * L
+    B = eye + 0.5 * dt / Pe * L
 
     # Precompute LU factorization equivalent (solve via direct inverse for small N)
     A_inv = jnp.linalg.inv(A)
@@ -121,9 +121,9 @@ def solve_reactor_cn_jit(N, Pe, Da, dt, n_steps):
 
     # Build operators
     L = build_fd_laplacian_neumann(N, dx)
-    I = jnp.eye(N)
-    A = I - 0.5 * dt / Pe * L
-    B = I + 0.5 * dt / Pe * L
+    eye = jnp.eye(N)
+    A = eye - 0.5 * dt / Pe * L
+    B = eye + 0.5 * dt / Pe * L
     A_inv = jnp.linalg.inv(A)
     G = build_fd_gradient_upwind(N, dx)
 

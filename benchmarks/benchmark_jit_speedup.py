@@ -209,7 +209,7 @@ ax.set_title(f'JIT Compilation Speedup\n{N}x{N} grid, {N_STEPS} steps', fontsize
 ax.set_ylim(0, max(times_plot) * 1.2)
 
 # Add value labels
-for bar, val, err in zip(bars, times_plot, errors):
+for bar, val, err in zip(bars, times_plot, errors, strict=False):
     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + err + 0.02,
             f'{val:.2f}s', ha='center', va='bottom', fontsize=11)
 

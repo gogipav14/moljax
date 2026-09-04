@@ -108,7 +108,7 @@ def rhs_scipy(t, u):
 times_scipy = []
 step_counts = []
 
-for i in range(N_REPS):
+for _i in range(N_REPS):
     start = time.perf_counter()
     sol = solve_ivp(
         rhs_scipy,

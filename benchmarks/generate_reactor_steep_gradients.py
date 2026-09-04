@@ -107,7 +107,7 @@ def analytical_danckwerts_steady(z, Pe, Da):
         AB = np.linalg.solve(M, rhs_vec)
         A, B = AB
         return A * np.exp(r1 * z) + B * np.exp(r2 * z)
-    except:
+    except Exception:
         return np.ones_like(z) * np.nan
 
 
@@ -157,7 +157,7 @@ cases = [
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 axes = axes.flatten()
 
-for idx, (Pe, Da, subtitle, desc) in enumerate(cases):
+for idx, (Pe, Da, subtitle, _desc) in enumerate(cases):
     ax = axes[idx]
     print(f"\nCase {idx+1}: Pe={Pe}, Da={Da} ({subtitle})")
 
@@ -217,7 +217,7 @@ Pe_values = [10, 50, 100, 200, 500]
 colors = plt.cm.viridis(np.linspace(0.1, 0.9, len(Pe_values)))
 
 print(f"\n\nPe Progression (Da={Da_fixed} fixed):")
-for Pe, color in zip(Pe_values, colors):
+for Pe, color in zip(Pe_values, colors, strict=False):
     print(f"  Pe={Pe}...")
     z, c_num, c_ana = solve_to_steady_state(Pe, Da_fixed, N=512, t_final=20.0)
     ax2.plot(z, c_num, '-', color=color, lw=2.0, label=f'Pe = {Pe}')
@@ -234,7 +234,7 @@ ax2.set_ylim(bottom=0)
 
 # Add inset zooming into inlet
 inset = ax2.inset_axes([0.4, 0.4, 0.5, 0.5])
-for Pe, color in zip(Pe_values, colors):
+for Pe, color in zip(Pe_values, colors, strict=False):
     z, c_num, _ = solve_to_steady_state(Pe, Da_fixed, N=512, t_final=20.0)
     inset.plot(z, c_num, '-', color=color, lw=1.5)
 inset.set_xlim(0, 0.1)

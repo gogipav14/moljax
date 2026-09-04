@@ -97,7 +97,7 @@ def plot_wp(data, title, filename, xlabel='Nonlinear Function Evaluations (NFE)'
                  if p['error'] > 0 and np.isfinite(p['error'])]
         if not valid:
             continue
-        nfes, errs, times = zip(*valid)
+        nfes, errs, times = zip(*valid, strict=False)
         s = STYLES.get(method_name, {'color': 'gray', 'marker': 'x', 'label': method_name})
         ax.plot(nfes, errs, marker=s['marker'], color=s['color'], lw=2, ms=8,
                 label=s['label'], markeredgecolor='black', markeredgewidth=0.5)
@@ -243,7 +243,7 @@ def run_scan_solver(step_fn, state, n_steps, block_size=2000):
     n_blocks = n_steps // block_size
     remainder = n_steps - n_blocks * block_size
 
-    for i in range(n_blocks):
+    for _i in range(n_blocks):
         state = run_block(state, block_size)
         if isinstance(state, tuple):
             state[0].block_until_ready()
@@ -592,7 +592,6 @@ def run_schnakenberg_wp():
     ky = np.fft.fftfreq(N, dx) * 2 * np.pi
     KX, KY = np.meshgrid(kx, ky, indexing='ij')
     lap_eig = -(KX**2 + KY**2)
-    lap_eig_jax = jnp.array(lap_eig)
 
     # Steady state and IC
     u_s = a_sn + b_sn

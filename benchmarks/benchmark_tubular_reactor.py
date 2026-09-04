@@ -232,7 +232,7 @@ def analytical_danckwerts_steady(z, Pe, Da):
         AB = np.linalg.solve(M, rhs_vec)
         A, B = AB
         return A * np.exp(r1 * z) + B * np.exp(r2 * z)
-    except:
+    except Exception:
         return np.ones_like(z) * np.nan
 
 
@@ -353,7 +353,7 @@ def generate_figures(results):
 
     Pe, Da = 10, 1  # Representative case
 
-    for ax, bc, label in zip(axes, bc_types, bc_labels):
+    for ax, bc, label in zip(axes, bc_types, bc_labels, strict=False):
         key = f"{bc}_Pe{Pe}_Da{Da}"
         if key in results and 'profile' in results[key]:
             z = results[key]['z']
@@ -411,7 +411,7 @@ def generate_figures(results):
     markers = {'danckwerts': 'o', 'robin': 's', 'neumann': '^'}
     colors = {1: 'blue', 10: 'green', 100: 'red'}
 
-    for key, data in results.items():
+    for data in results.values():
         if 'mean_time' in data and data.get('error') is not None:
             bc = data['bc_type']
             Pe = data['Pe']

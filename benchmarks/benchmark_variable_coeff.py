@@ -95,7 +95,6 @@ def np_variable_diffusion_matvec(v, D_x, dx):
         L*v_i = (D_{i+1/2}*(v_{i+1} - v_i) - D_{i-1/2}*(v_i - v_{i-1})) / dx^2
     where D_{i+1/2} = (D_i + D_{i+1}) / 2
     """
-    n = len(v)
     # Periodic padding
     v_p = np.roll(v, -1)  # v_{i+1}
     v_m = np.roll(v, 1)   # v_{i-1}

@@ -204,7 +204,7 @@ ax2.grid(True, alpha=0.3)
 ax2.axhline(y=1, color='gray', linestyle='--', alpha=0.5)
 
 # Add value labels
-for x, y in zip(dofs, speedups):
+for x, y in zip(dofs, speedups, strict=False):
     ax2.annotate(f'{y:.1f}x', (x, y), textcoords="offset points",
                 xytext=(0, 10), ha='center', fontsize=9)
 

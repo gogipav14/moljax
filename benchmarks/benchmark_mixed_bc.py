@@ -260,7 +260,7 @@ for N in GRID_SIZES:
 
         # Time
         times_fft_dst = []
-        for rep in range(N_TIMING_REPS):
+        for _rep in range(N_TIMING_REPS):
             t0 = perf_counter()
             u_fft_dst = solve_fft_dst(u0_jax, D, DT, n_steps, Nx, Ny, dx, dy)
             t1 = perf_counter()
@@ -283,7 +283,7 @@ for N in GRID_SIZES:
 
             # Time
             times_fd = []
-            for rep in range(N_TIMING_REPS):
+            for _rep in range(N_TIMING_REPS):
                 t0 = perf_counter()
                 u_fd = solve_fd_sparse(u0_np, D, DT, n_steps, Nx, Ny, dx, dy)
                 t1 = perf_counter()
@@ -370,9 +370,9 @@ errors_fd = [r["fd_sparse"]["error"] for r in results]
 
 # Left: Solve time vs grid size
 ax1.loglog(Ns, times_fft, 'o-', label='FFT-DST (tensor product)', linewidth=2, markersize=8)
-valid_fd = [(n, t) for n, t in zip(Ns, times_fd) if not np.isnan(t)]
+valid_fd = [(n, t) for n, t in zip(Ns, times_fd, strict=False) if not np.isnan(t)]
 if valid_fd:
-    fd_ns, fd_ts = zip(*valid_fd)
+    fd_ns, fd_ts = zip(*valid_fd, strict=False)
     ax1.loglog(fd_ns, fd_ts, 's--', label='FD sparse (LU)', linewidth=2, markersize=8)
 
 # Reference scaling lines
@@ -389,9 +389,9 @@ ax1.grid(True, alpha=0.3)
 
 # Right: Error vs grid size
 ax2.loglog(Ns, errors_fft, 'o-', label='FFT-DST', linewidth=2, markersize=8)
-valid_fd_err = [(n, e) for n, e in zip(Ns, errors_fd) if not np.isnan(e)]
+valid_fd_err = [(n, e) for n, e in zip(Ns, errors_fd, strict=False) if not np.isnan(e)]
 if valid_fd_err:
-    fd_ns_e, fd_es = zip(*valid_fd_err)
+    fd_ns_e, fd_es = zip(*valid_fd_err, strict=False)
     ax2.loglog(fd_ns_e, fd_es, 's--', label='FD sparse', linewidth=2, markersize=8)
 
 ax2.set_xlabel('Grid Size N (per dimension)')

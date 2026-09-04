@@ -110,8 +110,10 @@ np.random.seed(42)
 u0_gs = jnp.array(1.0 - 0.5 * np.random.rand(N_gs, N_gs))
 v0_gs = jnp.array(0.25 * np.random.rand(N_gs, N_gs))
 
-gs_rxn_u = lambda u, v: -u * v**2 + F_gs * (1 - u)
-gs_rxn_v = lambda u, v: u * v**2 - (F_gs + k_gs) * v
+def gs_rxn_u(u, v):
+    return -u * v**2 + F_gs * (1 - u)
+def gs_rxn_v(u, v):
+    return u * v**2 - (F_gs + k_gs) * v
 
 # Max spectral eigenvalue: Dv * (pi*N/L)^2 = 1e-5 * (pi*128/2.5)^2 = 1e-5 * 25872 = 0.259
 # RK4 stability: dt < 2.8/0.259 = 10.8 → dt=5.0 ok (reaction limited: F+k=0.1, so dt<10 ok)
@@ -138,8 +140,10 @@ np.random.seed(42)
 u0_sn = jnp.array(us_sn + 0.01 * np.random.randn(N_sn, N_sn))
 v0_sn = jnp.array(vs_sn + 0.01 * np.random.randn(N_sn, N_sn))
 
-sn_rxn_u = lambda u, v: gamma_sn * (a_sn - u + u**2 * v)
-sn_rxn_v = lambda u, v: gamma_sn * (b_sn - u**2 * v)
+def sn_rxn_u(u, v):
+    return gamma_sn * (a_sn - u + u**2 * v)
+def sn_rxn_v(u, v):
+    return gamma_sn * (b_sn - u**2 * v)
 
 # Max spectral eigenvalue (2D corner mode): Dv * 2*(pi*N/L)^2 = 40*2*1617 = 129,356
 # RK4: dt < 2.785/129356 = 2.15e-5 → need dt=2e-5 → 25M steps / 100M NFE!
@@ -170,8 +174,10 @@ np.random.seed(42)
 u0_br = jnp.array(us_br + 0.05 * np.random.randn(N_br, N_br))
 v0_br = jnp.array(vs_br + 0.05 * np.random.randn(N_br, N_br))
 
-br_rxn_u = lambda u, v: a_br - (b_br + 1) * u + u**2 * v
-br_rxn_v = lambda u, v: b_br * u - u**2 * v
+def br_rxn_u(u, v):
+    return a_br - (b_br + 1) * u + u**2 * v
+def br_rxn_v(u, v):
+    return b_br * u - u**2 * v
 
 # Max spectral eigenvalue: Dv * (pi*N/L)^2 = 0.1*(pi*128/5)^2 = 0.1*6468 = 647
 # RK4: dt < 2.8/647 = 0.0043 → use 0.002

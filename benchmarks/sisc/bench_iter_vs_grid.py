@@ -128,11 +128,11 @@ for N in GRID_SIZES:
         fft_iterations = []
         u_fft = u.copy()
 
-        for step in range(N_TIMESTEPS):
+        for _step in range(N_TIMESTEPS):
             u_old = u_fft
             u_new = u_old.copy()  # Initial guess
 
-            for newton_iter in range(NEWTON_MAXITER):
+            for _newton_iter in range(NEWTON_MAXITER):
                 # Compute residual
                 residual = cn_residual(u_new, u_old)
                 res_norm = jnp.linalg.norm(residual.flatten())
@@ -184,24 +184,24 @@ for N in GRID_SIZES:
         unprecond_iterations = []
         u_unprecond = u.copy()
 
-        for step in range(N_TIMESTEPS):
+        for _step in range(N_TIMESTEPS):
             u_old = u_unprecond
             u_new = u_old.copy()
 
-            for newton_iter in range(NEWTON_MAXITER):
+            for _newton_iter in range(NEWTON_MAXITER):
                 residual = cn_residual(u_new, u_old)
                 res_norm = jnp.linalg.norm(residual.flatten())
 
                 if res_norm < NEWTON_TOL:
                     break
 
-                def matvec_flat(v_flat):
+                def matvec_flat_unprec(v_flat):
                     return jacobian_matvec(v_flat.reshape(N, N), u_new).flatten()
 
                 iter_count = [0]
                 def counted_matvec(v):
                     iter_count[0] += 1
-                    return matvec_flat(v)
+                    return matvec_flat_unprec(v)
 
                 try:
                     delta_flat, info = gmres(

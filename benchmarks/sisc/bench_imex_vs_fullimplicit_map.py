@@ -165,7 +165,7 @@ for D in D_VALUES:
             t0 = time.perf_counter()
             _ = integrate_rk4(u0_jax, n_steps_explicit).block_until_ready()
             timings['RK4'] = (time.perf_counter() - t0) * 1000
-        except:
+        except Exception:
             timings['RK4'] = float('inf')
 
         # Test IMEX (implicit diffusion, explicit reaction)
@@ -180,7 +180,7 @@ for D in D_VALUES:
             t0 = time.perf_counter()
             _ = integrate_imex(u0_jax, n_steps_implicit).block_until_ready()
             timings['IMEX'] = (time.perf_counter() - t0) * 1000
-        except:
+        except Exception:
             timings['IMEX'] = float('inf')
 
         # Test CN
@@ -195,7 +195,7 @@ for D in D_VALUES:
             t0 = time.perf_counter()
             _ = integrate_cn(u0_jax, n_steps_implicit).block_until_ready()
             timings['CN'] = (time.perf_counter() - t0) * 1000
-        except:
+        except Exception:
             timings['CN'] = float('inf')
 
         # Test ETD
@@ -210,7 +210,7 @@ for D in D_VALUES:
             t0 = time.perf_counter()
             _ = integrate_etd(u0_jax, n_steps_implicit).block_until_ready()
             timings['ETD'] = (time.perf_counter() - t0) * 1000
-        except:
+        except Exception:
             timings['ETD'] = float('inf')
 
         # Determine winner

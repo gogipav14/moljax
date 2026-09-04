@@ -229,8 +229,10 @@ def run_gray_scott():
     coeffs_v = etdrk4_coeffs(Dv * lap_hat, dt_etd)
     n_etd = int(T / dt_etd)
 
-    nonlin_u = lambda u, v: -u * v**2 + F * (1 - u)
-    nonlin_v = lambda u, v: u * v**2 - (F + k) * v
+    def nonlin_u(u, v):
+        return -u * v**2 + F * (1 - u)
+    def nonlin_v(u, v):
+        return u * v**2 - (F + k) * v
 
     print(f"  Running ETDRK4: {n_etd} steps, dt={dt_etd}...")
     u_etd, v_etd = u0_etd.copy(), v0_etd.copy()
@@ -266,7 +268,7 @@ def run_schnakenberg():
     print("SCHNAKENBERG VERIFICATION")
     print("=" * 70)
 
-    N = 64; L = 10.0; dx = L / N
+    N = 64; L = 10.0
     Du, Dv = 1.0, 40.0
     a, b, gamma = 0.1, 0.9, 100.0
 
@@ -297,8 +299,10 @@ def run_schnakenberg():
     L_hat_u = Du * lap_hat
     L_hat_v = Dv * lap_hat
 
-    rxn_u = lambda u, v: gamma * (a - u + u**2 * v)
-    rxn_v = lambda u, v: gamma * (b - u**2 * v)
+    def rxn_u(u, v):
+        return gamma * (a - u + u**2 * v)
+    def rxn_v(u, v):
+        return gamma * (b - u**2 * v)
 
     dt_imex = 0.005
     T = 500.0
@@ -431,8 +435,10 @@ def run_brusselator():
     coeffs_v = etdrk4_coeffs(Dv * lap_hat, dt_etd)
     n_etd = int(T / dt_etd)
 
-    nonlin_u = lambda u, v: a_br - (b_br + 1) * u + u**2 * v
-    nonlin_v = lambda u, v: b_br * u - u**2 * v
+    def nonlin_u(u, v):
+        return a_br - (b_br + 1) * u + u**2 * v
+    def nonlin_v(u, v):
+        return b_br * u - u**2 * v
 
     print(f"  Running ETDRK4: {n_etd} steps, dt={dt_etd}...")
     u_etd, v_etd = u0_etd.copy(), v0_etd.copy()

@@ -140,7 +140,7 @@ for N in GRID_SIZES:
 
     # Timed runs
     times_sparse = []
-    for rep in range(N_REPS):
+    for _rep in range(N_REPS):
         u = u0_interior.copy()
         t0 = time.perf_counter()
         for _ in range(N_STEPS):
@@ -181,7 +181,7 @@ for N in GRID_SIZES:
 
     # Timed runs
     times_dst = []
-    for rep in range(N_REPS):
+    for _rep in range(N_REPS):
         u = u0_interior.copy()
         t0 = time.perf_counter()
         for _ in range(N_STEPS):
@@ -235,7 +235,7 @@ for N in GRID_SIZES:
 
     # Timed runs
     times_jax = []
-    for rep in range(N_REPS):
+    for _rep in range(N_REPS):
         t0 = time.perf_counter()
         u_jax = jax_fft_cn_loop(u0_jax, cn_factor_periodic, N_STEPS)
         u_jax.block_until_ready()

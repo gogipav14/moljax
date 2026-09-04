@@ -69,14 +69,14 @@ def time_cupy_fft(data_cp, fft_fn, n_reps, n_warmup):
     """Time a CuPy FFT operation."""
     # Warmup
     for _ in range(n_warmup):
-        r = fft_fn(data_cp)
+        fft_fn(data_cp)
         cp.cuda.Stream.null.synchronize()
 
     times = []
     for _ in range(n_reps):
         cp.cuda.Stream.null.synchronize()
         t0 = time.perf_counter()
-        r = fft_fn(data_cp)
+        fft_fn(data_cp)
         cp.cuda.Stream.null.synchronize()
         times.append(time.perf_counter() - t0)
     return compute_stats(times)

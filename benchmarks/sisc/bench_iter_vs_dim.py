@@ -166,11 +166,11 @@ for config in CONFIGS:
     u_fft = u0.copy()
 
     t0 = time.perf_counter()
-    for step in range(N_TIMESTEPS):
+    for _step in range(N_TIMESTEPS):
         u_old = u_fft
         u_new = u_old.copy()
 
-        for newton_iter in range(NEWTON_MAXITER):
+        for _newton_iter in range(NEWTON_MAXITER):
             residual = cn_residual(u_new, u_old)
             res_norm = jnp.linalg.norm(residual.flatten())
 
@@ -227,30 +227,30 @@ for config in CONFIGS:
     u_unprecond = u0.copy()
 
     t0 = time.perf_counter()
-    for step in range(N_TIMESTEPS):
+    for _step in range(N_TIMESTEPS):
         u_old = u_unprecond
         u_new = u_old.copy()
 
-        for newton_iter in range(NEWTON_MAXITER):
+        for _newton_iter in range(NEWTON_MAXITER):
             residual = cn_residual(u_new, u_old)
             res_norm = jnp.linalg.norm(residual.flatten())
 
             if res_norm < NEWTON_TOL:
                 break
 
-            def residual_at_u(u_trial):
+            def residual_at_u_unprec(u_trial):
                 return cn_residual(u_trial, u_old)
 
-            def jacobian_matvec(v):
-                return jax.jvp(residual_at_u, (u_new,), (v,))[1]
+            def jacobian_matvec_unprec(v):
+                return jax.jvp(residual_at_u_unprec, (u_new,), (v,))[1]
 
-            def matvec_flat(v_flat):
-                return jacobian_matvec(v_flat.reshape(shape)).flatten()
+            def matvec_flat_unprec(v_flat):
+                return jacobian_matvec_unprec(v_flat.reshape(shape)).flatten()
 
             iter_count = [0]
             def counted_matvec(v):
                 iter_count[0] += 1
-                return matvec_flat(v)
+                return matvec_flat_unprec(v)
 
             try:
                 delta_flat, info = gmres(
@@ -339,13 +339,13 @@ bars = ax.bar(range(len(dims)), medians, color=['#1f77b4', '#2ca02c', '#ff7f0e']
               yerr=[np.array(medians)-np.array(q25s), np.array(q75s)-np.array(medians)],
               capsize=5)
 ax.set_xticks(range(len(dims)))
-ax.set_xticklabels([f'{d}D\n({dof//1000}K DOF)' for d, dof in zip(dims, dofs)])
+ax.set_xticklabels([f'{d}D\n({dof//1000}K DOF)' for d, dof in zip(dims, dofs, strict=False)])
 ax.set_ylabel('GMRES Iterations (median)', fontsize=12)
 ax.set_title('FFT Preconditioned', fontsize=14)
 ax.grid(True, alpha=0.3, axis='y')
 ax.set_ylim(0, max(medians) + 5)
 
-for bar, m in zip(bars, medians):
+for bar, m in zip(bars, medians, strict=False):
     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
             f'{m:.0f}', ha='center', fontsize=11)
 

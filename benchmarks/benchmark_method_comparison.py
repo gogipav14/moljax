@@ -156,10 +156,10 @@ def run_reactor_cn(c0, L, dt, n_steps, c_inlet=1.0):
     (I - 0.5*dt*L) c^{n+1} = (I + 0.5*dt*L) c^n
     """
     N = len(c0)
-    I = jnp.eye(N)
+    eye = jnp.eye(N)
 
-    A_lhs = I - 0.5 * dt * L
-    A_rhs = I + 0.5 * dt * L
+    A_lhs = eye - 0.5 * dt * L
+    A_rhs = eye + 0.5 * dt * L
 
     # Modify for Dirichlet BC at inlet
     A_lhs = A_lhs.at[0, :].set(0)
@@ -184,9 +184,9 @@ def run_reactor_imex(c0, L_diff, L_adv_rxn, dt, n_steps, c_inlet=1.0):
     (I - dt*L_diff) c^{n+1} = c^n + dt*L_adv_rxn @ c^n
     """
     N = len(c0)
-    I = jnp.eye(N)
+    eye = jnp.eye(N)
 
-    A_impl = I - dt * L_diff
+    A_impl = eye - dt * L_diff
 
     # Modify for Dirichlet BC at inlet
     A_impl = A_impl.at[0, :].set(0)
@@ -514,10 +514,10 @@ def plot_reactor_comparison(results_by_regime, save_path):
     ax.set_title('(b) Speedup', fontsize=12)
     ax.grid(True, alpha=0.3, axis='y')
 
-    for bar, speedup in zip(bars1, speedups_cn):
+    for bar, speedup in zip(bars1, speedups_cn, strict=False):
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
                 f'{speedup:.1f}×', ha='center', va='bottom', fontsize=8, fontweight='bold')
-    for bar, speedup in zip(bars2, speedups_imex):
+    for bar, speedup in zip(bars2, speedups_imex, strict=False):
         ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
                 f'{speedup:.1f}×', ha='center', va='bottom', fontsize=8, fontweight='bold')
 

@@ -199,7 +199,7 @@ def generate_method_comparison():
     ax1.set_title('(a) Execution Time Comparison', fontweight='bold')
 
     # Add value labels
-    for bar, time in zip(bars, times):
+    for bar, time in zip(bars, times, strict=False):
         height = bar.get_height()
         if time >= 1:
             label = f'{time:.1f}s'
@@ -210,7 +210,7 @@ def generate_method_comparison():
                     ha='center', va='bottom', fontsize=7, rotation=45)
 
     # Right: Error comparison (log scale)
-    bars2 = ax2.bar(x, errors, color=colors, edgecolor='black', linewidth=0.5)
+    ax2.bar(x, errors, color=colors, edgecolor='black', linewidth=0.5)
     ax2.set_yscale('log')
     ax2.set_ylabel('Maximum Error', fontweight='bold')
     ax2.set_xticks(x)
@@ -324,7 +324,7 @@ def generate_speedup_figure():
     ax.set_title('Speedup of FFT-Crank-Nicolson over Traditional ODE Solvers\n(128×128 grid, 2D diffusion, T=1.0)', fontweight='bold')
 
     # Add value labels
-    for bar, speedup in zip(bars, speedups):
+    for bar, speedup in zip(bars, speedups, strict=False):
         height = bar.get_height()
         ax.annotate(f'{speedup:.0f}×', xy=(bar.get_x() + bar.get_width()/2, height),
                     xytext=(0, 3), textcoords="offset points",
@@ -491,7 +491,7 @@ def generate_fft_diagonalization_figure():
     lap_pattern[N//2, N//2-1] = 1
     lap_pattern[N//2, N//2+1] = 1
 
-    im1 = ax1.imshow(lap_pattern[N//2-3:N//2+4, N//2-3:N//2+4], cmap='RdBu_r',
+    ax1.imshow(lap_pattern[N//2-3:N//2+4, N//2-3:N//2+4], cmap='RdBu_r',
                      vmin=-4, vmax=4)
     ax1.set_title('(a) Physical Space\nLaplacian Stencil', fontweight='bold')
     ax1.set_xticks([])
@@ -589,21 +589,21 @@ def generate_solution_validation():
     vmax = np.max(np.abs(u0))
 
     # Initial condition
-    im0 = axes[0].imshow(u0.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
+    axes[0].imshow(u0.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
                          vmin=-vmax, vmax=vmax)
     axes[0].set_title('(a) Initial Condition\nt = 0', fontweight='bold')
     axes[0].set_xlabel('x')
     axes[0].set_ylabel('y')
 
     # Numerical solution
-    im1 = axes[1].imshow(numerical.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
+    axes[1].imshow(numerical.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
                          vmin=-vmax, vmax=vmax)
     axes[1].set_title(f'(b) FFT-CN Numerical\nt = {T}', fontweight='bold')
     axes[1].set_xlabel('x')
     axes[1].set_ylabel('y')
 
     # Analytical solution
-    im2 = axes[2].imshow(analytical.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
+    axes[2].imshow(analytical.T, origin='lower', extent=[0,1,0,1], cmap='RdBu_r',
                          vmin=-vmax, vmax=vmax)
     axes[2].set_title(f'(c) Analytical Solution\nt = {T}', fontweight='bold')
     axes[2].set_xlabel('x')
@@ -681,12 +681,12 @@ def generate_cross_language_figure():
     ax1.set_xticklabels(methods)
     ax1.set_title('(a) FFT-CN Implementation Times', fontweight='bold')
 
-    for bar, t in zip(bars1, times):
+    for bar, t in zip(bars1, times, strict=False):
         ax1.annotate(f'{t*1000:.0f}ms', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
                     xytext=(0, 3), textcoords="offset points", ha='center', fontsize=10)
 
     # Errors (all the same!)
-    bars2 = ax2.bar(x, errors, color=colors, edgecolor='black')
+    ax2.bar(x, errors, color=colors, edgecolor='black')
     ax2.set_ylabel('Maximum Error', fontweight='bold')
     ax2.set_xticks(x)
     ax2.set_xticklabels(methods)

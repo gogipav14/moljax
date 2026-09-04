@@ -79,7 +79,9 @@ for N in GRID_SIZES_3D:
         @jax.jit
         def cn_step_3d(u):
             u_hat = jnp.fft.fftn(u)
-            return jnp.real(jnp.fft.ifftn(G * u_hat))
+            # G is bound whenever this runs; the del below frees it after
+            # the reps, and only ruff's end-of-module view sees it missing.
+            return jnp.real(jnp.fft.ifftn(G * u_hat))  # noqa: F821
 
         @jax.jit
         def integrate_3d(u0, n_steps):
@@ -186,13 +188,13 @@ if successful_grids:
     ax1.semilogy(range(len(successful_grids)), successful_times, 'o-',
                 linewidth=2, markersize=10, color='green')
     ax1.set_xticks(range(len(successful_grids)))
-    ax1.set_xticklabels([f'{N}³\n({dof//1000}K)' for N, dof in zip(successful_grids, successful_dofs)])
+    ax1.set_xticklabels([f'{N}³\n({dof//1000}K)' for N, dof in zip(successful_grids, successful_dofs, strict=False)])
     ax1.set_xlabel('Grid Size (DOF)', fontsize=12)
     ax1.set_ylabel('Time (ms, log scale)', fontsize=12)
     ax1.set_title(f'3D FFT-CN Runtime ({N_STEPS} steps)', fontsize=14)
     ax1.grid(True, alpha=0.3)
 
-    for i, (t, g) in enumerate(zip(successful_times, successful_grids)):
+    for i, (t, _g) in enumerate(zip(successful_times, successful_grids, strict=False)):
         ax1.annotate(f'{t:.1f}ms', (i, t), textcoords="offset points",
                     xytext=(0, 10), ha='center', fontsize=9)
 

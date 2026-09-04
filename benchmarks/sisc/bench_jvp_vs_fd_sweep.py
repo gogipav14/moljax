@@ -213,7 +213,7 @@ for eps in test_epsilons:
         sol_fd.block_until_ready()
         iters_fd = iter_count_fd[0]
         converged = info_fd == 0
-    except:
+    except Exception:
         iters_fd = GMRES_MAXITER
         converged = False
 
@@ -289,7 +289,7 @@ ax2.set_ylabel('GMRES Iterations', fontsize=12)
 ax2.set_title('GMRES Convergence: AD vs FD JVP', fontsize=14)
 ax2.grid(True, alpha=0.3, axis='y')
 
-for bar, it in zip(bars, iters):
+for bar, it in zip(bars, iters, strict=False):
     ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
             str(it), ha='center', fontsize=10)
 

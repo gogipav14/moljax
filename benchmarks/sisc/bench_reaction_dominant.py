@@ -51,7 +51,7 @@ def get_device():
         devices = jax.devices('gpu')
         if devices:
             return devices[0]
-    except:
+    except Exception:
         pass
     return jax.devices('cpu')[0]
 
@@ -145,7 +145,6 @@ def count_gmres_iterations(lap_eig, D, k, dt, u0, tol, maxiter):
     CN: (I - 0.5*dt*(D*L - k*I)) u^{n+1} = (I + 0.5*dt*(D*L - k*I)) u^n
     """
     shape = u0.shape
-    n = u0.size
 
     # Build operators
     def apply_laplacian(u):
@@ -191,7 +190,7 @@ def count_gmres_iterations(lap_eig, D, k, dt, u0, tol, maxiter):
     for it in range(maxiter):
         # One GMRES-like iteration
         Az = apply_jacobian(z)
-        Mz = preconditioner(Az)
+        preconditioner(Az)
 
         alpha = jnp.dot(r, z) / (jnp.dot(Az, z) + 1e-14)
         x = x + alpha * z
@@ -212,7 +211,6 @@ def count_gmres_iterations(lap_eig, D, k, dt, u0, tol, maxiter):
 @jax.jit
 def run_cn_step_preconditioned(u, lap_eig, D, k, dt):
     """Run one CN step with FFT-preconditioned GMRES."""
-    shape = u.shape
 
     def apply_laplacian_2d(u_2d):
         u_hat = jnp.fft.fft2(u_2d)
@@ -414,7 +412,7 @@ def create_figure(results):
     ax.grid(True, alpha=0.3)
 
     # Mark regime transition
-    for i, (k, r) in enumerate(zip(k_vals, radii)):
+    for _i, (k, r) in enumerate(zip(k_vals, radii, strict=False)):
         if r >= 1.0:
             ax.axvline(x=k, color='red', linestyle=':', alpha=0.5)
             break

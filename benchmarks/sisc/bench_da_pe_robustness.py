@@ -55,7 +55,7 @@ def get_device():
         devices = jax.devices('gpu')
         if devices:
             return devices[0]
-    except:
+    except Exception:
         pass
     return jax.devices('cpu')[0]
 
@@ -105,7 +105,7 @@ def gmres_iteration_count(matvec, b, precond, tol, maxiter, restart):
     total_iters = 0
     converged = False
 
-    for restart_cycle in range(maxiter // restart + 1):
+    for _restart_cycle in range(maxiter // restart + 1):
         r = b - matvec(x)
         r_norm = jnp.linalg.norm(r)
 
@@ -186,7 +186,6 @@ def solve_one_newton_step(u, lap_eig, adv_eig, D, k, dt):
     where A is the advection operator.
     """
     shape = u.shape
-    n = u.size
 
     def apply_operators_fft(u_2d):
         """Apply D*Lap + Advection - k*I in Fourier space."""

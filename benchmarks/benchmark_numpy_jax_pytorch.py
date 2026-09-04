@@ -61,7 +61,7 @@ def benchmark_fft_2d(N=1024, n_reps=10, warmup=3):
     times = []
     for _ in range(n_reps):
         start = time.perf_counter()
-        result = np.fft.fft2(data_np)
+        np.fft.fft2(data_np)
         times.append(time.perf_counter() - start)
 
     results['numpy_cpu'] = {
@@ -87,7 +87,7 @@ def benchmark_fft_2d(N=1024, n_reps=10, warmup=3):
             times = []
             for _ in range(n_reps):
                 start = time.perf_counter()
-                result = jax_fft(data_jax).block_until_ready()
+                jax_fft(data_jax).block_until_ready()
                 times.append(time.perf_counter() - start)
 
             results['jax_cpu'] = {
@@ -112,7 +112,7 @@ def benchmark_fft_2d(N=1024, n_reps=10, warmup=3):
                     times = []
                     for _ in range(n_reps):
                         start = time.perf_counter()
-                        result = jax_fft(data_jax_gpu).block_until_ready()
+                        jax_fft(data_jax_gpu).block_until_ready()
                         times.append(time.perf_counter() - start)
 
                     results['jax_gpu'] = {
@@ -120,7 +120,7 @@ def benchmark_fft_2d(N=1024, n_reps=10, warmup=3):
                         'std': np.std(times) * 1000,
                     }
                     print(f"   Median: {results['jax_gpu']['median']:.2f} ms")
-        except:
+        except Exception:
             print("   JAX GPU not available")
 
     # PyTorch CPU
@@ -135,7 +135,7 @@ def benchmark_fft_2d(N=1024, n_reps=10, warmup=3):
         times = []
         for _ in range(n_reps):
             start = time.perf_counter()
-            result = torch.fft.fft2(data_torch_cpu)
+            torch.fft.fft2(data_torch_cpu)
             times.append(time.perf_counter() - start)
 
         results['torch_cpu'] = {
@@ -158,7 +158,7 @@ def benchmark_fft_2d(N=1024, n_reps=10, warmup=3):
         for _ in range(n_reps):
             torch.cuda.synchronize()
             start = time.perf_counter()
-            result = torch.fft.fft2(data_torch_gpu)
+            torch.fft.fft2(data_torch_gpu)
             torch.cuda.synchronize()
             times.append(time.perf_counter() - start)
 
@@ -209,7 +209,7 @@ def benchmark_diffusion_solver(N=256, n_steps=1000, n_reps=5, warmup=2):
     times = []
     for _ in range(n_reps):
         start = time.perf_counter()
-        result = numpy_cn_solve(u0_np, n_steps)
+        numpy_cn_solve(u0_np, n_steps)
         times.append(time.perf_counter() - start)
 
     results['numpy_cpu'] = {
@@ -248,7 +248,7 @@ def benchmark_diffusion_solver(N=256, n_steps=1000, n_reps=5, warmup=2):
                     times = []
                     for _ in range(n_reps):
                         start = time.perf_counter()
-                        result = jax_cn_solve(u0_jax, n_steps).block_until_ready()
+                        jax_cn_solve(u0_jax, n_steps).block_until_ready()
                         times.append(time.perf_counter() - start)
 
                     results['jax_gpu'] = {
@@ -283,7 +283,7 @@ def benchmark_diffusion_solver(N=256, n_steps=1000, n_reps=5, warmup=2):
         for _ in range(n_reps):
             torch.cuda.synchronize()
             start = time.perf_counter()
-            result = torch_cn_solve(u0_torch, n_steps)
+            torch_cn_solve(u0_torch, n_steps)
             torch.cuda.synchronize()
             times.append(time.perf_counter() - start)
 
@@ -320,7 +320,7 @@ def benchmark_diffusion_solver(N=256, n_steps=1000, n_reps=5, warmup=2):
             for _ in range(n_reps):
                 torch.cuda.synchronize()
                 start = time.perf_counter()
-                result = torch_cn_solve_compiled(u0_torch, n_steps)
+                torch_cn_solve_compiled(u0_torch, n_steps)
                 torch.cuda.synchronize()
                 times.append(time.perf_counter() - start)
 

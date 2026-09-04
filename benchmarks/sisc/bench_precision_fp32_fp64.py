@@ -187,7 +187,7 @@ print(f"FP64 can achieve: {min(r['error'] for r in results['fp64']):.2e}")
 # Compute speedups
 print(f"\n{'dt':>10} {'FP64 (ms)':>12} {'FP32 (ms)':>12} {'Speedup':>10}")
 print("-" * 50)
-for r64, r32 in zip(results['fp64'], results['fp32']):
+for r64, r32 in zip(results['fp64'], results['fp32'], strict=False):
     speedup = r64['time_ms'] / r32['time_ms']
     print(f"{r64['dt']:>10.5f} {r64['time_ms']:>12.3f} {r32['time_ms']:>12.3f} {speedup:>9.2f}x")
 print("=" * 70)
@@ -218,7 +218,7 @@ ax1.grid(True, alpha=0.3)
 
 # Speedup bar chart
 dts = [r['dt'] for r in results['fp64']]
-speedups = [r64['time_ms'] / r32['time_ms'] for r64, r32 in zip(results['fp64'], results['fp32'])]
+speedups = [r64['time_ms'] / r32['time_ms'] for r64, r32 in zip(results['fp64'], results['fp32'], strict=False)]
 
 ax2.bar(range(len(dts)), speedups, color='green', alpha=0.7)
 ax2.set_xticks(range(len(dts)))
@@ -229,7 +229,7 @@ ax2.set_title('FP32 Speedup over FP64', fontsize=14)
 ax2.axhline(y=1.0, color='red', linestyle='--', alpha=0.7)
 ax2.grid(True, alpha=0.3, axis='y')
 
-for i, (s, dt) in enumerate(zip(speedups, dts)):
+for i, (s, _dt) in enumerate(zip(speedups, dts, strict=False)):
     ax2.text(i, s + 0.05, f'{s:.2f}x', ha='center', fontsize=9)
 
 plt.tight_layout()

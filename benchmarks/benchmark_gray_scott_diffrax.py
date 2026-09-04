@@ -32,14 +32,12 @@ from benchmark_utils import compute_stats, setup_benchmark
 try:
     import diffrax
     from diffrax import (
-        ConstantStepSize,
         Dopri5,
         Kvaerno5,
         ODETerm,
         PIDController,
         SaveAt,
         Tsit5,
-        diffeqsolve,
     )
     HAS_DIFFRAX = True
 except ImportError:

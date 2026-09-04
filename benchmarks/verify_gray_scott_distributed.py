@@ -66,8 +66,10 @@ def run_gs(N, L, Du, Dv, F, k, dt, T, u0, v0, label):
     lap_hat = make_spectral_laplacian(N, L)
     cu = etdrk4_coeffs(Du * lap_hat, dt)
     cv = etdrk4_coeffs(Dv * lap_hat, dt)
-    nlu = lambda u, v: -u * v**2 + F * (1 - u)
-    nlv = lambda u, v: u * v**2 - (F + k) * v
+    def nlu(u, v):
+        return -u * v**2 + F * (1 - u)
+    def nlv(u, v):
+        return u * v**2 - (F + k) * v
 
     n_steps = int(T / dt)
     u, v = u0.copy(), v0.copy()
