@@ -57,9 +57,9 @@ jobs:
     name: lint (advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Advisory for now. The repository carries a backlog of style findings
-    # that predates CI; failing the build on them would block every merge.
-    # Once the backlog is cleared this becomes a required check.
+    # Advisory while the two open contributor PRs land; the style backlog
+    # that predated CI is cleared, so this can become a required check by
+    # adding it to the branch protection contexts.
     continue-on-error: true
 
     steps:
@@ -74,7 +74,7 @@ jobs:
       - name: Install ruff
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "ruff>=0.14"
+          python -m pip install "ruff==0.16.5"
 
       - name: Lint
         run: ruff check . --output-format=github

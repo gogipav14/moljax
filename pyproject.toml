@@ -95,3 +95,13 @@ ignore = [
     # follow executable statements throughout this package.
     "E402",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# The benchmark and example scripts reproduce the paper's tables and figures
+# and are kept close to the form they ran in. Their timing loops define
+# closures over the loop variable and call them within the same iteration
+# (B023), and their stencil setup writes several assignments per line (E702).
+# Neither affects a result; both would be churn in archival scripts. The
+# package and its tests carry the full rule set.
+"benchmarks/**" = ["B023", "E702"]
+"examples/**" = ["B023", "E702"]
