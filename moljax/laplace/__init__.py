@@ -21,6 +21,7 @@ from .adaptive_tuning import (
     tune_nilt_adaptive,
     tune_nilt_adaptive_cfl,
 )
+from .adaptive_tuning import classify_quality as classify_quality_tier
 from .benchmarks import (
     BenchmarkConfig,
     BenchmarkResult,
@@ -101,7 +102,6 @@ from .quality_metrics import (
     compute_eps_im,
     compute_eps_sym,
     generate_autotuner_feedback,
-    integrate_with_adaptive_tuner,
     print_quality_report,
     quality_meets_threshold,
 )
@@ -202,6 +202,7 @@ __all__ = [
     # Adaptive tuning (closed-loop)
     'QualityTier',
     'AdaptiveTuningResult',
+    'classify_quality_tier',
     'retune_based_on_diagnostics',
     'tune_nilt_adaptive',
     'tune_nilt_adaptive_cfl',
@@ -314,7 +315,6 @@ __all__ = [
     'classify_quality',
     'assess_nilt_quality',
     'generate_autotuner_feedback',
-    'integrate_with_adaptive_tuner',
     'print_quality_report',
     'quality_meets_threshold',
 

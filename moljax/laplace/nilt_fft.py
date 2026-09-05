@@ -320,6 +320,35 @@ def apply_hermitian_projection(F_vals: jnp.ndarray) -> jnp.ndarray:
     return F_proj
 
 
+def compute_bandwidth_sensors(F_pos: jnp.ndarray) -> tuple[float, float]:
+    """
+    Two bandwidth sensors from the half-spectrum samples F(a + i omega_k),
+    k = 0..N/2.
+
+    band_edge_ratio = |F_{N/2}| / max_k |F_k| is the relative size of the
+    transform at the Nyquist frequency pi/dt, which is what truncating the
+    Bromwich integral there discards. On 1/(s+1) at N = 256 it reads 0.016 at
+    dt = 0.05 (RMS error 3.9%), 0.157 at dt = 0.5 (16%) and 0.537 at dt = 2
+    (78%); sin t at dt = 0.05 gives 9e-6 and 1/(s+100) gives 0.85 (700%).
+
+    tail_energy_fraction = sqrt(sum_{k >= 0.9 N/2} |F_k|^2 / sum_k |F_k|^2)
+    is the RMS share of the top tenth of the band; it saturates near 0.32
+    for a flat spectrum.
+
+    Both use the raw samples, before the DC and Nyquist bins are forced real:
+    the imaginary part of F at the band edge is precisely what a coarse grid
+    fails to resolve, and forcing it away would hide it from the sensor.
+    """
+    mag = jnp.abs(F_pos)
+    tiny = float(jnp.finfo(mag.dtype).tiny)
+    n_half = mag.shape[-1] - 1
+    band_edge_ratio = float(mag[-1] / (jnp.max(mag) + tiny))
+    tail_start = (9 * n_half + 9) // 10  # ceil(0.9 N/2)
+    energy = mag ** 2
+    tail_energy_fraction = float(jnp.sqrt(jnp.sum(energy[tail_start:]) / (jnp.sum(energy) + tiny)))
+    return band_edge_ratio, tail_energy_fraction
+
+
 def _hermitian_full_spectrum(F_pos: jnp.ndarray, N: int) -> jnp.ndarray:
     """
     Mirror the half-spectrum samples k = 0..N//2 (last axis) into the
@@ -406,18 +435,21 @@ def nilt_fft_uniform(
         NILTResult with time points and inverse transform values
 
     Note:
-        **Quality control using ε_Im (imaginary leakage):**
+        **Quality control from the diagnostics:**
 
-        For validated one-sided grid, ε_Im ≈ 1.0 is structural baseline.
-        Use these signals for quality control:
-        - **Localization**: r_early (bandwidth), r_late (wraparound)
-        - **Percentiles**: p95, p99 (spike detection)
-        - **Tail energy**: Energy beyond t_end (wraparound indicator)
+        The spectrum is mirrored into exact Hermitian symmetry before the
+        ifft, so ε_Im and ε_sym are zero by construction and carry no
+        information about the tuning. The sensors that do are
 
-        **Retuning guidance (from diagnostics):**
-        - r_early > 0.5: Bandwidth issue → reduce dt
-        - r_late > 0.5 OR tail_ratio > 0.1: Wraparound → increase T or reduce a
-        - p95 >> p50: Spike/resolution issue → increase N or apply projection
+        - ``band_edge_ratio`` and ``tail_energy_fraction`` (bandwidth): how
+          much of F(a + iω) sits at the edge of the resolved band [0, π/dt];
+          see compute_bandwidth_sensors for calibration values.
+        - ``leakage_localization['tail_ratio']`` (wraparound): energy of the
+          damped inverse f(t) e^{-at} beyond t_end relative to [0, t_end].
+
+        **Retuning guidance (balanced thresholds of classify_quality_tier):**
+        - band_edge_ratio > 0.30 or tail_energy_fraction > 0.18: reduce dt
+        - tail_ratio > 0.12: increase T (or raise a)
     """
     # Half-period T: time grid goes from 0 to 2T-dt
     # dt = 2T/N => T = N*dt/2
@@ -439,6 +471,10 @@ def nilt_fft_uniform(
 
     # Evaluate F only on positive frequencies (half as many calls!)
     F_pos = F_eval(s_pos)
+
+    # Bandwidth sensors from the raw samples (before the bins are forced real)
+    if return_diagnostics:
+        band_edge_ratio, tail_energy_fraction = compute_bandwidth_sensors(F_pos)
 
     # Full Hermitian spectrum: DC and Nyquist forced real, F[N-k] = conj(F[k])
     F_vals = _hermitian_full_spectrum(F_pos, N)
@@ -493,11 +529,13 @@ def nilt_fft_uniform(
 
             diagnostics = {
                 'eps_im_before': eps_im_before,
-                'eps_sym_before': eps_sym_before,  # Expected ~1.0 for validated method
+                'eps_sym_before': eps_sym_before,  # Zero by construction (mirrored spectrum)
+                'band_edge_ratio': band_edge_ratio,
+                'tail_energy_fraction': tail_energy_fraction,
                 'omega_max': float(jnp.pi / dt),
                 'delta_omega': float(jnp.pi / T),
                 'projection_threshold': projection_threshold,
-                'threshold_type': 'eps_im',  # Primary gate is now ε_Im
+                'threshold_type': 'eps_im',
             }
 
             if localization is not None:
@@ -668,11 +706,14 @@ def nilt_fft_halfstep(
             ifft_result, t=t, t_end=t_end_diag, return_localization=True
         )
 
+        band_edge_ratio, tail_energy_fraction = compute_bandwidth_sensors(F_pos)
         diagnostics = {
             'method': 'halfstep',
             'f_at_zero_ivt': f_0_ivt,
             'eps_im': eps_im,
             'leakage_localization': localization,
+            'band_edge_ratio': band_edge_ratio,
+            'tail_energy_fraction': tail_energy_fraction,
             'omega_max': float(jnp.pi / dt),
             'delta_omega': float(jnp.pi / T),
         }

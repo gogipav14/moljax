@@ -166,7 +166,7 @@ class TestNILTWithProjection:
 
     @pytest.mark.parametrize("dtype", [jnp.float32, jnp.float64])
     def test_projection_reduces_eps_sym(self, dtype):
-        """Projection should reduce or maintain eps_sym."""
+        """Projection removes a non-Hermitian perturbation."""
         alpha = 1.0
         def F(s):
             return exponential_decay_F(s, alpha=alpha)
@@ -174,28 +174,40 @@ class TestNILTWithProjection:
         dt = 0.05
         N = 1024
         a = 0.3
+        tol = 1e-5 if dtype == jnp.float32 else 1e-12
 
-        # Without projection
-        nilt_fft_uniform(
-            F, dt=dt, N=N, a=a, dtype=dtype,
-            apply_projection=False,
-            return_diagnostics=True
-        )
-
-        # With projection
+        # The spectrum nilt_fft_uniform builds is Hermitian by construction,
+        # so before and after projection both sit at rounding level. That
+        # comparison cannot fail and proves nothing about the projection.
         result_proj = nilt_fft_uniform(
             F, dt=dt, N=N, a=a, dtype=dtype,
             apply_projection=True,
             return_diagnostics=True
         )
+        assert result_proj.diagnostics['eps_sym_before'] < tol
+        assert result_proj.diagnostics['eps_sym_after'] < tol
 
-        eps_sym_before = result_proj.diagnostics['eps_sym_before']
-        eps_sym_after = result_proj.diagnostics['eps_sym_after']
+        # A perturbed spectrum is where the projection does work: add a
+        # non-Hermitian component of 1% relative RMS and require the
+        # un-projected residual to exceed the projected one by a wide margin.
+        T = N * dt / 2
+        omega = jnp.arange(N // 2 + 1) * jnp.pi / T
+        F_pos = F(a + 1j * omega)
+        cdtype = jnp.complex64 if dtype == jnp.float32 else jnp.complex128
+        F_vals = jnp.concatenate([F_pos, jnp.conj(F_pos[N // 2 - 1:0:-1])]).astype(cdtype)
+        rng = np.random.default_rng(0)
+        noise = rng.standard_normal(N) + 1j * rng.standard_normal(N)
+        scale = 1e-2 * float(jnp.sqrt(jnp.mean(jnp.abs(F_vals) ** 2)))
+        F_perturbed = F_vals + scale * jnp.asarray(noise, dtype=cdtype)
 
-        print(f"\n{dtype}: eps_sym before={eps_sym_before:.2e}, after={eps_sym_after:.2e}")
+        eps_sym_before = compute_symmetry_residual(F_perturbed)
+        eps_sym_after = compute_symmetry_residual(apply_hermitian_projection(F_perturbed))
 
-        # Projection should reduce or maintain eps_sym
-        assert eps_sym_after <= eps_sym_before * 1.01, "Projection increased eps_sym"
+        print(f"\n{dtype}: perturbed eps_sym before={eps_sym_before:.2e}, after={eps_sym_after:.2e}")
+
+        assert eps_sym_before > 1e-3, "perturbation did not break the symmetry"
+        assert eps_sym_after < tol, "projection left a non-Hermitian residue"
+        assert eps_sym_after <= eps_sym_before
 
     @pytest.mark.parametrize("test_case", [
         ("exponential", lambda s: exponential_decay_F(s, alpha=1.0), lambda t: exponential_decay_f(t, alpha=1.0)),

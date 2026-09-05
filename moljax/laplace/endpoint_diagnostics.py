@@ -100,9 +100,11 @@ def compute_tail_energy_from_F_samples(F_eval, omega_grid, a, tail_fraction=0.1)
     Returns:
         R_tail: Ratio of tail energy to total energy
     """
-    # Evaluate F at all frequency points
+    # Evaluate F at all frequency points in one vectorized call, as every
+    # nilt_fft_* routine does; transfer functions that vmap internally
+    # (create_transfer_function_from_fft_operator) reject scalar calls.
     s_grid = a + 1j * omega_grid
-    F_samples = jnp.array([F_eval(s) for s in s_grid])
+    F_samples = jnp.asarray(F_eval(s_grid))
 
     # Energy (squared magnitude)
     energy = jnp.abs(F_samples)**2
@@ -125,22 +127,29 @@ def check_spectral_cfl_conditions(
     a: float,
     T: float,
     dt: float,
-    tau_end: float = 0.01,  # Endpoint jump tolerance (1%)
-    tau_tail: float = 1e-4,  # Tail energy tolerance (0.01%)
-    tau_chi: float = 0.3,  # Phase-step tolerance
+    tau_end: float = 0.01,  # Endpoint jump tolerance (1% of the signal scale)
+    tau_tail: float = 1e-2,  # Tail energy tolerance
+    tau_chi: float = 2.0,  # Phase-step tolerance (pi/2 at period_factor 4)
     A_max: float = 1e6,  # Maximum exp amplification (float64 safe)
 ) -> SpectralCFLConditions:
     """
     Check all spectral CFL-like conditions for FFT-NILT.
 
+    The default tolerances are chosen so that tune_nilt_params' own defaults
+    pass them on a well-posed transform: period_factor = 4 gives
+    chi = pi t_end / T = pi/2, and the tail energy of 1/(s+1) on the tuned
+    grid is about 5e-3. Tighter values (the previous 0.3 and 1e-4) flagged
+    every tuned parameter set and sent the CFL tuner into retuning loops
+    that could not satisfy them.
+
     Args:
-        result: NILTResult from nilt_fft_uniform
-        F_eval: Laplace-domain function F(s)
+        result: NILTResult from nilt_fft_uniform (or a half-step variant)
+        F_eval: Laplace-domain function F(s), evaluated on an array of s
         t_end: Integration end time
         a: Bromwich shift
         T: Half-period (2T = period)
         dt: Time step
-        tau_end: Endpoint jump tolerance (relative to signal)
+        tau_end: Endpoint jump tolerance, relative to max(|f(0+)|, ||f||_inf)
         tau_tail: Bandwidth tail energy tolerance
         tau_chi: Quadrature phase-step tolerance
         A_max: Maximum exponential amplification
@@ -159,19 +168,13 @@ def check_spectral_cfl_conditions(
     # Extract f(2T-) from last sample
     f_2T = float(result.f[-1])
 
-    # Compute endpoint jump
-    if f_0_ivt is not None:
-        J = abs(f_0_ivt - f_2T)
-        # Normalize by signal scale
-        signal_scale = max(1.0, abs(f_0_ivt))
-        J_relative = J / signal_scale
-        endpoint_compatible = (J_relative <= tau_end)
-    else:
-        # Fallback: use first sample as f(0) estimate
-        J = abs(result.f[0] - f_2T)
-        signal_scale = max(1.0, abs(result.f[0]))
-        J_relative = J / signal_scale
-        endpoint_compatible = (J_relative <= tau_end)
+    # Endpoint jump, relative to the signal's own scale. The scale used to
+    # be floored at 1.0, which passed any transform of amplitude below 1%
+    # regardless of its jump.
+    f_start = f_0_ivt if f_0_ivt is not None else float(result.f[0])
+    J = abs(f_start - f_2T)
+    signal_scale = max(abs(f_start), float(jnp.max(jnp.abs(result.f))), np.finfo(float).tiny)
+    endpoint_compatible = (J / signal_scale <= tau_end)
 
     if not endpoint_compatible:
         violated.append(f"endpoint_jump: J={J:.3e} > threshold={tau_end*signal_scale:.3e}")
@@ -179,9 +182,13 @@ def check_spectral_cfl_conditions(
     # CFL-2: Bandwidth coverage
     # ==========================
 
-    # Construct frequency grid (same as used in NILT)
-    N = len(result.f)
-    omega = jnp.pi * jnp.arange(N) / T
+    # The frequency grid the NILT actually samples: k = 0..N/2 with
+    # omega_k = k pi / T, N = 2T/dt. (result.f cannot supply N: the half-step
+    # IVT variant carries one extra point.) The previous grid ran k to N-1,
+    # twice past the Nyquist frequency, and measured a tail the inversion
+    # never uses.
+    N = int(round(2.0 * T / dt))
+    omega = jnp.pi * jnp.arange(N // 2 + 1) / T
 
     # Compute tail energy from F(s) samples (NOT from rfft(result.f))
     R_tail = compute_tail_energy_from_F_samples(F_eval, omega, a) if F_eval is not None else 0.0

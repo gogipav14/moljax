@@ -1,17 +1,31 @@
 """
 Unified quality metrics for NILT autotuning.
 
-This module consolidates quality assessment into a single framework:
-1. ε_Im (imaginary leakage) - primary quality indicator
-2. ε_sym (Hermitian symmetry) - numerical health indicator
-3. CFL-style endpoint conditions - physical constraints
-4. Automatic feedback for retuning decisions
+Quality is decided on two frequency-domain sensors that nilt_fft_uniform
+reports in its diagnostics:
 
-The quality metrics form a hierarchy:
-- ε_Im < 1% → excellent (direct use)
-- ε_Im < 5% → good (may benefit from projection)
-- ε_Im < 10% → acceptable (projection recommended)
-- ε_Im > 10% → poor (retuning required)
+1. Bandwidth: band_edge_ratio = |F(a + i pi/dt)| / max_k |F(a + i omega_k)|
+   and tail_energy_fraction, the RMS share of the top tenth of the resolved
+   band. Both measure what truncating the Bromwich integral at pi/dt
+   discards.
+2. Wraparound: tail_ratio, the energy of the damped inverse f(t) e^{-a t}
+   beyond t_end relative to [0, t_end], which the periodic extension folds
+   back onto the valid interval.
+
+eps_Im (imaginary leakage) and eps_sym (Hermitian symmetry) are still
+computed as numerical-health indicators, but they are reported rather than
+decided on: the spectrum is mirrored into exact Hermitian symmetry before
+the ifft, so both are zero by construction and cannot signal a badly
+resolved transform.
+
+Levels (band_edge_ratio on 1/(s+1) at N = 256 in parentheses):
+- excellent: band edge below 1% (sin t at dt = 0.05: 9e-6)
+- good: below 10% (dt = 0.05: 0.016, RMS error 3.9%)
+- acceptable: below 30% (dt = 0.5: 0.157, RMS error 16%)
+- poor: above (dt = 2: 0.537, RMS error 78%)
+
+The thresholds match the balanced policy of
+moljax.laplace.classify_quality_tier.
 
 Reference:
 - Dubner & Abate, "Numerical Inversion of Laplace Transforms" (1968)
@@ -20,19 +34,20 @@ Reference:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from enum import Enum
 from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 
+from .nilt_fft import compute_bandwidth_sensors
+
 
 class QualityLevel(Enum):
     """Quality level classification."""
-    EXCELLENT = 'excellent'  # ε_Im < 1%
-    GOOD = 'good'            # ε_Im < 5%
-    ACCEPTABLE = 'acceptable'  # ε_Im < 10%
-    POOR = 'poor'            # ε_Im > 10%
+    EXCELLENT = 'excellent'  # band edge < 1%
+    GOOD = 'good'            # band edge < 10%
+    ACCEPTABLE = 'acceptable'  # band edge < 30%
+    POOR = 'poor'            # band edge >= 30% or wraparound
     FAILED = 'failed'        # Numerical issues
 
 
@@ -43,21 +58,25 @@ class RetuningAction(Enum):
     INCREASE_T = 'increase_T'       # Wraparound detected
     INCREASE_N = 'increase_N'       # Resolution insufficient
     INCREASE_A = 'increase_a'       # Shift too small
-    APPLY_PROJECTION = 'apply_projection'  # Spike detected
+    APPLY_PROJECTION = 'apply_projection'  # Hermitian projection
     APPLY_SMOOTHING = 'apply_smoothing'    # Gibbs artifacts
 
 
 class QualityMetrics(NamedTuple):
     """Comprehensive quality metrics for NILT."""
-    # Primary metrics
+    # Decision sensors
+    band_edge_ratio: float         # |F| at the band edge relative to its peak (nan without F_vals)
+    tail_energy_fraction: float    # RMS share of the top tenth of the band (nan without F_vals)
+    tail_ratio: float              # Wraparound indicator
+
+    # Numerical health
     eps_im: float                  # Imaginary leakage (full grid)
     eps_im_valid: float            # Imaginary leakage in [0, t_end]
     eps_sym: float                 # Hermitian symmetry residual
 
-    # Localization metrics
+    # Localization of the leakage
     r_early: float                 # Early-time leakage ratio
     r_late: float                  # Late-time leakage ratio
-    tail_ratio: float              # Wraparound indicator
 
     # Percentile metrics
     leakage_p50: float             # Median leakage
@@ -66,8 +85,8 @@ class QualityMetrics(NamedTuple):
 
     # Derived indicators
     quality_level: str             # QualityLevel enum value
-    dominant_issue: str            # 'bandwidth', 'wraparound', 'spike', 'none'
-    spike_detected: bool           # p95 >> p50
+    dominant_issue: str            # 'bandwidth', 'wraparound', 'none'
+    spike_detected: bool           # p95 >> p50 (informational)
 
     # Recommended actions
     actions: list[str]             # List of RetuningAction values
@@ -185,7 +204,7 @@ def compute_eps_sym(F_vals: jnp.ndarray) -> float:
         F_vals: Frequency-domain values
 
     Returns:
-        eps_sym: Symmetry residual (expected ~1.0 for validated grid)
+        eps_sym: Symmetry residual (zero for the mirrored spectrum)
     """
     N = len(F_vals)
     if N < 4:
@@ -207,81 +226,74 @@ def compute_eps_sym(F_vals: jnp.ndarray) -> float:
 # Quality Classification
 # =============================================================================
 
+_DEFAULT_THRESHOLDS = {
+    'band_edge_excellent': 0.01,
+    'band_edge_good': 0.10,
+    'band_edge_acceptable': 0.30,
+    'tail_energy_good': 0.08,
+    'tail_energy_acceptable': 0.18,
+    'tail_ratio_good': 0.09,
+    'tail_ratio_acceptable': 0.12,
+}
+
+
 def classify_quality(
-    eps_im: float,
-    eps_im_valid: float,
-    localization: dict[str, float],
+    band_edge_ratio: float,
+    tail_ratio: float,
+    tail_energy_fraction: float = 0.0,
     thresholds: dict[str, float] | None = None
 ) -> tuple[QualityLevel, list[RetuningAction], str]:
     """
-    Classify quality and determine retuning actions.
+    Classify quality and determine retuning actions from the two sensors.
+
+    A sensor at or above its ``*_acceptable`` threshold is poor, at or above
+    its ``*_good`` threshold acceptable, otherwise good; the level is the
+    worst of the bandwidth pair (band_edge_ratio, tail_energy_fraction) and
+    the wraparound sensor (tail_ratio), and excellent when everything is good
+    and the band edge is below ``band_edge_excellent``. A NaN sensor (no
+    F samples available) counts as no evidence.
 
     Args:
-        eps_im: Full-grid imaginary leakage
-        eps_im_valid: Valid-region imaginary leakage
-        localization: Localization metrics dict
-        thresholds: Custom thresholds (optional)
+        band_edge_ratio: |F| at the band edge relative to its peak
+        tail_ratio: Energy of the damped inverse beyond t_end
+        tail_energy_fraction: RMS share of the top tenth of the band
+        thresholds: Overrides for the keys of the default thresholds
 
     Returns:
         (quality_level, recommended_actions, dominant_issue)
     """
-    if thresholds is None:
-        thresholds = {
-            'excellent': 0.01,
-            'good': 0.05,
-            'acceptable': 0.10,
-            'r_early_thresh': 0.5,
-            'r_late_thresh': 0.5,
-            'tail_thresh': 0.1,
-            'spike_ratio': 5.0,  # p95/p50 threshold
-        }
+    th = dict(_DEFAULT_THRESHOLDS)
+    if thresholds:
+        th.update(thresholds)
 
-    # Use valid-region metric if available
-    eps = eps_im_valid if eps_im_valid > 0 else eps_im
+    def rank(value: float, good: float, acceptable: float) -> int:
+        if value >= acceptable:
+            return 3
+        if value >= good:
+            return 2
+        return 1
 
-    # Determine quality level
-    if eps < thresholds['excellent']:
+    bandwidth_rank = max(
+        rank(band_edge_ratio, th['band_edge_good'], th['band_edge_acceptable']),
+        rank(tail_energy_fraction, th['tail_energy_good'], th['tail_energy_acceptable']),
+    )
+    wraparound_rank = rank(tail_ratio, th['tail_ratio_good'], th['tail_ratio_acceptable'])
+    worst = max(bandwidth_rank, wraparound_rank)
+
+    if worst == 1 and band_edge_ratio < th['band_edge_excellent']:
         level = QualityLevel.EXCELLENT
-    elif eps < thresholds['good']:
-        level = QualityLevel.GOOD
-    elif eps < thresholds['acceptable']:
-        level = QualityLevel.ACCEPTABLE
     else:
-        level = QualityLevel.POOR
+        level = [QualityLevel.GOOD, QualityLevel.ACCEPTABLE, QualityLevel.POOR][worst - 1]
 
-    # Determine dominant issue and actions
     actions = []
     dominant = 'none'
-
-    r_early = localization.get('r_early', 0.0)
-    r_late = localization.get('r_late', 0.0)
-    tail_ratio = localization.get('tail_ratio', 0.0)
-    p50 = localization.get('leakage_p50', 0.0)
-    p95 = localization.get('leakage_p95', 0.0)
-
-    # Check for bandwidth issue (high early leakage)
-    if r_early > thresholds['r_early_thresh']:
-        dominant = 'bandwidth'
+    if bandwidth_rank >= 2:
         actions.append(RetuningAction.REDUCE_DT)
-
-    # Check for wraparound (high late leakage or tail)
-    if r_late > thresholds['r_late_thresh'] or tail_ratio > thresholds['tail_thresh']:
-        if dominant == 'none':
-            dominant = 'wraparound'
+        dominant = 'bandwidth'
+    if wraparound_rank >= 2:
         actions.append(RetuningAction.INCREASE_T)
-
-    # Check for spike (p95 >> p50)
-    spike_ratio = p95 / (p50 + 1e-14)
-    if spike_ratio > thresholds['spike_ratio'] and level != QualityLevel.EXCELLENT:
-        if dominant == 'none':
-            dominant = 'spike'
-        actions.append(RetuningAction.APPLY_PROJECTION)
-        actions.append(RetuningAction.INCREASE_N)
-
-    # For acceptable/poor quality, suggest projection or smoothing
-    if level in [QualityLevel.ACCEPTABLE, QualityLevel.POOR]:
-        if RetuningAction.APPLY_PROJECTION not in actions:
-            actions.append(RetuningAction.APPLY_PROJECTION)
+        if wraparound_rank > bandwidth_rank:
+            dominant = 'wraparound'
 
     return level, actions, dominant
 
@@ -300,9 +312,12 @@ def assess_nilt_quality(
     """
     Comprehensive quality assessment for NILT result.
 
+    The bandwidth sensors need the sampled spectrum; without F_vals they
+    are NaN and only the wraparound sensor decides.
+
     Args:
         ifft_result: Complex IFFT output
-        F_vals: Frequency-domain values (for symmetry check)
+        F_vals: Full frequency-domain values (length N, Hermitian order)
         t: Time grid
         t_end: End time of interest
         params: NILT parameters (dt, N, a, T)
@@ -313,26 +328,30 @@ def assess_nilt_quality(
     # Compute imaginary leakage
     eps_im, localization = compute_eps_im(ifft_result, t, t_end)
 
-    # Compute symmetry residual
-    eps_sym = compute_eps_sym(F_vals) if F_vals is not None else 0.0
+    if F_vals is not None:
+        eps_sym = compute_eps_sym(F_vals)
+        band_edge_ratio, tail_energy_fraction = compute_bandwidth_sensors(F_vals[:len(F_vals) // 2 + 1])
+    else:
+        eps_sym = 0.0
+        band_edge_ratio = tail_energy_fraction = float('nan')
 
-    # Classify quality
     level, actions, dominant = classify_quality(
-        eps_im, localization['eps_im_valid'], localization
+        band_edge_ratio, localization['tail_ratio'], tail_energy_fraction
     )
 
-    # Detect spike
     p50 = localization['leakage_p50']
     p95 = localization['leakage_p95']
     spike_detected = (p95 / (p50 + 1e-14)) > 5.0
 
     return QualityMetrics(
+        band_edge_ratio=band_edge_ratio,
+        tail_energy_fraction=tail_energy_fraction,
+        tail_ratio=localization['tail_ratio'],
         eps_im=eps_im,
         eps_im_valid=localization['eps_im_valid'],
         eps_sym=eps_sym,
         r_early=localization['r_early'],
         r_late=localization['r_late'],
-        tail_ratio=localization['tail_ratio'],
         leakage_p50=p50,
         leakage_p95=p95,
         leakage_p99=localization['leakage_p99'],
@@ -376,13 +395,13 @@ def generate_autotuner_feedback(
         confidence = 0.5
     elif metrics.quality_level == 'excellent':
         should_retune = False
-        reason = f"Excellent quality (ε_Im = {metrics.eps_im_valid:.2%})"
+        reason = f"Excellent quality (band_edge_ratio = {metrics.band_edge_ratio:.2e})"
         priority_action = 'none'
         suggested_params = {}
         confidence = 1.0
     elif metrics.quality_level == 'good':
         should_retune = False
-        reason = f"Good quality (ε_Im = {metrics.eps_im_valid:.2%})"
+        reason = f"Good quality (band_edge_ratio = {metrics.band_edge_ratio:.3f})"
         priority_action = 'none'
         suggested_params = {}
         confidence = 0.9
@@ -393,13 +412,14 @@ def generate_autotuner_feedback(
 
         dt = current_params.get('dt', 0.01)
         N = current_params.get('N', 256)
-        T = current_params.get('T', N * dt)
+        T = current_params.get('T', N * dt / 2)
 
         if metrics.dominant_issue == 'bandwidth':
             # Reduce dt to increase bandwidth
             suggested_params['dt'] = dt * 0.5
             suggested_params['N'] = N * 2  # Keep same T
-            reason = f"Bandwidth issue detected (r_early = {metrics.r_early:.2f})"
+            reason = (f"Bandwidth issue detected (band_edge_ratio = {metrics.band_edge_ratio:.3f}, "
+                      f"tail_energy_fraction = {metrics.tail_energy_fraction:.3f})")
             confidence = 0.85
         elif metrics.dominant_issue == 'wraparound':
             # Increase T to reduce wraparound
@@ -407,15 +427,10 @@ def generate_autotuner_feedback(
             suggested_params['N'] = N * 2  # Double N to maintain dt
             reason = f"Wraparound detected (tail_ratio = {metrics.tail_ratio:.2%})"
             confidence = 0.85
-        elif metrics.dominant_issue == 'spike':
-            # Increase N or apply projection
-            suggested_params['N'] = min(N * 2, 8192)
-            reason = f"Spike detected (p95/p50 = {metrics.leakage_p95/(metrics.leakage_p50+1e-14):.1f}x)"
-            confidence = 0.75
         else:
             # General poor quality - try increasing N
             suggested_params['N'] = min(N * 2, 8192)
-            reason = f"Poor quality (ε_Im = {metrics.eps_im_valid:.2%})"
+            reason = f"Poor quality ({metrics.quality_level})"
             confidence = 0.7
 
     return AutotunerFeedback(
@@ -429,60 +444,6 @@ def generate_autotuner_feedback(
 
 
 # =============================================================================
-# Integration with Existing Autotuner
-# =============================================================================
-
-def integrate_with_adaptive_tuner(
-    result,
-    F_eval: Callable,
-    params: dict[str, float],
-    t_end: float,
-    iteration: int = 0
-) -> tuple[QualityMetrics, AutotunerFeedback, bool]:
-    """
-    Integrate quality metrics with the adaptive tuner.
-
-    This function is designed to be called from tune_nilt_adaptive()
-    to provide quality-based feedback for retuning decisions.
-
-    Args:
-        result: NILTResult from nilt_fft_* function
-        F_eval: Transfer function
-        params: Current parameters
-        t_end: End time of interest
-        iteration: Current iteration
-
-    Returns:
-        (metrics, feedback, projection_recommended)
-    """
-    # Get IFFT result (need to recompute with complex output)
-    # This assumes result has the raw complex values available
-    ifft_result = result.f.astype(jnp.complex128)
-    # Assess quality
-    metrics = assess_nilt_quality(
-        ifft_result=ifft_result,
-        t=result.t,
-        t_end=t_end,
-        params=params
-    )
-
-    # Generate feedback
-    feedback = generate_autotuner_feedback(
-        metrics=metrics,
-        current_params=params,
-        iteration=iteration
-    )
-
-    # Determine if projection should be applied
-    projection_recommended = (
-        metrics.spike_detected or
-        RetuningAction.APPLY_PROJECTION.value in metrics.actions
-    )
-
-    return metrics, feedback, projection_recommended
-
-
-# =============================================================================
 # Utility Functions
 # =============================================================================
 
@@ -492,13 +453,15 @@ def print_quality_report(metrics: QualityMetrics, feedback: AutotunerFeedback) -
     print("NILT Quality Assessment Report")
     print("=" * 60)
     print(f"Quality Level:     {metrics.quality_level.upper()}")
+    print(f"band_edge_ratio:   {metrics.band_edge_ratio:.4f}")
+    print(f"tail_energy_frac:  {metrics.tail_energy_fraction:.4f}")
+    print(f"tail_ratio:        {metrics.tail_ratio:.4%}")
+    print("-" * 60)
     print(f"ε_Im (full):       {metrics.eps_im:.4%}")
     print(f"ε_Im (valid):      {metrics.eps_im_valid:.4%}")
     print(f"ε_sym:             {metrics.eps_sym:.4f}")
-    print("-" * 60)
     print(f"r_early:           {metrics.r_early:.3f}")
     print(f"r_late:            {metrics.r_late:.3f}")
-    print(f"tail_ratio:        {metrics.tail_ratio:.4%}")
     print(f"Spike detected:    {metrics.spike_detected}")
     print(f"Dominant issue:    {metrics.dominant_issue}")
     print("-" * 60)

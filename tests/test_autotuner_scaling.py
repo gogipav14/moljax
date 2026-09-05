@@ -6,6 +6,7 @@ operator/grid properties (CFL-like scaling).
 """
 
 import jax.numpy as jnp
+import pytest
 
 from moljax.laplace import (
     BoundContext,
@@ -228,19 +229,19 @@ class TestOmegaCoverage:
 
     def test_warning_on_insufficient_coverage(self):
         """Warning should be generated when N is clamped."""
-        # Force N clamping by extreme frequency requirements
-        params = tune_nilt_params(
-            t_end=100.0,
-            bounds=SpectralBounds(rho=1000.0, re_max=0.0, im_max=500.0,
-                                   methods_used={}, warnings=[]),
-            N_max=256  # Too small for required frequency coverage
-        )
+        # Force N clamping by extreme frequency requirements: N_target is
+        # 95493 here, so the clamp must fire and be reported both ways.
+        with pytest.warns(UserWarning, match="clamped"):
+            params = tune_nilt_params(
+                t_end=100.0,
+                bounds=SpectralBounds(rho=1000.0, re_max=0.0, im_max=500.0,
+                                       methods_used={}, warnings=[]),
+                N_max=256  # Too small for required frequency coverage
+            )
 
-        # Should have warnings about N clamping
-        # May or may not trigger depending on exact constraints
-        # Just check the params are returned
+        assert params.N == 256
+        assert any('clamped' in w for w in params.warnings), params.warnings
         assert params.dt > 0
-        assert params.N <= 256
 
 
 class TestConstraintEnforcement:

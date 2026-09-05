@@ -151,16 +151,21 @@ class TestFrequencyWindowImportance:
         error_good = jnp.sqrt(jnp.mean((result_good.f[mask] - f_ref)**2))
 
         # Poor coverage: omega_max = pi/0.5 ≈ 6.28, still > 0.866 but less margin
-        nilt_fft_uniform(
+        result_poor = nilt_fft_uniform(
             second_order_damping_F,
             dt=0.5,
             N=256,
             a=0.3
         )
+        mask_poor = result_poor.t <= t_end
+        f_ref_poor = second_order_damping_f(result_poor.t[mask_poor])
+        error_poor = jnp.sqrt(jnp.mean((result_poor.f[mask_poor] - f_ref_poor)**2))
 
-        # Better coverage should give lower error
-        # (Note: this may not always hold due to other factors)
-        assert error_good < 0.5, f"Good coverage error {error_good} should be small"
+        # Measured 2.3e-4 at dt = 0.05 against 3.7e-2 at dt = 0.5: the fine
+        # grid must be accurate and the coarse one worse by a wide margin.
+        assert error_good < 1e-3, f"Good coverage error {error_good} should be small"
+        assert error_poor > 10 * error_good, \
+            f"Poor coverage error {error_poor} should exceed good coverage error {error_good}"
 
     def test_long_time_accuracy(self):
         """Test accuracy at longer times (t > T/2 region)."""

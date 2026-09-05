@@ -17,16 +17,25 @@ Each test demonstrates QUANTITATIVE improvement:
 - Quality metrics (ε_Im, localization) as supporting evidence
 """
 
+import warnings
+
 import jax.numpy as jnp
 import pytest
 
 from moljax.laplace import (
+    QualityTier,
+    TunedNILTParams,
+    check_spectral_cfl_conditions,
+    classify_quality_tier,
+    create_transfer_function_from_fft_operator,
     exponential_decay_F,
     exponential_decay_f,
     nilt_fft_uniform,
+    retune_based_on_diagnostics,
     sine_F,
     sine_f,
     tune_nilt_adaptive,
+    tune_nilt_adaptive_cfl,
     tune_nilt_params,
 )
 from moljax.laplace.spectral_bounds import SpectralBounds
@@ -117,17 +126,17 @@ class TestAdaptiveTuningImprovement:
         assert error_tunable < 0.15, \
             f"Tunable RMS error (t>0) poor: {error_tunable:.6f} (> 15%) with standard parameters"
 
-        # Note: Quality tier is based on internal ε_Im metrics (spike_ratio, r_early, etc.)
-        # which don't directly correlate with RMS error against analytical solution.
-        # If RMS error is acceptable, we don't require the quality tier to also be good.
-        # This is documented behavior - use nilt_fft_halfstep_ivt for consistently good quality.
+        # The tier is decided on the band-edge and tail sensors of the sampled
+        # transform, not on the RMS error against the analytical solution; if
+        # the RMS error is acceptable the tier need not also be good.
 
     def test_exponential_decay_poor_dt(self):
         """
         Failure mode 1: Pure decay / low-frequency dominated.
 
-        Poor tuning: dt too large (bandwidth issue) → high r_early
-        Expected fix: Reduce dt → lower ε_Im, better r_early
+        Coarse period_factor: the controller may not make anything worse,
+        and the band-edge sensor decides whether dt needs reducing (at
+        dt = 0.156 for exp(-t) it reads 0.05, so no action is required).
 
         QUANTITATIVE VALIDATION: Error reduction vs analytical solution.
         """
@@ -138,7 +147,7 @@ class TestAdaptiveTuningImprovement:
             return exponential_decay_f(t, alpha=alpha)
         t_end = 20.0
 
-        # Deliberately poor parameters: dt too large for frequency content
+        # Deliberately coarse period
         bounds = SpectralBounds(rho=10.0, re_max=-alpha, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
 
         # Step 1: Compute error with poor initial tuning (feedforward only)
@@ -198,7 +207,7 @@ class TestAdaptiveTuningImprovement:
         print(f"  Tunable error reduction: {error_reduction_pct_tunable:+.1f}% (ratio: {improvement_ratio_tunable:.2f}x)")
         print("")
         print(f"  Quality: {result_adaptive.quality.tier} - {result_adaptive.quality.reason}")
-        print(f"  ε_Im_valid: {result_adaptive.quality.eps_im_valid:.3f}")
+        print(f"  band_edge_ratio: {result_adaptive.quality.band_edge_ratio:.3f}")
         print(f"  Iterations: {result_adaptive.iterations}")
         print(f"  Actions: {result_adaptive.actions}")
 
@@ -288,7 +297,7 @@ class TestAdaptiveTuningImprovement:
         print(f"  ω_max: {result_adaptive.params.omega_max:.2f}, ω_req: {result_adaptive.params.omega_req:.2f}")
         print(f"  Coverage ratio: {coverage_ratio:.2f}x")
         print(f"  Quality: {result_adaptive.quality.tier} - {result_adaptive.quality.reason}")
-        print(f"  spike_ratio: {result_adaptive.quality.spike_ratio:.2f}")
+        print(f"  tail_energy_fraction: {result_adaptive.quality.tail_energy_fraction:.3f}")
         print(f"  Iterations: {result_adaptive.iterations}")
         print(f"  Actions: {result_adaptive.actions}")
 
@@ -514,67 +523,104 @@ class TestAdaptiveRetuningActions:
     """Test that adaptive tuning takes correct actions based on diagnostics."""
 
     def test_retuning_identifies_bandwidth_issue(self):
-        """Verify retuning detects early-time leakage and reduces dt."""
-        # Create scenario with bandwidth issue (coarse dt)
+        """The band-edge sensor fires on a coarse grid and the retune halves dt."""
+        # Bounds that understate the transform's frequency content, with a
+        # small N_min so the feedforward tuner is allowed to choose the coarse
+        # grid they imply: dt = 1.25 for exp(-t), band_edge_ratio 0.37.
         alpha = 1.0
         def F(s):
             return exponential_decay_F(s, alpha=alpha)
+        def f_true_func(t):
+            return exponential_decay_f(t, alpha=alpha)
+        t_end = 10.0
+        bounds = SpectralBounds(rho=1.0, re_max=-alpha, im_max=0.5, methods_used={'analytic': 'test'}, warnings=[])
 
-        bounds = SpectralBounds(rho=20.0, re_max=-alpha, im_max=10.0, methods_used={'analytic': 'test'}, warnings=[])
+        params_initial = tune_nilt_params(
+            t_end=t_end, bounds=bounds, dtype=jnp.float64, N_min=16, period_factor=2.0,
+        )
+        result_initial = nilt_fft_uniform(
+            F, dt=params_initial.dt, N=params_initial.N, a=params_initial.a, dtype=jnp.float64
+        )
+        error_initial = compute_rms_error(
+            result_initial.f, f_true_func(result_initial.t), result_initial.t, t_end, skip_t0=True
+        )
 
         result = tune_nilt_adaptive(
             F,
-            t_end=10.0,
+            t_end=t_end,
             bounds=bounds,
             dtype=jnp.float64,
             max_iterations=2,
-            omega_factor=1.1,  # Tight margin → may need adjustment
+            N_min=16,
             period_factor=2.0,
         )
-
-        # Check if retuning actions were taken
+        error_final = compute_rms_error(
+            result.result.f, f_true_func(result.result.t), result.result.t, t_end, skip_t0=True
+        )
 
         print("\nRetuning actions test:")
         print(f"  Actions: {result.actions}")
-        print(f"  Final params: dt={result.params.dt:.4f}, T={result.params.T:.2f}")
+        print(f"  Initial dt={params_initial.dt:.4f}, final dt={result.params.dt:.4f}, T={result.params.T:.2f}")
         print(f"  Quality: {result.quality.tier} - {result.quality.reason}")
+        print(f"  RMS(t>0): {error_initial:.4f} -> {error_final:.4f}")
 
-        # Adaptive tuning should take some action (dt, T, N, or projection)
-        # Quality may still be poor (some problems are hard), but actions should be taken
         assert len(result.actions) > 1, "No retuning actions taken"
-
-        # If quality is poor, projection should be offered as fallback
-        projection_used = any('projection' in action.lower() for action in result.actions)
-        if result.quality.tier == 'poor' and not projection_used:
-            pytest.fail(f"Quality poor without projection fallback: {result.quality.reason}")
+        assert 'reduced dt' in result.actions[1] and 'bandwidth' in result.actions[1], result.actions
+        # One halving brings the band edge from 0.37 to 0.19, below the
+        # critical 0.30, so the loop stops there with T kept.
+        assert result.params.dt == pytest.approx(params_initial.dt / 2)
+        assert result.params.T == params_initial.T
+        assert result.quality.band_edge_ratio < 0.30
+        assert error_final < error_initial
 
     def test_retuning_identifies_wraparound(self):
-        """Verify retuning detects late-time leakage and increases T."""
-        # Create scenario with wraparound issue (small T)
-        alpha = 0.2  # Very slow decay
+        """The tail sensor fires when the damped inverse has not decayed by t_end, and the retune doubles T."""
+        # The bounds claim a decay rate of 1 while the transform decays at
+        # 0.02, so the feedforward tuner sees no need for a shift (a = 0) and
+        # sets T = t_end: tail_ratio 0.30 on the pilot. Each retune doubles T;
+        # two doublings bring tail_ratio to 0.06.
+        alpha = 0.02
         def F(s):
             return exponential_decay_F(s, alpha=alpha)
+        def f_true_func(t):
+            return exponential_decay_f(t, alpha=alpha)
+        t_end = 30.0
+        bounds = SpectralBounds(rho=5.0, re_max=-1.0, im_max=2.0, methods_used={'analytic': 'test'}, warnings=[])
 
-        bounds = SpectralBounds(rho=5.0, re_max=-alpha, im_max=2.0, methods_used={'analytic': 'test'}, warnings=[])
+        params_initial = tune_nilt_params(t_end=t_end, bounds=bounds, dtype=jnp.float64, period_factor=2.0)
+        result_initial = nilt_fft_uniform(
+            F, dt=params_initial.dt, N=params_initial.N, a=params_initial.a, dtype=jnp.float64
+        )
+        error_initial = compute_rms_error(
+            result_initial.f, f_true_func(result_initial.t), result_initial.t, t_end, skip_t0=True
+        )
 
         result = tune_nilt_adaptive(
             F,
-            t_end=30.0,  # Long horizon
+            t_end=t_end,
             bounds=bounds,
             dtype=jnp.float64,
             max_iterations=2,
-            period_factor=2.0,  # Start small → wraparound risk
+            period_factor=2.0,
         )
-
+        error_final = compute_rms_error(
+            result.result.f, f_true_func(result.result.t), result.result.t, t_end, skip_t0=True
+        )
 
         print("\nWraparound retuning test:")
         print(f"  Actions: {result.actions}")
-        print(f"  Final T: {result.params.T:.2f}")
+        print(f"  Initial T={params_initial.T:.2f}, final T={result.params.T:.2f}")
         print(f"  tail_ratio: {result.quality.tail_ratio:.4f}")
+        print(f"  RMS(t>0): {error_initial:.4f} -> {error_final:.4f}")
 
-        # Quality should improve
-        if result.quality.tail_ratio > 0.20:
-            pytest.fail(f"High tail ratio after retuning: {result.quality.tail_ratio:.3f}")
+        increases = [action for action in result.actions if 'increased T' in action]
+        assert len(increases) == 2, result.actions
+        assert all('wraparound' in action for action in increases)
+        assert result.params.T == pytest.approx(4 * params_initial.T)
+        assert result.params.dt == pytest.approx(params_initial.dt)
+        assert result.quality.tier == 'good'
+        assert result.quality.tail_ratio < 0.09
+        assert error_final < 0.1 * error_initial
 
 
 class TestProjectionFallback:
@@ -610,53 +656,169 @@ class TestProjectionFallback:
             pytest.fail("Poor quality and projection not used as fallback")
 
 
-class TestQualityClassification:
-    """Test the three-tier quality classification."""
+def _params(dt, N, a=0.0):
+    """TunedNILTParams for a hand-chosen triad."""
+    return TunedNILTParams(
+        dt=dt, N=N, T=N * dt / 2, a=a, omega_max=float(jnp.pi / dt), omega_req=1.0,
+        bound_sources={}, warnings=[], diagnostics={},
+    )
+
+
+def _diag(band_edge, tail_energy, tail_ratio):
+    """Hand-built diagnostics carrying only the sensors the classifier reads."""
+    return {
+        'band_edge_ratio': band_edge,
+        'tail_energy_fraction': tail_energy,
+        'leakage_localization': {'tail_ratio': tail_ratio, 'r_late': 0.3},
+    }
+
+
+class TestQualitySensors:
+    """The bandwidth and wraparound sensors, and the tier classifier built on them."""
+
+    def test_bandwidth_sensor_separates_dt(self):
+        """1/(s+1) at N = 256: dt = 0.05 is good, dt = 2 is poor for bandwidth, the retune halves dt."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+        N = 256
+        good = nilt_fft_uniform(F, dt=0.05, N=N, a=0.0, dtype=jnp.float64, return_diagnostics=True)
+        poor = nilt_fft_uniform(F, dt=2.0, N=N, a=0.0, dtype=jnp.float64, return_diagnostics=True)
+
+        # |F(i pi/dt)| / |F(0)| = 1/sqrt(1 + (pi/dt)^2): 0.016 and 0.537; the
+        # top tenth of the band carries 3% and 22% of the RMS.
+        assert good.diagnostics['band_edge_ratio'] == pytest.approx(0.016, abs=0.002)
+        assert good.diagnostics['tail_energy_fraction'] == pytest.approx(0.031, abs=0.003)
+        assert poor.diagnostics['band_edge_ratio'] == pytest.approx(0.537, abs=0.005)
+        assert poor.diagnostics['tail_energy_fraction'] == pytest.approx(0.221, abs=0.005)
+
+        q_good = classify_quality_tier(good.diagnostics, tier='balanced')
+        q_poor = classify_quality_tier(poor.diagnostics, tier='balanced')
+        assert q_good.tier == 'good', q_good.reason
+        assert q_poor.tier == 'poor' and 'bandwidth' in q_poor.reason, q_poor.reason
+
+        params = _params(dt=2.0, N=N)
+        new_params, action = retune_based_on_diagnostics(params, q_poor)
+        assert 'reduced dt' in action and 'bandwidth' in action
+        assert new_params.dt == pytest.approx(1.0)
+        assert new_params.N == 2 * N
+        assert new_params.T == params.T
+
+    def test_wraparound_sensor_fires(self):
+        """exp(-0.1 t) on a period of 3.2 with a = 0: the damped inverse has not decayed (tail_ratio 0.73)."""
+        def F(s):
+            return exponential_decay_F(s, alpha=0.1)
+        res = nilt_fft_uniform(F, dt=0.05, N=64, a=0.0, dtype=jnp.float64, return_diagnostics=True, t_end=1.6)
+        q = classify_quality_tier(res.diagnostics, tier='balanced')
+        assert q.tier == 'poor' and 'wraparound' in q.reason, q.reason
+        assert q.tail_ratio > 0.5
+        assert q.band_edge_ratio < 0.10  # the grid itself is fine
+
+        new_params, action = retune_based_on_diagnostics(_params(dt=0.05, N=64), q)
+        assert 'increased T' in action and 'wraparound' in action
+        assert new_params.T == pytest.approx(3.2)
+        assert new_params.dt == pytest.approx(0.05)
+        assert new_params.N == 128
 
     def test_quality_tiers_match_thresholds(self):
-        """Verify quality classification responds to threshold policies."""
-        # Create mock diagnostics
-        diagnostics_good = {
-            'leakage_localization': {
-                'eps_im_valid': 1.2,  # Slightly above baseline
-                'r_early': 0.30,
-                'r_late': 0.35,
-                'tail_ratio': 0.05,
-                'leakage_p50': 1.0,
-                'leakage_p95': 2.0,
-            }
-        }
+        """Hand-built diagnostics: good and poor are told apart, and the policies order in strictness."""
+        good = classify_quality_tier(_diag(0.03, 0.04, 0.02), tier='balanced')
+        poor = classify_quality_tier(_diag(0.60, 0.25, 0.02), tier='balanced')
+        assert good.tier == 'good', good.reason
+        assert poor.tier == 'poor' and 'bandwidth' in poor.reason, poor.reason
 
-        diagnostics_poor = {
-            'leakage_localization': {
-                'eps_im_valid': 4.0,  # Well above baseline
-                'r_early': 0.60,  # High early leakage
-                'r_late': 0.30,
-                'tail_ratio': 0.08,
-                'leakage_p50': 2.0,
-                'leakage_p95': 8.0,
-            }
-        }
+        rank = {'good': 0, 'acceptable': 1, 'poor': 2}
+        samples = [
+            _diag(0.03, 0.04, 0.02), _diag(0.12, 0.04, 0.02), _diag(0.25, 0.04, 0.02),
+            _diag(0.03, 0.04, 0.11), _diag(0.03, 0.15, 0.02), _diag(0.60, 0.25, 0.02),
+        ]
+        for d in samples:
+            tiers = [classify_quality_tier(d, tier=policy).tier for policy in ('conservative', 'balanced', 'aggressive')]
+            ranks = [rank[t] for t in tiers]
+            assert ranks[0] >= ranks[1] >= ranks[2], (d, tiers)
 
-        from moljax.laplace.adaptive_tuning import classify_quality
+        # Strict separations at the policy boundaries
+        def tiers_at(d):
+            return tuple(classify_quality_tier(d, tier=policy).tier for policy in ('conservative', 'balanced', 'aggressive'))
+        assert tiers_at(_diag(0.25, 0.04, 0.02)) == ('poor', 'acceptable', 'acceptable')
+        assert tiers_at(_diag(0.12, 0.04, 0.02)) == ('acceptable', 'acceptable', 'good')
 
-        quality_good = classify_quality(diagnostics_good, tier='balanced')
-        quality_poor = classify_quality(diagnostics_poor, tier='balanced')
+    def test_retune_at_max_n_returns_unchanged(self):
+        """When the N cap leaves nothing to change, the same parameters come back with a terminal action."""
+        params = _params(dt=20.0 / 128, N=256)
+        q = QualityTier('poor', 'bandwidth', band_edge_ratio=0.9, tail_energy_fraction=0.3, tail_ratio=0.0, r_late=0.0)
+        new_params, action = retune_based_on_diagnostics(params, q, max_N=256)
+        assert new_params is params
+        assert action == "at max_N, no change"
 
-        print("\nQuality classification test:")
-        print(f"  Good case: {quality_good.tier} - {quality_good.reason}")
-        print(f"  Poor case: {quality_poor.tier} - {quality_poor.reason}")
+    def test_adaptive_tuning_stops_at_max_n(self):
+        """A poor verdict that cannot be acted on ends the loop at once, with a warning, instead of burning iterations."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+        bounds = SpectralBounds(rho=1.0, re_max=-1.0, im_max=0.5, methods_used={'analytic': 'test'}, warnings=[])
+        with pytest.warns(UserWarning, match="remains poor"):
+            result = tune_nilt_adaptive(
+                F, t_end=10.0, bounds=bounds, dtype=jnp.float64,
+                max_iterations=5, N_min=16, N_max=16, period_factor=2.0,
+            )
+        assert result.quality.tier == 'poor'
+        assert result.actions.count("at max_N, no change") == 1
+        assert result.iterations == 0
 
-        assert quality_good.tier in ['good', 'acceptable']
-        assert quality_poor.tier == 'poor'
 
-        # Conservative policy should be stricter
-        classify_quality(diagnostics_good, tier='conservative')
-        # (may classify as acceptable rather than good)
+class TestCFLGuidedTuning:
+    """tune_nilt_adaptive_cfl and the spectral CFL check it relies on."""
 
-        # Aggressive policy should be more lenient
-        classify_quality(diagnostics_poor, tier='aggressive')
-        # (may classify as acceptable rather than poor)
+    def test_exponential_converges_good(self):
+        """exp(-t) under the default tuner meets every CFL condition once the jump is handled by half-step sampling."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+        bounds = SpectralBounds(rho=10.0, re_max=-1.0, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = tune_nilt_adaptive_cfl(F, t_end=10.0, bounds=bounds, max_iterations=3)
+        assert not any("CFL conditions" in str(w.message) for w in caught)
+        assert result.quality.tier == 'good', result.quality.reason
+        assert result.iterations <= 3
+        # The endpoint jump is a property of f: one switch to half-step
+        # sampling settles it, and it is not re-evaluated afterwards.
+        assert sum('halfstep' in action for action in result.actions) == 1, result.actions
+        assert result.result.diagnostics['method'] == 'halfstep_ivt'
+
+    def test_cfl_check_uses_half_grid_and_vectorized_evaluation(self):
+        """CFL-2 samples F on k = 0..N/2 in one call, so a transfer function that vmaps over s works."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+        bounds = SpectralBounds(rho=10.0, re_max=-1.0, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
+        params = tune_nilt_params(t_end=10.0, bounds=bounds)
+        res = nilt_fft_uniform(F, dt=params.dt, N=params.N, a=params.a, dtype=jnp.float64)
+
+        cfl = check_spectral_cfl_conditions(res, F, 10.0, params.a, params.T, params.dt)
+        assert cfl.omega_max == pytest.approx(float(jnp.pi / params.dt))
+        assert cfl.bandwidth_sufficient and cfl.quadrature_stable and cfl.conditioning_safe
+        # The tail is the top tenth of the k = 0..N/2 grid the inversion
+        # samples; the previous grid ran k to N-1, twice past Nyquist.
+        omega = jnp.pi * jnp.arange(params.N // 2 + 1) / params.T
+        energy = jnp.abs(F(params.a + 1j * omega)) ** 2
+        n_tail = max(1, int(len(omega) * 0.1))
+        expected = float(jnp.sum(energy[-n_tail:]) / jnp.sum(energy))
+        assert cfl.tail_energy_ratio == pytest.approx(expected, rel=1e-6)
+        # exp(-t) jumps from 1 at t = 0+ to about 0 at 2T-: not endpoint compatible
+        assert not cfl.endpoint_compatible
+
+        eig = -jnp.arange(8.0)
+        tf = create_transfer_function_from_fft_operator(eig, jnp.ones(8) + 0j)
+        cfl_vmap = check_spectral_cfl_conditions(res, tf, 10.0, params.a, params.T, params.dt)
+        assert jnp.isfinite(cfl_vmap.tail_energy_ratio)
+
+    def test_endpoint_jump_is_relative_to_signal_scale(self):
+        """A transform of amplitude 1e-3 has the same relative jump as one of amplitude 1 and must fail the same way."""
+        bounds = SpectralBounds(rho=10.0, re_max=-1.0, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
+        params = tune_nilt_params(t_end=10.0, bounds=bounds)
+        def F_small(s):
+            return 1e-3 / (s + 1.0)
+        res = nilt_fft_uniform(F_small, dt=params.dt, N=params.N, a=params.a, dtype=jnp.float64)
+        cfl = check_spectral_cfl_conditions(res, F_small, 10.0, params.a, params.T, params.dt)
+        assert not cfl.endpoint_compatible
 
 
 if __name__ == '__main__':
