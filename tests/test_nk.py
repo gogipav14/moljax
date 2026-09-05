@@ -7,11 +7,25 @@ Verifies:
 - Preconditioner improves convergence
 """
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
+# The BDF2 order tests resolve second-order errors down to 1e-4 at
+# newton_tol=1e-13, which needs float64.
+jax.config.update("jax_enable_x64", True)
+
+from moljax.core.bc import BCType, FieldBCSpec
 from moljax.core.grid import Grid1D
-from moljax.core.newton_krylov import NKParams, _jvp_matvec, newton_krylov_solve
+from moljax.core.model import MOLModel
+from moljax.core.newton_krylov import (
+    NKParams,
+    _jvp_matvec,
+    create_bdf2_residual,
+    newton_krylov_solve,
+)
+from moljax.core.operators import NonlinearOp
 from moljax.core.preconditioners import BlockJacobiPreconditioner, IdentityPreconditioner
 
 
@@ -223,6 +237,135 @@ class TestNKRobustness:
 
         # Linear system should converge quickly (within a few iterations)
         assert int(result.stats.newton_iters) <= 5
+
+    def test_nk_converged_on_last_allowed_iteration(self):
+        """The flag describes the returned iterate, not the one before it.
+
+        x - 1 = 0 is solved exactly by the first Newton step, so with
+        max_newton_iters=1 the returned x is the root and converged must
+        be True with a residual norm at rounding level.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': x['u'] - 1.0}
+
+        x0 = {'u': jnp.array([0.0, 0.0, 0.0])}
+
+        result = newton_krylov_solve(
+            residual_fn=residual,
+            x0=x0,
+            grid=grid,
+            params={},
+            nk_params=NKParams(max_newton_iters=1, newton_tol=1e-10)
+        )
+
+        assert bool(result.stats.converged)
+        assert int(result.stats.newton_iters) == 1
+        assert float(result.stats.final_res_norm) < 1e-10
+        assert jnp.allclose(result.solution['u'], 1.0, atol=1e-10)
+
+    def test_nk_reported_residual_is_residual_of_solution(self):
+        """final_res_norm equals ||F(x)|| at the returned x, converged or not."""
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': x['u'] ** 2 - 2.0}
+
+        x0 = {'u': jnp.array([0.5, 3.0, 1.0])}
+
+        for max_iters in (1, 2, 20):
+            result = newton_krylov_solve(
+                residual_fn=residual,
+                x0=x0,
+                grid=grid,
+                params={},
+                nk_params=NKParams(max_newton_iters=max_iters, newton_tol=1e-12)
+            )
+            true_norm = float(jnp.linalg.norm(residual(result.solution)['u']))
+            reported = float(result.stats.final_res_norm)
+            assert abs(reported - true_norm) <= 1e-12 * max(1.0, true_norm), \
+                f"max_iters={max_iters}: reported {reported:.3e}, actual {true_norm:.3e}"
+            assert bool(result.stats.converged) == (true_norm < 1e-12)
+
+
+def decay_model(nx: int = 4) -> MOLModel:
+    """y' = -y on every grid point, periodic, so exp(-t) is the exact solution."""
+    grid = Grid1D.uniform(nx, 0.0, 1.0)
+    op = NonlinearOp(name="decay", apply=lambda s, g, t, p: {'y': -s['y']})
+    return MOLModel(
+        grid=grid,
+        bc_spec={'y': FieldBCSpec(kind=BCType.PERIODIC)},
+        params={'dtype': jnp.float64},
+        nonlinear_ops=(op,)
+    )
+
+
+def bdf2_run(model: MOLModel, steps: list[float]) -> tuple[float, float]:
+    """Advance y' = -y from t=0 with the given step sequence.
+
+    The first step is taken from the exact solution so only BDF2 itself is
+    measured. Returns (y at the end, end time).
+    """
+    n = model.grid.nx_total
+    nk = NKParams(newton_tol=1e-13, max_newton_iters=20)
+
+    @jax.jit
+    def step(y, y_prev, t_new, dt, dt_prev):
+        residual = create_bdf2_residual(model, y, y_prev, t_new, dt, dt_prev)
+        guess = {'y': 2.0 * y['y'] - y_prev['y']}
+        result = newton_krylov_solve(residual, guess, model.grid, model.params, nk_params=nk)
+        return result.solution, result.stats.converged
+
+    t = steps[0]
+    y_prev = {'y': jnp.ones(n)}
+    y = {'y': jnp.full(n, np.exp(-t))}
+    dt_prev = steps[0]
+    for dt in steps[1:]:
+        y_new, converged = step(y, y_prev, t + dt, dt, dt_prev)
+        assert bool(converged)
+        y_prev, y = y, y_new
+        t, dt_prev = t + dt, dt
+    return float(y['y'][1]), t
+
+
+def observed_orders(errors: list[float], ratio: float = 2.0) -> list[float]:
+    return [np.log(errors[i] / errors[i + 1]) / np.log(ratio) for i in range(len(errors) - 1)]
+
+
+class TestBDF2Residual:
+    """create_bdf2_residual must give a second-order method."""
+
+    def test_bdf2_order(self):
+        """Constant steps 0.1, 0.05, 0.025 to t=1: consecutive orders at least 1.9."""
+        model = decay_model()
+        errors = []
+        for dt in (0.1, 0.05, 0.025):
+            n_steps = int(round(1.0 / dt))
+            y_end, t_end = bdf2_run(model, [dt] * n_steps)
+            assert abs(t_end - 1.0) < 1e-12
+            errors.append(abs(y_end - np.exp(-1.0)))
+
+        orders = observed_orders(errors)
+        assert all(o >= 1.9 for o in orders), f"errors {errors}, orders {orders}"
+
+    def test_bdf2_order_alternating_steps(self):
+        """Steps alternate 0.1, 0.05 (then halved twice) to t=0.9: orders at least 1.9.
+
+        The variable-step coefficients are exercised on every step since
+        dt/dt_prev is 1/2 or 2, never 1.
+        """
+        model = decay_model()
+        errors = []
+        for scale in (1.0, 0.5, 0.25):
+            n_pairs = int(round(0.9 / (0.15 * scale)))
+            steps = [0.1 * scale, 0.05 * scale] * n_pairs
+            y_end, t_end = bdf2_run(model, steps)
+            assert abs(t_end - 0.9) < 1e-12
+            errors.append(abs(y_end - np.exp(-0.9)))
+
+        orders = observed_orders(errors)
+        assert all(o >= 1.9 for o in orders), f"errors {errors}, orders {orders}"
 
 
 if __name__ == "__main__":

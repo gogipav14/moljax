@@ -236,13 +236,19 @@ def newton_krylov_solve(
         Mv_flat, _ = ravel_pytree(Mv)
         return Mv_flat
 
-    # Newton iteration state
+    # Newton iteration state. Invariant at every loop boundary: res_norm is
+    # ||F(x)|| at the current x and converged is res_norm < newton_tol, so
+    # the statistics returned describe the iterate that is returned.
     class NewtonState(NamedTuple):
         x_flat: jnp.ndarray
         res_norm: jnp.ndarray
         iter_count: jnp.ndarray
         lin_iters_total: jnp.ndarray
         converged: jnp.ndarray
+
+    def residual_norm_at(x_flat: jnp.ndarray) -> jnp.ndarray:
+        r_flat, _ = ravel_pytree(residual_fn(unravel(x_flat)))
+        return jnp.linalg.norm(r_flat)
 
     def newton_step(state: NewtonState) -> NewtonState:
         """Single Newton iteration."""
@@ -252,9 +258,6 @@ def newton_krylov_solve(
         r = residual_fn(x)
         r_flat, _ = ravel_pytree(r)
         r_norm = jnp.linalg.norm(r_flat)
-
-        # Check convergence
-        converged = r_norm < nk_params.newton_tol
 
         # Solve J @ dx = -r using Krylov
         def matvec_at_x(v_flat):
@@ -307,23 +310,31 @@ def newton_krylov_solve(
 
         # Run backtracking
         init_carry = (alpha, state.x_flat, r_norm, jnp.array(False))
-        (final_alpha, x_new_flat, new_r_norm, _), _ = lax.scan(
+        (_, x_bt_flat, r_bt_norm, accepted), _ = lax.scan(
             backtrack_step, init_carry, None, length=nk_params.max_backtrack
         )
 
-        # If no backtrack accepted, just take the damped step
+        # If no candidate met the decrease test, take the damped step anyway
+        # rather than stall; its residual is then measured so that res_norm
+        # keeps describing the iterate actually stored. The accepted branch
+        # reuses the norm the line search already computed.
         x_final_flat = lax.cond(
-            jnp.allclose(x_new_flat, state.x_flat),
-            lambda: state.x_flat + alpha * dx_flat,
-            lambda: x_new_flat
+            accepted,
+            lambda: x_bt_flat,
+            lambda: state.x_flat + alpha * dx_flat
+        )
+        r_final = lax.cond(
+            accepted,
+            lambda: r_bt_norm,
+            lambda: residual_norm_at(x_final_flat)
         )
 
         return NewtonState(
             x_flat=x_final_flat,
-            res_norm=new_r_norm,
+            res_norm=r_final,
             iter_count=state.iter_count + 1,
             lin_iters_total=state.lin_iters_total + lin_iters,
-            converged=converged
+            converged=r_final < nk_params.newton_tol
         )
 
     def newton_cond(state: NewtonState) -> jnp.ndarray:
@@ -417,10 +428,20 @@ def create_bdf2_residual(
     """
     Create residual function for BDF2 time stepping.
 
-    Variable step BDF2:
-        (1+2r)/(1+r) * y_{n+1} - (1+r) * y_n + r^2/(1+r) * y_{n-1} = dt * F(y_{n+1})
+    Variable step BDF2 (Hairer and Wanner, Solving ODEs II, III.5), with
+    w = dt / dt_prev:
 
-    where r = dt / dt_prev.
+        y_{n+1} - (1+w)^2/(1+2w) y_n + w^2/(1+2w) y_{n-1} = (1+w)/(1+2w) dt F(y_{n+1})
+
+    Multiplying through by (1+2w)/(1+w) gives the form used here,
+
+        (1+2w)/(1+w) y_{n+1} - (1+w) y_n + w^2/(1+w) y_{n-1} = dt F(y_{n+1}),
+
+    whose right-hand side coefficient is exactly dt. Scaling only the
+    left-hand side and keeping (1+w)/(1+2w) dt on the right, as an earlier
+    version did, integrates y' = (2/3) F(y) at constant step: on y' = -y it
+    converged to exp(-2t/3) instead of exp(-t), a first-order error that
+    does not shrink with dt.
 
     Args:
         model: MOLModel with rhs method
@@ -437,7 +458,7 @@ def create_bdf2_residual(
     alpha0 = (1.0 + 2.0 * omega) / (1.0 + omega)
     alpha1 = -(1.0 + omega)
     alpha2 = omega ** 2 / (1.0 + omega)
-    beta = dt * (1.0 + omega) / (1.0 + 2.0 * omega)
+    beta = dt
 
     def residual(y_new: StateDict) -> StateDict:
         F_new = model.rhs(y_new, t_new)
