@@ -61,6 +61,7 @@ from moljax.core.fft_operators import (
 from moljax.core.fft_solvers import (
     FFTCache1D,
     FFTCache2D,
+    apply_diffusion_exp_fft,
     apply_diffusion_fft,
     apply_diffusion_inverse_fft,
     apply_spectral_filter_state,
@@ -288,6 +289,7 @@ __all__ = [
     "solve_helmholtz_1d",
     "solve_helmholtz_2d",
     "apply_diffusion_inverse_fft",
+    "apply_diffusion_exp_fft",
     "apply_diffusion_fft",
     "apply_spectral_filter_state",
     "exponential_filter_1d",

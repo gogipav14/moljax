@@ -536,6 +536,63 @@ def apply_diffusion_inverse_fft(
     return result
 
 
+def apply_diffusion_exp_fft(
+    state: StateDict,
+    grid: GridType,
+    dt: float,
+    diffusivities: dict[str, float],
+    fft_cache
+) -> StateDict:
+    """
+    Apply exp(dt * D * Δ) to each diffusive field in state.
+
+    This is the exact solution operator of the discrete diffusion equation
+    over a time dt: in Fourier space every mode is scaled by
+    exp(dt * D * lam(k)). Splitting methods need it rather than the
+    backward Euler inverse (I - dt * D * Δ)^{-1}, because a Strang
+    composition is second order only when each sub-step is at least second
+    order, and the exponential is exact. The transform follows the cache
+    layout (rfft2 for a half-spectrum cache), as solve_diffusion_fft_field
+    does.
+
+    Non-diffusive fields (D = 0 or not in diffusivities) pass through
+    unchanged; ghost cells keep the values they had in state.
+
+    Args:
+        state: Current state (with ghost cells)
+        grid: Grid instance
+        dt: Time step
+        diffusivities: Dict mapping field name to diffusion coefficient
+        fft_cache: Precomputed FFT cache
+
+    Returns:
+        New state after exact diffusion over dt
+    """
+    use_rfft = getattr(fft_cache, 'use_rfft', False)
+    result = {}
+
+    for name, field in state.items():
+        D = diffusivities.get(name, 0.0)
+
+        if D > 1e-14:
+            f_interior = extract_interior(field, grid)
+            factor = jnp.exp(dt * D * fft_cache.laplacian_symbol)
+
+            if f_interior.ndim == 2 and use_rfft:
+                ny, nx = f_interior.shape
+                u_interior = jnp.fft.irfft2(factor * jnp.fft.rfft2(f_interior), s=(ny, nx))
+            elif f_interior.ndim == 2:
+                u_interior = jnp.fft.ifft2(factor * jnp.fft.fft2(f_interior)).real
+            else:
+                u_interior = jnp.fft.ifft(factor * jnp.fft.fft(f_interior)).real
+
+            result[name] = embed_interior(u_interior, grid, field)
+        else:
+            result[name] = field
+
+    return result
+
+
 def apply_diffusion_fft(
     state: StateDict,
     grid: GridType,

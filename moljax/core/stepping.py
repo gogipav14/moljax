@@ -394,12 +394,19 @@ def imex_strang_step(
     IMEX Strang splitting step (2nd order).
 
     The split is:
-    1. Half diffusion step (implicit FFT): y* = (I - dt/2 * D * Δ)^-1 y
-    2. Full reaction step (explicit RK2): y** = y* + dt * R(y*, t)
-       Using Heun's method for 2nd order
-    3. Half diffusion step (implicit FFT): y_new = (I - dt/2 * D * Δ)^-1 y**
+    1. Half diffusion step, exact (FFT): y* = exp(dt/2 * D * Δ) y
+    2. Full reaction step with Heun's method over [t, t + dt]:
+       y** = y* + dt/2 * (R(y*, t) + R(y* + dt * R(y*, t), t + dt))
+    3. Half diffusion step, exact (FFT): y_new = exp(dt/2 * D * Δ) y**
 
-    Second-order accurate for time-independent operators.
+    Strang splitting is second order only when every sub-step is at least
+    second order. An earlier version took the half diffusion steps with
+    backward Euler, (I - dt/2 * D * Δ)^-1, and evaluated Heun's first
+    stage at t + dt/2; the backward Euler sub-steps are first order and so
+    was the composition (observed orders 0.97, 0.99, 0.99 on
+    u_t = u_xx - 0.3 u). The exponential is exact for the linear part and
+    Heun's stages sit at the ends of the reaction interval, which gives
+    orders 2.03, 2.02, 2.01 on the same problem.
 
     Args:
         model: MOLModel with diffusion and reaction terms
@@ -412,21 +419,21 @@ def imex_strang_step(
     Returns:
         New state at t + dt
     """
-    from moljax.core.fft_solvers import apply_diffusion_inverse_fft
+    from moljax.core.fft_solvers import apply_diffusion_exp_fft
 
     dt_half = dt / 2.0
 
     # Apply boundary conditions
     y = model.apply_bcs(y, t)
 
-    # Step 1: Half diffusion step (implicit)
-    y_star = apply_diffusion_inverse_fft(y, model.grid, dt_half, diffusivities, fft_cache)
+    # Step 1: Half diffusion step (exact)
+    y_star = apply_diffusion_exp_fft(y, model.grid, dt_half, diffusivities, fft_cache)
     y_star = model.apply_bcs(y_star, t + dt_half)
 
     # Step 2: Full reaction step using Heun's method (explicit 2nd order)
     if len(model.nonlinear_ops) > 0:
-        # k1 = R(y*, t + dt/2)
-        R1 = model.nonlinear_rhs(y_star, t + dt_half)
+        # k1 = R(y*, t)
+        R1 = model.nonlinear_rhs(y_star, t)
 
         # y_tilde = y* + dt * k1
         y_tilde = tree_axpy(y_star, dt, R1)
@@ -443,8 +450,8 @@ def imex_strang_step(
 
     y_double = model.apply_bcs(y_double, t + dt)
 
-    # Step 3: Half diffusion step (implicit)
-    y_new = apply_diffusion_inverse_fft(y_double, model.grid, dt_half, diffusivities, fft_cache)
+    # Step 3: Half diffusion step (exact)
+    y_new = apply_diffusion_exp_fft(y_double, model.grid, dt_half, diffusivities, fft_cache)
     y_new = model.apply_bcs(y_new, t + dt)
 
     return y_new
@@ -459,13 +466,26 @@ def imex_ssprk2_step(
     diffusivities: dict[str, float]
 ) -> StateDict:
     """
-    IMEX SSP-RK2 step (2nd order).
+    IMEX-SSP2(2,2,2) step of Pareschi and Russo (2nd order).
 
-    A two-stage IMEX method:
-    Stage 1: y1 = (I - dt*D*Δ)^-1 (y + dt * N(y, t))
-    Stage 2: y_new = 1/2 * y + 1/2 * (I - dt*D*Δ)^-1 (y1 + dt * N(y1, t+dt))
+    With L the diffusion operator (implicit, solved by FFT), R the reaction
+    (explicit) and gamma = 1 - 1/sqrt(2):
 
-    This is the IMEX analogue of SSPRK2/Heun's method.
+        U1 = (I - gamma dt L)^-1 y
+        U2 = (I - gamma dt L)^-1 [y + dt R(U1, t) + (1 - 2 gamma) dt L U1]
+        y_new = y + dt/2 [R(U1, t) + R(U2, t + dt)] + dt/2 [L U1 + L U2]
+
+    Explicit tableau c = (0, 1), A = [[0, 0], [1, 0]], b = (1/2, 1/2);
+    implicit tableau c = (gamma, 1 - gamma), A = [[gamma, 0],
+    [1 - 2 gamma, gamma]], b = (1/2, 1/2). The implicit part is an
+    L-stable DIRK and the pair is second order (Pareschi and Russo,
+    J. Sci. Comput. 25, 2005).
+
+    The scheme this replaces averaged y with a second backward Euler
+    stage, y_new = y/2 + (I - dt L)^-1 (U1 + dt R(U1))/2, which pairs a
+    first-order implicit part with the explicit Heun stages and converged
+    at first order (observed orders 0.98, 0.99, 1.00 on u_t = u_xx - 0.3 u,
+    against 1.89, 1.95, 1.98 here).
 
     Args:
         model: MOLModel with diffusion and reaction terms
@@ -478,33 +498,36 @@ def imex_ssprk2_step(
     Returns:
         New state at t + dt
     """
-    from moljax.core.fft_solvers import apply_diffusion_inverse_fft
+    from moljax.core.fft_solvers import apply_diffusion_inverse_fft, diffusion_rhs_fft
+
+    gamma = 1.0 - 1.0 / 2.0 ** 0.5
+
+    def reaction(state, time):
+        if len(model.nonlinear_ops) > 0:
+            return model.nonlinear_rhs(state, time)
+        return tree_zeros_like(state)
+
+    def diffusion(state):
+        return diffusion_rhs_fft(state, model.grid, diffusivities, fft_cache)
 
     # Apply boundary conditions
     y = model.apply_bcs(y, t)
 
-    # Stage 1: Forward Euler style
-    if len(model.nonlinear_ops) > 0:
-        N0 = model.nonlinear_rhs(y, t)
-    else:
-        N0 = tree_zeros_like(y)
+    # Stage 1: U1 = (I - gamma dt L)^-1 y
+    U1 = apply_diffusion_inverse_fft(y, model.grid, gamma * dt, diffusivities, fft_cache)
+    U1 = model.apply_bcs(U1, t + gamma * dt)
+    R1 = reaction(U1, t)
+    L1 = diffusion(U1)
 
-    rhs1 = tree_axpy(y, dt, N0)
-    y1 = apply_diffusion_inverse_fft(rhs1, model.grid, dt, diffusivities, fft_cache)
-    y1 = model.apply_bcs(y1, t + dt)
+    # Stage 2: U2 = (I - gamma dt L)^-1 [y + dt R1 + (1 - 2 gamma) dt L1]
+    rhs2 = tree_axpy(tree_axpy(y, dt, R1), (1.0 - 2.0 * gamma) * dt, L1)
+    U2 = apply_diffusion_inverse_fft(rhs2, model.grid, gamma * dt, diffusivities, fft_cache)
+    U2 = model.apply_bcs(U2, t + (1.0 - gamma) * dt)
+    R2 = reaction(U2, t + dt)
+    L2 = diffusion(U2)
 
-    # Stage 2: Averaging
-    if len(model.nonlinear_ops) > 0:
-        N1 = model.nonlinear_rhs(y1, t + dt)
-    else:
-        N1 = tree_zeros_like(y1)
-
-    rhs2 = tree_axpy(y1, dt, N1)
-    y2_full = apply_diffusion_inverse_fft(rhs2, model.grid, dt, diffusivities, fft_cache)
-    y2_full = model.apply_bcs(y2_full, t + dt)
-
-    # Average: y_new = 1/2 * y + 1/2 * y2_full
-    y_new = tree_add(tree_scale(y, 0.5), tree_scale(y2_full, 0.5))
+    # Update: y + dt/2 (R1 + R2) + dt/2 (L1 + L2)
+    y_new = tree_axpy(y, 0.5 * dt, tree_add(tree_add(R1, R2), tree_add(L1, L2)))
     y_new = model.apply_bcs(y_new, t + dt)
 
     return y_new

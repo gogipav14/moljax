@@ -10,22 +10,29 @@ Validates:
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
-from moljax.core.bc import BCType
+# The order and exactness tests resolve errors at 1e-6 and below.
+jax.config.update("jax_enable_x64", True)
+
+from moljax.core.bc import BCType, FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
     heisenberg_cfl_dt,
     imex_cfl_dt,
 )
 from moljax.core.fft_solvers import create_fft_cache
-from moljax.core.grid import Grid2D
+from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.model import (
+    MOLModel,
     create_gray_scott_model,
     create_gray_scott_periodic_fft,
 )
+from moljax.core.operators import NonlinearOp
 from moljax.core.stepping import (
     adaptive_integrate_imex,
     imex_euler_step,
+    imex_ssprk2_step,
     imex_strang_step,
     integrate_imex_fixed_dt,
 )
@@ -91,47 +98,94 @@ class TestIMEXStability:
         assert jnp.all(jnp.isfinite(y['v']))
 
 
+def linear_reaction_diffusion_1d(D: float = 1.0, r: float = 0.3, nx: int = 32):
+    """u_t = D u_xx - r u on [0, 2 pi], periodic, started from cos x.
+
+    The FFT diffusion solve uses the discrete symbol, so the mode decays as
+    exp((D lambda_1 - r) t) with lambda_1 = (2 cos dx - 2)/dx^2, and the
+    only error left in an IMEX step is the splitting error.
+    """
+    grid = Grid1D.uniform(nx, 0.0, 2.0 * np.pi)
+    reaction = NonlinearOp(name="linear_reaction", apply=lambda s, g, t, p: {'u': -r * s['u']})
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec(kind=BCType.PERIODIC)},
+        params={'dtype': jnp.float64},
+        nonlinear_ops=(reaction,)
+    )
+    fft_cache = create_fft_cache(grid)
+    u0 = {'u': jnp.cos(grid.x_coords(include_ghost=True))}
+    lam1 = (2.0 * np.cos(grid.dx) - 2.0) / grid.dx ** 2
+
+    def exact(t_end):
+        return np.exp((D * lam1 - r) * t_end) * np.cos(np.asarray(grid.x_coords()))
+
+    return model, fft_cache, {'u': D}, u0, exact
+
+
+def imex_errors_and_orders(step, dts=(0.2, 0.1, 0.05, 0.025), t_end=1.0):
+    model, fft_cache, diffusivities, u0, exact = linear_reaction_diffusion_1d()
+    errors = []
+    for dt in dts:
+        u = u0
+        for i in range(int(round(t_end / dt))):
+            u = step(model, u, i * dt, dt, fft_cache, diffusivities)
+        errors.append(float(np.max(np.abs(np.asarray(u['u'][1:-1]) - exact(t_end)))))
+    orders = [np.log2(errors[i] / errors[i + 1]) for i in range(len(errors) - 1)]
+    return errors, orders
+
+
+class TestIMEXOrder:
+    """The two second-order IMEX steps must show second order on a linear problem."""
+
+    def test_imex_strang_order(self):
+        errors, orders = imex_errors_and_orders(imex_strang_step)
+        assert all(o > 1.8 for o in orders), f"errors {errors}, orders {orders}"
+
+    def test_imex_ssprk2_order(self):
+        errors, orders = imex_errors_and_orders(imex_ssprk2_step)
+        assert all(o > 1.8 for o in orders), f"errors {errors}, orders {orders}"
+
+
 class TestIMEXAccuracy:
     """Test IMEX accuracy."""
 
     def test_pure_diffusion_exact(self):
-        """IMEX should be exact for pure diffusion."""
-        # Create a model with only diffusion (no reaction)
+        """Strang is exact for pure diffusion; IMEX Euler is first order.
+
+        The Strang half-steps apply exp(dt/2 D Laplacian) through the FFT,
+        so with no reaction the step is the exact discrete decay up to
+        rounding. IMEX Euler solves (I - dt D Laplacian), a first-order
+        approximation with local error (dt D lambda)^2 / 2.
+        """
         grid = Grid2D.uniform(32, 32, 0, 2*jnp.pi, 0, 2*jnp.pi, n_ghost=1)
-        model = create_gray_scott_model(
-            grid, Du=0.1, Dv=0.05, F=0.0, k=0.0,  # F=k=0 means no reaction
-            bc_type=BCType.PERIODIC
+        base = create_gray_scott_model(grid, Du=0.1, Dv=0.05, bc_type=BCType.PERIODIC)
+        # F = k = 0 would still leave the u v^2 term, so drop the reaction operator.
+        model = MOLModel(
+            grid=base.grid, bc_spec=base.bc_spec, params=base.params,
+            linear_ops=base.linear_ops, nonlinear_ops=()
         )
         fft_cache = create_fft_cache(grid)
         diffusivities = {'u': 0.1, 'v': 0.05}
 
-        # Initial sine wave
         X, Y = grid.meshgrid(include_ghost=True)
-        u0 = jnp.sin(X) * jnp.sin(Y)
-        v0 = jnp.cos(X) * jnp.cos(Y)
-        state = {'u': u0, 'v': v0}
+        state = {'u': jnp.sin(X) * jnp.sin(Y), 'v': jnp.cos(X) * jnp.cos(Y)}
 
-        dt = 0.01
-        # IMEX with no reaction should give exact diffusion
-        y_imex = imex_euler_step(model, state, 0.0, dt, fft_cache, diffusivities)
+        dt = 0.05
+        y_strang = imex_strang_step(model, state, 0.0, dt, fft_cache, diffusivities)
+        y_euler = imex_euler_step(model, state, 0.0, dt, fft_cache, diffusivities)
 
-        # Analytical diffusion decay: exp(-D*(kx^2+ky^2)*dt) with kx=ky=1
-        decay_u = jnp.exp(-0.1 * 2 * dt)
-        decay_v = jnp.exp(-0.05 * 2 * dt)
-
-        # Extract interior
+        # Discrete symbol of the (1, 1) mode
+        lam = ((2.0 * np.cos(grid.dx) - 2.0) / grid.dx ** 2
+               + (2.0 * np.cos(grid.dy) - 2.0) / grid.dy ** 2)
         sl_y, sl_x = grid.interior_slice
-        u_interior = y_imex['u'][sl_y, sl_x]
-        v_interior = y_imex['v'][sl_y, sl_x]
-        u0_interior = u0[sl_y, sl_x]
-        v0_interior = v0[sl_y, sl_x]
-
-        # Check decay
-        expected_u = decay_u * u0_interior
-        expected_v = decay_v * v0_interior
-
-        assert jnp.allclose(u_interior, expected_u, rtol=0.01)
-        assert jnp.allclose(v_interior, expected_v, rtol=0.01)
+        for name, D in diffusivities.items():
+            expected = np.exp(D * lam * dt) * np.asarray(state[name][sl_y, sl_x])
+            scale = np.max(np.abs(expected))
+            err_strang = np.max(np.abs(np.asarray(y_strang[name][sl_y, sl_x]) - expected)) / scale
+            err_euler = np.max(np.abs(np.asarray(y_euler[name][sl_y, sl_x]) - expected)) / scale
+            assert err_strang < 1e-6, f"{name}: Strang error {err_strang:.2e}"
+            assert err_euler < 1e-3, f"{name}: IMEX Euler error {err_euler:.2e}"
 
 
 class TestIMEXDTPolicy:
