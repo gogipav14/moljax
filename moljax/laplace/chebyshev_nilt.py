@@ -16,23 +16,34 @@ Disadvantages:
 - Requires more evaluations of F(s) per time point
 
 Methods implemented:
-1. Weeks' method - Laguerre expansion with Chebyshev acceleration
-2. Talbot contour - deformed Bromwich integration via Chebyshev quadrature
-3. Gaver-Stehfest - integer moments with Chebyshev refinement
+1. Weeks' method - Laguerre-function expansion, coefficients by FFT on the
+   Mobius image of the unit circle (Weideman 1999)
+2. Talbot contour - the fixed Talbot contour with the trapezoidal rule
+   (Weideman & Trefethen 2007)
+3. Gaver-Stehfest - integer abscissae with exact rational weights
 
 References:
 - Weeks, "Numerical Inversion of Laplace Transforms Using Laguerre Functions" (1966)
+- Weideman, "Algorithms for Parameter Selection in the Weeks Method for
+  Inverting the Laplace Transform", SIAM J. Sci. Comput. 21 (1999)
 - Talbot, "The Accurate Numerical Inversion of Laplace Transforms" (1979)
-- Weideman & Trefethen, "Parabolic and Hyperbolic Contours for Laplace Inversion" (2007)
+- Weideman & Trefethen, "Parabolic and Hyperbolic Contours for Computing the
+  Bromwich Integral", Math. Comp. 76 (2007)
 - Abate & Whitt, "A Unified Framework for Numerically Inverting Laplace Transforms" (2006)
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from fractions import Fraction
+from math import factorial
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
+import numpy as np
+
+from moljax._precision import require_x64
 
 
 class ChebyshevNILTResult(NamedTuple):
@@ -117,65 +128,70 @@ def laguerre_coefficients(
     b: float = 1.0
 ) -> jnp.ndarray:
     """
-    Compute Laguerre expansion coefficients for F(s).
+    Laguerre coefficients a_n, n = 0..n_terms-1, of Weeks' expansion
 
-    The inverse transform is represented as:
-    f(t) = exp(σt) Σ a_k L_k(2bt)
+        f(t) = e^{σt} Σ_n a_n e^{-bt} L_n(2bt).
 
-    where L_k are Laguerre polynomials.
+    Following Weideman (1999): the Mobius map s = σ + b (1 + z)/(1 - z)
+    sends the unit circle to the line Re s = σ, and the a_n are the Taylor
+    coefficients on the unit disk of
+
+        G(z) = 2b F(s(z)) / (1 - z).
+
+    They are computed by the trapezoidal rule on the midpoint grid
+    z_j = e^{iθ_j}, θ_j = (j + 1/2) 2π/M - π, M = 2 n_terms, which avoids
+    z = 1 (s = infinity) and turns the sum into an FFT:
+
+        a_n = Re[(1/M) Σ_j G(z_j) z_j^{-n}].
+
+    The previous implementation integrated on a circle in the s-plane
+    through the point s = σ + b, where its integrand has a pole, and every
+    coefficient came out NaN.
 
     Args:
-        F_eval: Laplace transform F(s)
+        F_eval: Laplace transform F(s), evaluated on an array of s
         n_terms: Number of Laguerre terms
-        sigma: Abscissa shift (should exceed all singularities)
+        sigma: Abscissa of the line Re s = σ; must exceed the real part of
+            every singularity of F
         b: Scaling parameter (affects convergence rate)
 
     Returns:
-        Laguerre coefficients a_k
+        Real Laguerre coefficients a_n, shape (n_terms,)
     """
-    # Use contour integral via trapezoidal rule
-    # a_k = (1/2πi) ∮ F(s) (s-σ+b)^k / (s-σ-b)^(k+1) ds
+    M = 2 * n_terms
+    j = jnp.arange(M)
+    theta = (j + 0.5) * (2 * jnp.pi / M) - jnp.pi
+    z = jnp.exp(1j * theta)
+    s = sigma + b * (1 + z) / (1 - z)
+    G = 2 * b * F_eval(s) / (1 - z)
 
-    n_quad = max(2 * n_terms, 64)
-    theta = jnp.linspace(0, 2 * jnp.pi, n_quad, endpoint=False)
-
-    # Circular contour centered at σ with radius b
-    s_vals = sigma + b * jnp.exp(1j * theta)
-    F_vals = jnp.array([F_eval(s) for s in s_vals])
-
-    coeffs = jnp.zeros(n_terms, dtype=jnp.complex128)
-
-    for k in range(n_terms):
-        # Residue calculation
-        integrand = F_vals * ((s_vals - sigma + b) / (s_vals - sigma - b)) ** k
-        integrand = integrand / (s_vals - sigma - b)
-        coeffs = coeffs.at[k].set(jnp.mean(integrand) * b)
-
+    # Σ_j G_j z_j^{-n} = Σ_j G_j e^{-inθ_j} = e^{in(π - π/M)} FFT(G)[n]
+    n = jnp.arange(n_terms)
+    coeffs = jnp.fft.fft(G)[:n_terms] * jnp.exp(1j * n * (jnp.pi - jnp.pi / M)) / M
     return jnp.real(coeffs)
 
 
 def laguerre_eval(coeffs: jnp.ndarray, t: jnp.ndarray, b: float = 1.0) -> jnp.ndarray:
     """
-    Evaluate Laguerre series at times t.
+    Evaluate the Laguerre-function series Σ_n a_n e^{-bt} L_n(2bt) at times t.
 
-    Uses Clenshaw recurrence for Laguerre polynomials.
+    Weeks' basis functions are the Laguerre functions e^{-x/2} L_n(x) with
+    x = 2bt, not the polynomials alone; the e^{-bt} factor was missing
+    before. The polynomials come from the three-term recurrence
+    (n + 1) L_{n+1}(x) = (2n + 1 - x) L_n(x) - n L_{n-1}(x) run forward.
     """
+    x = 2.0 * b * t
     n = len(coeffs)
-    x = 2 * b * t
 
-    # Laguerre recurrence: (k+1)L_{k+1}(x) = (2k+1-x)L_k(x) - k L_{k-1}(x)
-    b_kp2 = jnp.zeros_like(t)
-    b_kp1 = jnp.zeros_like(t)
+    L_prev = jnp.zeros_like(x)
+    L = jnp.ones_like(x)
+    total = coeffs[0] * L
+    for k in range(1, n):
+        L_next = ((2 * k - 1 - x) * L - (k - 1) * L_prev) / k
+        L_prev, L = L, L_next
+        total = total + coeffs[k] * L
 
-    for k in range(n - 1, -1, -1):
-        if k == n - 1:
-            b_k = coeffs[k]
-        else:
-            b_k = coeffs[k] + ((2 * k + 3 - x) * b_kp1 - (k + 2) * b_kp2) / (k + 1)
-        b_kp2 = b_kp1
-        b_kp1 = b_k
-
-    return b_kp1
+    return jnp.exp(-b * t) * total
 
 
 def weeks_method(
@@ -188,24 +204,24 @@ def weeks_method(
     """
     Weeks' method for numerical inverse Laplace transform.
 
-    Uses Laguerre polynomial expansion with optimal parameter selection.
+    f(t) = e^{σt} Σ_n a_n e^{-bt} L_n(2bt), with the a_n from
+    laguerre_coefficients (Weideman 1999). For 1/(s+1) with σ = 0.5, b = 1
+    and 32 terms the error is at rounding level.
 
     Args:
-        F_eval: Laplace transform F(s)
+        F_eval: Laplace transform F(s), evaluated on an array of s
         n_terms: Number of Laguerre terms
         t: Time points for evaluation
-        sigma: Abscissa shift (should exceed real parts of all singularities)
+        sigma: Abscissa of the Weeks line; must exceed the real part of
+            every singularity of F
         b: Scaling parameter
 
     Returns:
         ChebyshevNILTResult with inverse transform values
     """
-    # Compute Laguerre coefficients
+    t = jnp.asarray(t)
     coeffs = laguerre_coefficients(F_eval, n_terms, sigma, b)
-
-    # Evaluate at requested times
-    f_laguerre = laguerre_eval(coeffs, t, b)
-    f = jnp.exp(sigma * t) * f_laguerre
+    f = jnp.exp(sigma * t) * laguerre_eval(coeffs, t, b)
 
     # Error estimate from last coefficients
     if n_terms > 2:
@@ -237,44 +253,43 @@ def talbot_contour(
     sigma: float = 0.0
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-    Generate Talbot contour points and weights.
+    Talbot contour points and trapezoidal weights for one time t.
 
-    Uses the optimal Talbot contour from Weideman & Trefethen (2007):
-    s(θ) = N/t * (0.5017*θ*cot(0.6407*θ) - 0.6122 + 0.2645i*θ)
+    The fixed Talbot contour in the optimized form of Weideman & Trefethen
+    (2007),
+
+        s(θ) = (N/t) (-0.6122 + 0.5017 θ cot(0.6407 θ) + 0.2645 i θ) + σ,
+
+    sampled at the midpoints θ_k = -π + (2k + 1) π/N. The trapezoidal rule
+    for (1/2πi) ∫ e^{st} F(s) s'(θ) dθ gives
+
+        w_k = e^{s_k t} s'(θ_k) / (iN),   f(t) = Re Σ_k w_k F(s_k),
+
+    with no further factor: the 2π/N quadrature step and the 1/(2πi) of the
+    Bromwich integral are already in w_k. The previous implementation used
+    β cot(απ) = -0.24 in place of the paper's -0.6122 and its caller
+    multiplied the sum by another π/N; together they returned 0.098 of the
+    true value at N = 32 and diverged at N = 64.
+
+    Args:
+        t: Time (positive scalar; may be traced)
+        n_points: Number of contour points N
+        sigma: Optional shift of the whole contour to the right
 
     Returns:
-        (s_values, weights) for quadrature
+        (s_values, weights), each of shape (N,)
     """
     N = n_points
-    # Use the optimal Talbot parameters from Weideman & Trefethen
-    # These give good convergence for a wide range of problems
     k = jnp.arange(N)
-    theta = -jnp.pi + (2*k + 1) * jnp.pi / N
+    theta = -jnp.pi + (2 * k + 1) * jnp.pi / N
 
-    # Optimal Talbot contour parameters
-    alpha = 0.6407
-    beta = 0.5017
-    gamma = 0.2645
+    alpha, beta, gamma, delta = 0.6407, 0.5017, 0.2645, 0.6122
 
-    # Contour: s(θ) = N/t * [β*θ*cot(α*θ) - δ + γ*i*θ]
-    # where δ = β*cot(α*π) ≈ 0.6122 for the optimal parameters
-    delta = beta * jnp.cos(alpha * jnp.pi) / jnp.sin(alpha * jnp.pi)
+    cot = jnp.cos(alpha * theta) / jnp.sin(alpha * theta)
+    s = (N / t) * (beta * theta * cot - delta + 1j * gamma * theta) + sigma
+    ds_dtheta = (N / t) * (beta * (cot - alpha * theta / jnp.sin(alpha * theta) ** 2) + 1j * gamma)
 
-    # Compute s values
-    cot_alpha_theta = jnp.cos(alpha * theta) / jnp.sin(alpha * theta)
-    s_real = (N / t) * (beta * theta * cot_alpha_theta - delta) + sigma
-    s_imag = (N / t) * gamma * theta
-    s = s_real + 1j * s_imag
-
-    # Derivative ds/dθ for quadrature
-    sin_sq = jnp.sin(alpha * theta) ** 2
-    ds_real = (N / t) * beta * (cot_alpha_theta - alpha * theta / sin_sq)
-    ds_imag = (N / t) * gamma
-    ds_dtheta = ds_real + 1j * ds_imag
-
-    # Weights for trapezoidal rule
-    weights = jnp.exp(s * t) * ds_dtheta * (2 * jnp.pi / N) / (2j * jnp.pi)
-
+    weights = jnp.exp(s * t) * ds_dtheta / (1j * N)
     return s, weights
 
 
@@ -287,40 +302,36 @@ def talbot_method(
     """
     Talbot contour method for numerical inverse Laplace transform.
 
-    Uses deformed Bromwich contour with exponential convergence.
+    Trapezoidal rule on the Weideman-Trefethen contour, vectorized over
+    time points with jax.vmap; F is evaluated on the N contour points of
+    each time in one call. Converges geometrically for transforms analytic
+    off the negative real axis: exp(-t) to 6e-10 at N = 16 and 5e-14 at
+    N = 32.
 
     Args:
-        F_eval: Laplace transform F(s)
-        t: Time points for evaluation
+        F_eval: Laplace transform F(s), evaluated on an array of s
+        t: Time points for evaluation (t <= 0 returns 0)
         n_points: Number of quadrature points
-        sigma: Optional shift to avoid singularities
+        sigma: Optional shift of the contour to the right
 
     Returns:
-        ChebyshevNILTResult with inverse transform values
+        ChebyshevNILTResult with inverse transform values; error_estimate is
+        the difference from the same quadrature with N/2 points at the
+        middle time.
     """
-    f_vals = jnp.zeros(len(t))
+    t = jnp.atleast_1d(jnp.asarray(t))
+    positive = t > 0
+    t_safe = jnp.where(positive, t, 1.0)
 
-    for i, ti in enumerate(t):
-        if ti <= 0:
-            f_vals = f_vals.at[i].set(0.0)
-            continue
+    def invert_at(ti, n):
+        s, w = talbot_contour(ti, n, sigma)
+        return jnp.real(jnp.sum(F_eval(s) * w))
 
-        s_pts, weights = talbot_contour(float(ti), n_points, sigma)
+    f_vals = jnp.where(positive, jax.vmap(lambda ti: invert_at(ti, n_points))(t_safe), 0.0)
 
-        # Evaluate F at contour points
-        F_pts = jnp.array([F_eval(s) for s in s_pts])
-
-        # Quadrature
-        integral = jnp.sum(F_pts * weights) * (jnp.pi / n_points)
-        f_vals = f_vals.at[i].set(jnp.real(integral))
-
-    # Error estimate from Richardson extrapolation
-    if len(t) > 2:
-        # Compare with half the points
-        s_half, w_half = talbot_contour(float(t[len(t)//2]), n_points // 2, sigma)
-        F_half = jnp.array([F_eval(s) for s in s_half])
-        f_half = jnp.real(jnp.sum(F_half * w_half) * (jnp.pi / (n_points // 2)))
-        error_est = float(jnp.abs(f_vals[len(t)//2] - f_half))
+    if len(t) > 2 and n_points >= 4:
+        mid = len(t) // 2
+        error_est = float(jnp.abs(f_vals[mid] - invert_at(t_safe[mid], n_points // 2)))
     else:
         error_est = 0.0
 
@@ -341,42 +352,33 @@ def talbot_method(
 # Method 3: Gaver-Stehfest Algorithm
 # =============================================================================
 
-def gaver_stehfest_weights(n: int) -> jnp.ndarray:
+def gaver_stehfest_weights(n: int) -> np.ndarray:
     """
-    Compute Gaver-Stehfest weights.
+    Gaver-Stehfest weights V_k, k = 1..n (n even; an odd n is rounded up),
+    as a float64 numpy array.
 
-    The weights w_k allow approximation:
-    f(t) ≈ (ln 2 / t) Σ_{k=1}^{n} w_k F(k ln 2 / t)
+        f(t) ≈ (ln 2 / t) Σ_{k=1}^{n} V_k F(k ln 2 / t)
+
+    The weights are alternating integers that reach 1.7e8 at n = 14, and
+    the sum cancels down to an O(1) value, so they are formed exactly in
+    fractions.Fraction and rounded once. Forming them in floating point and
+    storing them as a JAX array made them float32 whenever x64 was off, and
+    the inversion then returned values off by 0.65 to 1.28 with no warning.
     """
-    # Must be even
     n = n if n % 2 == 0 else n + 1
     m = n // 2
 
-    weights = jnp.zeros(n)
-
+    weights = np.zeros(n, dtype=np.float64)
     for k in range(1, n + 1):
-        sum_val = 0.0
-        for j in range(max(1, (k + 1) // 2), min(k, m) + 1):
-            # Binomial and factorial computations
-            num = j ** m * _factorial(2 * j)
-            den = (_factorial(m - j) * _factorial(j) * _factorial(j - 1) *
-                   _factorial(k - j) * _factorial(2 * j - k))
-            if den != 0:
-                sum_val += num / den
-
-        weights = weights.at[k - 1].set((-1) ** (k + m) * sum_val)
+        total = Fraction(0)
+        for j in range((k + 1) // 2, min(k, m) + 1):
+            num = Fraction(j ** m * factorial(2 * j))
+            den = (factorial(m - j) * factorial(j) * factorial(j - 1) *
+                   factorial(k - j) * factorial(2 * j - k))
+            total += num / den
+        weights[k - 1] = float((-1) ** (k + m) * total)
 
     return weights
-
-
-def _factorial(n: int) -> int:
-    """Compute factorial."""
-    if n <= 1:
-        return 1
-    result = 1
-    for i in range(2, n + 1):
-        result *= i
-    return result
 
 
 def gaver_stehfest_method(
@@ -387,41 +389,48 @@ def gaver_stehfest_method(
     """
     Gaver-Stehfest algorithm for numerical inverse Laplace transform.
 
-    Uses integer abscissae, suitable for transforms known only at integer values.
+    Uses real abscissae only, so it suits transforms that can only be
+    evaluated on the real axis. It needs 64-bit precision: the weights
+    alternate in sign with magnitudes near 1e8 and cancel to an O(1) result,
+    which float32 cannot carry (errors of 0.65 to 1.28 on exp(-t)). With
+    x64 enabled 1/(s+1) at t = 1 comes out within 1e-6 at 14 terms.
 
     Args:
-        F_eval: Laplace transform F(s)
-        t: Time points for evaluation
-        n_terms: Number of terms (should be even, typically 10-18)
+        F_eval: Laplace transform F(s), evaluated on an array of s
+        t: Time points for evaluation (t <= 0 returns 0)
+        n_terms: Number of terms (even, typically 10-18; odd is rounded up)
 
     Returns:
         ChebyshevNILTResult with inverse transform values
+
+    Raises:
+        RuntimeError: If JAX is not running with 64-bit precision.
     """
-    weights = gaver_stehfest_weights(n_terms)
-    ln2 = jnp.log(2.0)
+    require_x64("Gaver-Stehfest inversion")
 
-    f_vals = jnp.zeros(len(t))
+    weights_np = gaver_stehfest_weights(n_terms)
+    weights = jnp.asarray(weights_np)
+    n = len(weights_np)
+    ln2 = float(np.log(2.0))
 
-    for i, ti in enumerate(t):
-        if ti <= 0:
-            f_vals = f_vals.at[i].set(0.0)
-            continue
+    t = jnp.atleast_1d(jnp.asarray(t, dtype=jnp.float64))
+    positive = t > 0
+    t_safe = jnp.where(positive, t, 1.0)
+    k = jnp.arange(1, n + 1, dtype=jnp.float64)
 
-        # Evaluate at s_k = k * ln(2) / t
-        s_vals = jnp.arange(1, n_terms + 1) * ln2 / ti
-        F_vals = jnp.array([F_eval(s) for s in s_vals])
+    def invert_at(ti):
+        return (ln2 / ti) * jnp.sum(weights * F_eval(k * ln2 / ti))
 
-        # Weighted sum
-        f_vals = f_vals.at[i].set((ln2 / ti) * jnp.sum(weights * F_vals))
+    f_vals = jnp.where(positive, jax.vmap(invert_at)(t_safe), 0.0)
 
     return ChebyshevNILTResult(
         t=t,
         f=f_vals,
         method='gaver_stehfest',
-        n_terms=n_terms,
+        n_terms=n,
         error_estimate=0.0,  # Hard to estimate for this method
         diagnostics={
-            'weights': weights,
+            'weights': weights_np,
         }
     )
 
@@ -441,58 +450,57 @@ def adaptive_chebyshev_nilt(
     """
     Adaptive Chebyshev-based NILT with automatic method selection.
 
-    Chooses the best method based on problem characteristics and
-    adaptively increases accuracy until tolerance is met.
+    The number of terms doubles from 16 until two successive results agree
+    to ``tol`` in the max norm relative to the result's size, or
+    ``max_terms`` is reached; the returned error_estimate is that measured
+    difference. Gaver-Stehfest is capped at 18 terms (float64 cancellation
+    grows beyond it), so its refinement stops there instead of comparing
+    two identical 18-term runs and declaring convergence.
 
     Args:
         F_eval: Laplace transform F(s)
         t: Time points for evaluation
-        method: 'auto', 'weeks', 'talbot', or 'gaver_stehfest'
-        tol: Target tolerance
+        method: 'auto' (Talbot), 'weeks', 'talbot', or 'gaver_stehfest'
+        tol: Target relative tolerance between successive refinements
         max_terms: Maximum number of terms
-        sigma: Abscissa shift (auto-detected if None)
+        sigma: Shift of the Talbot contour or abscissa of the Weeks line.
+            Defaults to 1/t_max: for a transform whose singularities lie in
+            Re s <= 0 this puts the line a distance 1/t_max to their right,
+            and the factor e^{σt} it introduces is at most e over the
+            requested times. A transform with singularities in Re s > 0
+            needs sigma passed explicitly.
 
     Returns:
-        ChebyshevNILTResult with best achievable accuracy
+        ChebyshevNILTResult with the last refinement
     """
-    t_arr = jnp.asarray(t)
+    t_arr = jnp.atleast_1d(jnp.asarray(t))
     t_max = float(jnp.max(t_arr[t_arr > 0]))
 
-    # Auto-detect sigma if not provided
     if sigma is None:
-        # Simple heuristic: sigma should make F decay sufficiently
         sigma = 1.0 / t_max
 
-    # Auto method selection
     if method == 'auto':
-        # Talbot is generally most robust
-        # Weeks is better for smooth F
-        # Gaver-Stehfest for integer evaluations only
         method = 'talbot'
+    if method not in ('weeks', 'talbot', 'gaver_stehfest'):
+        raise ValueError(f"Unknown method: {method}")
 
-    # Adaptive refinement
-    n_terms = 16
-    prev_result = None
-
-    while n_terms <= max_terms:
+    def run(n: int) -> ChebyshevNILTResult:
         if method == 'weeks':
-            result = weeks_method(F_eval, n_terms, t_arr, sigma, b=1.0/t_max)
-        elif method == 'talbot':
-            result = talbot_method(F_eval, t_arr, n_terms, sigma)
-        elif method == 'gaver_stehfest':
-            result = gaver_stehfest_method(F_eval, t_arr, min(n_terms, 18))
-        else:
-            raise ValueError(f"Unknown method: {method}")
+            return weeks_method(F_eval, n, t_arr, sigma, b=1.0 / t_max)
+        if method == 'talbot':
+            return talbot_method(F_eval, t_arr, n, sigma)
+        return gaver_stehfest_method(F_eval, t_arr, min(n, 18))
 
-        # Check convergence
-        if prev_result is not None:
-            diff = jnp.max(jnp.abs(result.f - prev_result.f))
-            rel_diff = diff / (jnp.max(jnp.abs(result.f)) + 1e-14)
-            if rel_diff < tol:
-                break
-
-        prev_result = result
+    n_terms = 16
+    result = run(n_terms)
+    while 2 * n_terms <= max_terms:
         n_terms *= 2
+        refined = run(n_terms)
+        diff = float(jnp.max(jnp.abs(refined.f - result.f)))
+        rel_diff = diff / (float(jnp.max(jnp.abs(refined.f))) + 1e-14)
+        result = refined._replace(error_estimate=rel_diff)
+        if rel_diff < tol or (method == 'gaver_stehfest' and n_terms >= 18):
+            break
 
     return result
 

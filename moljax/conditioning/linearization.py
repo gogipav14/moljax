@@ -15,6 +15,8 @@ import jax
 import jax.numpy as jnp
 from jax.flatten_util import ravel_pytree
 
+from moljax._precision import require_x64
+
 State = Any
 Residual = Callable[[State], State]
 Action = Callable[[jax.Array], jax.Array]
@@ -62,11 +64,7 @@ def linearized_operator(
         ValueError: If the residual changes the flattened dimension or a
             preconditioner is supplied without its context.
     """
-    if not jax.config.jax_enable_x64:
-        raise RuntimeError(
-            "conditioning diagnostics require 64-bit precision; enable it with "
-            'jax.config.update("jax_enable_x64", True) before calling.'
-        )
+    require_x64("conditioning diagnostics")
     if preconditioner is not None and context is None:
         raise ValueError("context is required when preconditioner is supplied")
 

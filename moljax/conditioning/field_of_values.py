@@ -22,6 +22,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.experimental.sparse.linalg import lobpcg_standard
 
+from moljax._precision import require_x64
 from moljax.conditioning._geometry import (
     _origin_enclosed,
     _smallest_enclosing_disk,
@@ -353,11 +354,7 @@ def numerical_range(
     if n_restarts < 1:
         raise ValueError("n_restarts must be positive")
     corroboration_attempted = n_restarts >= 2
-    if not jax.config.jax_enable_x64:
-        raise RuntimeError(
-            "conditioning diagnostics require 64-bit precision; enable it with "
-            'jax.config.update("jax_enable_x64", True) before calling.'
-        )
+    require_x64("conditioning diagnostics")
 
     boundary: list[jax.Array] = []
     thetas: list[float] = []
