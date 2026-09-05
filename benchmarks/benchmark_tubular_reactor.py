@@ -41,12 +41,13 @@ from jax import jit
 # Parse CLI arguments
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 N_REPS = args.n_reps
 
 print("=" * 70)
 print("Tubular Reactor Benchmark (Multi-BC)")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"N_REPS: {N_REPS}")
 print()
 

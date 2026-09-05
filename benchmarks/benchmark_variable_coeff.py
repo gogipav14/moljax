@@ -32,6 +32,7 @@ from scipy.sparse.linalg import gmres as scipy_gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # ============================================================================
 # Configuration
@@ -50,7 +51,7 @@ PROFILES = ["smooth", "step"]
 
 print("Variable-Coefficient Diffusion Stress Test")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N} points (1D, periodic BC)")
 print(f"Base diffusivity: D_base = {D_BASE}")
 print(f"Stiffness ratio: sigma = {SIGMA} (dt = {DT:.6f})")

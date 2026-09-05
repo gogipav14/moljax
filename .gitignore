@@ -86,6 +86,9 @@ figures/
 # But keep SISC pre-computed results for reproducibility
 !benchmarks/results/
 !benchmarks/results/*.json
+# benchmarks/sisc/run_sisc_suite.sh writes here
+!benchmarks/results/sisc/
+!benchmarks/results/sisc/*.json
 
 # Logs
 *.log

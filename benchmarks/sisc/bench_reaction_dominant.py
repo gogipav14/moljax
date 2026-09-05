@@ -6,7 +6,7 @@ This experiment demonstrates that FFT preconditioning effectiveness degrades
 when reaction Jacobian dominates over diffusion. Shows GMRES iteration growth
 and validates IMEX as the preferred method for reaction-dominant cases.
 
-Output: results/reaction_dominant.json, figures/fig_reaction_dominant.pdf
+Output: benchmarks/results/sisc/reaction_dominant.json, benchmarks/figures/fig_reaction_dominant.pdf
 """
 
 import json
@@ -21,9 +21,9 @@ import numpy as np
 # Ensure 64-bit precision
 jax.config.update("jax_enable_x64", True)
 
-RESULTS_DIR = Path(__file__).parent / "results"
+RESULTS_DIR = Path(__file__).parent.parent / "results" / "sisc"
 FIGURES_DIR = Path(__file__).parent.parent / "figures"
-RESULTS_DIR.mkdir(exist_ok=True)
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 FIGURES_DIR.mkdir(exist_ok=True)
 
 # Problem parameters

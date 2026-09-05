@@ -8,9 +8,15 @@
 #   doi:10.1016/j.cpc.2026.110205
 #
 # Usage:
-#   bash benchmarks/run_all.sh              # full suite
-#   SKIP_SLOW=1 bash benchmarks/run_all.sh  # omit the multi-hour stages
+#   bash benchmarks/run_all.sh                 # full suite
+#   bash benchmarks/run_all.sh --backend any   # on CPU, or whatever JAX has
+#   SKIP_SLOW=1 bash benchmarks/run_all.sh     # omit the multi-hour stages
 #   PYTHON=python3.12 bash benchmarks/run_all.sh
+#
+# --backend gpu|cpu|any (default gpu) is forwarded to every script. The
+# scripts check that JAX is running on the expected backend and abort
+# otherwise; "any" skips that check. Scripts without argument parsing
+# ignore the flag.
 #
 # Results are written to benchmarks/results/*.json. Figures are produced
 # separately by benchmarks/plot_main_figures.py.
@@ -18,7 +24,9 @@
 # Reference runtime on the paper's hardware (RTX 5060, float64):
 #   default suite   ~30 min
 #   with SKIP_SLOW  ~10 min
-# CPU-only reproduction takes roughly 3-4 hours.
+# CPU-only reproduction (--backend any) takes roughly 3-4 hours; the
+# GPU-only stages (the FFT baselines, the JIT x device factorial and the
+# OFAT study) fail without a GPU and the script continues past them.
 #
 # Every stage is run even if an earlier one fails; the script exits
 # nonzero at the end if any stage failed, and prints a summary.
@@ -27,6 +35,23 @@ cd "$(dirname "$0")"
 
 PYTHON="${PYTHON:-python3}"
 SKIP_SLOW="${SKIP_SLOW:-0}"
+BACKEND="${BACKEND:-gpu}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --backend)   BACKEND="$2"; shift 2 ;;
+        --backend=*) BACKEND="${1#--backend=}"; shift ;;
+        *)
+            echo "run_all.sh: unknown argument: $1" >&2
+            echo "usage: bash benchmarks/run_all.sh [--backend gpu|cpu|any]" >&2
+            exit 2 ;;
+    esac
+done
+
+case "$BACKEND" in
+    gpu|cpu|any) ;;
+    *) echo "run_all.sh: --backend must be gpu, cpu or any (got '$BACKEND')" >&2; exit 2 ;;
+esac
 
 FAILED=()
 PASSED=()
@@ -39,11 +64,11 @@ run() {
     echo ""
     echo "=================================================================="
     echo ">>> ${label}"
-    echo "    ${script}"
+    echo "    ${script} --backend ${BACKEND}"
     echo "=================================================================="
     local start
     start=$(date +%s)
-    if "$PYTHON" "$script" "$@"; then
+    if "$PYTHON" "$script" --backend "$BACKEND" "$@"; then
         local elapsed=$(( $(date +%s) - start ))
         echo "--- OK (${elapsed}s): ${label}"
         PASSED+=("$label")
@@ -70,6 +95,7 @@ echo "moljax benchmark suite"
 echo "=================================================================="
 echo "Started:  $(date)"
 echo "Python:   $($PYTHON --version 2>&1)"
+echo "Requested backend: $BACKEND"
 "$PYTHON" - <<'EOF'
 import jax
 print(f"JAX:      {jax.__version__}")

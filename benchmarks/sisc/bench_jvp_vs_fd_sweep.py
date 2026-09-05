@@ -25,6 +25,7 @@ from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration
 N = 64
@@ -37,7 +38,7 @@ GMRES_MAXITER = 200
 
 print("E9: JVP vs Finite-Difference Epsilon Sweep")
 print("=" * 60)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N}x{N}")
 print(f"Epsilons: {EPSILONS}")
 print("=" * 60)
@@ -235,8 +236,8 @@ results['config'] = {
     'device': device_str,
 }
 
-output_path = Path(__file__).parent / 'results' / 'jvp_vs_fd_sweep.json'
-output_path.parent.mkdir(exist_ok=True)
+output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'jvp_vs_fd_sweep.json'
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\nResults saved to {output_path}")

@@ -38,6 +38,7 @@ from scipy.sparse.linalg import gmres as scipy_gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration
 N = 128  # Match paper: 128x128 grid
@@ -55,7 +56,7 @@ REACTION_K = 1.0
 
 print("GMRES Iteration Sweep Benchmark (FIXED)")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N}x{N} (Matrix-free FD discretization)")
 print(f"Problem: 2D diffusion-reaction (k={REACTION_K})")
 print(f"Stiffness ratios: {STIFFNESS_RATIOS}")

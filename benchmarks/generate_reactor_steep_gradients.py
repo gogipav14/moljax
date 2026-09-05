@@ -26,12 +26,16 @@ matplotlib.use('Agg')
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from benchmark_utils import setup_benchmark
+from benchmark_utils import add_benchmark_args, setup_benchmark
+
+parser = add_benchmark_args()
+args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 print("=" * 70)
 print("Reactor Steep-Gradient Concentration Profiles")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 
 
 # =============================================================================

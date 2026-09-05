@@ -26,6 +26,7 @@ from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration - scaled DOF per dimension for reasonable runtime
 CONFIGS = [
@@ -45,7 +46,7 @@ NEWTON_TOL = 1e-6
 
 print("E2: GMRES Iterations vs Dimension (Full Integration)")
 print("=" * 60)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Stiffness ratio σ = {SIGMA}")
 print(f"Timesteps: {N_TIMESTEPS}")
 print(f"GMRES: tol={GMRES_TOL}, restart={GMRES_RESTART}, maxiter={GMRES_MAXITER}")
@@ -298,8 +299,8 @@ results['config'] = {
     'device': device_str,
 }
 
-output_path = Path(__file__).parent / 'results' / 'iter_vs_dim.json'
-output_path.parent.mkdir(exist_ok=True)
+output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'iter_vs_dim.json'
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\nResults saved to {output_path}")

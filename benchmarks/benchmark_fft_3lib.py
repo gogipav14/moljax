@@ -135,7 +135,14 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--n-reps", type=int, default=200)
     p.add_argument("--n-warmup", type=int, default=20)
+    p.add_argument("--backend", default="gpu", choices=["gpu", "cpu", "any"],
+                   help="expected JAX backend; 'any' skips the check (default: gpu)")
     args = p.parse_args()
+
+    # Same contract as benchmark_utils.setup_benchmark, so run_all.sh can
+    # forward --backend to this script like every other stage.
+    if args.backend != "any" and jax.default_backend() != args.backend:
+        raise SystemExit(f"Expected {args.backend} backend, got {jax.default_backend()}")
 
     print(f"Devices: {jax.devices()}")
     print(f"CuPy: {'yes' if HAS_CUPY else 'no'}   nvmath: {'yes' if HAS_NVMATH else 'no'}")

@@ -34,6 +34,7 @@ from jax.scipy.sparse.linalg import gmres
 # Parse CLI arguments
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 N_REPS = args.n_reps
 
 # Configuration
@@ -51,7 +52,7 @@ L = 2.5
 
 print("Ablation Benchmark")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N}x{N}, T_FINAL: {T_FINAL}, dt: {DT}")
 print(f"N_REPS: {N_REPS}")
 print("=" * 70)

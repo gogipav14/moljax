@@ -30,20 +30,24 @@ import jax.numpy as jnp
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from benchmark_utils import compute_stats, setup_benchmark
+from benchmark_utils import add_benchmark_args, compute_stats, setup_benchmark
 from scipy.fft import dst
+
+parser = add_benchmark_args()
+args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration
 GRID_SIZES = [64, 128, 256]  # Test multiple grid sizes
 N_STEPS = 100  # Time steps per benchmark
-N_REPS = 10  # Timing repetitions
+N_REPS = args.n_reps  # Timing repetitions (default 10)
 D = 0.01  # Diffusion coefficient
 T_FINAL = 0.1
 
 print("=" * 70)
 print("Operator-Level Benchmark: FFT Diagonalization vs Sparse Direct Solve")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid sizes: {GRID_SIZES}")
 print(f"Time steps: {N_STEPS}, T_final: {T_FINAL}")
 print(f"Repetitions: {N_REPS}")

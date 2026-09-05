@@ -22,6 +22,7 @@ from benchmark_utils import add_benchmark_args, compute_stats, setup_benchmark
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration
 GRID_SIZES = [64, 128, 256]
@@ -32,7 +33,7 @@ N_REPS = 10
 
 print("E6: Boundary Condition Matrix (FFT/DST/DCT)")
 print("=" * 60)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid sizes: {GRID_SIZES}")
 print(f"D={D}, T_final={T_FINAL}")
 print("=" * 60)
@@ -279,8 +280,8 @@ results['config'] = {
     'device': device_str,
 }
 
-output_path = Path(__file__).parent / 'results' / 'bc_matrix.json'
-output_path.parent.mkdir(exist_ok=True)
+output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'bc_matrix.json'
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\nResults saved to {output_path}")

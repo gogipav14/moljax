@@ -11,7 +11,7 @@ where:
 
 Reports GMRES iteration statistics with FFT diffusion preconditioner.
 
-Output: results/da_pe_robustness.json
+Output: benchmarks/results/sisc/da_pe_robustness.json
 """
 
 import json
@@ -24,8 +24,8 @@ import numpy as np
 # Ensure 64-bit precision
 jax.config.update("jax_enable_x64", True)
 
-RESULTS_DIR = Path(__file__).parent / "results"
-RESULTS_DIR.mkdir(exist_ok=True)
+RESULTS_DIR = Path(__file__).parent.parent / "results" / "sisc"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Problem parameters
 N = 128  # Grid size (N x N)

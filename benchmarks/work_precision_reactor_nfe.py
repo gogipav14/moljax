@@ -30,12 +30,16 @@ import numpy as np
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from benchmark_utils import setup_benchmark
+from benchmark_utils import add_benchmark_args, setup_benchmark
+
+parser = add_benchmark_args()
+args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 print("=" * 70)
 print("Work-Precision Diagram: Reactor (Error vs NFE)")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 
 # Fixed parameters
 Pe = 10.0

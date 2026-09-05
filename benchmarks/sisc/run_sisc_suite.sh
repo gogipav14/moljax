@@ -1,52 +1,83 @@
 #!/bin/bash
 #
-# SISC Benchmark Suite Runner
-# Executes all new benchmarks for the SISC resubmission
+# SISC benchmark suite runner.
 #
-# Usage: ./run_sisc_suite.sh [--quick]
-#   --quick: Run subset of benchmarks for testing
-
-set -e
+# Usage: ./run_sisc_suite.sh [--quick] [--backend gpu|cpu|any]
+#   --quick             run the three-script subset (E1, E4, E9)
+#   --backend BACKEND   forwarded to every script (default gpu); "any"
+#                       skips the backend check so the suite runs on CPU
+#   PYTHON=python3.12 ./run_sisc_suite.sh   chooses the interpreter
+#
+# The scripts import benchmark_utils from benchmarks/, so that directory is
+# put on PYTHONPATH here. Results are written to benchmarks/results/sisc/
+# and figures to benchmarks/figures/.
+#
+# Every stage is run even if an earlier one fails; the script exits
+# nonzero at the end if any stage failed.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Create results directory
-mkdir -p results
+PYTHON="${PYTHON:-python3}"
+BACKEND="${BACKEND:-gpu}"
+QUICK_MODE=false
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quick)     QUICK_MODE=true; shift ;;
+        --backend)   BACKEND="$2"; shift 2 ;;
+        --backend=*) BACKEND="${1#--backend=}"; shift ;;
+        *)
+            echo "run_sisc_suite.sh: unknown argument: $1" >&2
+            echo "usage: ./run_sisc_suite.sh [--quick] [--backend gpu|cpu|any]" >&2
+            exit 2 ;;
+    esac
+done
+
+case "$BACKEND" in
+    gpu|cpu|any) ;;
+    *) echo "run_sisc_suite.sh: --backend must be gpu, cpu or any (got '$BACKEND')" >&2; exit 2 ;;
+esac
+
+export PYTHONPATH="$SCRIPT_DIR/..${PYTHONPATH:+:$PYTHONPATH}"
+
+RESULTS_DIR="$SCRIPT_DIR/../results/sisc"
+FIGURES_DIR="$SCRIPT_DIR/../figures"
+mkdir -p "$RESULTS_DIR" "$FIGURES_DIR"
 
 echo "========================================"
 echo "SISC Benchmark Suite"
 echo "========================================"
 echo "Working directory: $SCRIPT_DIR"
-echo "Results will be saved to: $SCRIPT_DIR/results/"
+echo "Python:            $PYTHON"
+echo "Backend:           $BACKEND"
+echo "Results:           $RESULTS_DIR"
+echo "Figures:           $FIGURES_DIR"
 echo ""
 
-# Check for quick mode
-QUICK_MODE=false
-if [[ "$1" == "--quick" ]]; then
-    QUICK_MODE=true
+if $QUICK_MODE; then
     echo "Running in QUICK mode (subset of benchmarks)"
     echo ""
 fi
 
-# Function to run benchmark with timing
+# Run one benchmark with timing; returns nonzero if the script failed.
 run_benchmark() {
     local script=$1
     local name=$2
 
     echo "----------------------------------------"
     echo "Running: $name"
-    echo "Script: $script"
+    echo "Script: $script --backend $BACKEND"
     echo "----------------------------------------"
 
+    local start_time
     start_time=$(date +%s)
 
-    if python3 "$script"; then
-        end_time=$(date +%s)
-        duration=$((end_time - start_time))
-        echo "✓ $name completed in ${duration}s"
+    if "$PYTHON" "$script" --backend "$BACKEND"; then
+        local duration=$(( $(date +%s) - start_time ))
+        echo "OK: $name completed in ${duration}s"
     else
-        echo "✗ $name FAILED"
+        echo "FAILED: $name" >&2
         return 1
     fi
 
@@ -93,9 +124,9 @@ for entry in "${BENCHMARKS[@]}"; do
     IFS=':' read -r script name <<< "$entry"
 
     if run_benchmark "$script" "$name"; then
-        ((PASSED++))
+        PASSED=$((PASSED + 1))
     else
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 done
 
@@ -106,19 +137,19 @@ echo "========================================"
 echo "Passed: $PASSED / $TOTAL"
 echo "Failed: $FAILED / $TOTAL"
 echo ""
-echo "Results saved to: $SCRIPT_DIR/results/"
+echo "Results saved to: $RESULTS_DIR"
 echo ""
 
 # List generated files
 echo "Generated result files:"
-ls -la results/*.json 2>/dev/null || echo "  (no JSON files found)"
+ls -la "$RESULTS_DIR"/*.json 2>/dev/null || echo "  (no JSON files found)"
 echo ""
 echo "Generated figures:"
-ls -la ../figures/fig_*.pdf 2>/dev/null || echo "  (no figures found)"
+ls -la "$FIGURES_DIR"/fig_*.pdf 2>/dev/null || echo "  (no figures found)"
 echo ""
 
-if [ $FAILED -gt 0 ]; then
-    echo "WARNING: Some benchmarks failed!"
+if [ "$FAILED" -gt 0 ]; then
+    echo "WARNING: Some benchmarks failed!" >&2
     exit 1
 fi
 

@@ -26,7 +26,7 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-from benchmark_utils import compute_stats, setup_benchmark
+from benchmark_utils import add_benchmark_args, compute_stats, setup_benchmark
 
 # Try to import Diffrax
 try:
@@ -56,7 +56,10 @@ dx = L / N
 # ACTUAL simulation time - NO SCALING
 T_FINAL = 10000.0
 
-N_REPS = 10  # Paper uses 10 runs, report median
+parser = add_benchmark_args()
+args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
+N_REPS = args.n_reps  # Paper uses 10 runs, report median
 
 # Max steps for Diffrax (prevent infinite loops)
 MAX_STEPS = 100_000_000  # 100 million steps max
@@ -196,7 +199,7 @@ def main():
     print("Gray-Scott Diffrax Benchmark (ACTUAL t=10000, NO SCALING)")
     print("=" * 70)
 
-    device = setup_benchmark(expected_backend='gpu')
+    device = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 
     print(f"\nGrid: {N}x{N}, Du={Du}, Dv={Dv}, F={F}, k={k}")
     print(f"Simulation: t=0 to t={T_FINAL} (actual, no extrapolation)")

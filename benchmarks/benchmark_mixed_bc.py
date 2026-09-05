@@ -36,6 +36,7 @@ from scipy.sparse.linalg import splu
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # ============================================================================
 # Configuration
@@ -48,7 +49,7 @@ N_TIMING_REPS = 10    # Timing repetitions
 
 print("Mixed Boundary Conditions Performance Test")
 print("=" * 70)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Diffusion coefficient: D = {D}")
 print(f"Time: t_final = {T_FINAL}, dt = {DT}")
 print(f"Grid sizes: {GRID_SIZES}")

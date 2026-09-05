@@ -20,11 +20,15 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-from benchmark_utils import compute_stats, setup_benchmark
+from benchmark_utils import add_benchmark_args, compute_stats, setup_benchmark
+
+parser = add_benchmark_args()
+args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 print("E11: FP32 vs FP64 Work-Precision")
 print("=" * 60)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print("=" * 60)
 
 # Configuration
@@ -33,7 +37,7 @@ L = 1.0
 D = 0.1
 T_FINAL = 0.1
 DT_VALUES = [0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002, 0.0001]
-N_REPS = 10
+N_REPS = args.n_reps
 
 dx = L / N
 
@@ -168,8 +172,8 @@ results['config'] = {
     'device': device_str,
 }
 
-output_path = Path(__file__).parent / 'results' / 'precision_fp32_fp64.json'
-output_path.parent.mkdir(exist_ok=True)
+output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'precision_fp32_fp64.json'
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\nResults saved to {output_path}")

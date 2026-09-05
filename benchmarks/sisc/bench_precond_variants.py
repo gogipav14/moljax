@@ -27,6 +27,7 @@ from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration
 N = 128
@@ -38,7 +39,7 @@ REACTION_K = 10.0
 
 print("E4: Preconditioner Variants")
 print("=" * 60)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N}x{N}")
 print(f"Stiffness ratios: {STIFFNESS_RATIOS}")
 print("=" * 60)
@@ -188,8 +189,8 @@ results['config'] = {
     'device': device_str,
 }
 
-output_path = Path(__file__).parent / 'results' / 'precond_variants.json'
-output_path.parent.mkdir(exist_ok=True)
+output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'precond_variants.json'
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\nResults saved to {output_path}")

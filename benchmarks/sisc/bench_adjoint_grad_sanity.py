@@ -24,6 +24,7 @@ from benchmark_utils import add_benchmark_args, setup_benchmark
 
 parser = add_benchmark_args()
 args = parser.parse_args()
+EXPECTED_BACKEND = args.backend if args.backend != 'any' else None
 
 # Configuration
 N = 64
@@ -38,7 +39,7 @@ FD_EPSILON = 1e-6
 
 print("E10: End-to-End Gradient Sanity Check")
 print("=" * 60)
-device_str = setup_benchmark(expected_backend="gpu")
+device_str = setup_benchmark(expected_backend=EXPECTED_BACKEND)
 print(f"Grid: {N}x{N}, T_final={T_FINAL}")
 print("=" * 60)
 
@@ -205,8 +206,8 @@ results['config'] = {
     'device': device_str,
 }
 
-output_path = Path(__file__).parent / 'results' / 'adjoint_grad_sanity.json'
-output_path.parent.mkdir(exist_ok=True)
+output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'adjoint_grad_sanity.json'
+output_path.parent.mkdir(parents=True, exist_ok=True)
 with open(output_path, 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\nResults saved to {output_path}")

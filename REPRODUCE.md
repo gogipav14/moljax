@@ -258,13 +258,20 @@ The SISC resubmission includes 14 additional benchmarks for comprehensive covera
 ### Running the Full SISC Suite
 
 ```bash
-cd benchmarks
+cd benchmarks/sisc
 
-# Run all SISC benchmarks (30-60 minutes)
-./run_sisc_suite.sh
+./run_sisc_suite.sh                 # every script, 30-60 minutes on the GPU
+./run_sisc_suite.sh --quick         # E1, E4 and E9 only
+./run_sisc_suite.sh --backend any   # on CPU, or whatever backend JAX has
+```
 
-# Or run quick subset for testing
-./run_sisc_suite.sh --quick
+The runner puts `benchmarks/` on `PYTHONPATH` (the scripts import
+`benchmark_utils` from there) and writes to `benchmarks/results/sisc/`.
+To run one script by hand, do the same:
+
+```bash
+cd benchmarks/sisc
+PYTHONPATH=.. python bench_precond_variants.py --backend any
 ```
 
 ### SISC Benchmark Descriptions
@@ -307,7 +314,10 @@ cd benchmarks
 
 ### SISC Output Files
 
-Results saved to `benchmarks/results/`:
+A run writes `benchmarks/results/sisc/<name>.json`. The copies committed
+with the repository are the flat `benchmarks/results/<name>.json` files;
+a run does not overwrite them.
+
 - `iter_vs_grid.json` - Grid scaling data
 - `iter_vs_dim.json` - Dimensional comparison
 - `newton_policy_ablation.json` - Failure handling
@@ -320,8 +330,9 @@ Results saved to `benchmarks/results/`:
 - `gpu_memory_scaling.json` - Memory analysis
 - `3d_feasibility.json` - 3D capability limits
 - `imex_vs_fullimplicit_map.json` - Method regime map
+- `reaction_dominant.json` - Reaction-dominant regime
 
-Figures saved to `figures/fig_*.pdf`.
+Figures are saved to `benchmarks/figures/fig_*.pdf`.
 
 ## Contact
 
