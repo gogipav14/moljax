@@ -7,6 +7,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
+from moljax.laplace.nilt_fft import nilt_fft_uniform
 from moljax.laplace.spectral_smoothing import (
     SmoothingMethod,
     apply_spectral_smoothing,
@@ -133,6 +134,39 @@ class TestApplySmoothing:
 class TestNILTWithSmoothing:
     """Test NILT integration with smoothing."""
 
+    def test_smoothing_none_matches_uniform(self):
+        """With no smoothing the wrapper is nilt_fft_uniform: same grid, same scaling, same numbers."""
+        def F_exp(s):
+            return 1.0 / (s + 1.0)
+
+        dt, N, a = 0.01, 256, 1.0
+        smoothed = nilt_with_smoothing(F_exp, dt, N, a, SmoothingMethod.NONE)
+        uniform = nilt_fft_uniform(F_exp, dt=dt, N=N, a=a, dtype=jnp.float64)
+
+        assert smoothed.f.shape == uniform.f.shape
+        assert float(jnp.max(jnp.abs(smoothed.t - uniform.t))) == 0.0
+        # The wrapper used to sample omega_k = k pi/T for k = 0..N-1, a
+        # one-sided grid running to twice the Nyquist frequency, and scale by
+        # 1/(2T) instead of N/(2T); it was off by a factor of about N.
+        assert float(jnp.max(jnp.abs(smoothed.f - uniform.f))) < 1e-12
+        assert float(jnp.abs(smoothed.f[N // 4] - jnp.exp(-smoothed.t[N // 4]))) < 5e-3
+
+    def test_lanczos_step_late_region(self):
+        """Lanczos smoothing of the unit step keeps the late region near 1 and below the unsmoothed ringing."""
+        dt, N, a = 0.05, 256, 0.5
+        result_none = nilt_with_smoothing(step_F, dt, N, a, SmoothingMethod.NONE)
+        result_lanczos = nilt_with_smoothing(step_F, dt, N, a, SmoothingMethod.LANCZOS)
+
+        late = slice(N // 4, N // 2)
+        mean_lanczos = float(jnp.mean(result_lanczos.f[late]))
+        max_dev_none = float(jnp.max(jnp.abs(result_none.f[late] - 1.0)))
+        max_dev_lanczos = float(jnp.max(jnp.abs(result_lanczos.f[late] - 1.0)))
+
+        # Measured: mean 1.0018, deviations 1.8e-3 smoothed against 1.2e-2 unsmoothed.
+        assert abs(mean_lanczos - 1.0) < 0.05, f"late-region mean {mean_lanczos}"
+        assert max_dev_lanczos < max_dev_none, (max_dev_lanczos, max_dev_none)
+        assert max_dev_lanczos < 5e-3
+
     def test_smooth_function_minimal_effect(self):
         """Smoothing has minimal effect on smooth functions."""
         # Exponential decay: smooth, no Gibbs artifacts expected
@@ -146,9 +180,22 @@ class TestNILTWithSmoothing:
         result_none = nilt_with_smoothing(F_exp, dt, N, a, SmoothingMethod.NONE)
         result_lanczos = nilt_with_smoothing(F_exp, dt, N, a, SmoothingMethod.LANCZOS)
 
-        # Results should be similar for smooth functions
-        diff = jnp.linalg.norm(result_none.f - result_lanczos.f)
-        assert diff < 0.1  # Small difference
+        # The two differ where the periodic extension jumps, at t near 0 and
+        # near 2T (the far end amplified by e^{at}). On the middle half of
+        # the period the sigma-factors only trim the 1/omega tail of F, so the
+        # results agree to about 1% and the smoothed one sits closer to
+        # exp(-t). The previous whole-grid L2 bound of 0.1 held only because
+        # both outputs were N times too small.
+        T = result_none.T
+        middle = (result_none.t >= 0.4 * T) & (result_none.t <= 1.6 * T)
+        rel_diff = float(jnp.linalg.norm(result_none.f[middle] - result_lanczos.f[middle])
+                         / jnp.linalg.norm(result_none.f[middle]))
+        assert rel_diff < 5e-2, rel_diff
+
+        exact = jnp.exp(-result_none.t[middle])
+        dev_none = float(jnp.max(jnp.abs(result_none.f[middle] - exact)))
+        dev_lanczos = float(jnp.max(jnp.abs(result_lanczos.f[middle] - exact)))
+        assert dev_lanczos <= dev_none, (dev_lanczos, dev_none)
 
     def test_step_function_smoothing_helps(self):
         """Smoothing reduces ringing for step function."""

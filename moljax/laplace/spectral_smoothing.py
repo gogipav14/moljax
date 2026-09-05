@@ -317,8 +317,18 @@ def nilt_with_smoothing(
     """
     NILT with spectral smoothing for Gibbs artifact reduction.
 
-    This is a wrapper around the standard NILT that applies σ-factor
-    windowing before the IFFT to reduce ringing artifacts.
+    This is nilt_fft_uniform with σ-factors applied to the sampled spectrum
+    before the ifft: F is evaluated on the half grid ω_k = kπ/T, k = 0..N/2,
+    multiplied by the first N//2 + 1 σ-factors (the σ functions are defined
+    on the wrapped index min(k, N-k), so their first half is the half-grid
+    window), and inverted through the same Hermitian mirroring and N/(2T)
+    scaling as the uniform routine. With SmoothingMethod.NONE the output
+    equals nilt_fft_uniform to rounding.
+
+    Earlier versions evaluated F on ω_k = kπ/T for k = 0..N-1, a one-sided
+    grid whose upper half lies beyond the Nyquist frequency the ifft can
+    represent, and scaled by 1/(2T) instead of N/(2T); the result was off by
+    a factor of about N and the unit step came out near 1/N.
 
     Args:
         F_eval: Laplace domain function F(s)
@@ -332,37 +342,41 @@ def nilt_with_smoothing(
         **smoothing_kwargs: Method-specific smoothing parameters
 
     Returns:
-        NILTResult or (NILTResult, dict) if return_diagnostics=True
+        NILTResult or (NILTResult, dict) if return_diagnostics=True. The
+        SmoothingResult in the diagnostics holds the half-grid spectrum and
+        the N//2 + 1 σ-factors that were applied.
     """
-    from .nilt_fft import NILTResult
+    from .nilt_fft import NILTResult, _nilt_from_half_spectrum
 
     T = N * dt / 2  # Period T = N*dt/2
     t_end_actual = t_end if t_end is not None else 2 * T
 
-    # Create time grid
-    t = jnp.linspace(0, 2 * T, N, endpoint=False, dtype=dtype)
-    valid_mask = t <= t_end_actual
-    n_valid = int(jnp.sum(valid_mask))
+    # Time grid, as in nilt_fft_uniform
+    t = jnp.arange(N, dtype=dtype) * dt
+    n_valid = int(jnp.sum(t <= t_end_actual))
 
-    # Create frequency grid: ω_k = k·Δω where Δω = π/T
-    delta_omega = jnp.pi / T
-    k = jnp.arange(N, dtype=dtype)
-    omega = k * delta_omega
-
-    # Evaluate F(s) at s = a + i·ω_k
+    # Half frequency grid: ω_k = k·Δω, k = 0..N/2, Δω = π/T
+    n_pos = N // 2 + 1
+    omega = jnp.arange(n_pos, dtype=dtype) * (jnp.pi / T)
     s = a + 1j * omega
-    F_vals = F_eval(s).astype(jnp.complex128 if dtype == jnp.float64 else jnp.complex64)
+    F_pos = F_eval(s).astype(jnp.complex128 if dtype == jnp.float64 else jnp.complex64)
 
-    # Apply spectral smoothing
-    smoothing_result = apply_spectral_smoothing(F_vals, smoothing, **smoothing_kwargs)
-    F_smoothed = smoothing_result.F_smoothed
+    # σ-factors for the full wrapped spectrum, of which the half grid is the first half
+    sigma = get_sigma_factors(N, smoothing, dtype, **smoothing_kwargs)[:n_pos]
+    F_smoothed = F_pos * sigma
 
-    # Apply exponential shift: multiply by exp(a·t_k) after IFFT
-    # First do IFFT
-    f_shifted = jnp.fft.ifft(F_smoothed)
+    energy_original = jnp.sum(jnp.abs(F_pos) ** 2)
+    energy_smoothed = jnp.sum(jnp.abs(F_smoothed) ** 2)
+    if isinstance(smoothing, str):
+        smoothing = SmoothingMethod(smoothing.lower())
+    smoothing_result = SmoothingResult(
+        F_smoothed=F_smoothed,
+        sigma_factors=sigma,
+        method=smoothing.value,
+        bandwidth_retention=float(energy_smoothed / (energy_original + 1e-30)),
+    )
 
-    # Scale and shift
-    f_values = jnp.real(f_shifted) * (delta_omega / jnp.pi) * jnp.exp(a * t)
+    f_values = _nilt_from_half_spectrum(F_smoothed, N, dt, a)
 
     # Create result
     result = NILTResult(

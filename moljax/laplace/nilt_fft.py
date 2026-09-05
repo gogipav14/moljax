@@ -368,6 +368,23 @@ def _hermitian_full_spectrum(F_pos: jnp.ndarray, N: int) -> jnp.ndarray:
     return jnp.concatenate([F_pos, mirror], axis=-1)
 
 
+def _nilt_from_half_spectrum(F_pos: jnp.ndarray, N: int, dt: float, a: float) -> jnp.ndarray:
+    """
+    Real inverse f(t_j), t_j = j dt, from half-spectrum samples
+    F(a + i k pi/T), k = 0..N//2, on the last axis (T = N dt / 2).
+
+    This is the inversion nilt_fft_uniform performs once it has the samples:
+    mirror into the Hermitian spectrum, ifft, take the real part and scale by
+    exp(a t) N/(2T), which is (N Δω)/(2π) for the two-sided integral. It is
+    shared so that variants which modify the samples (windowing, batching)
+    cannot drift from the uniform grid convention.
+    """
+    T = N * dt / 2.0
+    t = jnp.arange(N, dtype=F_pos.real.dtype) * dt
+    F_full = _hermitian_full_spectrum(F_pos, N)
+    return jnp.real(jnp.fft.ifft(F_full, axis=-1)) * jnp.exp(a * t) * N / (2.0 * T)
+
+
 def _check_overflow(a: float, t: jnp.ndarray, dtype) -> None:
     """
     Raise before exp(a t) overflows on the time grid.
@@ -1161,16 +1178,10 @@ def nilt_fft_batch(
     if F_vals.ndim == 1:
         F_vals = F_vals[None, :]  # Add batch dimension
 
-    F_full = _hermitian_full_spectrum(F_vals, N)
-
-    # IFFT along last axis
-    f_shifted = jnp.fft.ifft(F_full, axis=-1)
-
     t = jnp.arange(N, dtype=dtype) * dt
     _check_overflow(a, t, dtype)
 
-    # Same scaling as nilt_fft_uniform: N / (2T) = (N Δω) / (2π)
-    f = jnp.real(f_shifted) * jnp.exp(a * t) * N / (2.0 * T)
+    f = _nilt_from_half_spectrum(F_vals, N, dt, a)
 
     return NILTResult(
         t=t,
