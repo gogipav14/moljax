@@ -320,6 +320,51 @@ def apply_hermitian_projection(F_vals: jnp.ndarray) -> jnp.ndarray:
     return F_proj
 
 
+def _hermitian_full_spectrum(F_pos: jnp.ndarray, N: int) -> jnp.ndarray:
+    """
+    Mirror the half-spectrum samples k = 0..N//2 (last axis) into the
+    length-N spectrum of a real signal, F[N-k] = conj(F[k]).
+
+    The DC bin and, for even N, the Nyquist bin are forced real: the transform
+    of a real f is real there, and an imaginary residue in either bin would
+    leak into the imaginary part of the ifft, which the real part discards
+    without notice.
+    """
+    F_pos = F_pos.at[..., 0].set(jnp.real(F_pos[..., 0]) + 0j)
+    if N % 2 == 0:
+        F_pos = F_pos.at[..., N // 2].set(jnp.real(F_pos[..., N // 2]) + 0j)
+        mirror = jnp.conj(F_pos[..., N // 2 - 1:0:-1])
+    else:
+        mirror = jnp.conj(F_pos[..., -1:0:-1])
+    return jnp.concatenate([F_pos, mirror], axis=-1)
+
+
+def _check_overflow(a: float, t: jnp.ndarray, dtype) -> None:
+    """
+    Raise before exp(a t) overflows on the time grid.
+
+    The thresholds are log(maxfloat) - 10 for the declared dtype, the same
+    budget the autotuner uses, so a tuned parameter set never trips this.
+    """
+    if a <= 0:
+        return
+    t_max = float(t[-1])
+    max_exponent = a * t_max
+
+    if dtype == jnp.float32 or str(dtype) == 'float32':
+        safe_threshold = 78.7  # log(maxfloat32) - 10
+    else:
+        safe_threshold = 699.8  # log(maxfloat64) - 10
+
+    if max_exponent > safe_threshold:
+        raise ValueError(
+            f"NILT overflow risk: a*t_max = {max_exponent:.2f} > {safe_threshold:.1f}.\n"
+            f"  Parameters: a={a:.2e}, t_max={t_max:.2f}, dtype={dtype}\n"
+            f"  This should not occur if autotuner was used. "
+            f"Use tune_nilt_params() to compute safe parameters."
+        )
+
+
 # =============================================================================
 # Core NILT implementation
 # =============================================================================
@@ -395,25 +440,8 @@ def nilt_fft_uniform(
     # Evaluate F only on positive frequencies (half as many calls!)
     F_pos = F_eval(s_pos)
 
-    # Enforce DC and Nyquist components are real
-    F_pos = F_pos.at[0].set(jnp.real(F_pos[0]) + 0j)
-    if N % 2 == 0:
-        F_pos = F_pos.at[N // 2].set(jnp.real(F_pos[N // 2]) + 0j)
-
-    # Build full Hermitian spectrum by explicit conjugate mirroring
-    # For k > N/2: F[N-k] = conj(F[k])
-    if N % 2 == 0:
-        # Even N: DC, k=1..N/2-1, Nyquist, conj(N/2-1)..conj(1)
-        F_vals = jnp.concatenate([
-            F_pos,                                  # k=0..N/2
-            jnp.conj(F_pos[N//2-1:0:-1])           # k=N/2+1..N-1 (mirror)
-        ])
-    else:
-        # Odd N: DC, k=1..(N-1)/2, conj((N-1)/2)..conj(1)
-        F_vals = jnp.concatenate([
-            F_pos,                                  # k=0..(N-1)/2
-            jnp.conj(F_pos[-1:0:-1])               # k=(N+1)/2..N-1 (mirror)
-        ])
+    # Full Hermitian spectrum: DC and Nyquist forced real, F[N-k] = conj(F[k])
+    F_vals = _hermitian_full_spectrum(F_pos, N)
 
     # Determine projection threshold (dtype-dependent defaults)
     # Use ε_Im (imaginary leakage) as primary gate - method-aligned metric
@@ -510,23 +538,7 @@ def nilt_fft_uniform(
         diagnostics['projection_applied'] = projection_applied
 
     # Runtime overflow failsafe (should never trigger if autotuner used correctly)
-    if a > 0:
-        t_max = float(t[-1])
-        max_exponent = a * t_max
-
-        # Conservative thresholds matching autotuner
-        if dtype == jnp.float32 or str(dtype) == 'float32':
-            safe_threshold = 78.7  # log(maxfloat32) - 10
-        else:
-            safe_threshold = 699.8  # log(maxfloat64) - 10
-
-        if max_exponent > safe_threshold:
-            raise ValueError(
-                f"NILT overflow risk: a*t_max = {max_exponent:.2f} > {safe_threshold:.1f}.\n"
-                f"  Parameters: a={a:.2e}, t_max={t_max:.2f}, dtype={dtype}\n"
-                f"  This should not occur if autotuner was used. "
-                f"Use tune_nilt_params() to compute safe parameters."
-            )
+    _check_overflow(a, t, dtype)
 
     # Scaling for signed frequency grid (two-sided integral):
     # f(t) = (e^{at}/2π) ∫_{-∞}^{∞} F(a+iω) e^{iωt} dω
@@ -610,27 +622,8 @@ def nilt_fft_halfstep(
     # Apply phase shift to positive half
     F_shifted_pos = F_pos * phase_pos
 
-    # Enforce DC and Nyquist components are real
-    F_shifted_pos = F_shifted_pos.at[0].set(jnp.real(F_shifted_pos[0]) + 0j)
-    if N % 2 == 0:
-        F_shifted_pos = F_shifted_pos.at[N // 2].set(jnp.real(F_shifted_pos[N // 2]) + 0j)
-
-    # Build full Hermitian spectrum by explicit conjugate mirroring
-    # For k > N/2: F[N-k] = conj(F[k])
-    # Positive half: k=0..N/2 (already have)
-    # Negative half: k=N/2+1..N-1 → mirror from k=N/2-1..1
-    if N % 2 == 0:
-        # Even N: DC, k=1..N/2-1, Nyquist, conj(N/2-1)..conj(1)
-        F_shifted = jnp.concatenate([
-            F_shifted_pos,                           # k=0..N/2
-            jnp.conj(F_shifted_pos[N//2-1:0:-1])    # k=N/2+1..N-1 (mirror)
-        ])
-    else:
-        # Odd N: DC, k=1..(N-1)/2, conj((N-1)/2)..conj(1)
-        F_shifted = jnp.concatenate([
-            F_shifted_pos,                           # k=0..(N-1)/2
-            jnp.conj(F_shifted_pos[-1:0:-1])        # k=(N+1)/2..N-1 (mirror)
-        ])
+    # Full Hermitian spectrum: DC and Nyquist forced real, F[N-k] = conj(F[k])
+    F_shifted = _hermitian_full_spectrum(F_shifted_pos, N)
 
     # IFFT
     ifft_result = jnp.fft.ifft(F_shifted)
@@ -943,22 +936,7 @@ def nilt_fft_signed_omega(
     ifft_result = jnp.fft.ifft(F_vals)
 
     # Runtime overflow failsafe
-    if a > 0:
-        t_max = float(t[-1])
-        max_exponent = a * t_max
-
-        if dtype == jnp.float32 or str(dtype) == 'float32':
-            safe_threshold = 78.7
-        else:
-            safe_threshold = 699.8
-
-        if max_exponent > safe_threshold:
-            raise ValueError(
-                f"NILT overflow risk: a*t_max = {max_exponent:.2f} > {safe_threshold:.1f}.\n"
-                f"  Parameters: a={a:.2e}, t_max={t_max:.2f}, dtype={dtype}\n"
-                f"  This should not occur if autotuner was used. "
-                f"Use tune_nilt_params() to compute safe parameters."
-            )
+    _check_overflow(a, t, dtype)
 
     # Scaling for signed grid: Need to match two-sided integral formula
     # For two-sided integral: f(t) = (e^{at}/2π) ∫_{-∞}^{∞} F(a+iω) e^{iωt} dω
@@ -1115,7 +1093,10 @@ def nilt_fft_batch(
     """
     Batched NILT for multiple related transforms.
 
-    Useful when F_eval returns a batch of transform values.
+    Each row of F_eval's output is the transform of a real function and is
+    inverted exactly as nilt_fft_uniform inverts a single transform: the
+    half spectrum k = 0..N//2 is mirrored into a Hermitian spectrum with the
+    DC and Nyquist bins forced real, then one ifft along the last axis.
 
     Args:
         F_eval: Function F(s) returning shape (n_batch, N//2+1) complex array
@@ -1129,10 +1110,9 @@ def nilt_fft_batch(
         NILTResult with f having shape (n_batch, N)
     """
     T = N * dt / 2.0
-    omega_0 = jnp.pi / T
 
     k = jnp.arange(N // 2 + 1, dtype=dtype)
-    s = a + 1j * k * omega_0
+    s = a + 1j * k * (jnp.pi / T)
 
     # F_vals shape: (n_batch, N//2+1)
     F_vals = F_eval(s)
@@ -1140,19 +1120,16 @@ def nilt_fft_batch(
     if F_vals.ndim == 1:
         F_vals = F_vals[None, :]  # Add batch dimension
 
-    # Build full spectrum using symmetry
-    F_full = jnp.concatenate([
-        F_vals,
-        jnp.conj(F_vals[:, -2:0:-1])
-    ], axis=-1)
+    F_full = _hermitian_full_spectrum(F_vals, N)
 
     # IFFT along last axis
     f_shifted = jnp.fft.ifft(F_full, axis=-1)
 
     t = jnp.arange(N, dtype=dtype) * dt
-    exp_at = jnp.exp(a * t)
+    _check_overflow(a, t, dtype)
 
-    f = jnp.real(f_shifted) * exp_at * (N / 2.0) * omega_0 / jnp.pi
+    # Same scaling as nilt_fft_uniform: N / (2T) = (N Δω) / (2π)
+    f = jnp.real(f_shifted) * jnp.exp(a * t) * N / (2.0 * T)
 
     return NILTResult(
         t=t,

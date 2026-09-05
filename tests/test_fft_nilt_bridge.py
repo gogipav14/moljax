@@ -172,9 +172,53 @@ class TestNILTAccuracy:
         result = nilt_solve_linear_pde(eigenvalues, u0, t_end)
         u_nilt = result['u_final']
 
-        # Check accuracy
+        # Against the continuous solution the residual is the second-order
+        # operator's discretization error (2e-5 on 256 points), which the
+        # closed form e^{lambda t} u0_hat shares exactly.
         rel_error = float(jnp.linalg.norm(u_nilt - u_exact) / jnp.linalg.norm(u_exact))
         assert rel_error < 1e-4, f"NILT error {rel_error:.2e} exceeds 1e-4 threshold"
+
+        # Against the closed form of the same discrete operator the inversion
+        # itself is measured: about 3e-9 at the tuned parameters. u_final must
+        # also be the NILT's own number. The bridge used to return the closed
+        # form under both keys, which made this test pass without any inversion
+        # taking place; a numerical inversion differs from the closed form by
+        # rounding at least.
+        rel_diff = float(jnp.linalg.norm(u_nilt - result['u_analytical']) / jnp.linalg.norm(u_exact))
+        assert rel_diff > 1e-12, "u_final is a copy of the closed form, not an inversion"
+        assert rel_diff < 1e-6, f"NILT deviates from the closed form by {rel_diff:.2e}"
+
+        # t_final is the grid time the NILT value was read at, and the tuned
+        # grid (2T = 4 t_end = N dt) contains t_end exactly.
+        t_grid = result['nilt_result'].t
+        assert float(jnp.min(jnp.abs(t_grid - result['t_final']))) == 0.0
+        assert abs(result['t_final'] - t_end) < 1e-12
+
+    def test_nilt_source_term_matches_closed_form(self, grid_256):
+        """Every mode with a constant source: U_k = (u0_k + f_k/s)/(s - lambda_k)."""
+        D = 0.01
+        t_end = 1.0
+        op = DiffusionOperator(grid_256, D)
+        eigenvalues = op.eigenvalues
+
+        x = grid_256.x_coords(include_ghost=False)
+        u0 = jnp.sin(2 * jnp.pi * x) + 0.3 * jnp.cos(6 * jnp.pi * x)
+        source = 0.5 * jnp.cos(2 * jnp.pi * x) + 0.2
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, t_end, source=source)
+
+        # Independent closed form: u_hat(t) = e^{lam t} u0_hat + (e^{lam t} - 1)/lam f_hat,
+        # with the lam = 0 (mean) mode growing linearly.
+        lam = eigenvalues
+        z = lam * result['t_final']
+        growth = jnp.where(jnp.abs(z) > 1e-12,
+                           (jnp.exp(z) - 1.0) / jnp.where(jnp.abs(z) > 1e-12, lam, 1.0),
+                           result['t_final'])
+        u_hat = jnp.exp(z) * jnp.fft.fft(u0) + growth * jnp.fft.fft(source)
+        u_exact = jnp.real(jnp.fft.ifft(u_hat))
+
+        rel_error = float(jnp.linalg.norm(result['u_final'] - u_exact) / jnp.linalg.norm(u_exact))
+        assert rel_error < 1e-6, f"NILT error with source {rel_error:.2e}"
 
     def test_nilt_vs_timestepping_agreement(self, grid_128):
         """NILT and time-stepping should agree for linear PDE."""
@@ -198,6 +242,10 @@ class TestNILTAccuracy:
         # Both should achieve good accuracy
         assert comparison.nilt_error < 1e-3, f"NILT error {comparison.nilt_error:.2e}"
         assert comparison.tss_error < 1e-3, f"TSS error {comparison.tss_error:.2e}"
+
+        # etd_integrate floors (t_end - t0)/dt; the report must count the steps
+        # actually taken, not the ceiling.
+        assert comparison.tss_steps == int(t_end / comparison.tss_dt)
 
 
 # =============================================================================

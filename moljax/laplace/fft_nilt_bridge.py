@@ -29,7 +29,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from moljax.laplace.nilt_fft import nilt_fft_uniform
+from moljax.laplace.nilt_fft import nilt_fft_batch
 from moljax.laplace.spectral_bounds import SpectralBounds
 from moljax.laplace.tuning import TunedNILTParams, tune_nilt_params
 
@@ -221,107 +221,140 @@ def nilt_solve_linear_pde(
     dtype=jnp.float64,
 ) -> dict:
     """
-    Solve linear PDE using NILT with FFT-diagonalizable operator.
+    Solve u_t = L*u + f(x), u(0) = u0, by inverting the Laplace transform
+    of every Fourier mode numerically.
 
-    For: u_t = L*u + f(x),  u(0) = u0
+    In Fourier space the PDE decouples into scalar transforms
+    U_k(s) = (u0_k + f_k/s) / (s - λ_k), one per wavenumber, and all of them
+    are inverted in one nilt_fft_batch call. The closed form
+    u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k is returned alongside as
+    ``u_analytical`` so the two can be compared; it is not what ``u_final``
+    reports.
 
-    where L has known FFT eigenvalues λ(k).
+    Two details make the inversion accurate to the tuner's design tolerance
+    instead of first order in dt:
+
+    - The t = 0 jump is removed analytically. The uniform-grid inversion
+      samples the periodic extension at the jump between u_k(0+) and
+      u_k(2T-), where the Fourier partial sums converge to the midpoint, and
+      the ringing this leaves is multiplied by e^{a t} (about 100 at the
+      tuned shift). Inverting G_k(s) = U_k(s) - u0_k/(s + c) with
+      c = 1/t_end, whose inverse vanishes at t = 0, and adding u0_k e^{-c t}
+      back afterwards, removes the jump.
+    - Complex modes are inverted as two real transforms. For real u,
+      u_{-k}(t) = conj(u_k(t)), so P_k = (U_k + U_{-k})/2 and
+      Q_k = (U_k - U_{-k})/(2i) are the transforms of the real functions
+      Re u_k(t) and Im u_k(t), and the real-valued NILT (which enforces
+      Hermitian symmetry of the sampled spectrum) applies to each. Inverting
+      Re U_k(s) alone is wrong by O(1).
 
     Args:
-        eigenvalues: FFT eigenvalues λ(k)
+        eigenvalues: FFT eigenvalues λ(k), FFT ordering
         u0: Initial condition (real space, interior only)
         t_end: End time
-        source: Optional constant source term
-        nilt_params: Pre-tuned NILT parameters (auto-tuned if None)
-        return_full_history: If True, return solution at all NILT time points
+        source: Optional constant source term f(x)
+        nilt_params: Pre-tuned NILT parameters (auto-tuned if None). The
+            Bromwich shift must exceed max Re λ, and must be positive when a
+            source is given (f_k/s adds a pole at the origin).
+        return_full_history: If True, also return u on every NILT grid time
         dtype: Output data type
 
     Returns:
         Dict with:
-            - u_final: Solution at t_end
-            - t_final: Actual final time from NILT grid
-            - nilt_result: Full NILTResult
+            - u_final: NILT solution at t_final
+            - t_final: The NILT grid time nearest t_end (the tuned grid,
+              2T = 4 t_end = N dt, contains t_end exactly)
+            - u_analytical: Closed form e^{λ t} u0 + t φ₁(λ t) f at t_final
+            - nilt_dc: NILT value of the k = 0 mode at t_final
+            - nilt_result: The batch NILTResult (rows: Re u_k then Im u_k,
+              k = 0..n//2, before the jump term is added back)
             - params: NILT parameters used
+            - t_history, u_history: if return_full_history, the NILT grid
+              and the solution on it, shape (N, n)
     """
-    # FFT of initial condition and source
-    u0_hat = jnp.fft.fft(u0)
-    source_hat = jnp.fft.fft(source) if source is not None else None
+    eigenvalues = jnp.asarray(eigenvalues)
+    n_modes = eigenvalues.shape[0]
+    u0_hat = jnp.fft.fft(jnp.asarray(u0))
+    source_hat = jnp.fft.fft(jnp.asarray(source)) if source is not None else None
 
-    # Auto-tune if parameters not provided
     if nilt_params is None:
-        nilt_params = tune_nilt_for_fft_operator(
-            eigenvalues, t_end, dtype=dtype
+        nilt_params = tune_nilt_for_fft_operator(eigenvalues, t_end, dtype=dtype)
+
+    a = nilt_params.a
+    re_max = float(jnp.max(jnp.real(eigenvalues)))
+    if a <= re_max:
+        raise ValueError(
+            f"Bromwich shift a={a:.3e} must exceed the spectral abscissa "
+            f"max Re(lambda)={re_max:.3e}; the contour has to pass to the right "
+            f"of every pole of U_k(s)."
+        )
+    if source_hat is not None and a <= 0.0:
+        raise ValueError(
+            "a constant source adds the pole f_k/s at the origin; the Bromwich "
+            f"shift must be positive, got a={a:.3e}."
         )
 
-    # For the linear PDE, we need to compute u(t) = ifft(U_hat(t))
-    # where U_hat(t) is the inverse Laplace transform
+    c = 1.0 / t_end
+    n_half = n_modes // 2 + 1
+    k_pos = jnp.arange(n_half)
+    k_neg = (-k_pos) % n_modes
 
-    # The transfer function for each wavenumber k is:
-    #   U_hat_k(s) = u0_hat_k / (s - λ_k)  (for zero source)
-    #   U_hat_k(s) = (u0_hat_k + source_hat_k/s) / (s - λ_k)  (with source)
-
-    # The inverse Laplace transform of 1/(s - λ) is exp(λ*t)
-    # So: u_hat_k(t) = u0_hat_k * exp(λ_k * t)
-
-    # For constant source f: L^{-1}[f_hat/s / (s-λ)] = f_hat/λ * (exp(λt) - 1)
-
-    # Direct analytical solution (exact for linear PDEs):
-    def u_at_time(t: float) -> jnp.ndarray:
-        """Compute u(t) analytically using exponential."""
-        exp_lam_t = jnp.exp(eigenvalues * t)
-
+    def transfer_pairs(s: jnp.ndarray) -> jnp.ndarray:
+        """P_k rows then Q_k rows of G_k(s) = U_k(s) - u0_k/(s + c), shape (2 n_half, len(s))."""
+        s = s[None, :]
+        numerator = u0_hat[:, None]
         if source_hat is not None:
-            # u_hat(t) = exp(λt)*u0_hat + (exp(λt) - 1)/λ * source_hat
-            # Use stable φ₁(z) = (exp(z) - 1) / z for z = λt
-            z = eigenvalues * t
-            phi1 = jnp.where(
-                jnp.abs(z) > 1e-10,
-                (exp_lam_t - 1.0) / z,
-                1.0 + z / 2 + z**2 / 6  # Taylor expansion
-            )
-            u_hat_t = exp_lam_t * u0_hat + t * phi1 * source_hat
-        else:
-            u_hat_t = exp_lam_t * u0_hat
+            numerator = numerator + source_hat[:, None] / s
+        G = numerator / (s - eigenvalues[:, None]) - u0_hat[:, None] / (s + c)
+        P = 0.5 * (G[k_pos] + G[k_neg])
+        Q = -0.5j * (G[k_pos] - G[k_neg])
+        return jnp.concatenate([P, Q], axis=0)
 
-        return jnp.real(jnp.fft.ifft(u_hat_t))
-
-    # Compute solution at t_end
-    u_final = u_at_time(t_end)
-
-    # Also compute via NILT for comparison (using DC component as scalar)
-    # Create transfer function for DC mode
-    transfer_fn = create_transfer_function_from_fft_operator(
-        eigenvalues, u0_hat, source_hat
-    )
-
-    nilt_result = nilt_fft_uniform(
-        transfer_fn,
+    batch = nilt_fft_batch(
+        transfer_pairs,
         dt=nilt_params.dt,
         N=nilt_params.N,
-        a=nilt_params.a,
+        a=a,
+        n_batch=2 * n_half,
         dtype=dtype,
-        return_diagnostics=True,
-        t_end=t_end,
     )
 
-    # Find closest time to t_end
-    t_idx = jnp.argmin(jnp.abs(nilt_result.t - t_end))
+    # Reassemble u_k(t) = Re + i Im, adding back the jump term u0_k e^{-c t}.
+    decay = jnp.exp(-c * batch.t)
+    u_hat_pos = batch.f[:n_half] + 1j * batch.f[n_half:] + u0_hat[k_pos][:, None] * decay[None, :]
+
+    t_idx = int(jnp.argmin(jnp.abs(batch.t - t_end)))
+    t_final = float(batch.t[t_idx])
+    # irfft rebuilds u_{-k} = conj(u_k) and returns the real field.
+    u_final = jnp.fft.irfft(u_hat_pos[:, t_idx], n=n_modes).astype(dtype)
+
+    def closed_form(t: float) -> jnp.ndarray:
+        """u(t) = ifft(e^{λt} u0_hat + t φ₁(λt) f_hat), φ₁(z) = (e^z - 1)/z."""
+        z = eigenvalues * t
+        exp_z = jnp.exp(z)
+        u_hat_t = exp_z * u0_hat
+        if source_hat is not None:
+            small = jnp.abs(z) < 1e-10
+            phi1 = jnp.where(
+                small,
+                1.0 + z / 2 + z**2 / 6,
+                (exp_z - 1.0) / jnp.where(small, 1.0, z),
+            )
+            u_hat_t = u_hat_t + t * phi1 * source_hat
+        return jnp.real(jnp.fft.ifft(u_hat_t))
 
     result = {
         'u_final': u_final,
-        't_final': t_end,
-        'u_analytical': u_final,  # Same for linear PDE
-        'nilt_dc': nilt_result.f[t_idx],  # DC component from NILT
-        'nilt_result': nilt_result,
+        't_final': t_final,
+        'u_analytical': closed_form(t_final),
+        'nilt_dc': float(jnp.real(u_hat_pos[0, t_idx])),
+        'nilt_result': batch,
         'params': nilt_params,
     }
 
     if return_full_history:
-        # Compute full solution history
-        t_grid = jnp.array(nilt_result.t)
-        u_history = jax.vmap(u_at_time)(t_grid)
-        result['t_history'] = t_grid
-        result['u_history'] = u_history
+        result['t_history'] = batch.t
+        result['u_history'] = jnp.fft.irfft(u_hat_pos, n=n_modes, axis=0).T.astype(dtype)
 
     return result
 
@@ -345,7 +378,7 @@ class NILTvsTSSComparison:
     # Parameters
     nilt_params: TunedNILTParams
     tss_dt: float
-    tss_steps: int
+    tss_steps: int  # Steps actually taken: floor(t_end / tss_dt)
     tss_method: str
 
 
@@ -424,8 +457,6 @@ def compare_nilt_vs_timestepping(
         # so we use moderate dt for accuracy
         tss_dt = min(0.1, 0.1 / (rho + 1e-10))
 
-    n_steps = int(jnp.ceil(t_end / tss_dt))
-
     # Create a simple operator wrapper for etd_integrate
     class SimpleOp:
         def __init__(self, eig):
@@ -446,9 +477,10 @@ def compare_nilt_vs_timestepping(
     # step, which for long horizons on fine grids is hundreds of MB that
     # are immediately discarded.
     #
-    # `n_steps` above uses ceil, but etd_integrate floors (t_end - t_start)/dt
-    # internally. save_every must match the number of steps actually taken,
-    # or no sample is ever retained and the "final" state is still u0.
+    # etd_integrate floors (t_end - t_start)/dt internally. save_every must
+    # match the number of steps actually taken, or no sample is ever retained
+    # and the "final" state is still u0; the same count is what the
+    # comparison reports.
     n_steps_taken = int(t_end / tss_dt)
     save_every = max(n_steps_taken, 1)
 
@@ -484,7 +516,7 @@ def compare_nilt_vs_timestepping(
         speedup=tss_time / nilt_time,
         nilt_params=nilt_params,
         tss_dt=tss_dt,
-        tss_steps=n_steps,
+        tss_steps=n_steps_taken,
         tss_method=tss_method,
     )
 
