@@ -116,6 +116,23 @@ def _etdrk4_coefficients(z: jnp.ndarray) -> tuple:
     return E, E2, phi1_z2, phi1_z, b1, b2, b3, b4
 
 
+def _fft_pair(op: FFTLinearOperator, u_field: jnp.ndarray) -> tuple[Callable, Callable]:
+    """Forward and inverse transforms matching the operator's spectral layout.
+
+    The eigenvalues of an operator built with rfft cover the half spectrum
+    (ny, nx//2 + 1), so a field paired with such an operator must go through
+    rfft2/irfft2; the full-spectrum and 1D layouts take the real part of the
+    complex inverse. Every ETD step needs this choice per field, so it is
+    made in one place.
+    """
+    if u_field.ndim == 1:
+        return jnp.fft.fft, lambda x: jnp.real(jnp.fft.ifft(x))
+    if getattr(op, '_is_rfft', False):
+        ny, nx = u_field.shape
+        return jnp.fft.rfft2, lambda x: jnp.fft.irfft2(x, s=(ny, nx))
+    return jnp.fft.fft2, lambda x: jnp.real(jnp.fft.ifft2(x))
+
+
 def etd1_step(
     state: StateDict,
     t: float,
@@ -148,35 +165,17 @@ def etd1_step(
         op = linear_ops.get(name)
 
         if op is not None:
-            lam = op.eigenvalues
-            z = dt * lam
-
-            # Exponential and phi_1 factors
+            z = dt * op.eigenvalues
             exp_z = jnp.exp(z)
             phi1 = _phi1(z)
 
-            # FFT of current state and nonlinear term
-            is_rfft = getattr(op, '_is_rfft', False)
-            if u_field.ndim == 1:
-                u_hat = jnp.fft.fft(u_field)
-                N_hat = jnp.fft.fft(N_state[name])
+            fft_func, ifft_func = _fft_pair(op, u_field)
+            u_hat = fft_func(u_field)
+            N_hat = fft_func(N_state[name])
 
-                # ETD1 update in Fourier space
-                u_new_hat = exp_z * u_hat + dt * phi1 * N_hat
-                result[name] = jnp.real(jnp.fft.ifft(u_new_hat))
-            elif is_rfft:
-                ny, nx = u_field.shape
-                u_hat = jnp.fft.rfft2(u_field)
-                N_hat = jnp.fft.rfft2(N_state[name])
-
-                u_new_hat = exp_z * u_hat + dt * phi1 * N_hat
-                result[name] = jnp.fft.irfft2(u_new_hat, s=(ny, nx))
-            else:
-                u_hat = jnp.fft.fft2(u_field)
-                N_hat = jnp.fft.fft2(N_state[name])
-
-                u_new_hat = exp_z * u_hat + dt * phi1 * N_hat
-                result[name] = jnp.real(jnp.fft.ifft2(u_new_hat))
+            # ETD1 update in Fourier space
+            u_new_hat = exp_z * u_hat + dt * phi1 * N_hat
+            result[name] = ifft_func(u_new_hat)
         else:
             # No linear operator: explicit Euler for nonlinear part
             result[name] = u_field + dt * N_state[name]
@@ -221,51 +220,39 @@ def etd2_step(
         op = linear_ops.get(name)
 
         if op is not None:
-            lam = op.eigenvalues
-            z = dt * lam
-
+            z = dt * op.eigenvalues
             exp_z = jnp.exp(z)
             phi1 = _phi1(z)
             phi2 = _phi2(z)
 
-            N_n = N_curr[name]
-            N_nm1 = N_prev[name]
+            fft_func, ifft_func = _fft_pair(op, u_field)
+            u_hat = fft_func(u_field)
+            N_n_hat = fft_func(N_curr[name])
+            N_nm1_hat = fft_func(N_prev[name])
 
-            is_rfft = getattr(op, '_is_rfft', False)
-            if u_field.ndim == 1:
-                u_hat = jnp.fft.fft(u_field)
-                N_n_hat = jnp.fft.fft(N_n)
-                N_nm1_hat = jnp.fft.fft(N_nm1)
-
-                # ETD2 update
-                u_new_hat = (exp_z * u_hat
-                            + dt * phi1 * N_n_hat
-                            + dt * phi2 * (N_n_hat - N_nm1_hat))
-                result[name] = jnp.real(jnp.fft.ifft(u_new_hat))
-            elif is_rfft:
-                ny, nx = u_field.shape
-                u_hat = jnp.fft.rfft2(u_field)
-                N_n_hat = jnp.fft.rfft2(N_n)
-                N_nm1_hat = jnp.fft.rfft2(N_nm1)
-
-                u_new_hat = (exp_z * u_hat
-                            + dt * phi1 * N_n_hat
-                            + dt * phi2 * (N_n_hat - N_nm1_hat))
-                result[name] = jnp.fft.irfft2(u_new_hat, s=(ny, nx))
-            else:
-                u_hat = jnp.fft.fft2(u_field)
-                N_n_hat = jnp.fft.fft2(N_n)
-                N_nm1_hat = jnp.fft.fft2(N_nm1)
-
-                u_new_hat = (exp_z * u_hat
-                            + dt * phi1 * N_n_hat
-                            + dt * phi2 * (N_n_hat - N_nm1_hat))
-                result[name] = jnp.real(jnp.fft.ifft2(u_new_hat))
+            # ETD2 update
+            u_new_hat = (exp_z * u_hat
+                        + dt * phi1 * N_n_hat
+                        + dt * phi2 * (N_n_hat - N_nm1_hat))
+            result[name] = ifft_func(u_new_hat)
         else:
             # Explicit Adams-Bashforth 2
             result[name] = u_field + dt * (1.5 * N_curr[name] - 0.5 * N_prev[name])
 
     return result, N_curr
+
+
+class _ETDRK4Field(NamedTuple):
+    """Per-field spectral data for one ETDRK4 step: transforms, u_hat, and coefficients."""
+    fft: Callable
+    ifft: Callable
+    u_hat: jnp.ndarray
+    E: jnp.ndarray
+    E2: jnp.ndarray
+    phi1_z2: jnp.ndarray
+    b1: jnp.ndarray
+    b2: jnp.ndarray
+    b4: jnp.ndarray
 
 
 def etdrk4_step(
@@ -288,6 +275,12 @@ def etdrk4_step(
         c = exp(dt*L/2)*a + (dt/2)*φ₁(dt*L/2)*(2*N(b) - N(u_n))
         u_{n+1} = exp(dt*L)*u_n + dt*(b₁*N_n + b₂*(N_a + N_b) + b₄*N_c)
 
+    Each stage is formed for every field before N is evaluated on the full
+    stage state: a reaction term such as Gray-Scott's u v^2 couples the
+    fields, so N(a) needs a for both u and v. Fields without a linear
+    operator take the classical RK4 stages (a = u + dt/2 k1, and so on) in
+    the same sweep, so they too see the coupled stage state.
+
     Args:
         state: Current state
         t: Current time
@@ -298,72 +291,74 @@ def etdrk4_step(
     Returns:
         New state after one ETDRK4 step
     """
-    # Stage 1: N at current state
-    N_n = nonlinear_rhs(state, t)
-
-    result = {}
+    # Spectral data for the fields that have a linear operator; the others
+    # take the RK4 fallback.
+    spectral: dict[str, _ETDRK4Field] = {}
     for name, u_field in state.items():
         op = linear_ops.get(name)
-
         if op is not None:
-            lam = op.eigenvalues
-            z = dt * lam
+            fft_func, ifft_func = _fft_pair(op, u_field)
+            E, E2, phi1_z2, _, b1, b2, _, b4 = _etdrk4_coefficients(dt * op.eigenvalues)
+            spectral[name] = _ETDRK4Field(
+                fft_func, ifft_func, fft_func(u_field), E, E2, phi1_z2, b1, b2, b4
+            )
+    explicit = [name for name in state if name not in spectral]
+    u_hat = {name: f.u_hat for name, f in spectral.items()}
 
-            # Get ETDRK4 coefficients
-            E, E2, phi1_z2, phi1_z, b1, b2, b3, b4 = _etdrk4_coefficients(z)
+    def transform(N_state):
+        return {name: f.fft(N_state[name]) for name, f in spectral.items()}
 
-            is_rfft = getattr(op, '_is_rfft', False)
-            if u_field.ndim == 1:
-                fft_func = jnp.fft.fft
-                def ifft_func(x):
-                    return jnp.real(jnp.fft.ifft(x))
-            elif is_rfft:
-                ny, nx = u_field.shape
-                fft_func = jnp.fft.rfft2
-                def ifft_func(x, ny=ny, nx=nx):
-                    return jnp.fft.irfft2(x, s=(ny, nx))
-            else:
-                fft_func = jnp.fft.fft2
-                def ifft_func(x):
-                    return jnp.real(jnp.fft.ifft2(x))
+    def half_stage(base_hat, N_hat, explicit_stage):
+        """exp(z/2) base + (dt/2) phi1(z/2) N for the ETD fields, joined with the RK4 stages."""
+        stage_hat = {
+            name: f.E2 * base_hat[name] + (dt/2) * f.phi1_z2 * N_hat[name]
+            for name, f in spectral.items()
+        }
+        stage = {
+            name: spectral[name].ifft(stage_hat[name]) if name in spectral else explicit_stage[name]
+            for name in state
+        }
+        return stage_hat, stage
 
-            u_hat = fft_func(u_field)
-            N_n_hat = fft_func(N_n[name])
+    # Stage 1: N at current state
+    N_n = nonlinear_rhs(state, t)
+    N_n_hat = transform(N_n)
 
-            # Stage a: half step
-            a_hat = E2 * u_hat + (dt/2) * phi1_z2 * N_n_hat
-            a_field = ifft_func(a_hat)
+    # Stage a: half step from u_n with N_n (RK4: u + dt/2 k1)
+    a_hat, a_state = half_stage(
+        u_hat, N_n_hat, {name: state[name] + dt/2 * N_n[name] for name in explicit}
+    )
+    N_a = nonlinear_rhs(a_state, t + dt/2)
+    N_a_hat = transform(N_a)
 
-            # Evaluate N(a)
-            N_a = nonlinear_rhs({name: a_field}, t + dt/2)[name]
-            N_a_hat = fft_func(N_a)
+    # Stage b: another half step from u_n with N_a (RK4: u + dt/2 k2)
+    _b_hat, b_state = half_stage(
+        u_hat, N_a_hat, {name: state[name] + dt/2 * N_a[name] for name in explicit}
+    )
+    N_b = nonlinear_rhs(b_state, t + dt/2)
+    N_b_hat = transform(N_b)
 
-            # Stage b: another half step starting from u_n
-            b_hat = E2 * u_hat + (dt/2) * phi1_z2 * N_a_hat
-            b_field = ifft_func(b_hat)
+    # Stage c: half step from a with 2 N_b - N_n (RK4: u + dt k3)
+    _c_hat, c_state = half_stage(
+        a_hat,
+        {name: 2*N_b_hat[name] - N_n_hat[name] for name in spectral},
+        {name: state[name] + dt * N_b[name] for name in explicit}
+    )
+    N_c = nonlinear_rhs(c_state, t + dt)
+    N_c_hat = transform(N_c)
 
-            # Evaluate N(b)
-            N_b = nonlinear_rhs({name: b_field}, t + dt/2)[name]
-            N_b_hat = fft_func(N_b)
-
-            # Stage c: half step from a with modified N
-            c_hat = E2 * a_hat + (dt/2) * phi1_z2 * (2*N_b_hat - N_n_hat)
-            c_field = ifft_func(c_hat)
-
-            # Evaluate N(c)
-            N_c = nonlinear_rhs({name: c_field}, t + dt)[name]
-            N_c_hat = fft_func(N_c)
-
-            # Final combination
-            u_new_hat = E * u_hat + dt * (b1 * N_n_hat + b2 * (N_a_hat + N_b_hat) + b4 * N_c_hat)
-            result[name] = ifft_func(u_new_hat)
+    # Final combination
+    result = {}
+    for name, u_field in state.items():
+        if name in spectral:
+            f = spectral[name]
+            u_new_hat = f.E * f.u_hat + dt * (
+                f.b1 * N_n_hat[name] + f.b2 * (N_a_hat[name] + N_b_hat[name]) + f.b4 * N_c_hat[name]
+            )
+            result[name] = f.ifft(u_new_hat)
         else:
-            # Fallback to classical RK4 for fields without linear operator
-            k1 = N_n[name]
-            k2 = nonlinear_rhs({name: u_field + dt/2 * k1}, t + dt/2)[name]
-            k3 = nonlinear_rhs({name: u_field + dt/2 * k2}, t + dt/2)[name]
-            k4 = nonlinear_rhs({name: u_field + dt * k3}, t + dt)[name]
-            result[name] = u_field + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+            # Classical RK4 with k1 = N_n, k2 = N_a, k3 = N_b, k4 = N_c
+            result[name] = u_field + dt/6 * (N_n[name] + 2*N_a[name] + 2*N_b[name] + N_c[name])
 
     return result
 

@@ -26,6 +26,7 @@ from moljax.core.fft_integrators import (
     diffusion_only_etd1,
     etd1_step,
     etd_integrate,
+    etdrk4_step,
     stacked_fft_solve_shared_op,
 )
 from moljax.core.fft_operators import (
@@ -612,6 +613,48 @@ class TestETDRK4:
         # ETDRK4 should achieve at least order 3.5 in practice
         # (may be limited by spatial discretization at coarse dt)
         assert avg_order > 3.0, f"ETDRK4 order {avg_order:.2f} < 3.0"
+
+    def test_etdrk4_coupled_reaction_two_fields(self, grid_128):
+        """A two-field Gray-Scott step must see both fields at every stage.
+
+        The reaction of each field depends on the other, so the nonlinear
+        term has to be evaluated on the full stage state. The reference is
+        ETD1 with dt/1000, whose first-order error at that step is far
+        below the 1e-6 tolerance.
+        """
+        grid = grid_128
+        x = get_interior_coords(grid)
+        state = {
+            'u': 1.0 + 0.1 * jnp.cos(2 * jnp.pi * x),
+            'v': 0.5 + 0.1 * jnp.sin(2 * jnp.pi * x),
+        }
+        ops = {'u': DiffusionOperator(grid, D=0.02), 'v': DiffusionOperator(grid, D=0.01)}
+
+        def gray_scott(s, t):
+            uv2 = s['u'] * s['v'] ** 2
+            return {'u': -uv2 + 0.04 * (1.0 - s['u']), 'v': uv2 - 0.1 * s['v']}
+
+        dt = 0.01
+        result = etdrk4_step(state, 0.0, dt, ops, gray_scott)
+
+        reference = state
+        n_sub = 1000
+        for i in range(n_sub):
+            reference = etd1_step(reference, i * dt / n_sub, dt / n_sub, ops, gray_scott)
+
+        for name in ('u', 'v'):
+            err = float(jnp.max(jnp.abs(result[name] - reference[name])))
+            assert err < 1e-6, f"field {name}: ETDRK4 vs fine ETD1 differ by {err:.2e}"
+
+        # Fields without a linear operator take the RK4 fallback and must
+        # also see the coupled state.
+        result_rk4 = etdrk4_step(state, 0.0, dt, {}, gray_scott)
+        reference = state
+        for i in range(n_sub):
+            reference = etd1_step(reference, i * dt / n_sub, dt / n_sub, {}, gray_scott)
+        for name in ('u', 'v'):
+            err = float(jnp.max(jnp.abs(result_rk4[name] - reference[name])))
+            assert err < 1e-6, f"field {name}: RK4 fallback vs fine Euler differ by {err:.2e}"
 
 
 # =============================================================================
