@@ -7,21 +7,31 @@ Verifies:
 - Explicit methods blow up at large dt for diffusion
 """
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
+# The fixed-step tests compare a compiled loop with an eager one to 1e-14,
+# which needs float64.
+jax.config.update("jax_enable_x64", True)
+
 from moljax.core.bc import FieldBCSpec
 from moljax.core.dt_policy import CFLParams, PIDParams
-from moljax.core.grid import Grid1D
-from moljax.core.model import MOLModel
+from moljax.core.grid import Grid1D, Grid2D
+from moljax.core.model import MOLModel, create_gray_scott_periodic_fft
+from moljax.core.newton_krylov import NKParams
 from moljax.core.operators import LinearOp
 from moljax.core.stepping import (
     IntegratorType,
     adaptive_integrate,
+    bdf2_step,
     be_step,
     cn_step,
     euler_step,
+    imex_strang_step,
+    integrate_fixed_dt,
+    integrate_imex_fixed_dt,
     rk4_step,
     ssprk3_step,
 )
@@ -314,6 +324,115 @@ class TestAdaptive:
         from moljax.core.utils import StatusCode
         assert int(result.status) == StatusCode.SUCCESS, f"Status: {int(result.status)}"
         assert float(result.t_final) >= 0.1 - 1e-6
+
+
+def gray_scott_off_equilibrium():
+    """Small periodic Gray-Scott model with a Gaussian dip in u and a bump in v.
+
+    The reaction term is nonzero everywhere, so a wrong step count or a
+    skipped step changes the answer visibly.
+    """
+    grid = Grid2D.uniform(8, 8, 0.0, 2.5, 0.0, 2.5)
+    model, fft_cache, diffusivities = create_gray_scott_periodic_fft(grid)
+
+    def bump(X, Y):
+        return jnp.exp(-((X - 1.25) ** 2 + (Y - 1.25) ** 2))
+
+    state = model.create_initial_state(init_fns={
+        'u': lambda X, Y: 1.0 - 0.5 * bump(X, Y),
+        'v': lambda X, Y: 0.25 * bump(X, Y),
+    })
+    return model, fft_cache, diffusivities, state
+
+
+def assert_states_match(actual, expected, tol=1e-14):
+    for name in expected:
+        diff = float(jnp.max(jnp.abs(actual[name] - expected[name])))
+        assert diff < tol, f"field {name}: max difference {diff:.3e}"
+
+
+def assert_history_layout(t_hist, y_hist, y_final, grid, t_end, n_expected):
+    """The history holds one entry per save_every steps, interior only, ending at t_end."""
+    assert t_hist.shape == (n_expected,)
+    assert abs(float(t_hist[-1]) - t_end) < 1e-12
+    sl_y, sl_x = grid.interior_slice
+    for name, field in y_final.items():
+        assert y_hist[name].shape == (n_expected, grid.ny, grid.nx)
+        assert float(jnp.max(jnp.abs(y_hist[name][-1] - field[sl_y, sl_x]))) < 1e-14
+
+
+class TestFixedStep:
+    """integrate_fixed_dt and integrate_imex_fixed_dt take exactly (t_end - t0)/dt steps.
+
+    Each run is compared with the same number of eager single steps. With
+    t_end=0.5, dt=0.05 and save_every=5 the history must hold two entries,
+    at t=0.25 and t=0.5.
+    """
+
+    T_END, DT, SAVE_EVERY, N_STEPS = 0.5, 0.05, 5, 10
+    NK = NKParams(newton_tol=1e-12)
+
+    def test_rk4_matches_manual_loop(self):
+        model, _, _, y0 = gray_scott_off_equilibrium()
+        y = y0
+        for i in range(self.N_STEPS):
+            y = rk4_step(model, y, i * self.DT, self.DT)
+
+        t_hist, y_hist, y_final = integrate_fixed_dt(
+            model, y0, 0.0, self.T_END, self.DT,
+            method=IntegratorType.RK4, save_every=self.SAVE_EVERY
+        )
+        assert_states_match(y_final, y)
+        assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
+        assert abs(float(t_hist[0]) - 0.25) < 1e-12
+
+    def test_be_matches_manual_loop(self):
+        model, _, _, y0 = gray_scott_off_equilibrium()
+        y = y0
+        for i in range(self.N_STEPS):
+            y, _ = be_step(model, y, i * self.DT, self.DT, nk_params=self.NK)
+
+        t_hist, y_hist, y_final = integrate_fixed_dt(
+            model, y0, 0.0, self.T_END, self.DT,
+            method=IntegratorType.BE, save_every=self.SAVE_EVERY, nk_params=self.NK
+        )
+        assert_states_match(y_final, y)
+        assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
+
+    def test_bdf2_matches_manual_loop(self):
+        model, _, _, y0 = gray_scott_off_equilibrium()
+        # BE start, then BDF2 with a constant step.
+        y_prev, y = y0, be_step(model, y0, 0.0, self.DT, nk_params=self.NK)[0]
+        for i in range(1, self.N_STEPS):
+            y_new, _ = bdf2_step(model, y, y_prev, i * self.DT, self.DT, self.DT, nk_params=self.NK)
+            y_prev, y = y, y_new
+
+        t_hist, y_hist, y_final = integrate_fixed_dt(
+            model, y0, 0.0, self.T_END, self.DT,
+            method=IntegratorType.BDF2, save_every=self.SAVE_EVERY, nk_params=self.NK
+        )
+        assert_states_match(y_final, y)
+        assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
+
+    def test_imex_strang_matches_manual_loop(self):
+        model, fft_cache, diffusivities, y0 = gray_scott_off_equilibrium()
+        y = y0
+        for i in range(self.N_STEPS):
+            y = imex_strang_step(model, y, i * self.DT, self.DT, fft_cache, diffusivities)
+
+        t_hist, y_hist, y_final = integrate_imex_fixed_dt(
+            model, y0, 0.0, self.T_END, self.DT, fft_cache, diffusivities,
+            use_strang=True, save_every=self.SAVE_EVERY
+        )
+        assert_states_match(y_final, y)
+        assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
+
+    def test_dt_must_divide_interval(self):
+        model, fft_cache, diffusivities, y0 = gray_scott_off_equilibrium()
+        with pytest.raises(ValueError):
+            integrate_fixed_dt(model, y0, 0.0, self.T_END, 0.03, method=IntegratorType.RK4)
+        with pytest.raises(ValueError):
+            integrate_imex_fixed_dt(model, y0, 0.0, self.T_END, 0.03, fft_cache, diffusivities)
 
 
 if __name__ == "__main__":

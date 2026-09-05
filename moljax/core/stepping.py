@@ -54,6 +54,7 @@ from moljax.core.utils import (
     StatusCode,
     allocate_scalar_history,
     allocate_state_history,
+    get_interior,
     is_finite,
     save_to_history,
 )
@@ -1041,6 +1042,58 @@ def adaptive_integrate(
 # Fixed-Step Integration (simpler, faster for known stable dt)
 # =============================================================================
 
+def _fixed_step_count(t0: float, t_end: float, dt: float, save_every: int) -> int:
+    """
+    Number of steps of size dt that cover [t0, t_end] exactly.
+
+    A fixed-step run has no clamping of the last step, so dt must divide the
+    interval: truncating (t_end - t0)/dt and adding one, as this code once
+    did, ran past t_end by up to a full step. Rounding absorbs the floating
+    point error of (t_end - t0)/dt (0.5/0.05 is 10.000000000000002) and the
+    check below rejects a genuine mismatch.
+    """
+    span = t_end - t0
+    if dt <= 0.0 or span <= 0.0:
+        raise ValueError(f"need dt > 0 and t_end > t0, got dt={dt}, t0={t0}, t_end={t_end}")
+    if save_every < 1:
+        raise ValueError(f"save_every must be at least 1, got {save_every}")
+    n_steps = int(round(span / dt))
+    if n_steps < 1 or abs(n_steps * dt - span) > 1e-9 * span:
+        raise ValueError(
+            f"dt={dt} does not divide the interval [{t0}, {t_end}] into whole steps "
+            f"({span / dt:.12g} steps); pick dt = (t_end - t0)/n for an integer n"
+        )
+    return n_steps
+
+
+def _run_fixed_steps(advance: Callable, carry, n_steps: int, save_every: int, grid):
+    """
+    Run n_steps of advance(carry), keeping the state after every save_every-th step.
+
+    The outer lax.scan emits once per block of save_every steps, so the
+    history has n_steps // save_every entries and nothing is stored for the
+    steps in between; the inner lax.fori_loop runs the block. Steps left
+    over when save_every does not divide n_steps are taken after the scan
+    so the returned carry is always at t_end. The saved states hold
+    interior points only, the layout the adaptive integrators use.
+    """
+    n_saves = n_steps // save_every
+    n_tail = n_steps - n_saves * save_every
+
+    def run_block(c, n):
+        return lax.fori_loop(0, n, lambda _, c_in: advance(c_in), c)
+
+    def save_body(c, _):
+        c = run_block(c, save_every)
+        y_interior = {name: get_interior(field, grid) for name, field in c.y.items()}
+        return c, (c.t, y_interior)
+
+    carry, (t_history, y_history) = lax.scan(save_body, carry, None, length=n_saves)
+    if n_tail > 0:
+        carry = run_block(carry, n_tail)
+    return t_history, y_history, carry
+
+
 def integrate_fixed_dt(
     model: MOLModel,
     y0: StateDict,
@@ -1053,32 +1106,36 @@ def integrate_fixed_dt(
     nk_params: NKParams | None = None
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], StateDict]:
     """
-    Fixed time step integration using lax.scan.
+    Fixed time step integration with compiled loops.
 
-    Faster than adaptive for problems where stable dt is known.
+    Faster than adaptive for problems where stable dt is known. Takes
+    exactly (t_end - t0)/dt steps; dt must divide the interval (see
+    _fixed_step_count).
 
     Args:
         model: MOLModel
-        y0: Initial state
+        y0: Initial state (with ghost cells)
         t0: Initial time
         t_end: Final time
         dt: Fixed time step
         method: IntegratorType
-        save_every: Save every N steps
+        save_every: Keep the state after every save_every-th step
         preconditioner: For implicit methods
         nk_params: For implicit methods
 
     Returns:
-        Tuple of (t_history, y_history, final_state)
+        Tuple of (t_history, y_history, final_state). The histories hold
+        one entry per saved step (the initial state is not included) and
+        the saved fields are interior points only, shape
+        (n_steps // save_every, *interior_shape); final_state is the full
+        padded state at t_end.
     """
     if preconditioner is None:
         preconditioner = IdentityPreconditioner()
     if nk_params is None:
         nk_params = NKParams()
 
-    n_steps = int((t_end - t0) / dt) + 1
-
-    # Allocate output
+    n_steps = _fixed_step_count(t0, t_end, dt, save_every)
 
     class ScanState(NamedTuple):
         t: jnp.ndarray
@@ -1087,11 +1144,11 @@ def integrate_fixed_dt(
         dt_prev: jnp.ndarray
         step: jnp.ndarray
 
-    def scan_body(carry: ScanState, _) -> tuple[ScanState, tuple[jnp.ndarray, StateDict]]:
+    def advance(carry: ScanState) -> ScanState:
         """Single fixed step."""
 
         def explicit():
-            return step_explicit(model, carry.y, carry.t, dt), None
+            return step_explicit(model, carry.y, carry.t, dt, method)
 
         def implicit():
             is_be = method == 3
@@ -1115,28 +1172,21 @@ def integrate_fixed_dt(
                 )
                 return y_new
 
-            y_new = lax.cond(
+            return lax.cond(
                 is_be,
                 do_be,
                 lambda: lax.cond(is_cn, do_cn, do_bdf2)
             )
-            return y_new, None
 
-        y_new, _ = lax.cond(method < 3, explicit, implicit)
+        y_new = lax.cond(method < 3, explicit, implicit)
 
-        new_carry = ScanState(
+        return ScanState(
             t=carry.t + dt,
             y=y_new,
             y_prev=carry.y,
             dt_prev=jnp.array(dt, dtype=model.dtype),
             step=carry.step + 1
         )
-
-        # Output for saving
-        t_out = carry.t + dt
-        y_out = y_new
-
-        return new_carry, (t_out, y_out)
 
     init_carry = ScanState(
         t=jnp.array(t0, dtype=model.dtype),
@@ -1146,9 +1196,11 @@ def integrate_fixed_dt(
         step=jnp.array(0, dtype=jnp.int32)
     )
 
-    final_carry, (t_outs, y_outs) = lax.scan(scan_body, init_carry, None, length=n_steps)
+    t_history, y_history, final_carry = _run_fixed_steps(
+        advance, init_carry, n_steps, save_every, model.grid
+    )
 
-    return t_outs, y_outs, final_carry.y
+    return t_history, y_history, final_carry.y
 
 
 # =============================================================================
@@ -1395,51 +1447,44 @@ def integrate_imex_fixed_dt(
     save_every: int = 1
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], StateDict]:
     """
-    Fixed time step IMEX integration using lax.scan.
+    Fixed time step IMEX integration with compiled loops.
+
+    Takes exactly (t_end - t0)/dt steps; dt must divide the interval (see
+    _fixed_step_count).
 
     Args:
         model: MOLModel
-        y0: Initial state
+        y0: Initial state (with ghost cells)
         t0: Initial time
         t_end: Final time
         dt: Fixed time step
         fft_cache: FFT cache
         diffusivities: Diffusion coefficients
         use_strang: Use Strang splitting or IMEX Euler
-        save_every: Save every N steps
+        save_every: Keep the state after every save_every-th step
 
     Returns:
-        Tuple of (t_history, y_history, final_state)
+        Tuple of (t_history, y_history, final_state), laid out as in
+        integrate_fixed_dt: one history entry per saved step, interior
+        points only, and the full padded state at t_end.
     """
-    n_steps = int((t_end - t0) / dt) + 1
-
-    # Allocate output
+    n_steps = _fixed_step_count(t0, t_end, dt, save_every)
 
     class ScanState(NamedTuple):
         t: jnp.ndarray
         y: StateDict
-        step: jnp.ndarray
 
-    def scan_body(carry: ScanState, _) -> tuple[ScanState, tuple[jnp.ndarray, StateDict]]:
+    def advance(carry: ScanState) -> ScanState:
         if use_strang:
             y_new = imex_strang_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
         else:
             y_new = imex_euler_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
+        return ScanState(t=carry.t + dt, y=y_new)
 
-        new_carry = ScanState(
-            t=carry.t + dt,
-            y=y_new,
-            step=carry.step + 1
-        )
+    init_carry = ScanState(t=jnp.array(t0, dtype=model.dtype), y=y0)
 
-        return new_carry, (carry.t + dt, y_new)
-
-    init_carry = ScanState(
-        t=jnp.array(t0, dtype=model.dtype),
-        y=y0,
-        step=jnp.array(0, dtype=jnp.int32)
+    t_history, y_history, final_carry = _run_fixed_steps(
+        advance, init_carry, n_steps, save_every, model.grid
     )
 
-    final_carry, (t_outs, y_outs) = lax.scan(scan_body, init_carry, None, length=n_steps)
-
-    return t_outs, y_outs, final_carry.y
+    return t_history, y_history, final_carry.y
