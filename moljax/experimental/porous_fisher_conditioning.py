@@ -171,8 +171,8 @@ def assess_porous_fisher_state(
     epsilon: float,
     d0_kind: str,
     const_value: float = 1.0,
-    n_angles: int = 180,
-    fov_max_iters: int = 120,
+    n_angles: int = 16,
+    fov_max_iters: int = 60,
     fov_residual_tolerance: float = 1.0e-3,
     fov_n_restarts: int = 2,
     arnoldi_steps: int = 8,
@@ -223,11 +223,16 @@ def assess_porous_fisher_state(
             else float(assessment.predicted_gmres_factor)
         ),
         "origin_enclosed": bool(field_of_values.origin_enclosed),
-        "n_right_real_outliers": int(assessment.n_right_real_outliers),
+        "n_right_real_outliers": (
+            None
+            if assessment.n_right_real_outliers is None
+            else int(assessment.n_right_real_outliers)
+        ),
         "max_support_residual": float(field_of_values.max_support_residual),
         "supports_converged": bool(field_of_values.supports_converged),
         "supports_corroborated": bool(field_of_values.supports_corroborated),
-        "geometry_certified": bool(field_of_values.geometry_certified),
+        "supports_consistent": bool(field_of_values.supports_consistent),
+        "corroboration_attempted": bool(field_of_values.corroboration_attempted),
         "rates": {name: value for name, value in rates._asdict().items()},
     }
 

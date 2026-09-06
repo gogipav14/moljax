@@ -150,28 +150,32 @@ def _plot_reaction_axis(reaction: dict[str, Any], plt: Any) -> Path:
 
     verdicts = ("adequate", "investigate", "indeterminate")
     colors = {"adequate": "tab:green", "investigate": "tab:orange", "indeterminate": "tab:red"}
-    bottoms = [0.0] * len(entries)
+    counts_by_verdict = {
+        verdict: [_hard_verdict_counts(reaction, entry)[verdict] for entry in entries]
+        for verdict in verdicts
+    }
+    totals = [
+        sum(counts_by_verdict[verdict][position] for verdict in verdicts) for position in positions
+    ]
+    bottoms = [0] * len(entries)
     for verdict in verdicts:
-        fractions: list[float] = []
-        for entry in entries:
-            counts = _hard_verdict_counts(reaction, entry)
-            total = sum(counts.values())
-            fractions.append(counts[verdict] / total if total else 0.0)
-        verdict_axis.bar(positions, fractions, bottom=bottoms, color=colors[verdict], label=verdict)
-        for position, fraction, bottom in zip(positions, fractions, bottoms, strict=True):
-            if fraction:
+        counts = counts_by_verdict[verdict]
+        verdict_axis.bar(positions, counts, bottom=bottoms, color=colors[verdict], label=verdict)
+        for position, count, bottom in zip(positions, counts, bottoms, strict=True):
+            if count:
                 verdict_axis.text(
                     position,
-                    bottom + 0.5 * fraction,
-                    f"{fraction:.0%}",
+                    bottom + 0.5 * count,
+                    str(count),
                     ha="center",
                     va="center",
                     fontsize=8,
                 )
-        bottoms = [bottom + fraction for bottom, fraction in zip(bottoms, fractions, strict=True)]
+        bottoms = [bottom + count for bottom, count in zip(bottoms, counts, strict=True)]
     verdict_axis.set_xticks(positions, labels)
-    verdict_axis.set_ylim(0.0, 1.0)
-    verdict_axis.set_ylabel("fraction of identity-hard states")
+    verdict_axis.set_ylim(0.0, max(totals, default=0) + 0.25)
+    verdict_axis.set_yticks(range(max(totals, default=0) + 1))
+    verdict_axis.set_ylabel("number of identity-hard states")
     verdict_axis.set_title("Hard-state decision verdict composition")
     verdict_axis.legend()
     figure.suptitle("Reaction-axis conditioning evidence from the recorded identity systems")
