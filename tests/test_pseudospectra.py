@@ -144,41 +144,29 @@ def test_arnoldi_breakdown_trims_to_the_completed_invariant_block():
     assert actual_epsilon == pytest.approx(expected_epsilon, abs=1.0e-10)
 
 
-@pytest.mark.parametrize("scale", [1.0, 1.0e-13])
+@pytest.mark.parametrize("scale", [1.0, 1.0e-15])
 def test_arnoldi_breakdown_tolerance_is_scale_relative(scale: float):
     """Breakdown detection must not depend on the operator's overall magnitude.
 
-    The block-diagonal case above is axis-aligned, so the missing block's
-    contribution to each candidate is exactly zero in floating point and any
-    tolerance, fixed or relative, detects it.  A random orthogonal similarity
-    turns that exact zero into rounding noise of size ``eps * ||A q||``
-    instead.  A fixed absolute tolerance of ``64 * eps`` compares that noise
-    to a constant regardless of the operator's scale: at unit scale here the
-    noise (about ``2e-14``) already exceeds the old fixed threshold
-    (``64 * eps`` is about ``1.4e-14``), so breakdown went undetected and
-    Arnoldi ran to the full requested order instead of trimming to the
-    completed invariant block, while at ``1e-13`` the same fixed threshold
-    happened to still exceed the (now much smaller) noise and detected it by
-    coincidence.  Comparing to ``64 * eps * ||A q||`` instead trims to the
-    same ``(4, 3)`` shape at both scales.
+    The fixed ``64 * eps`` tolerance that preceded the relative one compared
+    every subdiagonal entry to about ``1.4e-14``.  For an operator of scale
+    ``1e-15`` every entry is below that, so the old rule declared breakdown
+    after the first column whether or not an invariant subspace existed:
+    both cases below trimmed to ``(2, 1)``.  Comparing to ``64 * eps`` times
+    the pre-orthogonalization norm ``||A q||`` instead makes the decision
+    about the operator's own geometry, so a genuine invariant block trims to
+    ``(4, 3)`` and an operator without one runs to the full ``(7, 6)`` at
+    every scale.  Both operators are axis-aligned so the outcome does not
+    rest on rounding noise from a random similarity.
     """
-    first_block = np.diag(np.array([1.0, 2.0, 4.0], dtype=np.complex128))
-    second_block = np.diag(np.array([7.0, 9.0, 12.0], dtype=np.complex128))
-    block_diagonal = np.zeros((6, 6), dtype=np.complex128)
-    block_diagonal[:3, :3] = first_block
-    block_diagonal[3:, 3:] = second_block
+    blocks = np.zeros((6, 6), dtype=np.complex128)
+    blocks[:3, :3] = np.diag([1.0, 2.0, 4.0])
+    blocks[3:, 3:] = np.diag([7.0, 9.0, 12.0])
+    start = jnp.asarray(np.array([1.0, 0.5, 0.25, 0.0, 0.0, 0.0]), dtype=jnp.complex128)
 
-    # Seeded to land comfortably clear of the breakdown threshold at both
-    # scales: near tangency to that threshold, the outcome is a coin flip
-    # driven by rounding in the Krylov recurrence itself (see the module
-    # docstring note in the class above), not by the fix under test.
-    rng = np.random.default_rng(15)
-    raw = rng.standard_normal((6, 6))
-    orthogonal, r_factor = np.linalg.qr(raw)
-    orthogonal = orthogonal @ np.diag(np.sign(np.diag(r_factor)))
-    start_in_block_basis = np.concatenate([rng.standard_normal(3), np.zeros(3)])
-    matrix = scale * (orthogonal @ block_diagonal @ orthogonal.conj().T)
-    start = jnp.asarray(orthogonal @ start_in_block_basis, dtype=jnp.complex128)
-
-    _, hessenberg = arnoldi(_matvec(matrix), start, 6)
+    _, hessenberg = arnoldi(_matvec(scale * blocks), start, 6)
     assert hessenberg.shape == (4, 3)
+
+    coupled = blocks + 0.1 * np.ones((6, 6), dtype=np.complex128)
+    _, hessenberg = arnoldi(_matvec(scale * coupled), start, 6)
+    assert hessenberg.shape == (7, 6)
