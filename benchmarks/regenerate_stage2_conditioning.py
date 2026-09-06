@@ -18,6 +18,10 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+import jax
+
+jax.config.update("jax_enable_x64", True)
+
 import pme_breakdown
 import porous_fisher_conditioning
 
