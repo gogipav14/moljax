@@ -310,6 +310,44 @@ class TestNKRobustness:
                 f"max_iters={max_iters}: reported {reported:.3e}, actual {true_norm:.3e}"
             assert bool(result.stats.converged) == (true_norm < 1e-12)
 
+    def test_failed_line_search_does_not_increase_residual(self):
+        """When no backtracked candidate satisfies the decrease test, the
+        iterate must never move to a step with a larger residual than where
+        it started.
+
+        atan(x) from x0 = 10 is the classic Newton overshoot example: the
+        full Newton step (and every halving tried within max_backtrack=3)
+        lands further from the root than the start, so the line search
+        finds nothing to accept. The old fallback applied the untried full
+        step anyway (the same candidate the line search never even
+        evaluated against the decrease test), which increased the residual
+        from about 2.548 to about 2.708 (checked by direct reproduction).
+        The fix keeps the best candidate actually tried, which here is none
+        of them, so the iterate must stay unchanged.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': jnp.arctan(x['u'])}
+
+        x0 = {'u': jnp.array([10.0, 10.0, 10.0])}
+        r0_norm = float(jnp.linalg.norm(residual(x0)['u']))
+
+        result = newton_krylov_solve(
+            residual_fn=residual,
+            x0=x0,
+            grid=grid,
+            params={},
+            nk_params=NKParams(max_newton_iters=1, max_backtrack=3, newton_tol=1e-12)
+        )
+
+        r1_norm = float(result.stats.final_res_norm)
+        assert r1_norm <= r0_norm + 1e-10, \
+            f"line search increased the residual: {r0_norm:.6f} -> {r1_norm:.6f}"
+        # No candidate improved on the start, so the iterate is unchanged.
+        assert jnp.allclose(result.solution['u'], x0['u'])
+        assert not bool(result.stats.converged)
+
 
 def decay_model(nx: int = 4) -> MOLModel:
     """y' = -y on every grid point, periodic, so exp(-t) is the exact solution."""

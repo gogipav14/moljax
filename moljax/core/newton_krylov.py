@@ -262,10 +262,6 @@ def newton_krylov_solve(
         lin_iters_total: jnp.ndarray
         converged: jnp.ndarray
 
-    def residual_norm_at(x_flat: jnp.ndarray) -> jnp.ndarray:
-        r_flat, _ = ravel_pytree(residual_fn(unravel(x_flat)))
-        return jnp.linalg.norm(r_flat)
-
     def newton_step(state: NewtonState) -> NewtonState:
         """Single Newton iteration."""
         x = unravel(state.x_flat)
@@ -292,7 +288,7 @@ def newton_krylov_solve(
         alpha = nk_params.damping
 
         def backtrack_step(carry, _):
-            alpha_bt, x_bt_flat, r_bt_norm, accepted = carry
+            alpha_bt, x_bt_flat, r_bt_norm, accepted, best_x_flat, best_r_norm = carry
 
             # Candidate update
             x_new_flat = x_bt_flat + alpha_bt * dx_flat
@@ -322,28 +318,33 @@ def newton_krylov_solve(
             )
             new_accepted = jnp.logical_or(accepted, accept)
 
-            return (new_alpha, new_x_flat, new_r_norm, new_accepted), None
+            # Track the best candidate tried so far (by residual norm), so
+            # that if no candidate ever satisfies the Armijo-style decrease
+            # test, the loop still has something no worse than the starting
+            # iterate to fall back on instead of the untried full step.
+            is_better = r_new_norm < best_r_norm
+            new_best_x_flat = lax.cond(is_better, lambda: x_new_flat, lambda: best_x_flat)
+            new_best_r_norm = lax.cond(is_better, lambda: r_new_norm, lambda: best_r_norm)
 
-        # Run backtracking
-        init_carry = (alpha, state.x_flat, r_norm, jnp.array(False))
-        (_, x_bt_flat, r_bt_norm, accepted), _ = lax.scan(
+            return (new_alpha, new_x_flat, new_r_norm, new_accepted, new_best_x_flat, new_best_r_norm), None
+
+        # Run backtracking. best_x_flat/best_r_norm start at the current
+        # iterate (alpha = 0), so a candidate only replaces them when it is
+        # strictly better than where we started.
+        init_carry = (alpha, state.x_flat, r_norm, jnp.array(False), state.x_flat, r_norm)
+        (_, x_bt_flat, r_bt_norm, accepted, best_x_flat, best_r_norm), _ = lax.scan(
             backtrack_step, init_carry, None, length=nk_params.max_backtrack
         )
 
-        # If no candidate met the decrease test, take the damped step anyway
-        # rather than stall; its residual is then measured so that res_norm
-        # keeps describing the iterate actually stored. The accepted branch
-        # reuses the norm the line search already computed.
-        x_final_flat = lax.cond(
-            accepted,
-            lambda: x_bt_flat,
-            lambda: state.x_flat + alpha * dx_flat
-        )
-        r_final = lax.cond(
-            accepted,
-            lambda: r_bt_norm,
-            lambda: residual_norm_at(x_final_flat)
-        )
+        # If a candidate satisfied the decrease test, take it (the accepted
+        # branch reuses the norm the line search already computed). If none
+        # did, never apply the untried full step: it was never checked
+        # against the decrease test and can be the worst candidate of all
+        # (the whole reason backtracking exists). Instead keep the best
+        # candidate actually tried, which is never worse than the starting
+        # iterate because best_r_norm is initialized from it.
+        x_final_flat = lax.cond(accepted, lambda: x_bt_flat, lambda: best_x_flat)
+        r_final = lax.cond(accepted, lambda: r_bt_norm, lambda: best_r_norm)
 
         return NewtonState(
             x_flat=x_final_flat,

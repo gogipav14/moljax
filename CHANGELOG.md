@@ -342,6 +342,19 @@ All notable changes to moljax are documented here.
   `assess_nilt_quality` is called without `F_vals` samples still defers to
   the wraparound sensor unchanged.
 
+- **A failed Newton-Krylov line search could apply a step it had already
+  shown made the residual worse.** `newton_step`'s backtracking `lax.scan`
+  tries `alpha`, `alpha * backtrack_factor`, ... against the Armijo-style
+  decrease test, but when none of them was accepted the fallback took
+  `x + alpha * dx` at the original, undamped `alpha`: the very first,
+  worst candidate the scan had already rejected, applied without ever
+  being checked against the decrease test a second time. `newton_step` now
+  tracks the best (lowest-residual) candidate seen across the backtracking
+  scan, seeded with the starting iterate itself, and falls back to that
+  instead: a failed line search can no longer move to a larger residual
+  than where it started, and reports unchanged if nothing tried improved
+  on it.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the
