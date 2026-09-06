@@ -302,6 +302,23 @@ PYTHONPATH=.. python bench_precond_variants.py --backend any
 
 **Key finding**: Iterations remain nearly constant across grid sizes (preempts "works only at small grids" criticism).
 
+**Note on the committed files.** Until 1.2.0 the E1, E2, E4 and E9 scripts
+counted GMRES iterations with a Python counter inside the matvec handed to
+`jax.scipy.sparse.linalg.gmres`, which records how often JAX traced the
+matvec (a constant, 5) rather than how many iterations GMRES took. The
+scripts now count with SciPy's GMRES on the same system (`iteration_source`
+in each result's `config` says so) and keep JAX GMRES where a wall time is
+reported. The committed `benchmarks/results/iter_vs_grid.json` and
+`iter_vs_dim.json` predate this fix; they were written by an earlier
+revision of the scripts (their `config` blocks carry keys the current
+scripts do not write) and have not been regenerated. The committed
+`precond_variants.json` shows the defect directly: every count in it is 5.
+`jvp_vs_fd_sweep.json` shows the same 5 for its AD-JVP entry, but its FD
+entries show 200 (`GMRES_MAXITER`): the pre-fix script also preconditioned
+the right-hand side twice (once building `precond_rhs`, again passing
+`precond_flat(precond_rhs)` to `gmres`), a mismatched system fixed in the
+same pass.
+
 #### E9: JVP vs FD Accuracy
 - Optimal FD epsilon: ~1e-7 (U-shaped error curve)
 - AD-JVP: machine precision (~1e-15)

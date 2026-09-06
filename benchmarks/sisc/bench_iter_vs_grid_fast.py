@@ -17,8 +17,12 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-from benchmark_utils import add_benchmark_args, setup_benchmark
-from jax.scipy.sparse.linalg import gmres
+from benchmark_utils import (
+    GMRES_ITERATION_SOURCE,
+    add_benchmark_args,
+    count_gmres_iterations,
+    setup_benchmark,
+)
 
 parser = add_benchmark_args()
 args = parser.parse_args()
@@ -128,19 +132,12 @@ for N in GRID_SIZES:
 
             precond_rhs = precond_flat(rhs)
 
-            iter_count = [0]
-            def counted_matvec(v):
-                iter_count[0] += 1
-                return precond_A(v)
-
-            try:
-                sol, info = gmres(counted_matvec, precond_rhs,
-                                  tol=GMRES_TOL, maxiter=GMRES_MAXITER,
-                                  restart=GMRES_RESTART)
-                sol.block_until_ready()
-                fft_iterations.append(iter_count[0])
-            except Exception:
-                fft_iterations.append(GMRES_MAXITER)
+            # SciPy GMRES on the same left-preconditioned system; its
+            # callback counts inner iterations (see count_gmres_iterations).
+            _sol, n_iters, _converged = count_gmres_iterations(
+                precond_A, precond_rhs, rtol=GMRES_TOL,
+                maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
+            fft_iterations.append(n_iters)
 
         fft_stats = compute_stats(fft_iterations)
         print(f"  FFT precond: median={fft_stats['median']:.0f}, "
@@ -153,19 +150,10 @@ for N in GRID_SIZES:
             np.random.seed(100 + sample)
             rhs = jnp.array(np.random.randn(N, N).flatten())
 
-            iter_count = [0]
-            def counted_matvec(v):
-                iter_count[0] += 1
-                return matvec_flat(v)
-
-            try:
-                sol, info = gmres(counted_matvec, rhs,
-                                  tol=GMRES_TOL, maxiter=GMRES_MAXITER,
-                                  restart=GMRES_RESTART)
-                sol.block_until_ready()
-                unprecond_iterations.append(iter_count[0])
-            except Exception:
-                unprecond_iterations.append(GMRES_MAXITER)
+            _sol, n_iters, _converged = count_gmres_iterations(
+                matvec_flat, rhs, rtol=GMRES_TOL,
+                maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
+            unprecond_iterations.append(n_iters)
 
         unprecond_stats = compute_stats(unprecond_iterations)
         print(f"  Unprecond:   median={unprecond_stats['median']:.0f}, "
@@ -190,6 +178,7 @@ results['config'] = {
     'D': D,
     'reaction_k': REACTION_K,
     'device': device_str,
+    'iteration_source': GMRES_ITERATION_SOURCE,
 }
 
 output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'iter_vs_grid.json'
@@ -202,7 +191,7 @@ print(f"\nResults saved to {output_path}")
 print("\n" + "=" * 90)
 print("SUMMARY: GMRES Iterations - median [IQR] (max)")
 print("=" * 90)
-print(f"{'Grid':>10} {'σ=1':>20} {'σ=10':>20} {'σ=100':>20}")
+print(f"{'Grid':>10}" + "".join(f" {'σ=' + str(s):>20}" for s in STIFFNESS_RATIOS))
 print("-" * 90)
 print("FFT Preconditioned:")
 for N in GRID_SIZES:
@@ -221,8 +210,9 @@ for N in GRID_SIZES:
         exp = [e for e in results['experiments']
                if e['grid_size'] == N and e['sigma'] == sigma][0]
         s = exp['unpreconditioned']
-        if s['max'] >= GMRES_MAXITER:
-            row.append(f">{GMRES_MAXITER}")
+        # maxiter counts restart cycles; the inner-iteration cap is maxiter * restart
+        if s['max'] >= GMRES_MAXITER * GMRES_RESTART:
+            row.append(f">{GMRES_MAXITER * GMRES_RESTART}")
         else:
             row.append(f"{s['median']:.0f} [{s['q25']:.0f}-{s['q75']:.0f}] ({s['max']})")
     print(f"{row[0]:>10} {row[1]:>20} {row[2]:>20} {row[3]:>20}")

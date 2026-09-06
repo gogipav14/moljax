@@ -150,6 +150,51 @@ def time_call(fn, n_reps=10):
     return result, median, iqr, np.array(times)
 
 
+# Provenance of GMRES iteration counts and wall times in the SISC result files.
+GMRES_ITERATION_SOURCE = "scipy.sparse.linalg.gmres callback, callback_type='pr_norm'"
+GMRES_TIMING_SOURCE = "jax.scipy.sparse.linalg.gmres"
+
+
+def count_gmres_iterations(matvec, rhs, rtol, maxiter, restart=20):
+    """Solve A x = b with SciPy's GMRES; return (x, n_iterations, converged).
+
+    Counting inside a matvec handed to jax.scipy.sparse.linalg.gmres does not
+    work: JAX traces the matvec a fixed number of times while building the
+    solver, so a Python counter in it reads the number of traces (5 with
+    JAX 0.9.1), whatever the system. SciPy's GMRES runs in Python and, with
+    callback_type='pr_norm', calls ``callback`` once per inner iteration.
+    Its ``info`` is also meaningful (0 on convergence), whereas JAX returns
+    a placeholder.
+
+    ``matvec`` may be a JAX function; every call round-trips through NumPy,
+    so use this for counts and jax.scipy.sparse.linalg.gmres for timing.
+    ``rtol``, ``maxiter`` (restart cycles) and ``restart`` (Krylov size)
+    mean what ``tol``, ``maxiter`` and ``restart`` mean in the JAX call, so
+    both solvers see the same problem.
+    """
+    from scipy.sparse.linalg import LinearOperator
+    from scipy.sparse.linalg import gmres as scipy_gmres
+
+    b = np.asarray(rhs, dtype=np.float64).ravel()
+    n = b.size
+
+    def np_matvec(v):
+        v = np.asarray(v, dtype=np.float64).ravel()
+        # np.array, not np.asarray: a NumPy view of a JAX array is read-only,
+        # and SciPy's GMRES updates the returned vector in place.
+        return np.array(matvec(v), dtype=np.float64).ravel()
+
+    op = LinearOperator((n, n), matvec=np_matvec, dtype=np.float64)
+    n_iters = [0]
+
+    def callback(_pr_norm):
+        n_iters[0] += 1
+
+    x, info = scipy_gmres(op, b, rtol=rtol, maxiter=maxiter, restart=restart,
+                          callback=callback, callback_type='pr_norm')
+    return x, n_iters[0], bool(info == 0)
+
+
 def add_benchmark_args(parser=None):
     """Add standard benchmark CLI arguments.
 

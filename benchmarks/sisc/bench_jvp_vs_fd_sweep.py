@@ -20,8 +20,12 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-from benchmark_utils import add_benchmark_args, setup_benchmark
-from jax.scipy.sparse.linalg import gmres
+from benchmark_utils import (
+    GMRES_ITERATION_SOURCE,
+    add_benchmark_args,
+    count_gmres_iterations,
+    setup_benchmark,
+)
 
 parser = add_benchmark_args()
 args = parser.parse_args()
@@ -35,6 +39,7 @@ DT = 0.01
 REACTION_K = 10.0
 GMRES_TOL = 1e-10
 GMRES_MAXITER = 200
+GMRES_RESTART = 20  # the default Krylov size of both libraries, made explicit
 
 print("E9: JVP vs Finite-Difference Epsilon Sweep")
 print("=" * 60)
@@ -168,27 +173,21 @@ def precond_flat(u_flat):
 rhs_gmres = jnp.array(np.random.randn(N * N))
 precond_rhs = precond_flat(rhs_gmres)
 
-# AD-based GMRES
+# AD-based GMRES on the left-preconditioned system M^{-1} J x = M^{-1} b.
+# SciPy's callback counts the inner iterations (see count_gmres_iterations).
 def ad_matvec(v_flat):
     return jvp_ad(u_flat, v_flat)
 
 def precond_ad_matvec(v_flat):
     return precond_flat(ad_matvec(v_flat))
 
-iter_count_ad = [0]
-def counted_ad_matvec(v):
-    iter_count_ad[0] += 1
-    return precond_ad_matvec(v)
+_sol_ad, iters_ad, converged_ad = count_gmres_iterations(
+    precond_ad_matvec, precond_rhs, rtol=GMRES_TOL,
+    maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
 
-iter_count_ad[0] = 0
-sol_ad, info_ad = gmres(counted_ad_matvec, precond_flat(precond_rhs),
-                        tol=GMRES_TOL, maxiter=GMRES_MAXITER)
-sol_ad.block_until_ready()
-iters_ad = iter_count_ad[0]
+print(f"\n  AD-JVP GMRES: {iters_ad} iterations {'✓' if converged_ad else '✗'}")
 
-print(f"\n  AD-JVP GMRES: {iters_ad} iterations")
-
-results['gmres_comparison'] = {'ad': {'iterations': iters_ad}}
+results['gmres_comparison'] = {'ad': {'iterations': iters_ad, 'converged': converged_ad}}
 
 # FD-based GMRES at different epsilons
 test_epsilons = [1e-4, 1e-6, 1e-8, 1e-10]
@@ -202,21 +201,9 @@ for eps in test_epsilons:
     def precond_fd_matvec(v_flat):
         return precond_flat(fd_matvec(v_flat))
 
-    iter_count_fd = [0]
-    def counted_fd_matvec(v):
-        iter_count_fd[0] += 1
-        return precond_fd_matvec(v)
-
-    iter_count_fd[0] = 0
-    try:
-        sol_fd, info_fd = gmres(counted_fd_matvec, precond_flat(precond_rhs),
-                               tol=GMRES_TOL, maxiter=GMRES_MAXITER)
-        sol_fd.block_until_ready()
-        iters_fd = iter_count_fd[0]
-        converged = info_fd == 0
-    except Exception:
-        iters_fd = GMRES_MAXITER
-        converged = False
+    _sol_fd, iters_fd, converged = count_gmres_iterations(
+        precond_fd_matvec, precond_rhs, rtol=GMRES_TOL,
+        maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
 
     status = "✓" if converged else "✗"
     print(f"    ε={eps:.0e}: {iters_fd} iterations {status}")
@@ -233,7 +220,10 @@ results['config'] = {
     'dt': DT,
     'reaction_k': REACTION_K,
     'gmres_tol': GMRES_TOL,
+    'gmres_maxiter': GMRES_MAXITER,
+    'gmres_restart': GMRES_RESTART,
     'device': device_str,
+    'iteration_source': GMRES_ITERATION_SOURCE,
 }
 
 output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'jvp_vs_fd_sweep.json'

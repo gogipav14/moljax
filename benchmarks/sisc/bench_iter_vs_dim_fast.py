@@ -18,7 +18,13 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-from benchmark_utils import add_benchmark_args, setup_benchmark
+from benchmark_utils import (
+    GMRES_ITERATION_SOURCE,
+    GMRES_TIMING_SOURCE,
+    add_benchmark_args,
+    count_gmres_iterations,
+    setup_benchmark,
+)
 from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
@@ -159,7 +165,7 @@ for config in CONFIGS:
 
     # Test FFT-preconditioned GMRES
     fft_iterations = []
-    t0 = time.perf_counter()
+    fft_time = 0.0  # wall time of the JAX GMRES solves
     for sample in range(N_SAMPLES):
         np.random.seed(100 + sample)
         rhs = jnp.array(np.random.randn(*shape).flatten())
@@ -169,21 +175,20 @@ for config in CONFIGS:
 
         precond_rhs = precond_flat(rhs)
 
-        iter_count = [0]
-        def counted_matvec(v):
-            iter_count[0] += 1
-            return precond_A(v)
+        # JAX GMRES for the wall time; SciPy GMRES on the same system for
+        # the iteration count (see count_gmres_iterations).
+        t_solve = time.perf_counter()
+        sol, _info = gmres(precond_A, precond_rhs,
+                           tol=GMRES_TOL, maxiter=GMRES_MAXITER,
+                           restart=GMRES_RESTART)
+        sol.block_until_ready()
+        fft_time += time.perf_counter() - t_solve
 
-        try:
-            sol, info = gmres(counted_matvec, precond_rhs,
-                              tol=GMRES_TOL, maxiter=GMRES_MAXITER,
-                              restart=GMRES_RESTART)
-            sol.block_until_ready()
-            fft_iterations.append(iter_count[0])
-        except Exception:
-            fft_iterations.append(GMRES_MAXITER)
+        _sol, n_iters, _converged = count_gmres_iterations(
+            precond_A, precond_rhs, rtol=GMRES_TOL,
+            maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
+        fft_iterations.append(n_iters)
 
-    fft_time = time.perf_counter() - t0
     fft_stats = compute_stats(fft_iterations)
     print(f"  FFT precond: median={fft_stats['median']:.0f}, "
           f"IQR=[{fft_stats['q25']:.0f}-{fft_stats['q75']:.0f}], "
@@ -191,26 +196,23 @@ for config in CONFIGS:
 
     # Test unpreconditioned GMRES
     unprecond_iterations = []
-    t0 = time.perf_counter()
+    unprecond_time = 0.0
     for sample in range(N_SAMPLES):
         np.random.seed(100 + sample)
         rhs = jnp.array(np.random.randn(*shape).flatten())
 
-        iter_count = [0]
-        def counted_matvec(v):
-            iter_count[0] += 1
-            return matvec_flat(v)
+        t_solve = time.perf_counter()
+        sol, _info = gmres(matvec_flat, rhs,
+                           tol=GMRES_TOL, maxiter=GMRES_MAXITER,
+                           restart=GMRES_RESTART)
+        sol.block_until_ready()
+        unprecond_time += time.perf_counter() - t_solve
 
-        try:
-            sol, info = gmres(counted_matvec, rhs,
-                              tol=GMRES_TOL, maxiter=GMRES_MAXITER,
-                              restart=GMRES_RESTART)
-            sol.block_until_ready()
-            unprecond_iterations.append(iter_count[0])
-        except Exception:
-            unprecond_iterations.append(GMRES_MAXITER)
+        _sol, n_iters, _converged = count_gmres_iterations(
+            matvec_flat, rhs, rtol=GMRES_TOL,
+            maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
+        unprecond_iterations.append(n_iters)
 
-    unprecond_time = time.perf_counter() - t0
     unprecond_stats = compute_stats(unprecond_iterations)
     print(f"  Unprecond:   median={unprecond_stats['median']:.0f}, "
           f"IQR=[{unprecond_stats['q25']:.0f}-{unprecond_stats['q75']:.0f}], "
@@ -236,6 +238,8 @@ results['config'] = {
     'D': D,
     'reaction_k': REACTION_K,
     'device': device_str,
+    'iteration_source': GMRES_ITERATION_SOURCE,
+    'timing_source': GMRES_TIMING_SOURCE,
 }
 
 output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'iter_vs_dim.json'
@@ -255,8 +259,9 @@ for exp in results['experiments']:
     fft = exp['fft_precond']
     unp = exp['unpreconditioned']
     fft_str = f"{fft['median']:.0f} [{fft['q25']:.0f}-{fft['q75']:.0f}] ({fft['max']})"
-    if unp['max'] >= GMRES_MAXITER:
-        unp_str = f">{GMRES_MAXITER}"
+    # maxiter counts restart cycles; the inner-iteration cap is maxiter * restart
+    if unp['max'] >= GMRES_MAXITER * GMRES_RESTART:
+        unp_str = f">{GMRES_MAXITER * GMRES_RESTART}"
     else:
         unp_str = f"{unp['median']:.0f} [{unp['q25']:.0f}-{unp['q75']:.0f}] ({unp['max']})"
     print(f"{exp['dim']:>5} {shape_str:>15} {exp['dof']:>10,} {fft_str:>25} {unp_str:>25}")

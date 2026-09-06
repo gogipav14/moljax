@@ -22,7 +22,13 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
-from benchmark_utils import add_benchmark_args, setup_benchmark
+from benchmark_utils import (
+    GMRES_ITERATION_SOURCE,
+    GMRES_TIMING_SOURCE,
+    add_benchmark_args,
+    count_gmres_iterations,
+    setup_benchmark,
+)
 from jax.scipy.sparse.linalg import gmres
 
 parser = add_benchmark_args()
@@ -34,6 +40,7 @@ N = 128
 STIFFNESS_RATIOS = [1, 10, 100]
 GMRES_TOL = 1e-6
 GMRES_MAXITER = 5000
+GMRES_RESTART = 20  # the default Krylov size of both libraries, made explicit
 D = 0.01
 REACTION_K = 10.0
 
@@ -147,26 +154,23 @@ for sigma in STIFFNESS_RATIOS:
     sigma_results = {'sigma': sigma, 'dt': float(dt), 'preconditioners': {}}
 
     for name, precond in preconditioners:
-        iter_count = [0]
-
-        def counted_matvec(u):
-            iter_count[0] += 1
+        def precond_A(u, precond=precond):
             return precond(jacobian_matvec_flat(u))
 
         precond_rhs = precond(rhs_flat)
 
-        iter_count[0] = 0
-        try:
-            t0 = time.perf_counter()
-            sol, info = gmres(counted_matvec, precond_rhs, tol=GMRES_TOL, maxiter=GMRES_MAXITER)
-            sol.block_until_ready()
-            elapsed = time.perf_counter() - t0
-            iters = iter_count[0]
-            converged = info == 0
-        except Exception:
-            iters = GMRES_MAXITER
-            converged = False
-            elapsed = 0
+        # JAX GMRES for the wall time; SciPy GMRES on the same system for
+        # the iteration count and the convergence flag (JAX's info is a
+        # placeholder, see count_gmres_iterations).
+        t0 = time.perf_counter()
+        sol, _info = gmres(precond_A, precond_rhs, tol=GMRES_TOL,
+                           maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
+        sol.block_until_ready()
+        elapsed = time.perf_counter() - t0
+
+        _sol, iters, converged = count_gmres_iterations(
+            precond_A, precond_rhs, rtol=GMRES_TOL,
+            maxiter=GMRES_MAXITER, restart=GMRES_RESTART)
 
         status = "✓" if converged else "✗"
         print(f"  {name:15s}: {iters:5d} iters, {elapsed*1000:.1f}ms {status}")
@@ -184,9 +188,12 @@ results['config'] = {
     'grid_size': N,
     'gmres_tol': GMRES_TOL,
     'gmres_maxiter': GMRES_MAXITER,
+    'gmres_restart': GMRES_RESTART,
     'D': D,
     'reaction_k': REACTION_K,
     'device': device_str,
+    'iteration_source': GMRES_ITERATION_SOURCE,
+    'timing_source': GMRES_TIMING_SOURCE,
 }
 
 output_path = Path(__file__).parent.parent / 'results' / 'sisc' / 'precond_variants.json'
