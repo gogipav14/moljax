@@ -2,7 +2,7 @@
 
 All notable changes to moljax are documented here.
 
-## [1.2.0] - 2026-09-01
+## [1.2.0] - 2026-09-06
 
 ### Added
 
