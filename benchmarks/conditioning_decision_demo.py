@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -80,6 +81,7 @@ class FigureData(NamedTuple):
     imag_grid: jax.Array
     sigma_min: jax.Array
     predicted_gmres_factor: float | None
+    verdict: str
 
 
 def _ready_state(state: dict[str, jax.Array]) -> dict[str, jax.Array]:
@@ -293,6 +295,7 @@ def _run_state_diagnostics(
             imag_grid=imag_grid,
             sigma_min=reduced,
             predicted_gmres_factor=rates.predicted_gmres_factor,
+            verdict=assessment.verdict,
         ),
     )
 
@@ -325,10 +328,16 @@ def _render_figures(data: list[FigureData], figure_dir: str | None) -> list[str]
                 directory / f"{stem}_pseudospectrum.png",
             )
         )
-        # The envelope is drawn from a rate the geometry has to justify.  With
-        # an uncertified boundary there is no rate to draw, and inventing one
-        # would put the least defensible number on the most persuasive plot.
-        if item.predicted_gmres_factor is not None:
+        # The envelope is drawn from a rate the geometry has to justify.  Only
+        # "adequate" and "provisional" mean every threshold gate passed: an
+        # "investigate" state can still carry a finite predicted_gmres_factor
+        # (a threshold failed for a reason unrelated to r1, r2 or r3, such as
+        # a small epsilon_zero or a real outlier), and drawing a decaying
+        # envelope for it would put the least defensible number on the most
+        # persuasive plot, presenting exactly the false confidence the
+        # verdict itself is warning against.  "indeterminate" never has a
+        # rate to draw at all.
+        if item.verdict in ("adequate", "provisional") and item.predicted_gmres_factor is not None:
             residuals = item.predicted_gmres_factor ** np.arange(0, 9)
             paths.append(
                 _save_figure(
@@ -465,6 +474,27 @@ def run_decision_demo(config: DemoConfig | None = None) -> dict[str, Any]:
     }
 
 
+def _json_safe(value: Any) -> Any:
+    """Recursively replace non-finite floats with ``None`` for strict JSON.
+
+    ``r1`` (``disk_rate``), ``r3`` (``clustering_rate``), and the ``inf``
+    that ``estimate_rates`` returns for ``predicted_gmres_factor`` when no
+    finite estimate exists are all legitimate readings, not defects, but
+    ``json.dumps`` with the default ``allow_nan=True`` serializes them as the
+    bare tokens ``Infinity`` and ``NaN``, which is not valid JSON and which a
+    strict downstream parser rejects.  Mapping them to ``None`` here, then
+    passing ``allow_nan=False``, makes any future non-finite value in the
+    result an explicit, loud failure instead of a silently invalid file.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def main() -> None:
     """Run the default demo and write its diagnostics JSON."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -484,10 +514,10 @@ def main() -> None:
         n_states=args.n_states,
         overhead_runs=args.overhead_runs,
     )
-    result = run_decision_demo(config)
+    result = _json_safe(run_decision_demo(config))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2) + "\n")
-    print(json.dumps(result, indent=2))
+    args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+    print(json.dumps(result, indent=2, allow_nan=False))
     print(f"Results saved to {args.output}")
 
 

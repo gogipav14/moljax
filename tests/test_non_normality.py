@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import time
 
 import jax
 
@@ -15,12 +16,16 @@ from scipy import optimize
 
 from moljax.conditioning import (
     FieldOfValuesResult,
+    arnoldi,
     assess_preconditioner,
     clustering_rate,
     crouzeix_palencia_envelope,
     enclosing_disk_rate,
     estimate_rates,
+    numerical_range,
     right_real_outliers,
+    ritz_values,
+    traced_boundary_rate,
 )
 
 
@@ -199,7 +204,16 @@ def test_rate_estimates_match_independent_dense_references(matrix: np.ndarray):
         expected_r3, abs=1.0e-12
     )
     assert rates.r3 == pytest.approx(expected_r3, abs=1.0e-12)
-    assert rates.predicted_gmres_factor == pytest.approx(min(expected_r1, expected_r2, expected_r3))
+    if expected_r1 >= 1.0:
+        # The Grcar operator's numerical range encloses the origin (r1 > 1),
+        # so no convergence factor may be offered regardless of what the
+        # bulk-clustering estimate reads: see
+        # test_predicted_gmres_factor_withheld_when_origin_is_enclosed.
+        assert rates.predicted_gmres_factor is None
+    else:
+        assert rates.predicted_gmres_factor == pytest.approx(
+            min(expected_r1, expected_r2, expected_r3)
+        )
 
 
 def test_crouzeix_palencia_envelope_matches_formula_and_decreases():
@@ -247,3 +261,88 @@ def test_assess_preconditioner_verdicts_cover_all_branches():
     assert assess_preconditioner(adequate, ritz, epsilon_zero=0.2).verdict == "adequate"
     assert assess_preconditioner(broad, ritz, epsilon_zero=0.2).verdict == "investigate"
     assert assess_preconditioner(enclosing, ritz, epsilon_zero=0.2).verdict == "indeterminate"
+
+
+@pytest.mark.slow
+def test_predicted_gmres_factor_withheld_when_origin_is_enclosed():
+    """No convergence factor is offered when the numerical range contains zero.
+
+    ``estimate_rates`` used to withhold ``predicted_gmres_factor`` only when
+    the supports failed their own consistency checks.  On this operator (23
+    eigenvalues in [0.9, 1.1] plus one at -0.5, so the numerical range is
+    [-0.5, 1.1] and encloses the origin) the supports are perfectly resolved:
+    ``r1`` and ``r2`` correctly read at or above one, but the bulk-clustering
+    estimate ``r3`` never sees the outlier, only picking it up in the Arnoldi
+    projection when the starting vector carries a roundoff-level component
+    along its eigenvector.  Before the fix this produced a confident
+    ``predicted_gmres_factor`` of about 0.1 for an operator GMRES is not even
+    guaranteed to converge on.
+    """
+    m = 24
+    diagonal = np.concatenate([np.linspace(0.9, 1.1, m - 1), [-0.5]])
+    operator = jnp.asarray(np.diag(diagonal), dtype=jnp.complex128)
+
+    def matvec(value: jax.Array) -> jax.Array:
+        return operator @ value
+
+    def matvec_adjoint(value: jax.Array) -> jax.Array:
+        return operator.conj().T @ value
+
+    fov = numerical_range(matvec, matvec_adjoint, m, n_angles=8, max_iters=150, n_restarts=2)
+    assert fov.origin_enclosed
+    assert fov.supports_consistent
+
+    start = np.ones(m, dtype=complex)
+    start[-1] = 1.0e-17
+    _, hessenberg = arnoldi(matvec, jnp.asarray(start), 12)
+    ritz = ritz_values(hessenberg)
+
+    rates = estimate_rates(fov, ritz)
+    # r3 alone, read off the Ritz bulk, would still offer a convergence
+    # factor comfortably below one; the fix withholds it regardless.
+    assert rates.r3 == pytest.approx(0.0999602471790453, rel=1.0e-6)
+    assert rates.predicted_gmres_factor is None
+
+
+def test_traced_boundary_rate_exact_interval_and_disk():
+    """``traced_boundary_rate`` matches closed-form minimax values exactly.
+
+    The previous bisection tested feasibility with pairwise circle
+    intersections in the reciprocal plane.  Near tangency the height of an
+    intersection carries an error of order ``eps |z_j| / (min|z|**2 * h)``,
+    which is not a fixed rounding margin but a geometric singularity: on
+    ``[0.1, 3.9]`` it returned 0.97375 against the exact 0.95, and a looser
+    tolerance alone did not fix it.  The rewrite parametrizes directly by the
+    scaling ``beta`` and finds the minimum with a nested golden-section
+    search, which has no such singularity.
+    """
+    theta = np.linspace(0.0, 2.0 * math.pi, 400, endpoint=False)
+    cases = [
+        ([0.1, 3.9], 0.95),
+        ([1.0, 2.0], 1.0 / 3.0),
+        ([0.5, 4.0], 7.0 / 9.0),
+        (2.0 + 0.5 * np.exp(1j * theta), 0.25),
+        ((1.0 + 1.0j) + 0.3 * np.exp(1j * theta), 0.212132034356),
+        (0.5 + 0.9 * np.exp(1j * theta), 1.0),
+    ]
+    for values, expected in cases:
+        boundary = jnp.asarray(values, dtype=jnp.complex128)
+        assert traced_boundary_rate(boundary) == pytest.approx(expected, abs=1.0e-12)
+
+
+@pytest.mark.parametrize("scale", [1.0e-8, 1.0e8])
+def test_traced_boundary_rate_is_scale_invariant(scale: float) -> None:
+    """The minimax rate is unchanged by a uniform rescaling of the boundary."""
+    boundary = jnp.asarray(scale * np.asarray([0.1, 3.9]), dtype=jnp.complex128)
+    assert traced_boundary_rate(boundary) == pytest.approx(0.95, abs=1.0e-9)
+
+
+def test_traced_boundary_rate_on_a_large_disk_is_fast():
+    """A 3600-point traced disk resolves in well under a second."""
+    theta = np.linspace(0.0, 2.0 * math.pi, 3600, endpoint=False)
+    boundary = jnp.asarray(2.0 + 0.5 * np.exp(1j * theta), dtype=jnp.complex128)
+    started = time.perf_counter()
+    rate = traced_boundary_rate(boundary)
+    elapsed = time.perf_counter() - started
+    assert rate == pytest.approx(0.25, abs=1.0e-9)
+    assert elapsed < 1.0

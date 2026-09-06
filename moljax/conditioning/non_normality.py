@@ -8,13 +8,14 @@ traced boundary points or Ritz values.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from moljax.conditioning._geometry import _smallest_enclosing_disk
+from moljax.conditioning._geometry import _origin_enclosed, _smallest_enclosing_disk
 from moljax.conditioning.field_of_values import FieldOfValuesResult
 
 _CP_PREFACTOR = 1.0 + math.sqrt(2.0)
@@ -33,13 +34,19 @@ class RateEstimates(NamedTuple):
         r3: Bulk Ritz-clustering estimate after self-consistent outlier removal.
         predicted_gmres_factor: The smallest finite estimate among ``r1``,
             ``r2``, and ``r3``, or ``None`` when a defect in the supports was
-            detected.  ``r1`` and ``r2`` derive from the numerical range, so
-            an under-resolved or disagreeing boundary makes them
-            optimistically small; offering their minimum as a convergence
-            prediction would present exactly the number a caller is most
-            likely to act on.  Read it together with
-            ``corroboration_attempted``: a value produced without restarts
-            rests on the residual gate alone.
+            detected, or when the numerical range encloses the origin
+            (equivalently ``r1 >= 1``).  ``r1`` and ``r2`` derive from the
+            numerical range, so an under-resolved or disagreeing boundary
+            makes them optimistically small; offering their minimum as a
+            convergence prediction would present exactly the number a caller
+            is most likely to act on.  An enclosed origin means GMRES is not
+            guaranteed to converge at all, yet ``r3``, which only sees the
+            Ritz bulk and not the outliers an enclosed origin represents, can
+            still be small and finite; withholding the minimum keeps that
+            bulk estimate from masquerading as a convergence prediction for
+            an operator whose numerical range contains zero. Read it together
+            with ``corroboration_attempted``: a value produced without
+            restarts rests on the residual gate alone.
         agree: Whether the finite estimates agree within a relative tolerance.
         supports_consistent: Whether ``r1`` and ``r2`` rest on a boundary that
             passed every check that was actually run.  This is not a
@@ -122,72 +129,85 @@ def enclosing_disk_rate(fov: FieldOfValuesResult) -> float:
     return float(fov.disk_rate)
 
 
-def _traced_rate_feasible(centers: jax.Array, scales: jax.Array, rate: jax.Array) -> jax.Array:
-    """Test feasibility of ``|beta - 1/z| <= rate / |z|`` for all points."""
-    count = centers.size
-    first, second = jnp.triu_indices(count, k=1)
-    left = centers[first]
-    right = centers[second]
-    left_radius = rate * scales[first]
-    right_radius = rate * scales[second]
-    difference = right - left
-    distance = jnp.abs(difference)
-    safe_distance = jnp.where(distance > jnp.finfo(jnp.float64).tiny, distance, 1.0)
-    direction = difference / safe_distance
-    along = (left_radius**2 - right_radius**2 + distance**2) / (2.0 * safe_distance)
-    height_squared = left_radius**2 - along**2
-    base = left + along * direction
-    height = jnp.sqrt(jnp.maximum(height_squared, 0.0))
-    intersections = jnp.concatenate(
-        (base + 1j * height * direction, base - 1j * height * direction)
-    )
-    pair_valid = (distance > jnp.finfo(jnp.float64).tiny) & (
-        height_squared >= -64.0 * jnp.finfo(jnp.float64).eps
-    )
-    candidate_valid = jnp.concatenate((jnp.ones(count, dtype=bool), pair_valid, pair_valid))
-    candidates = jnp.concatenate((centers, intersections))
-    scaled_distances = jnp.abs(candidates[:, None] - centers[None, :]) / scales[None, :]
-    contained = jnp.max(scaled_distances, axis=1) <= rate + 64.0 * jnp.finfo(jnp.float64).eps
-    return jnp.any(candidate_valid & contained)
+_GOLDEN_SECTION_RATIO = (math.sqrt(5.0) - 1.0) / 2.0
+
+
+def _golden_section_minimize(
+    func: Callable[[float], float], lower: float, upper: float, iterations: int = 100
+) -> float:
+    """Return the minimum value of a unimodal scalar function on ``[lower, upper]``.
+
+    Golden-section search only needs unimodality, which a convex function of
+    one real variable always has.  It is used here, nested, rather than a
+    general-purpose optimizer so both the outer and inner searches stay a
+    fixed, small number of scalar evaluations with no external dependency.
+    """
+    left, right = lower, upper
+    probe_left = right - _GOLDEN_SECTION_RATIO * (right - left)
+    probe_right = left + _GOLDEN_SECTION_RATIO * (right - left)
+    value_left, value_right = func(probe_left), func(probe_right)
+    for _ in range(iterations):
+        if value_left < value_right:
+            right, probe_right, value_right = probe_right, probe_left, value_left
+            probe_left = right - _GOLDEN_SECTION_RATIO * (right - left)
+            value_left = func(probe_left)
+        else:
+            left, probe_left, value_left = probe_left, probe_right, value_right
+            probe_right = left + _GOLDEN_SECTION_RATIO * (right - left)
+            value_right = func(probe_right)
+    midpoint = 0.5 * (left + right)
+    return min(value_left, value_right, func(midpoint))
 
 
 def traced_boundary_rate(boundary: jax.Array) -> float:
-    """Return ``r2 = min_alpha max_z |1 - z / alpha|`` on a traced boundary.
+    """Return ``r2 = min_beta max_i |1 - beta * z_i|`` on a traced boundary.
 
-    Under ``beta = 1 / alpha``, each bound is a disk
-    ``|beta - 1 / z| <= r / |z|``.  Bisection over ``r`` and the finite set of
-    disk centers and pairwise circle intersections evaluates this minimax
-    problem without an external optimizer.  Keeping every traced point is
-    equivalent to restricting to convex-hull vertices for this convex
-    objective.
+    The objective is convex in ``beta`` (a maximum of moduli of affine
+    functions of ``beta``), and its minimum over each real coordinate with
+    the other held fixed is itself convex in that coordinate, so a nested
+    golden-section search -- outer over ``Re(beta)``, inner over
+    ``Im(beta)`` -- finds the global minimum without an external optimizer
+    and without materializing the pairwise circle-intersection geometry the
+    previous bisection needed.
+
+    That previous approach bisected over the rate ``r`` and tested
+    feasibility using pairwise intersections of circles
+    ``|beta - 1/z_i| <= r/|z_i|``.  Near tangency, the height of an
+    intersection point carries an error of order
+    ``eps |z_j| / (min|z| ** 2 * height)``, which blows up as the tangency is
+    approached and swamps a fixed tolerance long before it reaches ``64
+    eps``: on the interval ``[0.1, 3.9]`` it returned 0.97375 against the
+    exact 0.95, and raising the tolerance alone did not fix it, because the
+    error is not a rounding margin but a geometric singularity in the
+    parametrization.
+
+    If zero lies in the convex hull of the traced points, no finite complex
+    ``beta`` can pull every ``beta * z_i`` inside a disk around 1 smaller
+    than the whole plane's worth of directions spanned by points on both
+    sides of the origin, and the minimax value is exactly 1; this is checked
+    directly rather than left to the search, which would need an unbounded
+    domain to discover it.
     """
     values = jnp.asarray(boundary, dtype=jnp.complex128)
     if values.ndim != 1 or values.size == 0:
         raise ValueError("boundary must be a nonempty one-dimensional array")
-    magnitudes = jnp.abs(values)
-    if bool(jnp.any(magnitudes <= jnp.finfo(jnp.float64).tiny)):
+    host_values = np.asarray(values, dtype=np.complex128)
+    if _origin_enclosed(host_values):
         return 1.0
-    centers = 1.0 / values
-    scales = 1.0 / magnitudes
+    magnitudes = np.abs(host_values)
+    if bool(np.any(magnitudes <= np.finfo(np.float64).tiny)):
+        return 1.0
+    bound = 2.0 / float(np.min(magnitudes))
 
-    def bisect(_: int, interval: tuple[jax.Array, jax.Array]) -> tuple[jax.Array, jax.Array]:
-        lower, upper = interval
-        middle = 0.5 * (lower + upper)
-        feasible = _traced_rate_feasible(centers, scales, middle)
-        return jax.lax.cond(
-            feasible,
-            lambda _: (lower, middle),
-            lambda _: (middle, upper),
-            operand=None,
-        )
+    def objective(re_beta: float, im_beta: float) -> float:
+        beta = complex(re_beta, im_beta)
+        return float(np.max(np.abs(1.0 - beta * host_values)))
 
-    _, result = jax.lax.fori_loop(
-        0,
-        48,
-        bisect,
-        (jnp.asarray(0.0), jnp.asarray(1.0)),
-    )
-    return float(result)
+    def minimize_over_imaginary_part(re_beta: float) -> float:
+        return _golden_section_minimize(lambda im_beta: objective(re_beta, im_beta), -bound, bound)
+
+    best = _golden_section_minimize(minimize_over_imaginary_part, -bound, bound)
+    return float(min(best, 1.0))
 
 
 def _robust_enclosing_disk(values: jax.Array) -> tuple[complex, float]:
@@ -395,10 +415,19 @@ def estimate_rates(fov: FieldOfValuesResult, ritz: jax.Array) -> RateEstimates:
     finite = [rate for rate in (r1, r2, r3) if math.isfinite(rate)]
     # r1 and r2 are read off the numerical-range geometry, so without an
     # outer bound their minimum is not a convergence prediction and must not
-    # be offered as one.  We withhold it on any detected inconsistency.  What
-    # evidence backs the number when it is offered travels with it as
-    # corroboration_attempted, so a serialized estimate stays self-describing.
-    predicted_gmres_factor = (min(finite) if finite else math.inf) if consistent else None
+    # be offered as one.  We withhold it on any detected inconsistency.  A
+    # numerical range that encloses the origin (equivalently r1 >= 1, since
+    # an outer disk containing the origin has |center| <= radius) is the
+    # same abstention for a different reason: r3 is a bulk-clustering
+    # estimate that ignores the outliers the enclosed origin represents, so
+    # it can be small and finite while the enclosing-disk and traced-boundary
+    # rates that see the whole range are at or above one.  Offering the
+    # bulk estimate's minimum in that case is exactly the confident wrong
+    # number a caller is most likely to act on.  What evidence backs the
+    # number when it is offered travels with it as corroboration_attempted,
+    # so a serialized estimate stays self-describing.
+    safe_to_predict = consistent and not fov.origin_enclosed and r1 < 1.0
+    predicted_gmres_factor = (min(finite) if finite else math.inf) if safe_to_predict else None
     return RateEstimates(
         r1=r1,
         r2=r2,

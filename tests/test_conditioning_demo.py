@@ -49,4 +49,13 @@ def test_small_diffusion_decision_demo(tmp_path):
         "provisional",
         "investigate",
     }
-    assert len(result["figures"]) == 6
+    # Both preconditioners get a numerical-range and a pseudospectrum figure
+    # (four), but only the "provisional" fft_diffusion state also gets a
+    # residual-envelope figure: the "investigate" identity state fails a
+    # threshold gate, and drawing a decaying envelope for a state flagged as
+    # needing further preconditioner work would be exactly the false
+    # confidence the verdict warns against.
+    assert len(result["figures"]) == 5
+    envelope_figures = [path for path in result["figures"] if "residual_envelope" in path]
+    assert len(envelope_figures) == 1
+    assert "identity" not in envelope_figures[0]
