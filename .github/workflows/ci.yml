@@ -54,13 +54,12 @@ jobs:
         run: pytest -q -p no:cacheprovider --durations=15
 
   lint:
-    name: lint (advisory)
+    name: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Advisory while the two open contributor PRs land; the style backlog
-    # that predated CI is cleared, so this can become a required check by
-    # adding it to the branch protection contexts.
-    continue-on-error: true
+    # Required alongside the two test legs. The style backlog that predated
+    # CI is cleared and ruff is pinned, so a red job here is a finding in the
+    # change under review, not an upstream default drifting.
 
     steps:
       - uses: actions/checkout@v4
