@@ -50,8 +50,8 @@ class BreakdownConfig(NamedTuple):
     analysis_dt_values: tuple[float, ...] = (2.0e-4, 2.0e-2, 2.0)
     epsilon: float = 1.0e-5
     front_target_halfwidths: tuple[float, ...] = (0.25, 0.75, 3.0)
-    n_angles: int = 180
-    fov_max_iters: int = 120
+    n_angles: int = 16
+    fov_max_iters: int = 60
     fov_residual_tolerance: float = 1.0e-3
     fov_n_restarts: int = 2
     arnoldi_steps: int = 6
@@ -493,8 +493,7 @@ def _regime_map(records: list[dict[str, Any]]) -> dict[str, Any]:
         "reliable_cells_pearson_gt_0_8": reliable_cells,
         "unreliable_or_too_benign_cells_pearson_le_0_8": unreliable_or_benign_cells,
         "statement": (
-            f"Identity Pearson > 0.8: {reliable_text}. "
-            f"Identity Pearson <= 0.8: {unreliable_text}."
+            f"Identity Pearson > 0.8: {reliable_text}. Identity Pearson <= 0.8: {unreliable_text}."
         ),
     }
 
@@ -690,7 +689,8 @@ def _record_state(
                 "max_support_residual": diagnostics["max_support_residual"],
                 "supports_converged": diagnostics["supports_converged"],
                 "supports_corroborated": diagnostics["supports_corroborated"],
-                "geometry_certified": diagnostics["geometry_certified"],
+                "supports_consistent": diagnostics["supports_consistent"],
+                "corroboration_attempted": diagnostics["corroboration_attempted"],
                 "rates": diagnostics["rates"],
                 "actual_gmres": actual_gmres,
                 "reference_state_solver": dict(state_solver),

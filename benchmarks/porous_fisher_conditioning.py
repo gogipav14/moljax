@@ -40,8 +40,8 @@ class ReactionStudyConfig(NamedTuple):
     epsilon: float = 1.0e-5
     d0_kinds: tuple[str, ...] = ("frozen_mean", "frozen_bulk", "floor", "const", "identity")
     const_d0: float = 1.0
-    n_angles: int = 180
-    fov_max_iters: int = 120
+    n_angles: int = 16
+    fov_max_iters: int = 60
     fov_residual_tolerance: float = 1.0e-3
     fov_n_restarts: int = 2
     arnoldi_steps: int = 6
@@ -332,7 +332,8 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
                         "max_support_residual": diagnostics["max_support_residual"],
                         "supports_converged": diagnostics["supports_converged"],
                         "supports_corroborated": diagnostics["supports_corroborated"],
-                        "geometry_certified": diagnostics["geometry_certified"],
+                        "supports_consistent": diagnostics["supports_consistent"],
+                        "corroboration_attempted": diagnostics["corroboration_attempted"],
                         "rates": diagnostics["rates"],
                         "actual_gmres": actual_gmres,
                         "state_solver": dict(state_solver),
@@ -349,8 +350,7 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
     ratio = float("inf") if minimum == 0.0 and maximum > 0.0 else maximum / minimum
     if ratio < 10.0:
         raise RuntimeError(
-            "Identity GMRES dynamic-range gate failed: "
-            f"min={minimum}, max={maximum}, ratio={ratio}"
+            f"Identity GMRES dynamic-range gate failed: min={minimum}, max={maximum}, ratio={ratio}"
         )
 
     report = {
