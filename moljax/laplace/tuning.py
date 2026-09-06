@@ -426,11 +426,6 @@ def diagnose_tuning(params: TunedNILTParams) -> dict:
             "Verify operator stability or use smaller a_margin."
         )
 
-    if params.N == 16384:
-        report['recommendations'].append(
-            "FFT size at maximum. For higher resolution, increase N_max."
-        )
-
     if len(params.warnings) > 0:
         report['recommendations'].append(
             "Review warnings in params.warnings for potential issues."

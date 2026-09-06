@@ -2,7 +2,15 @@
 Tests for NILT inversion of standard Laplace transform pairs.
 """
 
+import os
+import subprocess
+import sys
+
+import jax
 import jax.numpy as jnp
+import pytest
+
+jax.config.update("jax_enable_x64", True)
 
 from moljax.laplace import (
     cosine_F,
@@ -11,16 +19,21 @@ from moljax.laplace import (
     damped_cosine_f,
     damped_sine_F,
     damped_sine_f,
+    estimate_nilt_truncation_error,
     exponential_decay_F,
     exponential_decay_f,
     get_standard_laplace_pairs,
     invert_laplace,
+    nilt_fft_halfstep,
     nilt_fft_uniform,
     nilt_fft_with_pole_at_origin,
+    nilt_with_smoothing,
     sine_F,
     sine_f,
     step_F,
 )
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class TestExponentialDecay:
@@ -187,6 +200,21 @@ class TestPoleAtOrigin:
         assert jnp.mean(result.f[100:200]) > jnp.mean(result.f[0:10]), \
             "Integration should accumulate value"
 
+    def test_pole_at_origin_requires_positive_shift(self):
+        """G(s) = s F(s) is evaluated at s = a + i omega; at a = 0 the k = 0 sample is 0 * inf."""
+        def F(s):
+            return 1.0 / (s * (s + 1.0))
+
+        with pytest.raises(ValueError, match="positive"):
+            nilt_fft_with_pole_at_origin(F, dt=0.05, N=1024, a=0.0, dtype=jnp.float64)
+
+        result = nilt_fft_with_pole_at_origin(F, dt=0.05, N=1024, a=0.5, dtype=jnp.float64)
+        mask = result.t <= 10.0
+        exact = 1.0 - jnp.exp(-result.t[mask])
+        assert bool(jnp.all(jnp.isfinite(result.f)))
+        # Measured 3.0e-3 (trapezoidal integration of the inverted e^{-t})
+        assert float(jnp.max(jnp.abs(result.f[mask] - exact))) < 5e-3
+
 
 class TestHighLevelInterface:
     """Test the high-level invert_laplace interface."""
@@ -206,6 +234,24 @@ class TestHighLevelInterface:
         # Check that output covers requested interval
         assert result.t[-1] >= 10.0 or result.T >= 10.0
 
+    def test_long_horizon_defaults_are_feasible(self):
+        """The defaults come from tune_nilt_params, so a t_max stays inside the float32 budget at t_end = 50.
+
+        The old fixed default a = 0.5 with 2T = 4 t_end gave a t_max = 100,
+        past the float32 overflow guard, and invert_laplace(t_end=50) raised.
+        """
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+
+        with pytest.warns(UserWarning):
+            result = invert_laplace(F, t_end=50.0)
+
+        assert bool(jnp.all(jnp.isfinite(result.f)))
+        assert result.t[-1] >= 50.0
+        assert result.a > 0.0
+        mask = (result.t > 0) & (result.t <= 5.0)
+        assert float(jnp.max(jnp.abs(result.f[mask] - jnp.exp(-result.t[mask])))) < 0.1
+
     def test_with_pole_at_origin_flag(self):
         """Test has_pole_at_origin flag routes to convolution method."""
         # Use F(s) = 1/(s*(s+1)) which has a simple pole at origin
@@ -220,6 +266,60 @@ class TestHighLevelInterface:
         assert result.t is not None
         assert result.f is not None
         assert len(result.t) == len(result.f)
+
+
+class TestOverflowGuard:
+    """exp(a t) must never overflow silently."""
+
+    def test_overflow_guard_without_x64(self):
+        """With x64 off a float64 request yields a float32 grid; the guard judges that dtype.
+
+        a t_max = 127.5 is inside the float64 budget (699.8) but past the
+        float32 one (78.7). Before, the guard read the declared dtype and let
+        the float32 computation return inf.
+        """
+        code = (
+            "import jax\n"
+            "jax.config.update('jax_enable_x64', False)\n"
+            "import jax.numpy as jnp\n"
+            "from moljax.laplace import nilt_fft_uniform\n"
+            "try:\n"
+            "    r = nilt_fft_uniform(lambda s: 1 / (s + 1), dt=0.1, N=256, a=5.0, dtype=jnp.float64)\n"
+            "except ValueError as e:\n"
+            "    print('RAISED', str(e).splitlines()[0])\n"
+            "else:\n"
+            "    print('FINITE', bool(jnp.all(jnp.isfinite(r.f))), str(r.f.dtype))\n"
+        )
+        env = dict(os.environ, JAX_PLATFORMS='cpu', PYTHONPATH=ROOT)
+        out = subprocess.run(
+            [sys.executable, '-c', code], capture_output=True, text=True, env=env, cwd=ROOT, check=True
+        )
+        assert out.stdout.startswith('RAISED') or 'FINITE True' in out.stdout, out.stdout + out.stderr
+        if out.stdout.startswith('RAISED'):
+            assert 'float32' in out.stdout, out.stdout
+
+    def test_halfstep_and_smoothing_have_the_guard(self):
+        """a t_max = 766 exceeds the float64 budget; the half-step and smoothing variants must refuse, not return inf."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+
+        with pytest.raises(ValueError, match="overflow"):
+            nilt_fft_halfstep(F, dt=0.1, N=256, a=30.0, dtype=jnp.float64)
+        with pytest.raises(ValueError, match="overflow"):
+            nilt_with_smoothing(F, 0.1, 256, 30.0)
+
+
+class TestTruncationErrorEstimate:
+    def test_estimate_honors_dtype(self):
+        """The cutoff sample is evaluated in the complex type matching dtype, not always complex64."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+
+        exact = 1.0 / (1.0 + 100.0 ** 2) ** 0.5
+        est64 = estimate_nilt_truncation_error(F, 0.0, 100.0, dtype=jnp.float64)
+        assert abs(est64 - exact) < 1e-13, est64 - exact
+        est32 = estimate_nilt_truncation_error(F, 0.0, 100.0, dtype=jnp.float32)
+        assert abs(est32 - exact) < 1e-7
 
 
 class TestStandardPairsSuite:

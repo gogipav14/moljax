@@ -346,7 +346,7 @@ def nilt_with_smoothing(
         SmoothingResult in the diagnostics holds the half-grid spectrum and
         the N//2 + 1 σ-factors that were applied.
     """
-    from .nilt_fft import NILTResult, _nilt_from_half_spectrum
+    from .nilt_fft import NILTResult, _check_overflow, _nilt_from_half_spectrum
 
     T = N * dt / 2  # Period T = N*dt/2
     t_end_actual = t_end if t_end is not None else 2 * T
@@ -376,6 +376,7 @@ def nilt_with_smoothing(
         bandwidth_retention=float(energy_smoothed / (energy_original + 1e-30)),
     )
 
+    _check_overflow(a, t)
     f_values = _nilt_from_half_spectrum(F_smoothed, N, dt, a)
 
     # Create result

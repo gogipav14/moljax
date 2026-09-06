@@ -11,8 +11,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Literal, NamedTuple
 
-import jax
 import jax.numpy as jnp
+
+from .spectral_bounds import SpectralBounds
+from .tuning import _log_max_float, tune_nilt_params
 
 
 class NILTResult(NamedTuple):
@@ -385,29 +387,31 @@ def _nilt_from_half_spectrum(F_pos: jnp.ndarray, N: int, dt: float, a: float) ->
     return jnp.real(jnp.fft.ifft(F_full, axis=-1)) * jnp.exp(a * t) * N / (2.0 * T)
 
 
-def _check_overflow(a: float, t: jnp.ndarray, dtype) -> None:
+def _check_overflow(a: float, t: jnp.ndarray) -> None:
     """
     Raise before exp(a t) overflows on the time grid.
 
-    The thresholds are log(maxfloat) - 10 for the declared dtype, the same
-    budget the autotuner uses, so a tuned parameter set never trips this.
+    The budget is log(maxfloat) - 10 for the dtype the grid actually has,
+    not the one the caller asked for: with x64 off JAX allocates float32 for
+    a float64 request, and exp(a t) then overflows at a t_max = 88.7 rather
+    than 709.8, leaving inf in the result with no error (a = 5.46, t_max = 40
+    gave 152 non-finite values of 256). The budget is the autotuner's, so
+    parameters tuned for the precision in use never trip this.
     """
     if a <= 0:
         return
     t_max = float(t[-1])
     max_exponent = a * t_max
-
-    if dtype == jnp.float32 or str(dtype) == 'float32':
-        safe_threshold = 78.7  # log(maxfloat32) - 10
-    else:
-        safe_threshold = 699.8  # log(maxfloat64) - 10
+    safe_threshold = _log_max_float(t.dtype)
 
     if max_exponent > safe_threshold:
         raise ValueError(
-            f"NILT overflow risk: a*t_max = {max_exponent:.2f} > {safe_threshold:.1f}.\n"
-            f"  Parameters: a={a:.2e}, t_max={t_max:.2f}, dtype={dtype}\n"
-            f"  This should not occur if autotuner was used. "
-            f"Use tune_nilt_params() to compute safe parameters."
+            f"NILT overflow risk: a*t_max = {max_exponent:.2f} > {safe_threshold:.1f} "
+            f"for a {t.dtype} grid.\n"
+            f"  Parameters: a={a:.2e}, t_max={t_max:.2f}, grid dtype={t.dtype}\n"
+            f"  If float64 was requested, enable it with "
+            f"jax.config.update(\"jax_enable_x64\", True); otherwise use "
+            f"tune_nilt_params(dtype=...) to compute parameters within this budget."
         )
 
 
@@ -444,7 +448,10 @@ def nilt_fft_uniform(
         a: Bromwich contour shift (should be > max Re(poles))
         dtype: Output data type
         apply_projection: If True, apply Hermitian projection to denoise spectrum
-        projection_threshold: Only project if ε_Im > threshold (None = dtype default)
+        projection_threshold: Recorded in diagnostics['projection_threshold'] and
+            used to label diagnostics['projection_reason'] as 'threshold_exceeded'
+            or 'user_requested'; it does not gate the projection, which
+            apply_projection alone controls (None = 1.5)
         return_diagnostics: If True, include comprehensive frequency-domain quality metrics
         t_end: End of valid region for refined diagnostics (None = use T as default)
 
@@ -496,22 +503,10 @@ def nilt_fft_uniform(
     # Full Hermitian spectrum: DC and Nyquist forced real, F[N-k] = conj(F[k])
     F_vals = _hermitian_full_spectrum(F_pos, N)
 
-    # Determine projection threshold (dtype-dependent defaults)
-    # Use ε_Im (imaginary leakage) as primary gate - method-aligned metric
-    #
-    # NOTE: For validated one-sided grid with DC halving:
-    #   - Baseline ε_Im ≈ 1.0 (expected, not a bug)
-    #   - Projection reduces ε_Im: 1.0 → 0.0 (machine precision)
-    #   - Threshold should be relative to baseline
-    #
-    # Recommended thresholds:
-    #   - ε_Im < 1.5: Normal (projection optional for quality)
-    #   - ε_Im > 2.0: Poor tuning (projection + consider retuning parameters)
+    # The threshold does not gate the projection (apply_projection does); it
+    # is recorded in the diagnostics and labels projection_reason.
     if projection_threshold is None:
-        if dtype == jnp.float32 or str(dtype) == 'float32':
-            projection_threshold = 1.5  # Above baseline ~1.0, trigger quality improvement
-        else:
-            projection_threshold = 1.5  # Same for float64 (baseline is method-dependent)
+        projection_threshold = 1.5
 
     # Optional: Compute symmetry residual for diagnostics
     # NOTE: eps_sym is structurally ~1.0 for validated one-sided grid (DC halving)
@@ -593,7 +588,7 @@ def nilt_fft_uniform(
         diagnostics['projection_applied'] = projection_applied
 
     # Runtime overflow failsafe (should never trigger if autotuner used correctly)
-    _check_overflow(a, t, dtype)
+    _check_overflow(a, t)
 
     # Scaling for signed frequency grid (two-sided integral):
     # f(t) = (e^{at}/2π) ∫_{-∞}^{∞} F(a+iω) e^{iωt} dω
@@ -734,6 +729,8 @@ def nilt_fft_halfstep(
             'omega_max': float(jnp.pi / dt),
             'delta_omega': float(jnp.pi / T),
         }
+
+    _check_overflow(a, t)
 
     # Scaling for signed frequency grid (two-sided integral):
     # f(t) = (e^{at}/2π) ∫_{-∞}^{∞} F(a+iω) e^{iωt} dω
@@ -994,7 +991,7 @@ def nilt_fft_signed_omega(
     ifft_result = jnp.fft.ifft(F_vals)
 
     # Runtime overflow failsafe
-    _check_overflow(a, t, dtype)
+    _check_overflow(a, t)
 
     # Scaling for signed grid: Need to match two-sided integral formula
     # For two-sided integral: f(t) = (e^{at}/2π) ∫_{-∞}^{∞} F(a+iω) e^{iωt} dω
@@ -1080,7 +1077,7 @@ def nilt_fft_with_pole_at_origin(
     *,
     dt: float,
     N: int,
-    a: float = 0.0,
+    a: float,
     dtype: jnp.dtype = jnp.float32,
     integration_rule: Literal["trapezoid", "simpson"] = "trapezoid"
 ) -> NILTResult:
@@ -1097,13 +1094,24 @@ def nilt_fft_with_pole_at_origin(
         F_eval: Function F(s) with pole at s=0
         dt: Time step
         N: Number of FFT points
-        a: Bromwich shift
+        a: Bromwich shift, strictly positive. G is evaluated as s F(s) at
+            s = a + iω, and at a = 0 the k = 0 sample is 0 times the pole,
+            NaN, which the ifft spreads over every output point.
         dtype: Output data type
         integration_rule: Rule for numerical integration
 
     Returns:
         NILTResult with inverse transform
+
+    Raises:
+        ValueError: If a is not positive.
     """
+    if a <= 0:
+        raise ValueError(
+            f"nilt_fft_with_pole_at_origin needs a positive Bromwich shift, got a={a}: "
+            "the k = 0 sample of s F(s) is evaluated at s = a, which is the pole itself when a = 0."
+        )
+
     # Define G(s) = s * F(s) (removes pole at origin)
     def G_eval(s):
         return s * F_eval(s)
@@ -1126,18 +1134,8 @@ def nilt_fft_with_pole_at_origin(
 
 
 # =============================================================================
-# Optimized variants
+# Batched variant
 # =============================================================================
-
-@jax.jit
-def _nilt_core_jit(F_vals: jnp.ndarray, a: float, dt: float,
-                   N: int, omega_0: float) -> jnp.ndarray:
-    """JIT-compiled core NILT computation."""
-    f_shifted = jnp.fft.ifft(F_vals)
-    t = jnp.arange(N, dtype=F_vals.real.dtype) * dt
-    f = jnp.real(f_shifted) * jnp.exp(a * t) * (N / 2.0) * omega_0 / jnp.pi
-    return f
-
 
 def nilt_fft_batch(
     F_eval: Callable[[jnp.ndarray], jnp.ndarray],
@@ -1179,7 +1177,7 @@ def nilt_fft_batch(
         F_vals = F_vals[None, :]  # Add batch dimension
 
     t = jnp.arange(N, dtype=dtype) * dt
-    _check_overflow(a, t, dtype)
+    _check_overflow(a, t)
 
     f = _nilt_from_half_spectrum(F_vals, N, dt, a)
 
@@ -1219,7 +1217,8 @@ def estimate_nilt_truncation_error(
         Estimate of truncation error contribution
     """
     s_cutoff = a + 1j * omega_max
-    F_at_cutoff = F_eval(jnp.array([s_cutoff], dtype=jnp.complex64))
+    cdtype = jnp.complex128 if jnp.dtype(dtype) == jnp.dtype(jnp.float64) else jnp.complex64
+    F_at_cutoff = F_eval(jnp.array([s_cutoff], dtype=cdtype))
     return float(jnp.abs(F_at_cutoff[0]))
 
 
@@ -1262,37 +1261,42 @@ def invert_laplace(
     a: float | None = None,
     dt: float | None = None,
     N: int | None = None,
+    bounds: SpectralBounds | dict | None = None,
     has_pole_at_origin: bool = False,
     dtype: jnp.dtype = jnp.float32
 ) -> NILTResult:
     """
     High-level interface for Laplace transform inversion.
 
-    Automatically selects parameters if not provided.
+    Parameters that are not given come from tune_nilt_params, so the shift,
+    the period and the grid respect the overflow budget of ``dtype`` and the
+    wraparound criterion for any t_end. The previous fixed defaults
+    (a = 0.5, N = 1024, 2T = 4 t_end) put a t_max past the float32 budget
+    for t_end above about 39 and the call raised.
 
     Args:
         F_eval: Laplace domain function F(s)
         t_end: End time for inversion
-        a: Bromwich shift (auto-selected if None)
-        dt: Time step (auto-selected if None)
-        N: FFT size (auto-selected if None)
+        a: Bromwich shift (tuned if None)
+        dt: Time step (2T/N of the tuned parameters if None)
+        N: FFT size (tuned if None)
+        bounds: Spectral bounds for the tuner (SpectralBounds or dict with
+            rho, re_max, im_max). Without them the tuner assumes a stable
+            operator of spectral radius 10 and warns.
         has_pole_at_origin: Use convolution method if True
         dtype: Output data type
 
     Returns:
         NILTResult with inverse transform
     """
-    # Default parameter selection
-    if a is None:
-        a = 0.5  # Small positive shift
-
-    if N is None:
-        N = 1024  # Default FFT size
-
-    if dt is None:
-        # Ensure we cover [0, t_end] with some margin
-        T_target = 2.0 * t_end  # Period should be > t_end
-        dt = 2.0 * T_target / N
+    if a is None or dt is None or N is None:
+        tuned = tune_nilt_params(t_end=t_end, bounds=bounds, dtype=dtype)
+        if a is None:
+            a = tuned.a
+        if N is None:
+            N = tuned.N
+        if dt is None:
+            dt = 2.0 * tuned.T / N
 
     if has_pole_at_origin:
         return nilt_fft_with_pole_at_origin(
