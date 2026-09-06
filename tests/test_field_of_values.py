@@ -124,3 +124,61 @@ def test_origin_enclosure_and_disk_rate():
     assert straddling_result.origin_enclosed
     assert straddling_result.disk_rate == pytest.approx(1.5, abs=1.0e-12)
     assert positive_result.cp_prefactor == pytest.approx(1.0 + math.sqrt(2.0))
+
+
+@pytest.mark.slow
+def test_numerical_range_scale_invariance():
+    """Flags, residuals and geometry are equivariant under rescaling the operator.
+
+    The certificate gates used to floor their scale at 1.0, so an operator of
+    magnitude 1e-8 passed the residual gate and the restart corroboration with
+    the same unconverged vectors that failed both gates at magnitude 1.  Every
+    flag and every relative quantity below has to be identical across sixteen
+    decades, and the boundary has to scale exactly.
+    """
+    m = 24
+    center = 0.9 * np.exp(-1j * np.pi / 4)
+    diagonal = center + np.exp(2j * np.pi * np.arange(m) / m)
+    scales = [1.0e-8, 1.0e-4, 1.0, 1.0e4, 1.0e8]
+    for max_iters, expected_resolved in ((1, False), (120, True)):
+        results = []
+        for scale in scales:
+            matvec, matvec_adjoint = _matrix_actions(np.diag(scale * diagonal))
+            results.append(
+                numerical_range(
+                    matvec,
+                    matvec_adjoint,
+                    m,
+                    n_angles=8,
+                    max_iters=max_iters,
+                    n_restarts=2,
+                )
+            )
+        reference = results[scales.index(1.0)]
+        assert reference.supports_converged is expected_resolved
+        assert reference.supports_corroborated is expected_resolved
+        for scale, result in zip(scales, results, strict=True):
+            assert result.supports_converged is expected_resolved
+            assert result.supports_corroborated is expected_resolved
+            if expected_resolved:
+                # The unresolved sweep separates the origin on an unconverged
+                # support; whether that separation survives the hull check is
+                # a geometry question with its own scale test.
+                assert result.origin_enclosed is reference.origin_enclosed
+            # At this residual level (order 1e-10 for the resolved sweep) the
+            # remaining variation across sixteen decades of scale is floating-
+            # point rounding noise, not a defect: matching numerics reference
+            # item 1's own measurement of "2.7e-10 at every scale", a generous
+            # relative tolerance still catches the original defect, which
+            # floored the residual at a fixed scale and disagreed by many
+            # orders of magnitude rather than by rounding.
+            assert result.max_support_residual == pytest.approx(
+                reference.max_support_residual, rel=0.5
+            )
+            assert result.disk_rate == pytest.approx(reference.disk_rate, rel=1.0e-9)
+            np.testing.assert_allclose(
+                np.asarray(result.boundary) / scale,
+                np.asarray(reference.boundary),
+                rtol=1.0e-9,
+                atol=0.0,
+            )

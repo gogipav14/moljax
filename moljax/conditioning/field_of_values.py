@@ -27,7 +27,6 @@ from moljax.conditioning._geometry import (
     _smallest_enclosing_disk,
     _support_outer_polygon,
 )
-from moljax.laplace.spectral_bounds import power_iteration_rho
 
 Matvec = Callable[[jax.Array], jax.Array]
 _CP_PREFACTOR = 1.0 + math.sqrt(2.0)
@@ -52,10 +51,14 @@ class FieldOfValuesResult(NamedTuple):
             the same condition as the outer bound.  ``True`` means no
             separating direction was found and the caller should abstain.
         cp_prefactor: The Crouzeix--Palencia spectral-set prefactor.
-        max_support_residual: Largest relative eigenpair residual over the
-            support directions.  Reports how well the boundary is resolved so
-            that the disk rate can be read with its convergence quality in
-            view, rather than trusting an unqualified number.
+        max_support_residual: Largest eigenpair residual over the support
+            directions, in units of the operator's scale (the largest
+            spectral radius of a rotated Hermitian part met during the sweep,
+            between a quarter of ``||A||`` and ``||A||``), so the same operator
+            reports the same residual at every magnitude.  Reports how well
+            the boundary is resolved so that the disk rate can be read with
+            its convergence quality in view, rather than trusting an
+            unqualified number.
         supports_converged: Whether every support solve met the
             ``residual_tolerance`` requested of ``numerical_range``.  When
             false the supports are under-resolved, so a half-plane may be
@@ -141,6 +144,35 @@ def _realified_action(action: Matvec, n: int) -> Callable[[jax.Array], jax.Array
     return realified
 
 
+def _operator_scale(action: Callable[[jax.Array], jax.Array], start: jax.Array) -> float:
+    """Estimate the spectral radius of a real symmetric action by power iteration.
+
+    The estimate sets the shift that places LOBPCG's spectrum in [0.5, 1.5],
+    and its maximum over the sweep is the unit in which the eigenpair
+    residuals and the restart spreads are judged, so it has to track the
+    operator's magnitude rather than a fixed floor.
+    ``moljax.laplace.spectral_bounds.power_iteration_rho`` is not reused: it
+    returns 0 below an absolute 1e-14 and stops on ``tol * max(rho, 1)``,
+    which is the unit floor this function exists to remove.  Three
+    significant digits are plenty.  Any estimate above half the spectral
+    radius keeps the shifted spectrum positive, and the residuals it
+    normalizes are compared against a tolerance of order 1e-3.
+    """
+    vector = start / jnp.linalg.norm(start)
+    rho = 0.0
+    for _ in range(50):
+        image = action(vector)
+        rho_next = float(jnp.linalg.norm(image))
+        if rho_next < np.finfo(np.float64).tiny:
+            return 0.0
+        vector = image / rho_next
+        settled = abs(rho_next - rho) <= 1.0e-3 * rho_next
+        rho = rho_next
+        if settled:
+            break
+    return rho
+
+
 def _largest_hermitian_eigenvector(
     action: Matvec,
     n: int,
@@ -148,11 +180,17 @@ def _largest_hermitian_eigenvector(
     max_iters: int,
     tolerance: float,
     restart: int,
-) -> tuple[jax.Array, float]:
-    """Find a dominant eigenvector and its relative eigenpair residual.
+) -> tuple[jax.Array, float, float]:
+    """Find a dominant eigenvector, its eigenpair residual norm, and the scale.
 
     The residual is returned, not judged: ``numerical_range`` compares it
-    against the tolerance the caller requested.
+    against the tolerance the caller requested.  It is returned as an absolute
+    norm together with the spectral radius of ``action``, and the caller
+    divides by the largest such radius met over the sweep.  The radius of this
+    one direction is the wrong unit: for a real operator the rotated Hermitian
+    part at ``theta = pi / 2`` is ``0.5 (i A - i A*)``, a cancellation that
+    leaves rounding noise of size ``eps ||A||``, and a residual judged against
+    that noise fails every gate for a support that is exact to rounding.
     """
     real_dimension = 2 * n
     # Realification represents every complex eigenvector by two real vectors,
@@ -167,13 +205,20 @@ def _largest_hermitian_eigenvector(
         jnp.arange(n, dtype=jnp.float64) + 0.5 * theta + 0.5
     )
     initial_real = jnp.concatenate((jnp.real(initial_complex), jnp.imag(initial_complex)))
-    spectral_scale = power_iteration_rho(
-        real_action,
-        initial_real,
-        max_iters=max(50, min(max_iters, 100)),
-        tol=tolerance,
-    )
-    shift = max(2.0 * abs(spectral_scale), 1.0)
+    spectral_scale = _operator_scale(real_action, initial_real)
+    if spectral_scale < np.finfo(np.float64).tiny:
+        # The rotated Hermitian part vanishes: every vector is an eigenvector
+        # with eigenvalue zero, the support is exactly zero, and there is no
+        # direction to resolve or scale to shift by.
+        vector = initial_complex / jnp.linalg.norm(initial_complex)
+        return vector, 0.0, spectral_scale
+    # Dividing by twice the spectral radius maps the spectrum of the rotated
+    # Hermitian part into [0.5, 1.5] whatever the operator's magnitude, so
+    # LOBPCG's convergence test, which is relative to the operator it is
+    # handed, behaves identically for A and for s * A.  The previous floor of
+    # 1.0 on the shift turned any operator of magnitude well below one into a
+    # perturbation of the identity that the solver accepted in one step.
+    shift = 2.0 * spectral_scale
 
     def shifted_action(value: jax.Array) -> jax.Array:
         active = value[:real_dimension]
@@ -217,11 +262,15 @@ def _largest_hermitian_eigenvector(
     # interior of the numerical range, understating the radius and, with it,
     # the disk rate that the adequacy verdict is read from.  Validate the
     # eigenpair before trusting it.
-    action_value = shifted_action(candidate)
-    rayleigh = jnp.real(jnp.vdot(candidate, action_value))
-    residual = float(jnp.linalg.norm(action_value - rayleigh * candidate))
-    relative = residual / max(float(abs(rayleigh)), 1.0)
-    if not math.isfinite(relative):
+    real_vector = candidate[:real_dimension]
+    real_vector = real_vector / jnp.linalg.norm(real_vector)
+    # Measured on the unshifted action.  The shifted operator has norm about
+    # one at every scale, so a residual taken there and floored at one shrank
+    # with the operator and hid every defect once the operator was small.
+    action_value = real_action(real_vector)
+    rayleigh = jnp.real(jnp.vdot(real_vector, action_value))
+    residual = float(jnp.linalg.norm(action_value - rayleigh * real_vector))
+    if not math.isfinite(residual):
         raise RuntimeError(
             "numerical-range support produced a non-finite eigenpair residual "
             f"at theta={theta:.6f}; the operator or its adjoint is returning "
@@ -235,9 +284,8 @@ def _largest_hermitian_eigenvector(
     # absolute geometry is not certified.  The residual travels with the
     # result and assess_preconditioner abstains on it, so the verdict path
     # stays safe while the numbers remain available.
-    real_vector = candidate[:real_dimension]
     vector = real_vector[:n] + 1j * real_vector[n:]
-    return vector / jnp.linalg.norm(vector), relative
+    return vector, residual, spectral_scale
 
 
 def numerical_range(
@@ -262,11 +310,20 @@ def numerical_range(
         dtype: Complex working dtype.  Numerical-range diagnostics require
             ``complex128`` to provide float64 accuracy.
         max_iters: Maximum matrix-free LOBPCG iterations per direction.
-        tolerance: Relative eigensolver tolerance.
-        residual_tolerance: Largest relative eigenpair residual the caller is
-            willing to treat as resolved.  Exceeding it does not raise; it
-            clears ``supports_converged``, which ``assess_preconditioner``
-            refuses to certify.
+        tolerance: LOBPCG convergence tolerance.  The solver accepts an
+            eigenpair once its residual is below
+            ``tolerance * 10 * n_pad * (||A x|| + theta)`` for the operator
+            it is handed.  That operator is the rotated Hermitian part shifted
+            and scaled to have spectrum in [0.5, 1.5], so this is an effective
+            relative residual of about ``30 * n_pad * tolerance`` at every
+            operator magnitude, with ``n_pad = max(2 n, 16)`` the padded real
+            dimension.
+        residual_tolerance: Largest eigenpair residual, in units of the
+            operator's scale, the caller is willing to treat as resolved.
+            Exceeding it does not raise; it clears ``supports_converged``,
+            which ``assess_preconditioner`` refuses to certify.  The same
+            tolerance, in the same unit, bounds the spread between restarts
+            that still counts as agreement.
         n_restarts: Independent eigensolver starts per direction.  A single
             fixed start cannot establish that it found a global maximum;
             additional starts corroborate it, and disagreement clears
@@ -304,8 +361,16 @@ def numerical_range(
 
     boundary: list[jax.Array] = []
     thetas: list[float] = []
+    # Residual norms and restart spreads are collected in absolute terms and
+    # judged after the sweep in units of the operator's scale: the largest
+    # spectral radius of a rotated Hermitian part met in any direction, which
+    # lies between a quarter of ||A|| and ||A||.  That unit tracks the operator
+    # at every magnitude, where a floor of 1.0 passed every small operator, and
+    # it does not judge a direction whose Hermitian part cancels to rounding
+    # noise against its own noise.
     worst_residual = 0.0
-    corroborated = True
+    worst_spread = 0.0
+    operator_scale = 0.0
     for index in range(n_angles):
         theta = 2.0 * math.pi * index / n_angles
         thetas.append(theta)
@@ -315,7 +380,7 @@ def numerical_range(
         best_support = -math.inf
         attempt_supports: list[float] = []
         for restart in range(n_restarts):
-            candidate, support_residual = _largest_hermitian_eigenvector(
+            candidate, support_residual, spectral_scale = _largest_hermitian_eigenvector(
                 hermitian,
                 n,
                 theta,
@@ -324,6 +389,7 @@ def numerical_range(
                 restart,
             )
             worst_residual = max(worst_residual, support_residual)
+            operator_scale = max(operator_scale, spectral_scale)
             value = complex(jnp.vdot(candidate, _complex_action(matvec, candidate)))
             attempt = (rotation * value).real
             attempt_supports.append(attempt)
@@ -332,12 +398,19 @@ def numerical_range(
             if attempt > best_support:
                 best_support, best_vector = attempt, candidate
         if len(attempt_supports) > 1:
-            spread = max(attempt_supports) - min(attempt_supports)
-            if spread > residual_tolerance * max(abs(best_support), 1.0):
-                corroborated = False
+            worst_spread = max(worst_spread, max(attempt_supports) - min(attempt_supports))
         vector = best_vector
         boundary.append(jnp.vdot(vector, _complex_action(matvec, vector)))
     boundary_array = jnp.asarray(boundary, dtype=jnp.complex128)
+    # A zero scale means every rotated Hermitian part vanished, so every
+    # residual and spread is exactly zero as well and there is nothing to
+    # normalize.
+    if operator_scale > 0.0:
+        worst_residual /= operator_scale
+        worst_spread /= operator_scale
+    # Judged in the same unit as the residual gate.  A floor of 1.0 here read
+    # any disagreement between restarts on a small operator as agreement.
+    corroborated = bool(worst_spread <= residual_tolerance)
 
     boundary_host = np.asarray(boundary_array, dtype=np.complex128)
     theta_host = np.asarray(thetas, dtype=np.float64)

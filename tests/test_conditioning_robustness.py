@@ -188,7 +188,7 @@ class TestSampledBoundaryIsNotTreatedAsEnclosure:
         assessment = assess_preconditioner(result, ritz, epsilon_zero=float(abs(center)))
         # The outer bound must never understate a range that contains zero.
         assert result.disk_rate >= 1.0
-        assert assessment.verdict != "adequate"
+        assert assessment.verdict == "indeterminate"
 
     @pytest.mark.slow
     def test_outer_bound_converges_from_above(self) -> None:
@@ -237,7 +237,7 @@ class TestOutlierGateCanActuallyReject:
 
         assessment = assess_preconditioner(fov, ritz, epsilon_zero=0.9)
         assert assessment.n_right_real_outliers >= 1
-        assert assessment.verdict != "adequate"
+        assert assessment.verdict == "investigate"
 
     def test_enclosing_disk_would_be_vacuous(self) -> None:
         """Pin the reason the gate must not use the enclosing disk."""
@@ -711,3 +711,54 @@ class TestOutlierGateFailsClosed:
         assert assessment.verdict == "investigate"
         assert assessment.n_right_real_outliers == 0
 
+
+
+class TestCertificateGatesAreScaleInvariant:
+    """The residual and corroboration gates must not depend on operator magnitude.
+
+    Both gates normalized by ``max(scale, 1.0)`` and the LOBPCG shift was
+    floored at 1.0 as well, so an operator of magnitude 1e-6 was solved as a
+    perturbation of the identity: the eigensolver stopped at once, the
+    residual gate measured its unconverged vectors against a unit scale and
+    passed them, and the restart spread was judged against 1.0 and read as
+    agreement.  The same operator at magnitude 1 failed both gates.  A flag
+    that flips when the equations are rescaled is not a certificate.
+    """
+
+    @staticmethod
+    def _actions(diagonal: np.ndarray):
+        values = jnp.asarray(diagonal, dtype=jnp.complex128)
+        return (lambda v: values * v), (lambda v: jnp.conj(values) * v)
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("scale", [1.0, 1.0e-6, 1.0e-10])
+    def test_unconverged_supports_fail_both_gates_at_every_scale(self, scale: float) -> None:
+        # 396 eigenvalues in [0.8, 1.0] and four at -1, so W(A) = [-1, 1].
+        # Three LOBPCG iterations cannot resolve the supports: both gates
+        # must fire, and they must fire regardless of the magnitude.
+        m = 400
+        diagonal = scale * np.concatenate([np.linspace(0.8, 1.0, m - 4), [-1.0] * 4])
+        matvec, adjoint = self._actions(diagonal)
+        result = numerical_range(matvec, adjoint, m, n_angles=8, max_iters=3, n_restarts=2)
+        assert result.supports_converged is False
+        assert result.supports_corroborated is False
+        assert result.supports_consistent is False
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("scale", [1.0, 1.0e-6, 1.0e-10])
+    def test_enclosed_origin_is_found_at_every_scale(self, scale: float) -> None:
+        # Eigenvalues on the unit circle about a center of modulus 0.9, so the
+        # origin lies inside W(A).  A resolved sweep must report it enclosed and
+        # the outer disk must be the same disk, rescaled: with the unit floor
+        # the 1e-10 copy was "solved" in one step and reported a smaller disk
+        # with a clean certificate.
+        m = 24
+        center = 0.9 * np.exp(-1j * np.pi / 4)
+        diagonal = scale * (center + np.exp(2j * np.pi * np.arange(m) / m))
+        matvec, adjoint = self._actions(diagonal)
+        result = numerical_range(matvec, adjoint, m, n_angles=8, max_iters=120, n_restarts=2)
+        assert result.supports_consistent
+        assert result.origin_enclosed is True
+        # Exact eight-direction outer disk of the unscaled operator.
+        assert result.disk_rate == pytest.approx(1.2027, abs=1.0e-3)
+        assert result.radius / scale == pytest.approx(1.0824, abs=1.0e-3)
