@@ -15,6 +15,7 @@ Test categories:
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 from jax import random
 
@@ -357,6 +358,29 @@ class TestCFL:
 
         rel_diff = abs(dt_cfl - expected_dt) / expected_dt
         assert rel_diff < 0.01, f"CFL mismatch: {dt_cfl} vs {expected_dt}"
+
+    def test_explicit_cfl_complex_spectrum(self, grid_128):
+        """Forward Euler has no stable dt for a purely imaginary spectrum.
+
+        |1 + dt lambda| <= 1 requires dt <= -2 Re(lambda) / |lambda|^2 for
+        every eigenvalue. Pure advection has Re(lambda) = 0 and the limit
+        is zero; 2/rho, the real-axis formula, would report a positive dt
+        at which every mode grows. For advection-diffusion the bound is
+        the minimum of that expression over the nonzero eigenvalues.
+        """
+        grid = grid_128
+
+        pure_advection = AdvectionDiffusionOperator(grid, v=1.0, D=0.0)
+        assert exact_cfl_dt(pure_advection, method='explicit', safety=1.0) == 0.0
+
+        op = AdvectionDiffusionOperator(grid, v=1.0, D=0.01)
+        lam = np.asarray(op.eigenvalues)
+        lam = lam[np.abs(lam) > 1e-14]
+        expected = float(np.min(-2.0 * lam.real / np.abs(lam) ** 2))
+        dt_cfl = exact_cfl_dt(op, method='explicit', safety=1.0)
+        assert abs(dt_cfl - expected) < 1e-12 * expected
+        # Strictly below the real-axis formula, which ignores Im(lambda)
+        assert dt_cfl < 2.0 / float(np.max(np.abs(lam)))
 
     def test_etd_allows_large_dt(self, grid_128):
         """ETD should remain stable with dt > CFL."""

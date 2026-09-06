@@ -4,6 +4,9 @@ Tests for non-periodic FFT solvers (Dirichlet/Neumann BCs).
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+import pytest
+from jax.scipy.fft import dct, idct
 
 jax.config.update("jax_enable_x64", True)
 
@@ -11,9 +14,15 @@ from moljax.core.fft_nonperiodic import (
     BCType,
     check_compatibility_neumann,
     create_nonperiodic_fft_cache,
+    dct_I,
+    dct_I_2d,
+    dst_I,
     dst_I_fast,
     etd1_dirichlet,
     etd1_neumann,
+    idct_I,
+    idct_I_2d,
+    idst_I,
     idst_I_fast,
     laplacian_symbol_dirichlet,
     laplacian_symbol_neumann,
@@ -22,6 +31,43 @@ from moljax.core.fft_nonperiodic import (
     solve_helmholtz_neumann,
     solve_poisson_dirichlet,
 )
+
+
+class TestTransformRoundTrips:
+    """Every transform pair in the module is an inverse pair, for even and odd N.
+
+    The slow DST-I pair once carried a factor 2 in the forward transform
+    that the inverse did not undo, so idst_I(dst_I(x)) returned 2x.
+    """
+
+    PAIRS_1D = {
+        'dst_I': (dst_I, idst_I),
+        'dst_I_fast': (dst_I_fast, idst_I_fast),
+        'dct_I': (dct_I, idct_I),
+        'dct_II_ortho': (lambda x: dct(x, type=2, norm='ortho'),
+                         lambda X: idct(X, type=2, norm='ortho')),
+    }
+
+    @pytest.mark.parametrize("name", sorted(PAIRS_1D))
+    @pytest.mark.parametrize("N", [32, 31])
+    def test_round_trip_1d(self, name, N):
+        forward, inverse = self.PAIRS_1D[name]
+        x = jnp.asarray(np.random.default_rng(N).standard_normal(N))
+        err = float(jnp.max(jnp.abs(inverse(forward(x)) - x)))
+        assert err < 1e-12, f"{name}, N={N}: round-trip error {err:.2e}"
+
+    @pytest.mark.parametrize("shape", [(16, 24), (15, 23), (16, 23)])
+    def test_round_trip_dct_I_2d(self, shape):
+        x = jnp.asarray(np.random.default_rng(shape[0]).standard_normal(shape))
+        err = float(jnp.max(jnp.abs(idct_I_2d(dct_I_2d(x)) - x)))
+        assert err < 1e-12, f"dct_I_2d, shape {shape}: round-trip error {err:.2e}"
+
+    @pytest.mark.parametrize("N", [32, 31])
+    def test_slow_and_fast_dst_agree(self, N):
+        """Both DST-I implementations compute the same unnormalized sum."""
+        x = jnp.asarray(np.random.default_rng(N).standard_normal(N))
+        err = float(jnp.max(jnp.abs(dst_I(x) - dst_I_fast(x))))
+        assert err < 1e-12, f"N={N}: dst_I and dst_I_fast differ by {err:.2e}"
 
 
 class TestDST:

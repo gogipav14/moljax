@@ -238,6 +238,28 @@ class TestNKRobustness:
         # Linear system should converge quickly (within a few iterations)
         assert int(result.stats.newton_iters) <= 5
 
+    def test_nk_lin_iters_is_the_krylov_budget(self):
+        """lin_iters counts the GMRES budget, max_krylov_iters per Newton step.
+
+        jax.scipy.sparse.linalg.gmres returns (x, info) with no iteration
+        count, so the statistic is the budget that was made available, not
+        the iterations spent. This pins the documented meaning.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': x['u'] ** 2 - 1.0}
+
+        result = newton_krylov_solve(
+            residual_fn=residual,
+            x0={'u': jnp.array([0.5, 0.5, 0.5])},
+            grid=grid,
+            params={},
+            nk_params=NKParams(newton_tol=1e-8, max_krylov_iters=7)
+        )
+
+        assert int(result.stats.lin_iters) == 7 * int(result.stats.newton_iters)
+
     def test_nk_converged_on_last_allowed_iteration(self):
         """The flag describes the returned iterate, not the one before it.
 

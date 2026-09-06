@@ -13,6 +13,7 @@ Key optimizations:
 
 from __future__ import annotations
 
+import math
 from functools import partial
 
 import jax
@@ -22,32 +23,55 @@ from jax import lax
 # =============================================================================
 # φ-functions (JIT-compiled)
 # =============================================================================
+#
+# phi_n(z) = (exp(z) - sum_{j<n} z^j/j!) / z^n, so phi_1 = (e^z - 1)/z,
+# phi_2 = (e^z - 1 - z)/z^2 and phi_3 = (e^z - 1 - z - z^2/2)/z^3. The
+# direct formula cancels the n leading terms of exp(z) and loses about n
+# decades of relative accuracy per decade below |z| = 1: in float64 phi_3
+# at |z| = 1e-2 is off by 3e-10 to 7e-10, and in float32 it is unusable
+# below |z| = 0.1. Below a threshold the Taylor series
+# sum_{j<16} z^j/(j+n)! is used instead. Sixteen terms give 4e-15 at
+# |z| = 0.5 in float64 and 9e-8 at |z| = 2 in float32, both below the
+# direct formula's error there, so the switch sits at |z| = 0.5 in double
+# and |z| = 2 in single precision, chosen from the dtype's epsilon at
+# trace time. The functions accept complex z (advection eigenvalues);
+# fft_integrators imports them so there is a single implementation.
+
+_PHI_TAYLOR_TERMS = 16
+
+
+def _phi_taylor(z: jnp.ndarray, n: int) -> jnp.ndarray:
+    """sum_{j<16} z^j / (j+n)! by Horner's rule; coefficients are exact Python floats."""
+    result = 1.0 / math.factorial(_PHI_TAYLOR_TERMS - 1 + n)
+    for j in range(_PHI_TAYLOR_TERMS - 2, -1, -1):
+        result = 1.0 / math.factorial(j + n) + z * result
+    return result
+
+
+def _phi_series_radius(z: jnp.ndarray) -> float:
+    """|z| below which the series beats the direct formula: 0.5 in double, 2.0 in single."""
+    return 0.5 if jnp.finfo(z.dtype).eps < 1e-10 else 2.0
+
 
 @jax.jit
 def phi1(z: jnp.ndarray) -> jnp.ndarray:
-    """JIT-compiled φ₁(z) = (exp(z) - 1) / z."""
-    taylor = 1.0 + z/2.0 + z**2/6.0 + z**3/24.0
-    exp_z = jnp.exp(z)
-    direct = (exp_z - 1.0) / z
-    return jnp.where(jnp.abs(z) < 1e-4, taylor, direct)
+    """φ₁(z) = (exp(z) - 1) / z, series below the precision-dependent radius."""
+    direct = (jnp.exp(z) - 1.0) / z
+    return jnp.where(jnp.abs(z) < _phi_series_radius(z), _phi_taylor(z, 1), direct)
 
 
 @jax.jit
 def phi2(z: jnp.ndarray) -> jnp.ndarray:
-    """JIT-compiled φ₂(z) = (exp(z) - 1 - z) / z²."""
-    taylor = 0.5 + z/6.0 + z**2/24.0 + z**3/120.0
-    exp_z = jnp.exp(z)
-    direct = (exp_z - 1.0 - z) / (z * z)
-    return jnp.where(jnp.abs(z) < 1e-4, taylor, direct)
+    """φ₂(z) = (exp(z) - 1 - z) / z², series below the precision-dependent radius."""
+    direct = (jnp.exp(z) - 1.0 - z) / (z * z)
+    return jnp.where(jnp.abs(z) < _phi_series_radius(z), _phi_taylor(z, 2), direct)
 
 
 @jax.jit
 def phi3(z: jnp.ndarray) -> jnp.ndarray:
-    """JIT-compiled φ₃(z) = (exp(z) - 1 - z - z²/2) / z³."""
-    taylor = 1.0/6.0 + z/24.0 + z**2/120.0 + z**3/720.0
-    exp_z = jnp.exp(z)
-    direct = (exp_z - 1.0 - z - z**2/2.0) / (z**3)
-    return jnp.where(jnp.abs(z) < 1e-4, taylor, direct)
+    """φ₃(z) = (exp(z) - 1 - z - z²/2) / z³, series below the precision-dependent radius."""
+    direct = (jnp.exp(z) - 1.0 - z - z**2/2.0) / (z**3)
+    return jnp.where(jnp.abs(z) < _phi_series_radius(z), _phi_taylor(z, 3), direct)
 
 
 # =============================================================================

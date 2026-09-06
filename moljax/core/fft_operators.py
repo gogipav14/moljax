@@ -295,18 +295,23 @@ def exact_cfl_dt(
         safety: Safety factor (0 < safety ≤ 1)
 
     Returns:
-        Maximum stable timestep for the given method
+        Maximum stable timestep for the given method. For 'explicit' this
+        is the forward Euler limit over the whole spectrum: |1 + dt*λ| ≤ 1
+        holds when dt ≤ -2 Re(λ)/|λ|² at every eigenvalue, which is 2/|λ|
+        for real negative λ and 0 when some λ is purely imaginary (pure
+        advection has no stable explicit dt). The real-axis formula 2/rho
+        that was used before ignored Im(λ) and returned a positive dt for
+        pure advection.
     """
     lam = op.eigenvalues
 
     if method == 'explicit':
-        # Forward Euler stability: |1 + dt*λ| ≤ 1 for all λ
-        # For purely real negative λ: dt ≤ 2/|λ_max|
-        # For complex λ: more conservative
-        rho = float(jnp.max(jnp.abs(lam)))
-        if rho < 1e-14:
+        nonzero = jnp.abs(lam) > 1e-14
+        if not bool(jnp.any(nonzero)):
             return float('inf')
-        return safety * 2.0 / rho
+        bound = -2.0 * jnp.real(lam) / jnp.abs(lam) ** 2
+        dt_max = float(jnp.min(jnp.where(nonzero, bound, jnp.inf)))
+        return safety * max(dt_max, 0.0)
 
     elif method == 'imex':
         # Only explicit part matters (diffusion handled implicitly)

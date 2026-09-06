@@ -31,7 +31,13 @@ if TYPE_CHECKING:
 
 
 class NKParams(NamedTuple):
-    """Newton-Krylov solver parameters."""
+    """Newton-Krylov solver parameters.
+
+    newton_tol is compared with the unweighted 2-norm of the flattened
+    residual (all fields, all points, no grid weighting), so it scales
+    with sqrt(number of unknowns). max_krylov_iters is the GMRES budget
+    per Newton step; see NKStats.lin_iters.
+    """
     max_newton_iters: int = 10
     max_krylov_iters: int = 50
     newton_tol: float = 1e-8
@@ -43,7 +49,14 @@ class NKParams(NamedTuple):
 
 
 class NKStats(NamedTuple):
-    """Newton-Krylov solver statistics."""
+    """Newton-Krylov solver statistics.
+
+    lin_iters is the Krylov budget that was made available, newton_iters
+    times max_krylov_iters, not the iterations spent:
+    jax.scipy.sparse.linalg.gmres returns (x, info) with no count.
+    final_res_norm is the unweighted 2-norm of the residual at the
+    returned solution and converged is final_res_norm < newton_tol.
+    """
     converged: jnp.ndarray
     newton_iters: jnp.ndarray
     lin_iters: jnp.ndarray
@@ -107,10 +120,11 @@ def _gmres_solve(
         M: Optional left preconditioner
 
     Returns:
-        Tuple of (solution, iterations)
+        Tuple of (solution, max_iters). JAX's gmres returns (x, info) with
+        info always None, so no iteration count is available inside a
+        traced loop; the budget is returned in its place and summed into
+        NKStats.lin_iters.
     """
-    # Use JAX's GMRES
-    # Note: JAX GMRES doesn't track iteration count, we estimate from residual reduction
     try:
         from jax.scipy.sparse.linalg import gmres
 
@@ -128,8 +142,7 @@ def _gmres_solve(
         else:
             result, info = gmres(linear_op, b, x0=x0, tol=tol, maxiter=max_iters)
 
-        # info is 0 for success
-        return result, max_iters  # GMRES doesn't return iter count easily
+        return result, max_iters
 
     except ImportError:
         # Fallback to BiCGSTAB
@@ -193,14 +206,17 @@ def newton_krylov_solve(
     Args:
         residual_fn: Function F: StateDict -> StateDict to solve F(x) = 0
         x0: Initial guess (StateDict)
-        grid: Grid for norm computations
+        grid: Grid handed to the preconditioner through PrecondContext.
+            Norms are unweighted 2-norms of the flattened residual and do
+            not use the grid.
         params: Model parameters
         preconditioner: Optional preconditioner
         nk_params: Solver parameters (default created if None)
         dt: Time step (for preconditioner context)
 
     Returns:
-        NKResult containing solution and statistics
+        NKResult containing solution and statistics (see NKStats for what
+        lin_iters and final_res_norm measure)
 
     Example:
         >>> def residual(x):

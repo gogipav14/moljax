@@ -28,6 +28,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from moljax.core.fft_operators import FFTLinearOperator
+from moljax.core.jit_kernels import phi1, phi2, phi3
 from moljax.core.state import StateDict
 
 
@@ -38,82 +39,32 @@ class ETDStepResult(NamedTuple):
     diagnostics: dict
 
 
-def _phi1(z: jnp.ndarray) -> jnp.ndarray:
-    """Compute φ₁(z) = (exp(z) - 1) / z with regularization at z=0.
-
-    Uses Taylor expansion for |z| < 1e-4 to avoid numerical instability.
-    φ₁(z) = 1 + z/2 + z²/6 + z³/24 + O(z⁴)
-    """
-    # Taylor expansion for small |z|
-    taylor = 1.0 + z/2.0 + z**2/6.0 + z**3/24.0
-
-    # Direct formula for larger |z|
-    exp_z = jnp.exp(z)
-    direct = (exp_z - 1.0) / z
-
-    return jnp.where(jnp.abs(z) < 1e-4, taylor, direct)
-
-
-def _phi2(z: jnp.ndarray) -> jnp.ndarray:
-    """Compute φ₂(z) = (exp(z) - 1 - z) / z² with regularization at z=0.
-
-    φ₂(z) = 1/2 + z/6 + z²/24 + z³/120 + O(z⁴)
-    """
-    taylor = 0.5 + z/6.0 + z**2/24.0 + z**3/120.0
-
-    exp_z = jnp.exp(z)
-    direct = (exp_z - 1.0 - z) / (z * z)
-
-    return jnp.where(jnp.abs(z) < 1e-4, taylor, direct)
-
-
-def _phi3(z: jnp.ndarray) -> jnp.ndarray:
-    """Compute φ₃(z) = (exp(z) - 1 - z - z²/2) / z³ with regularization.
-
-    φ₃(z) = 1/6 + z/24 + z²/120 + z³/720 + O(z⁴)
-    """
-    taylor = 1.0/6.0 + z/24.0 + z**2/120.0 + z**3/720.0
-
-    exp_z = jnp.exp(z)
-    direct = (exp_z - 1.0 - z - z**2/2.0) / (z**3)
-
-    return jnp.where(jnp.abs(z) < 1e-4, taylor, direct)
-
-
 def _etdrk4_coefficients(z: jnp.ndarray) -> tuple:
     """Compute ETDRK4 (Cox-Matthews) coefficients.
 
-    Returns (E, E2, a21, a31, a32, a41, a42, a43, b1, b2, b3, b4)
-    for the 4-stage RK scheme.
+    Returns (E, E2, phi1_z2, b1, b2, b4): E = exp(z) and E2 = exp(z/2)
+    propagate the linear part over a step and a half step, phi1_z2 =
+    φ₁(z/2) weights the nonlinear term in the three internal stages, and
+    b1, b2, b4 weight N_n, N_a + N_b and N_c in the final combination
+    (Cox-Matthews' b3 equals b2, so the two middle stages share one
+    coefficient). The φ functions come from jit_kernels so there is a
+    single implementation.
 
     Reference: Cox & Matthews (2002), "Exponential Time Differencing for
     Stiff Systems", J. Comput. Phys. 176, 430-455.
     """
-    exp_z = jnp.exp(z)
-    exp_z2 = jnp.exp(z / 2.0)
+    E = jnp.exp(z)
+    E2 = jnp.exp(z / 2.0)
 
-    # E = exp(z), E2 = exp(z/2)
-    E = exp_z
-    E2 = exp_z2
+    phi1_z2 = phi1(z / 2.0)
+    phi2_z = phi2(z)
+    phi3_z = phi3(z)
 
-    # φ functions at z and z/2
-    phi1_z = _phi1(z)
-    phi2_z = _phi2(z)
-    phi3_z = _phi3(z)
-
-    phi1_z2 = _phi1(z / 2.0)
-
-    # Stage coefficients (simplified Cox-Matthews)
-    # a coefficients for stages
-
-    # b coefficients for final combination
-    # Using the standard ETDRK4 formula
-    b1 = phi1_z - 3*phi2_z + 4*phi3_z
+    b1 = phi1(z) - 3*phi2_z + 4*phi3_z
     b2 = 2*phi2_z - 4*phi3_z
-    b3 = 2*phi2_z - 4*phi3_z
     b4 = -phi2_z + 4*phi3_z
 
-    return E, E2, phi1_z2, phi1_z, b1, b2, b3, b4
+    return E, E2, phi1_z2, b1, b2, b4
 
 
 def _fft_pair(op: FFTLinearOperator, u_field: jnp.ndarray) -> tuple[Callable, Callable]:
@@ -167,14 +118,14 @@ def etd1_step(
         if op is not None:
             z = dt * op.eigenvalues
             exp_z = jnp.exp(z)
-            phi1 = _phi1(z)
+            phi1_z = phi1(z)
 
             fft_func, ifft_func = _fft_pair(op, u_field)
             u_hat = fft_func(u_field)
             N_hat = fft_func(N_state[name])
 
             # ETD1 update in Fourier space
-            u_new_hat = exp_z * u_hat + dt * phi1 * N_hat
+            u_new_hat = exp_z * u_hat + dt * phi1_z * N_hat
             result[name] = ifft_func(u_new_hat)
         else:
             # No linear operator: explicit Euler for nonlinear part
@@ -222,8 +173,8 @@ def etd2_step(
         if op is not None:
             z = dt * op.eigenvalues
             exp_z = jnp.exp(z)
-            phi1 = _phi1(z)
-            phi2 = _phi2(z)
+            phi1_z = phi1(z)
+            phi2_z = phi2(z)
 
             fft_func, ifft_func = _fft_pair(op, u_field)
             u_hat = fft_func(u_field)
@@ -232,8 +183,8 @@ def etd2_step(
 
             # ETD2 update
             u_new_hat = (exp_z * u_hat
-                        + dt * phi1 * N_n_hat
-                        + dt * phi2 * (N_n_hat - N_nm1_hat))
+                        + dt * phi1_z * N_n_hat
+                        + dt * phi2_z * (N_n_hat - N_nm1_hat))
             result[name] = ifft_func(u_new_hat)
         else:
             # Explicit Adams-Bashforth 2
@@ -298,7 +249,7 @@ def etdrk4_step(
         op = linear_ops.get(name)
         if op is not None:
             fft_func, ifft_func = _fft_pair(op, u_field)
-            E, E2, phi1_z2, _, b1, b2, _, b4 = _etdrk4_coefficients(dt * op.eigenvalues)
+            E, E2, phi1_z2, b1, b2, b4 = _etdrk4_coefficients(dt * op.eigenvalues)
             spectral[name] = _ETDRK4Field(
                 fft_func, ifft_func, fft_func(u_field), E, E2, phi1_z2, b1, b2, b4
             )

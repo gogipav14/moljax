@@ -99,6 +99,10 @@ def dst_I(x: jnp.ndarray) -> jnp.ndarray:
 
     DST-I[k] = Σ_{n=1}^{N} x[n] · sin(πkn/(N+1)), k = 1, ..., N
 
+    This is the O(N^2) reference form of dst_I_fast and returns the same
+    unnormalized coefficients; an earlier version doubled them while its
+    inverse assumed the plain sum, so idst_I(dst_I(x)) gave 2x.
+
     Args:
         x: Input array of length N (interior points only)
 
@@ -106,23 +110,20 @@ def dst_I(x: jnp.ndarray) -> jnp.ndarray:
         DST-I coefficients
     """
     N = len(x)
-    # Embed in a larger array for scipy dct
-    # DST-I can be computed via DCT-I of antisymmetric extension
-    # Use relationship: DST-I(x) = -imag(FFT(antisym_ext))
-    # Direct computation
     result = jnp.zeros(N, dtype=x.dtype)
     for ki in range(N):
         result = result.at[ki].set(
             jnp.sum(x * jnp.sin(jnp.pi * (ki + 1) * jnp.arange(1, N + 1) / (N + 1)))
         )
-    return result * 2.0
+    return result
 
 
 def idst_I(X: jnp.ndarray) -> jnp.ndarray:
     """
     Inverse Type-I Discrete Sine Transform.
 
-    IDST-I is proportional to DST-I (self-inverse up to scaling).
+    DST-I is its own inverse up to the factor 2/(N+1), the same scale as
+    idst_I_fast.
 
     Args:
         X: DST-I coefficients
@@ -131,8 +132,7 @@ def idst_I(X: jnp.ndarray) -> jnp.ndarray:
         Reconstructed interior values
     """
     N = len(X)
-    # DST-I is self-inverse up to scaling: IDST-I = 2/(N+1) * DST-I
-    return dst_I(X) / (N + 1)
+    return dst_I(X) * 2.0 / (N + 1)
 
 
 @jax.jit
