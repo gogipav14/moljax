@@ -94,6 +94,30 @@ def tune_nilt_params(
         2. Spectral placement: a ≥ alpha + delta_min
         3. Wraparound: exp(-(a-alpha)*t_max) ≤ eps_tail
 
+    The three conditions above, with the scales that actually appear in the
+    derivation:
+
+        W (wraparound): 2(a - sigma)T >= ln(1/eps_tail). sigma must be the
+            abscissa of the transform actually being inverted, not of some
+            other operator that merely resembles it. For a normal operator
+            sigma is the spectral abscissa (max Re of the eigenvalues,
+            i.e. `alpha`/`re_max` here); for a non-normal operator the
+            transient can grow faster than any single eigenvalue predicts,
+            and sigma must instead be the numerical abscissa
+            max Re W(J), the rightmost point of the numerical range,
+            which `moljax.conditioning.numerical_range` supplies directly
+            (its rightmost support point) -- the spectral abscissa is not
+            a safe substitute there.
+        B (bandwidth): dt <= pi * (pi * eps * (p - 1) * e^{-a t_end} / M)^{1/(p-1)},
+            where p is the decay order of |F(a + i*omega)| as omega -> infinity
+            (how fast the transform's magnitude falls off along the
+            Bromwich contour) and M bounds |F(a + i*omega)| * omega^p.
+            This is the guardrail `omega_req`/`dt_nyquist` below approximate
+            via the operator's im_max and rho instead of an explicit decay
+            order.
+        A (amplification): a * t_end <= ln(A_max), the dynamic-range budget
+            realized below as `a * t_max <= L_dtype`.
+
     Args:
         t_end: End time for inversion
         bounds: SpectralBounds or dict with {rho, re_max, im_max}

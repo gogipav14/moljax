@@ -178,21 +178,36 @@ class TestNILTAccuracy:
         rel_error = float(jnp.linalg.norm(u_nilt - u_exact) / jnp.linalg.norm(u_exact))
         assert rel_error < 1e-4, f"NILT error {rel_error:.2e} exceeds 1e-4 threshold"
 
+        # DiffusionOperator's eigenvalues are real, so H_k(s) = w_k*[1/(s -
+        # lambda_k) - 1/(s + c_k)] is identically zero for every mode (both
+        # poles sit at s = lambda_k) and u_final matches u_analytical to
+        # rounding: the bridge is exact by construction on a real spectrum,
+        # not tautological. The non-tautology check below therefore uses
+        # AdvectionDiffusionOperator, whose complex eigenvalues give the
+        # NILT an actual transient to invert.
+        advdiff = AdvectionDiffusionOperator(grid_256, v=1.0, D=D)
+        u0_adv = jnp.sin(2 * jnp.pi * x) + 0.3 * jnp.cos(6 * jnp.pi * x)
+        result_adv = nilt_solve_linear_pde(advdiff.eigenvalues, u0_adv, t_end)
+        u_nilt_adv = result_adv['u_final']
+
         # Against the closed form of the same discrete operator the inversion
-        # itself is measured: about 3e-9 at the tuned parameters. u_final must
-        # also be the NILT's own number. The bridge used to return the closed
-        # form under both keys, which made this test pass without any inversion
-        # taking place; a numerical inversion differs from the closed form by
-        # rounding at least.
-        rel_diff = float(jnp.linalg.norm(u_nilt - result['u_analytical']) / jnp.linalg.norm(u_exact))
+        # itself is measured: about 1.0e-7 at the tuned parameters. u_final
+        # must also be the NILT's own number. The bridge used to return the
+        # closed form under both keys, which made this test pass without any
+        # inversion taking place; a numerical inversion differs from the
+        # closed form by rounding at least.
+        norm_exact_adv = float(jnp.linalg.norm(result_adv['u_analytical']))
+        rel_diff = float(
+            jnp.linalg.norm(u_nilt_adv - result_adv['u_analytical']) / norm_exact_adv
+        )
         assert rel_diff > 1e-12, "u_final is a copy of the closed form, not an inversion"
         assert rel_diff < 1e-6, f"NILT deviates from the closed form by {rel_diff:.2e}"
 
         # t_final is the grid time the NILT value was read at, and the tuned
         # grid (2T = 4 t_end = N dt) contains t_end exactly.
-        t_grid = result['nilt_result'].t
-        assert float(jnp.min(jnp.abs(t_grid - result['t_final']))) == 0.0
-        assert abs(result['t_final'] - t_end) < 1e-12
+        t_grid = result_adv['nilt_result'].t
+        assert float(jnp.min(jnp.abs(t_grid - result_adv['t_final']))) == 0.0
+        assert abs(result_adv['t_final'] - t_end) < 1e-12
 
     def test_nilt_source_term_matches_closed_form(self, grid_256):
         """Every mode with a constant source: U_k = (u0_k + f_k/s)/(s - lambda_k)."""
@@ -246,6 +261,70 @@ class TestNILTAccuracy:
         # etd_integrate floors (t_end - t0)/dt; the report must count the steps
         # actually taken, not the ceiling.
         assert comparison.tss_steps == int(t_end / comparison.tss_dt)
+
+
+# =============================================================================
+# Test: The Bridge Inverts Only the Transient
+# =============================================================================
+
+class TestTransientOnlyInversion:
+    """nilt_solve_linear_pde removes everything the closed form already
+    knows and inverts only the e^{lambda_k t} transient, via
+    H_k(s) = w_k*[1/(s - lambda_k) - 1/(s + c_k)] with c_k = -Re(lambda_k).
+    For a real lambda_k both poles of H_k coincide at s = lambda_k, so H_k
+    is identically zero and the bridge reproduces the closed form to
+    rounding; before this fix the bridge instead inverted
+    G_k(s) = U_k(s) - u0_k/(s + 1/t_end), which added a pole at -1/t_end
+    the tuner never saw and left the source pole at s = 0 uncanceled."""
+
+    def test_decaying_spectrum_is_exact(self):
+        """A fully real, negative spectrum needs no numerical inversion.
+
+        Before the fix, eigenvalues = full(8, -10), u0 = ones(8), t_end = 1
+        tuned a = 0 and returned -0.006816 instead of e^{-10} = 4.540e-5.
+        """
+        eigenvalues = jnp.full(8, -10.0)
+        u0 = jnp.ones(8)
+        t_end = 1.0
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, t_end)
+        u_expected = jnp.exp(-10.0) * jnp.ones(8)
+        max_error = float(jnp.max(jnp.abs(result['u_final'] - u_expected)))
+        assert max_error < 1e-12, f"max error {max_error:.3e} on a real spectrum"
+
+        # With a constant source, u_k(t) = w e^{lambda t} - f/lambda,
+        # w = u0 + f/lambda; still exact, since H_k is still identically
+        # zero for a real spectrum.
+        source = jnp.ones(8)
+        result_src = nilt_solve_linear_pde(eigenvalues, u0, t_end, source=source)
+        lam = -10.0
+        f = 1.0
+        w = 1.0 + f / lam
+        u_expected_src = (w * jnp.exp(lam * t_end) - f / lam) * jnp.ones(8)
+        max_error_src = float(jnp.max(jnp.abs(result_src['u_final'] - u_expected_src)))
+        assert max_error_src < 1e-12, f"max error {max_error_src:.3e} with a source"
+
+    def test_zero_mode_with_source_is_a_ramp(self):
+        """An eigenvalue exactly 0 with a source is handled entirely in
+        closed form: u(t) = u0 + f*t, no transient (w = 0 for that mode)."""
+        eigenvalues = jnp.zeros(4)
+        u0 = jnp.array([1.0, 2.0, -1.0, 0.5])
+        source = jnp.array([0.5, -0.5, 1.0, 0.0])
+        t_end = 2.0
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, t_end)
+        assert 'empty transient' in result['note']
+        assert result['nilt_result'] is None
+        assert result['params'] is None
+        assert float(jnp.max(jnp.abs(result['u_final'] - u0))) < 1e-12
+
+        result_src = nilt_solve_linear_pde(eigenvalues, u0, t_end, source=source)
+        u_expected_src = u0 + source * t_end
+        max_error = float(jnp.max(jnp.abs(result_src['u_final'] - u_expected_src)))
+        assert max_error < 1e-12, f"max error {max_error:.3e} on the zero-mode ramp"
+        assert 'empty transient' in result_src['note']
+        assert result_src['nilt_result'] is None
+        assert result_src['params'] is None
 
 
 # =============================================================================

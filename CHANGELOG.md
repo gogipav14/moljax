@@ -401,6 +401,21 @@ All notable changes to moljax are documented here.
   evaluated, so `res_norm`/`converged` still describe the returned
   iterate.
 
+- **`nilt_solve_linear_pde` tuned and inverted a transform with two extra
+  poles the tuner never saw.** It inverted `G_k(s) = U_k(s) - u0_k/(s + c)`
+  with `c = 1/t_end`, which keeps the source pole at the origin and adds a
+  second pole at `-1/t_end` invisible to `tune_nilt_for_fft_operator`; on
+  `eigenvalues = full(8, -10)`, `u0 = ones(8)`, `t_end = 1` the tuner picked
+  `a = 0` and returned `-0.006816` instead of `e^{-10} = 4.540e-5`. The
+  bridge now removes everything the closed form already knows (the
+  particular constant `-f_k/lambda_k`, or the whole polynomial
+  `u0_k + f_k t` when `lambda_k` is spectrally zero) and inverts only the
+  transient `H_k(s) = w_k * [1/(s - lambda_k) - 1/(s + c_k)]` with
+  `c_k = -Re(lambda_k)`, tuned against that transform's own abscissa. On a
+  real spectrum both poles of `H_k` coincide and the bridge is exact by
+  construction; the NILT budget is now spent only on the oscillatory part
+  of a spectrum.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the

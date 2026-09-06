@@ -100,6 +100,7 @@ def tune_nilt_for_fft_operator(
     omega_factor: float = 1.5,
     N_min: int = 256,
     N_max: int = 8192,
+    re_max_override: float | None = None,
 ) -> TunedNILTParams:
     """
     Tune NILT parameters using exact FFT eigenvalues.
@@ -120,6 +121,12 @@ def tune_nilt_for_fft_operator(
         omega_factor: Multiplier for frequency coverage
         N_min: Minimum FFT size
         N_max: Maximum FFT size
+        re_max_override: If given, replaces the spectral abscissa (re_max)
+            computed from eigenvalues before tuning. nilt_solve_linear_pde
+            uses this to tune against the abscissa of the transform it
+            actually inverts (sigma_H, the transient's abscissa) rather
+            than the abscissa of the full eigenvalue spectrum, which can
+            include modes handled entirely in closed form.
 
     Returns:
         TunedNILTParams optimized for the FFT operator
@@ -127,6 +134,8 @@ def tune_nilt_for_fft_operator(
     # Get exact bounds
     fft_bounds = exact_spectral_bounds_from_fft(eigenvalues, operator_name)
     spectral_bounds = fft_bounds_to_spectral_bounds(fft_bounds)
+    if re_max_override is not None:
+        spectral_bounds = spectral_bounds._replace(re_max=re_max_override)
 
     # Use standard tuner with exact bounds
     params = tune_nilt_params(
@@ -221,32 +230,64 @@ def nilt_solve_linear_pde(
     dtype=jnp.float64,
 ) -> dict:
     """
-    Solve u_t = L*u + f(x), u(0) = u0, by inverting the Laplace transform
-    of every Fourier mode numerically.
+    Solve u_t = L*u + f(x), u(0) = u0, by removing everything the closed
+    form already knows and inverting only the leftover transient.
 
-    In Fourier space the PDE decouples into scalar transforms
-    U_k(s) = (u0_k + f_k/s) / (s - λ_k), one per wavenumber, and all of them
-    are inverted in one nilt_fft_batch call. The closed form
-    u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k is returned alongside as
-    ``u_analytical`` so the two can be compared; it is not what ``u_final``
-    reports.
+    In Fourier space the PDE decouples into scalar ODEs
+    u_k' = λ_k u_k + f_k, one per wavenumber, whose exact solution is
+
+        u_k(t) = w_k e^{λ_k t} - f_k/λ_k      if λ_k != 0, w_k = u0_k + f_k/λ_k
+        u_k(t) = u0_k + f_k t                 if λ_k == 0 (w_k := 0)
+
+    Everything except the e^{λ_k t} term is known in closed form (the
+    particular constant -f_k/λ_k, or the whole polynomial u0_k + f_k t when
+    λ_k is spectrally zero) and is added back directly in the time domain.
+    NILT inverts only the transient's transform
+
+        H_k(s) = w_k * [1/(s - λ_k) - 1/(s + c_k)],   c_k = -Re(λ_k)
+
+    all of them in one nilt_fft_batch call. The closed form
+    u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k (the full solution, not just
+    the part inverted here) is returned alongside as ``u_analytical`` so the
+    two can be compared; it is not what ``u_final`` reports.
+
+    The 1/(s + c_k) term is the same t = 0 jump correction used previously
+    (see below), now placed to cancel exactly at the abscissa of the pole
+    it is removing instead of at an unrelated c = 1/t_end. For a real λ_k,
+    c_k = -λ_k, so both poles of H_k sit at the same point s = λ_k and H_k
+    is identically zero: on a real spectrum the NILT inverts nothing and
+    the bridge reproduces the closed form to rounding. The NILT budget is
+    spent entirely on modes with a nonzero imaginary part (or, more
+    precisely, on any mode whose transient coefficient w_k is nonzero and
+    whose two poles therefore do not coincide); a purely real, decaying
+    spectrum needs no numerical inversion at all. This also removes the
+    pole G_k(s) = U_k(s) - u0_k/(s + c) used to carry, with c = 1/t_end: it
+    added a pole at -1/t_end that the tuner never accounted for, and left
+    the source pole at s = 0 in place, which together could throw the
+    Bromwich contour off by orders of magnitude (see the module's git log
+    for the a = full(8, -10), u0 = ones(8), t_end = 1 regression this fixed).
 
     Two details make the inversion accurate to the tuner's design tolerance
     instead of first order in dt:
 
-    - The t = 0 jump is removed analytically. The uniform-grid inversion
-      samples the periodic extension at the jump between u_k(0+) and
-      u_k(2T-), where the Fourier partial sums converge to the midpoint, and
-      the ringing this leaves is multiplied by e^{a t} (about 100 at the
-      tuned shift). Inverting G_k(s) = U_k(s) - u0_k/(s + c) with
-      c = 1/t_end, whose inverse vanishes at t = 0, and adding u0_k e^{-c t}
-      back afterwards, removes the jump.
+    - The t = 0 jump is removed analytically, as above: the uniform-grid
+      inversion samples the periodic extension at the jump between h_k(0+)
+      and h_k(2T-), where the Fourier partial sums converge to the
+      midpoint, and the ringing this leaves is multiplied by e^{a t} (about
+      100 at the tuned shift). Inverting H_k(s) (whose inverse vanishes at
+      t = 0 by construction) and adding w_k e^{-c_k t} back afterwards
+      removes the jump.
     - Complex modes are inverted as two real transforms. For real u,
-      u_{-k}(t) = conj(u_k(t)), so P_k = (U_k + U_{-k})/2 and
-      Q_k = (U_k - U_{-k})/(2i) are the transforms of the real functions
-      Re u_k(t) and Im u_k(t), and the real-valued NILT (which enforces
+      u_{-k}(t) = conj(u_k(t)), so P_k = (H_k + H_{-k})/2 and
+      Q_k = (H_k - H_{-k})/(2i) are the transforms of the real functions
+      Re h_k(t) and Im h_k(t), and the real-valued NILT (which enforces
       Hermitian symmetry of the sampled spectrum) applies to each. Inverting
-      Re U_k(s) alone is wrong by O(1).
+      Re H_k(s) alone is wrong by O(1).
+
+    A self-paired mode (index 0, or N//2 on an even grid) has no distinct
+    conjugate partner; a real field cannot have a nonzero imaginary part
+    there; eigenvalues with one raise a ValueError before any of the above
+    is attempted.
 
     Restricted to 1D spectra: eigenvalues and u0 must each be a 1D array of
     length n_modes (FFT ordering). n_modes is read from eigenvalues.shape[0]
@@ -267,21 +308,34 @@ def nilt_solve_linear_pde(
         t_end: End time
         source: Optional constant source term f(x)
         nilt_params: Pre-tuned NILT parameters (auto-tuned if None). The
-            Bromwich shift must exceed max Re λ, and must be positive when a
-            source is given (f_k/s adds a pole at the origin).
-        return_full_history: If True, also return u on every NILT grid time
+            Bromwich shift must exceed sigma_H = max Re(λ_k) over modes
+            with a nonzero transient coefficient w_k, the abscissa of the
+            transform H_k actually being inverted; modes handled entirely
+            in closed form (λ_k ~ 0) do not constrain it, and there is no
+            longer a source-pole positivity requirement (H_k has no pole
+            at the origin regardless of source).
+        return_full_history: If True, also return u on every NILT grid
+            time. Meaningless (and not populated) when every eigenvalue is
+            within tolerance of zero, since no NILT grid is built in that
+            case.
         dtype: Output data type
 
     Returns:
         Dict with:
-            - u_final: NILT solution at t_final
+            - u_final: solution at t_final (closed form plus NILT-inverted
+              transient)
             - t_final: The NILT grid time nearest t_end (the tuned grid,
-              2T = 4 t_end = N dt, contains t_end exactly)
+              2T = 4 t_end = N dt, contains t_end exactly), or exactly
+              t_end when there is no transient to invert
             - u_analytical: Closed form e^{λ t} u0 + t φ₁(λ t) f at t_final
-            - nilt_dc: NILT value of the k = 0 mode at t_final
-            - nilt_result: The batch NILTResult (rows: Re u_k then Im u_k,
-              k = 0..n//2, before the jump term is added back)
-            - params: NILT parameters used
+            - nilt_dc: value of the k = 0 mode at t_final
+            - nilt_result: The batch NILTResult (rows: Re h_k then Im h_k,
+              k = 0..n//2, before the jump term and closed-form part are
+              added back), or None when there is no transient to invert
+            - params: NILT parameters used, or None when there is no
+              transient to invert
+            - note: only present when every eigenvalue is within tolerance
+              of zero; explains that the closed form was returned directly
             - t_history, u_history: if return_full_history, the NILT grid
               and the solution on it, shape (N, n)
     """
@@ -322,56 +376,24 @@ def nilt_solve_linear_pde(
     u0_hat = jnp.fft.fft(u0)
     source_hat = jnp.fft.fft(source) if source is not None else None
 
-    if nilt_params is None:
-        nilt_params = tune_nilt_for_fft_operator(eigenvalues, t_end, dtype=dtype)
+    max_abs_lambda = float(jnp.max(jnp.abs(eigenvalues)))
+    tol = max(1e-12 * max_abs_lambda, 1e-300)
 
-    a = nilt_params.a
-    re_max = float(jnp.max(jnp.real(eigenvalues)))
-    if a <= re_max:
+    # A self-paired mode (its own conjugate partner) cannot carry a nonzero
+    # imaginary eigenvalue for a real field: index 0 always, and N//2 on an
+    # even grid (the Nyquist mode of an odd first-derivative symbol such as
+    # AdvectionDiffusionOperator's -i*v*k).
+    self_paired = [0] if n_modes % 2 else [0, n_modes // 2]
+    self_paired_idx = jnp.array(self_paired)
+    im_self_paired = jnp.imag(eigenvalues)[self_paired_idx]
+    if bool(jnp.any(jnp.abs(im_self_paired) > tol)):
+        bad = int(self_paired_idx[int(jnp.argmax(jnp.abs(im_self_paired)))])
         raise ValueError(
-            f"Bromwich shift a={a:.3e} must exceed the spectral abscissa "
-            f"max Re(lambda)={re_max:.3e}; the contour has to pass to the right "
-            f"of every pole of U_k(s)."
+            f"eigenvalues[{bad}] = {complex(eigenvalues[bad])!r} has a nonzero "
+            f"imaginary part at a self-paired mode (index 0, or N//2 on an "
+            f"even grid). A self-paired mode is its own conjugate partner, so "
+            f"a real field cannot have a complex eigenvalue there."
         )
-    if source_hat is not None and a <= 0.0:
-        raise ValueError(
-            "a constant source adds the pole f_k/s at the origin; the Bromwich "
-            f"shift must be positive, got a={a:.3e}."
-        )
-
-    c = 1.0 / t_end
-    n_half = n_modes // 2 + 1
-    k_pos = jnp.arange(n_half)
-    k_neg = (-k_pos) % n_modes
-
-    def transfer_pairs(s: jnp.ndarray) -> jnp.ndarray:
-        """P_k rows then Q_k rows of G_k(s) = U_k(s) - u0_k/(s + c), shape (2 n_half, len(s))."""
-        s = s[None, :]
-        numerator = u0_hat[:, None]
-        if source_hat is not None:
-            numerator = numerator + source_hat[:, None] / s
-        G = numerator / (s - eigenvalues[:, None]) - u0_hat[:, None] / (s + c)
-        P = 0.5 * (G[k_pos] + G[k_neg])
-        Q = -0.5j * (G[k_pos] - G[k_neg])
-        return jnp.concatenate([P, Q], axis=0)
-
-    batch = nilt_fft_batch(
-        transfer_pairs,
-        dt=nilt_params.dt,
-        N=nilt_params.N,
-        a=a,
-        n_batch=2 * n_half,
-        dtype=dtype,
-    )
-
-    # Reassemble u_k(t) = Re + i Im, adding back the jump term u0_k e^{-c t}.
-    decay = jnp.exp(-c * batch.t)
-    u_hat_pos = batch.f[:n_half] + 1j * batch.f[n_half:] + u0_hat[k_pos][:, None] * decay[None, :]
-
-    t_idx = int(jnp.argmin(jnp.abs(batch.t - t_end)))
-    t_final = float(batch.t[t_idx])
-    # irfft rebuilds u_{-k} = conj(u_k) and returns the real field.
-    u_final = jnp.fft.irfft(u_hat_pos[:, t_idx], n=n_modes).astype(dtype)
 
     def closed_form(t: float) -> jnp.ndarray:
         """u(t) = ifft(e^{λt} u0_hat + t φ₁(λt) f_hat), φ₁(z) = (e^z - 1)/z."""
@@ -387,6 +409,99 @@ def nilt_solve_linear_pde(
             )
             u_hat_t = u_hat_t + t * phi1 * source_hat
         return jnp.real(jnp.fft.ifft(u_hat_t))
+
+    # Split each mode into the part the closed form already knows and the
+    # e^{lambda_k t} transient NILT is asked to invert. mask is False for
+    # modes with lambda_k ~ 0 (within a relative tolerance of the largest
+    # eigenvalue): those are entirely closed form (u0_k + f_k t) and have no
+    # transient (w_k := 0).
+    mask = jnp.abs(eigenvalues) > tol
+    lambda_safe = jnp.where(mask, eigenvalues, 1.0)  # avoids 0/0 below; w is 0 there regardless
+    if source_hat is not None:
+        w = jnp.where(mask, u0_hat + source_hat / lambda_safe, 0.0)
+        particular = jnp.where(mask, -source_hat / lambda_safe, 0.0)
+    else:
+        w = jnp.where(mask, u0_hat, 0.0)
+        particular = jnp.zeros_like(u0_hat)
+    c = jnp.where(mask, -jnp.real(eigenvalues), 0.0)  # per-mode jump-cancellation rate
+
+    def analytic_part(t: jnp.ndarray) -> jnp.ndarray:
+        """-f_k/lambda_k for transient modes, u0_k + f_k t for lambda_k ~ 0 modes."""
+        t = jnp.atleast_1d(t).astype(u0_hat.real.dtype)
+        ramp = u0_hat[:, None] + (source_hat[:, None] * t[None, :] if source_hat is not None else 0.0)
+        return jnp.where(mask[:, None], particular[:, None], ramp)
+
+    transient_mask = w != 0
+    has_transient = bool(jnp.any(transient_mask))
+
+    if not has_transient:
+        # Every eigenvalue is within tolerance of zero: the closed form
+        # u0 + f*t is the exact solution and there is nothing to invert.
+        u_final = closed_form(t_end)
+        result = {
+            'u_final': u_final,
+            't_final': float(t_end),
+            'u_analytical': u_final,
+            'nilt_dc': float(jnp.real(analytic_part(jnp.asarray(t_end))[0, 0])),
+            'nilt_result': None,
+            'params': None,
+            'note': (
+                "empty transient: every eigenvalue is within tolerance of zero, "
+                "so nilt_solve_linear_pde returned the closed form u0 + f*t "
+                "directly with no NILT inversion."
+            ),
+        }
+        return result
+
+    sigma_H = float(jnp.max(jnp.real(eigenvalues[transient_mask])))
+
+    if nilt_params is None:
+        nilt_params = tune_nilt_for_fft_operator(
+            eigenvalues, t_end, dtype=dtype, re_max_override=sigma_H
+        )
+
+    a = nilt_params.a
+    if a <= sigma_H:
+        raise ValueError(
+            f"Bromwich shift a={a:.3e} must exceed sigma_H={sigma_H:.3e}, the "
+            f"abscissa of H_k(s) (max Re(lambda_k) over modes with a nonzero "
+            f"transient); the contour has to pass to the right of every pole "
+            f"of H_k(s)."
+        )
+
+    n_half = n_modes // 2 + 1
+    k_pos = jnp.arange(n_half)
+    k_neg = (-k_pos) % n_modes
+
+    def transfer_pairs(s: jnp.ndarray) -> jnp.ndarray:
+        """P_k rows then Q_k rows of H_k(s) = w_k*[1/(s-lambda_k) - 1/(s+c_k)]."""
+        s = s[None, :]
+        denom1 = jnp.where(mask[:, None], s - eigenvalues[:, None], 1.0)
+        denom2 = jnp.where(mask[:, None], s + c[:, None], 1.0)
+        H = w[:, None] * (1.0 / denom1 - 1.0 / denom2)
+        P = 0.5 * (H[k_pos] + H[k_neg])
+        Q = -0.5j * (H[k_pos] - H[k_neg])
+        return jnp.concatenate([P, Q], axis=0)
+
+    batch = nilt_fft_batch(
+        transfer_pairs,
+        dt=nilt_params.dt,
+        N=nilt_params.N,
+        a=a,
+        n_batch=2 * n_half,
+        dtype=dtype,
+    )
+
+    # Reassemble the transient h_k(t) = Re + i Im, add back the jump term
+    # w_k e^{-c_k t}, then add the closed-form part for every mode.
+    decay = jnp.exp(-c[k_pos][:, None] * batch.t[None, :])
+    transient_pos = batch.f[:n_half] + 1j * batch.f[n_half:] + w[k_pos][:, None] * decay
+    u_hat_pos = transient_pos + analytic_part(batch.t)[k_pos]
+
+    t_idx = int(jnp.argmin(jnp.abs(batch.t - t_end)))
+    t_final = float(batch.t[t_idx])
+    # irfft rebuilds u_{-k} = conj(u_k) and returns the real field.
+    u_final = jnp.fft.irfft(u_hat_pos[:, t_idx], n=n_modes).astype(dtype)
 
     result = {
         'u_final': u_final,
