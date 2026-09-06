@@ -37,6 +37,7 @@ from moljax.core.fft_solvers import (
     create_fft_cache_2d_rfft,
 )
 from moljax.core.grid import Grid1D, Grid2D
+from moljax.core.preconditioners import _odd_symbol_wavenumber
 from moljax.laplace.spectral_bounds import SpectralBounds
 
 GridType = Grid1D | Grid2D
@@ -241,9 +242,15 @@ class AdvectionDiffusionOperator:
 
     @property
     def eigenvalues(self) -> jnp.ndarray:
-        """Eigenvalues λ(k) = -i*v*k + D*(2*cos(k*dx) - 2)/dx²."""
+        """Eigenvalues λ(k) = -i*v*k + D*(2*cos(k*dx) - 2)/dx².
+
+        The odd first-derivative symbol -i*v*k is zeroed at the self-paired
+        Nyquist mode of an even grid (see _odd_symbol_wavenumber): fftfreq
+        stores that mode's k as -pi/dx, which has no distinct conjugate
+        partner, so a real field cannot carry a nonzero derivative there.
+        """
         # Negative sign on advection: u_t = -v*u_x means exp(-i*v*k*t) phase shift
-        lam_adv = -1j * self.v * self._k
+        lam_adv = -1j * self.v * _odd_symbol_wavenumber(self._k, self.grid.dx)
         lam_diff = self.D * self._cache.laplacian_symbol if self.D > 0 else 0.0
         return lam_adv + lam_diff
 

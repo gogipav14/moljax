@@ -84,7 +84,13 @@ class TestExactSpectralBounds:
         assert 'exact_fft' in bounds.methods_used
 
     def test_advdiff_bounds_exact(self, advdiff_op):
-        """Verify advection-diffusion operator bounds."""
+        """Verify advection-diffusion operator bounds.
+
+        The odd advection symbol -i*v*k is zeroed at the self-paired
+        Nyquist mode of this even grid (k = -pi/dx has no distinct
+        conjugate partner for a real field), so the true im_max is
+        attained one bin below Nyquist, not at v*pi/dx.
+        """
         eigenvalues = advdiff_op.eigenvalues
         bounds = exact_spectral_bounds_from_fft(eigenvalues, "AdvDiff")
 
@@ -92,9 +98,12 @@ class TestExactSpectralBounds:
         # Re(λ) from diffusion (≤ 0), Im(λ) from advection
         v = 1.0
         dx = advdiff_op.grid.dx
+        nx = advdiff_op.grid.nx
 
-        # Expected im_max: v * k_max where k_max = π/dx
-        expected_im_max = abs(v) * jnp.pi / dx
+        # Expected im_max: v * k_next, k_next the wavenumber one bin below
+        # the (zeroed) Nyquist mode.
+        k_next = 2.0 * jnp.pi * (nx // 2 - 1) / (nx * dx)
+        expected_im_max = abs(v) * k_next
 
         assert bounds.re_max <= 0, "AdvDiff should have re_max <= 0"
         assert abs(bounds.im_max - expected_im_max) / expected_im_max < 0.01, \
@@ -547,3 +556,71 @@ class TestQuantitativeResults:
         for r in results:
             assert r.nilt_error < 1e-3, \
                 f"NILT should achieve <1e-3 error at t_end={r.t_end}"
+
+
+# =============================================================================
+# Test: Real Symbol at Self-Paired Modes
+# =============================================================================
+
+class TestAdvectionNyquistFix:
+    """AdvectionDiffusionOperator's odd symbol -i*v*k used to carry a
+    complex eigenvalue at the self-paired Nyquist mode of an even grid
+    (fftfreq stores that mode's k as -pi/dx), which no real operator has.
+    nilt_solve_linear_pde must reject such a spectrum rather than silently
+    produce a wrong answer, and the fixed operator (real eigenvalue at that
+    mode) must agree with both the closed form and an independent
+    etd_integrate run."""
+
+    def test_advection_nyquist_matches_closed_form(self):
+        """8 points on [0, 1], v = 1, D = 0, u0[j] = (-1)^j, t_end = 0.1.
+
+        u0 is exactly the Nyquist spatial mode, so once its derivative
+        symbol is zeroed (the usual convention for a real grid function)
+        the field is stationary: the bridge, the closed form it is built
+        from, and an independent etd_integrate run all return u0
+        unchanged. Before the fix the bridge returned -5.638635 at the
+        first point against -0.809017 from treating the checkerboard as a
+        continuous, aliased wave.
+        """
+        from moljax.core.fft_integrators import etd_integrate
+
+        grid = Grid1D.uniform(8, x_min=0.0, x_max=1.0)
+        op = AdvectionDiffusionOperator(grid, v=1.0, D=0.0)
+        u0 = (-1.0) ** jnp.arange(grid.nx)
+        t_end = 0.1
+
+        result = nilt_solve_linear_pde(op.eigenvalues, u0, t_end)
+        max_err_closed = float(jnp.max(jnp.abs(result['u_final'] - result['u_analytical'])))
+        assert max_err_closed < 1e-10, f"bridge vs closed form: {max_err_closed:.3e}"
+        max_err_u0 = float(jnp.max(jnp.abs(result['u_final'] - u0)))
+        assert max_err_u0 < 1e-10, f"bridge vs stationary u0: {max_err_u0:.3e}"
+
+        def zero_rhs(state, t):
+            return {name: jnp.zeros_like(v) for name, v in state.items()}
+
+        dt = 1e-3
+        n_steps = int(t_end / dt)
+        _, hist = etd_integrate(
+            {'u': u0}, (0.0, t_end), dt, {'u': op}, zero_rhs,
+            method='etd1', save_every=n_steps,
+        )
+        u_etd = hist[-1]['u']
+        max_err_etd = float(jnp.max(jnp.abs(result['u_final'] - u_etd)))
+        assert max_err_etd < 1e-8, f"bridge vs etd_integrate: {max_err_etd:.3e}"
+
+    def test_bridge_rejects_complex_self_paired_mode(self):
+        """A hand-built spectrum with a nonzero imaginary eigenvalue at the
+        self-paired Nyquist mode (index N//2 on an even grid) must raise:
+        a self-paired mode is its own conjugate partner, so a real field
+        cannot have a complex eigenvalue there."""
+        n = 6
+        eigenvalues = jnp.array([0.0, -1.0 + 1.0j, -2.0, 1.0 + 2.0j, -2.0, -1.0 - 1.0j])
+        u0 = jnp.ones(n)
+
+        with pytest.raises(ValueError, match="self-paired"):
+            nilt_solve_linear_pde(eigenvalues, u0, t_end=1.0)
+
+        # The DC mode (index 0) is also self-paired.
+        eigenvalues_dc = jnp.array([1.0j, -1.0, -2.0, -3.0, -2.0, -1.0])
+        with pytest.raises(ValueError, match="self-paired"):
+            nilt_solve_linear_pde(eigenvalues_dc, u0, t_end=1.0)

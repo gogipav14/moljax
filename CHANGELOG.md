@@ -416,6 +416,17 @@ All notable changes to moljax are documented here.
   construction; the NILT budget is now spent only on the oscillatory part
   of a spectrum.
 
+- **`AdvectionDiffusionOperator` carried a complex eigenvalue at the
+  self-paired Nyquist mode of an even grid.** The odd symbol `-i*v*k` is
+  not Hermitian at `k = -pi/dx`, a mode with no distinct conjugate
+  partner; on an 8-point grid with `v = 1`, `D = 0`, `u0[j] = (-1)^j`,
+  `t_end = 0.1` `nilt_solve_linear_pde` returned `-5.638635` at the first
+  point instead of leaving the stationary checkerboard mode unchanged. The
+  Nyquist entry is now zeroed, reusing the `_odd_symbol_wavenumber`
+  convention already applied to the FFT preconditioners, and
+  `nilt_solve_linear_pde` raises if a self-paired mode (index 0, or `N//2`
+  on an even grid) is ever handed a nonzero imaginary eigenvalue.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the
