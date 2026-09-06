@@ -328,6 +328,20 @@ All notable changes to moljax are documented here.
   by a full run), and REPRODUCE.md names one GPU (RTX 5060) and the real
   SISC script count (13) and paths.
 
+- **A non-finite or missing NILT quality sensor classified as `'good'`.**
+  `adaptive_tuning.classify_quality` decided the tier from `>` comparisons
+  against threshold values; a NaN sensor (`F_eval` returning NaN or inf on
+  the Bromwich contour, or a diagnostics dict missing the sensor keys)
+  fails every such comparison and fell through to the best tier, so
+  `tune_nilt_adaptive` could report a non-finite inversion as a successful
+  `'good'` result. The same fallthrough existed in the differently-shaped
+  `quality_metrics.classify_quality`. Both now treat a missing or
+  non-finite sensor as a failure (`'poor'`, and `QualityLevel.FAILED`, an
+  enum value that existed but was never returned, in `quality_metrics`),
+  naming the offending sensor in the reason; the documented case where
+  `assess_nilt_quality` is called without `F_vals` samples still defers to
+  the wraparound sensor unchanged.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the

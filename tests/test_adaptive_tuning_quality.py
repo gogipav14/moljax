@@ -23,9 +23,11 @@ import jax.numpy as jnp
 import pytest
 
 from moljax.laplace import (
+    QualityLevel,
     QualityTier,
     TunedNILTParams,
     check_spectral_cfl_conditions,
+    classify_quality,
     classify_quality_tier,
     create_transfer_function_from_fft_operator,
     exponential_decay_F,
@@ -819,6 +821,66 @@ class TestCFLGuidedTuning:
         res = nilt_fft_uniform(F_small, dt=params.dt, N=params.N, a=params.a, dtype=jnp.float64)
         cfl = check_spectral_cfl_conditions(res, F_small, 10.0, params.a, params.T, params.dt)
         assert not cfl.endpoint_compatible
+
+
+class TestNonFiniteAndMissingSensors:
+    """A non-finite or missing sensor must never classify as good.
+
+    classify_quality (adaptive_tuning) decides on threshold comparisons like
+    ``band_edge > th['band_edge'][1]``; a NaN sensor (F_eval returned NaN/inf
+    somewhere on the contour, or the diagnostics dict is malformed) makes
+    every such comparison False, which used to fall through all the way to
+    'good'. quality_metrics.classify_quality had the same shape of bug.
+    """
+
+    def test_non_finite_transform_is_not_good(self):
+        """F_eval returning NaN must classify as poor/failed, not good, and
+        tune_nilt_adaptive must not report the non-finite result as success."""
+        def F_nan(s):
+            return jnp.full_like(s, jnp.nan, dtype=complex)
+
+        result = nilt_fft_uniform(
+            F_nan, dt=0.05, N=256, a=1.0, dtype=jnp.float64, t_end=6.4, return_diagnostics=True
+        )
+        assert not bool(jnp.all(jnp.isfinite(result.f)))
+        assert jnp.isnan(result.diagnostics['band_edge_ratio'])
+        assert jnp.isnan(result.diagnostics['tail_energy_fraction'])
+
+        quality = classify_quality_tier(result.diagnostics)
+        assert quality.tier == 'poor', quality.reason
+        assert 'non-finite' in quality.reason
+
+        bounds = SpectralBounds(rho=1.0, re_max=0.0, im_max=1.0, methods_used={'test': 'test'}, warnings=[])
+        with pytest.warns(UserWarning, match="quality remains poor"):
+            adaptive = tune_nilt_adaptive(F_nan, t_end=6.4, bounds=bounds)
+        assert adaptive.quality.tier == 'poor'
+        assert not bool(jnp.all(jnp.isfinite(adaptive.result.f)))
+
+        # quality_metrics.classify_quality has the same NaN-comparison shape
+        # and must reach the same non-passing verdict (QualityLevel.FAILED).
+        level, _actions, reason = classify_quality(float('nan'), float('nan'), float('nan'))
+        assert level == QualityLevel.FAILED, reason
+        # The documented "no F samples available" case (only the bandwidth
+        # pair is NaN, tail_ratio is a real value) must still work as before.
+        level_no_evidence, _actions, _reason = classify_quality(float('nan'), 0.01, float('nan'))
+        assert level_no_evidence == QualityLevel.GOOD
+
+    def test_missing_sensors_are_not_good(self):
+        """A diagnostics dict lacking the sensor keys must not read as passing."""
+        quality = classify_quality_tier({})
+        assert quality.tier == 'poor'
+        assert 'missing' in quality.reason
+        assert 'band_edge_ratio' in quality.reason
+        assert 'tail_energy_fraction' in quality.reason
+        assert 'tail_ratio' in quality.reason
+
+        # Partially missing (bandwidth present, wraparound absent) is still poor.
+        partial = classify_quality_tier({
+            'band_edge_ratio': 0.01,
+            'tail_energy_fraction': 0.01,
+        })
+        assert partial.tier == 'poor'
+        assert 'tail_ratio' in partial.reason
 
 
 if __name__ == '__main__':

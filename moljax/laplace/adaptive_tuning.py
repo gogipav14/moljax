@@ -24,6 +24,7 @@ bounded: max_iterations refinements, then an optional projection fallback.
 
 from __future__ import annotations
 
+import math
 import warnings as _warnings
 from typing import Literal, NamedTuple
 
@@ -58,20 +59,32 @@ _TIER_THRESHOLDS = {
 }
 
 
-def _read_sensors(diagnostics: dict | None) -> tuple[float, float, float, float]:
-    """Pull the sensors out of an nilt_fft_* diagnostics dict; a missing sensor reads 0."""
+_REQUIRED_SENSOR_KEYS = ('band_edge_ratio', 'tail_energy_fraction')
+
+
+def _read_sensors(diagnostics: dict | None) -> tuple[float, float, float, float, list[str]]:
+    """Pull the sensors out of an nilt_fft_* diagnostics dict.
+
+    A sensor that nilt_fft_uniform(..., return_diagnostics=True) always
+    populates but that is absent here is reported as missing (not defaulted
+    to 0, which would read as a passing value) in the returned list.
+    """
     diagnostics = diagnostics or {}
-    loc = diagnostics.get('leakage_localization', {})
+    loc = diagnostics.get('leakage_localization') or {}
+    missing = [key for key in _REQUIRED_SENSOR_KEYS if key not in diagnostics]
+    if 'tail_ratio' not in loc:
+        missing.append('tail_ratio')
     return (
-        float(diagnostics.get('band_edge_ratio', 0.0)),
-        float(diagnostics.get('tail_energy_fraction', 0.0)),
-        float(loc.get('tail_ratio', 0.0)),
+        float(diagnostics.get('band_edge_ratio', float('nan'))),
+        float(diagnostics.get('tail_energy_fraction', float('nan'))),
+        float(loc.get('tail_ratio', float('nan'))),
         float(loc.get('r_late', 0.0)),
+        missing,
     )
 
 
 def _quality_from_diagnostics(tier: str, reason: str, diagnostics: dict | None) -> QualityTier:
-    band_edge, tail_energy, tail_ratio, r_late = _read_sensors(diagnostics)
+    band_edge, tail_energy, tail_ratio, r_late, _missing = _read_sensors(diagnostics)
     return QualityTier(tier, reason, band_edge, tail_energy, tail_ratio, r_late)
 
 
@@ -84,12 +97,19 @@ def classify_quality(
 
     - **good**: every sensor below its warning level
     - **acceptable**: a sensor above its warning level; a retune is optional
-    - **poor**: a sensor above its critical level; retune_based_on_diagnostics
-      picks the remedy
+    - **poor**: a sensor above its critical level, or a sensor is missing or
+      non-finite (NaN/inf); retune_based_on_diagnostics picks the remedy,
+      but a non-finite transform generally needs a different F_eval rather
+      than a parameter change
 
     Bandwidth is judged on band_edge_ratio and tail_energy_fraction,
     wraparound on tail_ratio. r_late is carried for information only.
     Exported from the package as classify_quality_tier.
+
+    A missing sensor key, or a NaN/inf sensor value (F_eval returned a
+    non-finite value somewhere on the contour), is never treated as
+    passing: every threshold comparison against NaN is False, which would
+    otherwise fall through to 'good'.
 
     Args:
         diagnostics: Dict from nilt_fft_uniform(..., return_diagnostics=True)
@@ -101,10 +121,23 @@ def classify_quality(
     if tier not in _TIER_THRESHOLDS:
         raise ValueError(f"unknown quality tier {tier!r}; expected one of {sorted(_TIER_THRESHOLDS)}")
     th = _TIER_THRESHOLDS[tier]
-    band_edge, tail_energy, tail_ratio, r_late = _read_sensors(diagnostics)
+    band_edge, tail_energy, tail_ratio, r_late, missing = _read_sensors(diagnostics)
 
     def verdict(level: str, reason: str) -> QualityTier:
         return QualityTier(level, reason, band_edge, tail_energy, tail_ratio, r_late)
+
+    if missing:
+        return verdict('poor', f"missing sensor(s): {', '.join(missing)}")
+
+    non_finite = [
+        name for name, value in (
+            ('band_edge_ratio', band_edge),
+            ('tail_energy_fraction', tail_energy),
+            ('tail_ratio', tail_ratio),
+        ) if not math.isfinite(value)
+    ]
+    if non_finite:
+        return verdict('poor', f"non-finite sensor(s): {', '.join(non_finite)}")
 
     bandwidth = f'band_edge_ratio={band_edge:.3f}, tail_energy_fraction={tail_energy:.3f}'
     wraparound = f'tail_ratio={tail_ratio:.3f}'

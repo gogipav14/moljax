@@ -34,6 +34,7 @@ Reference:
 
 from __future__ import annotations
 
+import math
 from enum import Enum
 from typing import Any, NamedTuple
 
@@ -250,8 +251,17 @@ def classify_quality(
     its ``*_good`` threshold acceptable, otherwise good; the level is the
     worst of the bandwidth pair (band_edge_ratio, tail_energy_fraction) and
     the wraparound sensor (tail_ratio), and excellent when everything is good
-    and the band edge is below ``band_edge_excellent``. A NaN sensor (no
-    F samples available) counts as no evidence.
+    and the band edge is below ``band_edge_excellent``.
+
+    A NaN band_edge_ratio and tail_energy_fraction *together* is the
+    documented "no F samples available" case (see assess_nilt_quality) and
+    counts as no evidence for bandwidth, deferring entirely to tail_ratio.
+    tail_ratio itself is always computed from the time-domain result, so a
+    non-finite tail_ratio, or a non-finite bandwidth sensor whose counterpart
+    is finite, means the underlying transform is not finite (F_eval returned
+    NaN/inf somewhere on the contour): that is QualityLevel.FAILED, never a
+    passing grade, since every ``>=`` comparison against NaN is False and
+    would otherwise fall through to good.
 
     Args:
         band_edge_ratio: |F| at the band edge relative to its peak
@@ -266,6 +276,20 @@ def classify_quality(
     if thresholds:
         th.update(thresholds)
 
+    no_bandwidth_evidence = math.isnan(band_edge_ratio) and math.isnan(tail_energy_fraction)
+
+    non_finite = []
+    if not no_bandwidth_evidence:
+        if not math.isfinite(band_edge_ratio):
+            non_finite.append('band_edge_ratio')
+        if not math.isfinite(tail_energy_fraction):
+            non_finite.append('tail_energy_fraction')
+    if not math.isfinite(tail_ratio):
+        non_finite.append('tail_ratio')
+
+    if non_finite:
+        return QualityLevel.FAILED, [], f"non-finite sensor(s): {', '.join(non_finite)}"
+
     def rank(value: float, good: float, acceptable: float) -> int:
         if value >= acceptable:
             return 3
@@ -273,10 +297,13 @@ def classify_quality(
             return 2
         return 1
 
-    bandwidth_rank = max(
-        rank(band_edge_ratio, th['band_edge_good'], th['band_edge_acceptable']),
-        rank(tail_energy_fraction, th['tail_energy_good'], th['tail_energy_acceptable']),
-    )
+    if no_bandwidth_evidence:
+        bandwidth_rank = 1
+    else:
+        bandwidth_rank = max(
+            rank(band_edge_ratio, th['band_edge_good'], th['band_edge_acceptable']),
+            rank(tail_energy_fraction, th['tail_energy_good'], th['tail_energy_acceptable']),
+        )
     wraparound_rank = rank(tail_ratio, th['tail_ratio_good'], th['tail_ratio_acceptable'])
     worst = max(bandwidth_rank, wraparound_rank)
 
