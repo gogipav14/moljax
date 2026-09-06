@@ -10,6 +10,10 @@ Validates:
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+
+# The preconditioner comparisons are made to 1e-12, which needs float64.
+jax.config.update("jax_enable_x64", True)
 
 from moljax.core.bc import BCType, FieldBCSpec, apply_bc
 from moljax.core.fft_solvers import (
@@ -17,6 +21,7 @@ from moljax.core.fft_solvers import (
     apply_spectral_filter_interior,
     create_fft_cache_1d,
     create_fft_cache_2d,
+    create_fft_cache_2d_rfft,
     exponential_filter_1d,
     exponential_filter_2d,
     laplacian_symbol_1d,
@@ -26,6 +31,93 @@ from moljax.core.fft_solvers import (
 )
 from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.operators import laplacian_2d
+from moljax.core.preconditioners import (
+    FFTAdvectionDiffusionPreconditioner,
+    FFTDiffusionPreconditioner,
+    PrecondContext,
+)
+
+
+class TestRfftCacheLayout:
+    """The rfft cache is the first nx//2 + 1 columns of the full cache.
+
+    kx varies along columns (axis 1) and ky along rows (axis 0) in both
+    layouts; the rfft cache once carried the y frequencies under the name
+    kx and vice versa, which the Laplacian symbol hid (both were paired
+    with the wrong spacing, consistently) but the advection symbol did not.
+
+    kx itself matches full.kx column for column except at the Nyquist bin
+    of an even nx: fftfreq (the full cache) stores it as -pi/dx and
+    rfftfreq (the half cache) as +pi/dx, the same physical frequency with
+    opposite sign by numpy convention. That is exactly why the advection
+    preconditioner zeroes the odd symbol there (K8); the Laplacian symbol
+    is unaffected because cos(kx dx) does not see the sign.
+    """
+
+    def test_rfft_wavenumbers_are_half_of_full(self):
+        grid = Grid2D.uniform(24, 16, 0.0, 1.0, 0.0, 2.0)
+        full = create_fft_cache_2d(grid)
+        half = create_fft_cache_2d_rfft(grid)
+        n_r = grid.nx // 2 + 1
+
+        assert half.kx.shape == half.ky.shape == (grid.ny, n_r)
+        # All columns but the Nyquist one agree exactly; the Nyquist column
+        # (present because nx=24 is even) agrees up to the fftfreq/rfftfreq
+        # sign convention.
+        assert np.array_equal(np.asarray(half.kx[:, :-1]), np.asarray(full.kx[:, :n_r - 1]))
+        assert np.array_equal(np.abs(np.asarray(half.kx[:, -1])), np.abs(np.asarray(full.kx[:, n_r - 1])))
+        assert np.array_equal(np.asarray(half.ky), np.asarray(full.ky[:, :n_r]))
+        assert np.array_equal(np.asarray(half.laplacian_symbol),
+                              np.asarray(full.laplacian_symbol[:, :n_r]))
+        assert np.allclose(np.asarray(half.kx[0]), 2 * np.pi * np.fft.rfftfreq(grid.nx, grid.dx))
+        assert np.allclose(np.asarray(half.ky[:, 0]), 2 * np.pi * np.fft.fftfreq(grid.ny, grid.dy))
+
+
+class TestFFTPreconditionersRfft:
+    """Both FFT preconditioners give the same answer with an rfft or a full cache."""
+
+    def test_fft_preconditioners_rfft_matches_full(self):
+        grid = Grid2D.uniform(24, 16, 0.0, 1.0, 0.0, 2.0)
+        D, dt, v = 0.3, 0.05, (1.0, 0.5)
+        sl_y, sl_x = grid.interior_slice
+
+        rng = np.random.default_rng(0)
+        r_interior = rng.standard_normal((grid.ny, grid.nx))
+        r_padded = jnp.zeros((grid.ny_total, grid.nx_total)).at[sl_y, sl_x].set(r_interior)
+        context = PrecondContext(grid=grid, dt=dt, params={'D': D, 'v': v})
+
+        results = {}
+        for label, cache in (('full', create_fft_cache_2d(grid)),
+                             ('rfft', create_fft_cache_2d_rfft(grid))):
+            diffusion = FFTDiffusionPreconditioner(field_diffusivity_keys={'u': 'D'}, fft_cache=cache)
+            advection = FFTAdvectionDiffusionPreconditioner(
+                field_diffusivity_keys={'u': 'D'}, field_velocity_keys={'u': 'v'}, fft_cache=cache
+            )
+            results[label] = (
+                np.asarray(diffusion.apply({'u': r_padded}, context)['u'][sl_y, sl_x]),
+                np.asarray(advection.apply({'u': r_padded}, context)['u'][sl_y, sl_x]),
+            )
+
+        for i, name in enumerate(("diffusion", "advection-diffusion")):
+            diff = np.max(np.abs(results['rfft'][i] - results['full'][i]))
+            assert diff < 1e-12, f"{name}: rfft and full caches differ by {diff:.2e}"
+
+        # Independent numpy reference. The first-derivative symbol at the
+        # Nyquist frequency is set to zero, the standard convention for an
+        # odd symbol on a real grid function (it keeps the spectrum
+        # Hermitian, so the inverse transform is real).
+        kx = 2 * np.pi * np.fft.fftfreq(grid.nx, grid.dx)[None, :]
+        ky = 2 * np.pi * np.fft.fftfreq(grid.ny, grid.dy)[:, None]
+        lap = (2 * np.cos(kx * grid.dx) - 2) / grid.dx**2 + (2 * np.cos(ky * grid.dy) - 2) / grid.dy**2
+        kx_adv = np.where(np.isclose(np.abs(kx), np.pi / grid.dx), 0.0, kx)
+        ky_adv = np.where(np.isclose(np.abs(ky), np.pi / grid.dy), 0.0, ky)
+        lam_adv = -1j * (v[0] * kx_adv + v[1] * ky_adv)
+        r_hat = np.fft.fft2(r_interior)
+        x_diff_ref = np.real(np.fft.ifft2(r_hat / (1 - dt * D * lap)))
+        x_adv_ref = np.real(np.fft.ifft2(r_hat / (1 - dt * (D * lap + lam_adv))))
+
+        assert np.max(np.abs(results['full'][0] - x_diff_ref)) < 1e-12
+        assert np.max(np.abs(results['full'][1] - x_adv_ref)) < 1e-12
 
 
 class TestLaplacianSymbol1D:

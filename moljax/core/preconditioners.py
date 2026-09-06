@@ -268,12 +268,14 @@ class FFTDiffusionPreconditioner:
                 else:
                     r_interior = r_field
 
-                # Solve using FFT
+                # Solve using FFT, through rfft2 when the cache holds the
+                # half spectrum (its symbol has shape (ny, nx//2 + 1))
                 x_interior = solve_helmholtz(
                     r_interior,
                     self.fft_cache.laplacian_symbol,
                     dt,
-                    D
+                    D,
+                    use_rfft=getattr(self.fft_cache, 'use_rfft', False)
                 )
 
                 # Embed back if needed
@@ -294,6 +296,30 @@ class FFTDiffusionPreconditioner:
                 result[name] = r_field
 
         return result
+
+
+def _speed(v) -> float:
+    """|v| for a scalar velocity, |vx| + |vy| for a 2D velocity tuple."""
+    if isinstance(v, (tuple, list)):
+        return sum(abs(c) for c in v)
+    return abs(v)
+
+
+def _odd_symbol_wavenumber(k: jnp.ndarray, spacing: float) -> jnp.ndarray:
+    """
+    Wavenumbers for a first-derivative symbol, with the Nyquist mode zeroed.
+
+    fftfreq stores the Nyquist frequency of an even-length axis as -pi/d
+    and rfftfreq as +pi/d. The odd symbol -i v k is then not Hermitian at
+    that mode: the real part of the full inverse transform silently
+    discards an imaginary residue (5.5e-3 of the result on the test grid)
+    and the half-spectrum path treats the same mode differently, so the
+    two disagreed by 2.1e-3. Setting the derivative of the Nyquist mode to
+    zero is the usual convention for a real grid function; it keeps the
+    spectrum Hermitian and the two paths agree to rounding.
+    """
+    k_nyquist = jnp.pi / spacing
+    return jnp.where(jnp.abs(jnp.abs(k) - k_nyquist) < 1e-12 * k_nyquist, 0.0, k)
 
 
 @dataclass(frozen=True)
@@ -351,8 +377,9 @@ class FFTAdvectionDiffusionPreconditioner:
 
             v_key = self.field_velocity_keys.get(name, None) if self.field_velocity_keys else None
             v = params.get(v_key, 0.0) if v_key else 0.0
+            speed = _speed(v)
 
-            if D > 1e-14 or abs(v) > 1e-14:
+            if D > 1e-14 or speed > 1e-14:
                 # Check if array is already interior-sized (no ghost cells)
                 interior_size = grid.nx if isinstance(grid, Grid1D) else (grid.ny, grid.nx)
                 is_interior_only = (r_field.shape == (interior_size,) if isinstance(grid, Grid1D)
@@ -374,32 +401,27 @@ class FFTAdvectionDiffusionPreconditioner:
                 lam_diff = D * self.fft_cache.laplacian_symbol if D > 1e-14 else 0.0
 
                 if isinstance(grid, Grid1D):
-                    k = self.fft_cache.k
-                    lam_adv = -1j * v * k if abs(v) > 1e-14 else 0.0
-                    eigenvalues = lam_diff + lam_adv
-
-                    # Solve in Fourier space
-                    r_hat = jnp.fft.fft(r_interior)
-                    denom = 1.0 - dt * eigenvalues
+                    k = _odd_symbol_wavenumber(self.fft_cache.k, grid.dx)
+                    lam_adv = -1j * v * k if speed > 1e-14 else 0.0
+                    denom = 1.0 - dt * (lam_diff + lam_adv)
                     denom = jnp.where(jnp.abs(denom) < 1e-14, 1e-14, denom)
-                    x_hat = r_hat / denom
-                    x_interior = jnp.real(jnp.fft.ifft(x_hat))
+                    x_interior = jnp.real(jnp.fft.ifft(jnp.fft.fft(r_interior) / denom))
                 else:
-                    # 2D case
-                    kx, ky = self.fft_cache.kx, self.fft_cache.ky
-                    # For 2D, v could be tuple (vx, vy)
-                    if isinstance(v, (tuple, list)):
-                        vx, vy = v
-                    else:
-                        vx, vy = v, 0.0
-                    lam_adv = -1j * (vx * kx + vy * ky) if (abs(vx) + abs(vy)) > 1e-14 else 0.0
-                    eigenvalues = lam_diff + lam_adv
-
-                    r_hat = jnp.fft.fft2(r_interior)
-                    denom = 1.0 - dt * eigenvalues
+                    # 2D case; v may be a tuple (vx, vy)
+                    kx = _odd_symbol_wavenumber(self.fft_cache.kx, grid.dx)
+                    ky = _odd_symbol_wavenumber(self.fft_cache.ky, grid.dy)
+                    vx, vy = v if isinstance(v, (tuple, list)) else (v, 0.0)
+                    lam_adv = -1j * (vx * kx + vy * ky) if speed > 1e-14 else 0.0
+                    denom = 1.0 - dt * (lam_diff + lam_adv)
                     denom = jnp.where(jnp.abs(denom) < 1e-14, 1e-14, denom)
-                    x_hat = r_hat / denom
-                    x_interior = jnp.real(jnp.fft.ifft2(x_hat))
+
+                    # The cache decides the transform: a half-spectrum cache
+                    # has symbols of shape (ny, nx//2 + 1) and needs rfft2.
+                    if getattr(self.fft_cache, 'use_rfft', False):
+                        ny, nx = r_interior.shape
+                        x_interior = jnp.fft.irfft2(jnp.fft.rfft2(r_interior) / denom, s=(ny, nx))
+                    else:
+                        x_interior = jnp.real(jnp.fft.ifft2(jnp.fft.fft2(r_interior) / denom))
 
                 # Embed back if needed
                 if is_interior_only:

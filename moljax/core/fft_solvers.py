@@ -104,7 +104,13 @@ def build_wavenumbers_2d_rfft(
     Build wavenumbers for 2D rfft (real FFT).
 
     Uses rfftfreq for the last axis, giving shape (ny, nx//2+1) instead of (ny, nx).
-    This halves the spectral data for real-valued fields.
+    This halves the spectral data for real-valued fields. The arrays are
+    the first nx//2+1 columns of build_wavenumbers_2d's: kx varies along
+    columns (axis 1) and ky along rows (axis 0), the same layout as the
+    full spectrum. (An earlier version returned the y frequencies under
+    the name kx and the x frequencies under ky; the Laplacian symbol hid
+    the swap because it paired each with the matching wrong spacing, but
+    the advection symbol vx*kx + vy*ky did not.)
 
     Args:
         ny: Number of interior points in y
@@ -116,12 +122,12 @@ def build_wavenumbers_2d_rfft(
     Returns:
         Tuple of (kx, ky) wavenumber arrays, each with shape (ny, nx//2+1)
     """
-    kx_1d = 2.0 * jnp.pi * jnp.fft.fftfreq(ny, d=dy)    # Full spectrum in y
-    ky_1d = 2.0 * jnp.pi * jnp.fft.rfftfreq(nx, d=dx)    # Half spectrum in x
+    kx_1d = 2.0 * jnp.pi * jnp.fft.rfftfreq(nx, d=dx)    # Half spectrum in x
+    ky_1d = 2.0 * jnp.pi * jnp.fft.fftfreq(ny, d=dy)     # Full spectrum in y
 
     nx_r = nx // 2 + 1
-    kx = jnp.broadcast_to(kx_1d[:, None], (ny, nx_r)).astype(dtype)
-    ky = jnp.broadcast_to(ky_1d, (ny, nx_r)).astype(dtype)
+    kx = jnp.broadcast_to(kx_1d, (ny, nx_r)).astype(dtype)
+    ky = jnp.broadcast_to(ky_1d[:, None], (ny, nx_r)).astype(dtype)
 
     return kx, ky
 
@@ -150,8 +156,8 @@ def laplacian_symbol_2d_rfft(
     """
     kx, ky = build_wavenumbers_2d_rfft(ny, nx, dy, dx, dtype)
 
-    lam_x = (2.0 * jnp.cos(kx * dy) - 2.0) / (dy * dy)
-    lam_y = (2.0 * jnp.cos(ky * dx) - 2.0) / (dx * dx)
+    lam_x = (2.0 * jnp.cos(kx * dx) - 2.0) / (dx * dx)
+    lam_y = (2.0 * jnp.cos(ky * dy) - 2.0) / (dy * dy)
 
     return lam_x + lam_y
 

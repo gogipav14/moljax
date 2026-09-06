@@ -530,9 +530,9 @@ def create_advection_diffusion_model(
         dt_bound=advdiff_dt_bound
     )
 
-    # Metadata
+    # Metadata (field_names may arrive as a tuple; every factory stores a list)
     metadata = {
-        'field_names': field_names,
+        'field_names': list(field_names),
         'pde_type': 'advection_diffusion',
         'stiff': False
     }
