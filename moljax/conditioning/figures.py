@@ -11,7 +11,8 @@ from typing import Any
 
 import numpy as np
 
-from moljax.conditioning.field_of_values import FieldOfValuesResult
+from moljax.conditioning.field_of_values import _CP_PREFACTOR, FieldOfValuesResult
+from moljax.conditioning.non_normality import crouzeix_palencia_envelope
 from moljax.conditioning.pseudospectra import PseudospectraResult
 
 
@@ -306,16 +307,27 @@ def plot_residual_envelope(
     residuals: Any,
     disk_rate: float,
     *,
-    prefactor: float = 1.0 + math.sqrt(2.0),
+    prefactor: float = _CP_PREFACTOR,
     ax: Any | None = None,
 ) -> Any:
-    """Plot supplied residuals against the Crouzeix--Palencia disk envelope."""
+    """Plot supplied residuals against the Crouzeix--Palencia disk envelope.
+
+    ``residuals[i]`` is read as the residual after ``i + 1`` Krylov
+    iterations (there is no iteration-zero entry), matching
+    ``crouzeix_palencia_envelope``'s ``k = 1, ..., n`` convention: the CP
+    bound is a statement about the residual after at least one iteration,
+    not about the un-iterated starting residual.  The previous inline
+    ``disk_rate ** arange(n)`` instead started the exponent at zero, drawing
+    an envelope one iteration ahead of the residuals it was laid over.
+    """
     figure, axis = _axes(ax)
     observed = np.asarray(residuals, dtype=np.float64).reshape(-1)
     if observed.size == 0:
         raise ValueError("residuals must be nonempty")
-    iterations = np.arange(observed.size)
-    envelope = prefactor * float(disk_rate) ** iterations
+    iterations = np.arange(1, observed.size + 1)
+    envelope = np.asarray(
+        crouzeix_palencia_envelope(disk_rate, observed.size, prefactor=prefactor)
+    )
     floor = np.finfo(np.float64).tiny
     axis.semilogy(iterations, np.maximum(observed, floor), "o-", label="supplied residuals")
     axis.semilogy(iterations, np.maximum(envelope, floor), ":", label="CP envelope")

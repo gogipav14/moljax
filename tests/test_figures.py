@@ -16,6 +16,7 @@ from matplotlib.figure import Figure
 from moljax.conditioning import (
     FieldOfValuesResult,
     PseudospectraResult,
+    crouzeix_palencia_envelope,
     plot_numerical_range,
     plot_pseudospectrum,
     plot_rate_scaling,
@@ -128,3 +129,28 @@ def test_conditioning_figures_return_populated_figures():
     finally:
         for figure in figures:
             plt.close(figure)
+
+
+def test_residual_envelope_uses_the_shared_formula_starting_at_iteration_one():
+    """The drawn envelope is ``crouzeix_palencia_envelope``'s k = 1, ..., n, not k = 0, ..., n - 1.
+
+    The envelope used to be computed inline as ``prefactor * disk_rate **
+    arange(n)``, which starts the exponent at zero and so draws a curve one
+    iteration ahead of the residuals it is laid over: the theorem bounds the
+    residual after at least one iteration, not the un-iterated starting
+    residual.
+    """
+    residuals = [1.0, 0.2, 0.04, 0.008]
+    disk_rate = 0.25
+    figure = plot_residual_envelope(residuals, disk_rate)
+    try:
+        axis = figure.axes[0]
+        envelope_line = next(
+            line for line in axis.get_lines() if line.get_label() == "CP envelope"
+        )
+        x_data, y_data = envelope_line.get_xdata(), envelope_line.get_ydata()
+        expected = np.asarray(crouzeix_palencia_envelope(disk_rate, len(residuals)))
+        np.testing.assert_allclose(x_data, np.arange(1, len(residuals) + 1))
+        np.testing.assert_allclose(y_data, expected, rtol=0.0, atol=0.0)
+    finally:
+        plt.close(figure)

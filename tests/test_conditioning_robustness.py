@@ -15,6 +15,7 @@ modes worth gating in CI.
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import jax
@@ -28,7 +29,7 @@ from benchmarks.conditioning_decision_demo import (  # noqa: E402
     DemoConfig,
     run_decision_demo,
 )
-from moljax.conditioning._geometry import _smallest_enclosing_disk  # noqa: E402
+from moljax.conditioning._geometry import _origin_enclosed, _smallest_enclosing_disk  # noqa: E402
 from moljax.conditioning.field_of_values import FieldOfValuesResult, numerical_range  # noqa: E402
 
 
@@ -56,6 +57,77 @@ class TestEnclosingDiskScaleInvariance:
         points = np.asarray([0.0 + 0.0j, 1e-10 + 0.0j, 2e-10 + 0.0j])
         center, radius = _smallest_enclosing_disk(points)
         assert max(abs(p - center) for p in points) <= radius * (1.0 + 1.0e-9)
+
+
+class TestEnclosingDiskToleratesLargeOffsets:
+    """A tight cluster far from the origin must resolve at its own scale.
+
+    ``_smallest_enclosing_disk`` scaled its containment tolerance by the
+    points' distance from the origin.  A cluster with a large common offset
+    and a tiny spread -- a numerical range far from zero, say -- then read
+    every point as already contained in an arbitrary early candidate disk,
+    because the tolerance carried by that offset dwarfed the actual radius:
+    a disk of true radius 1e-9 centered at 1e6 read back at radius 2e-9, a
+    factor of two, before this fix. The fix scales the tolerance by the
+    points' own spread instead, and translates to one of the points before
+    the circumcenter arithmetic, which squares each coordinate and so loses
+    most of its precision to cancellation when the coordinates share a large
+    common offset.
+    """
+
+    def test_tight_cluster_far_from_origin_matches_a_shifted_reference(self) -> None:
+        # float64 cannot represent "1e6 + 1e-9" any more precisely than
+        # roughly one part in ulp(1e6) / 1e-9 =~ 12%: adding a radius far
+        # below the offset's own rounding granularity perturbs the radius
+        # actually realized by each stored point.  A high-precision
+        # reference has to be built from the same translate-then-solve
+        # arithmetic to be comparable; comparing straight to the
+        # mathematically intended radius of 1e-9 would be judging the fix
+        # against a target float64 cannot represent at this magnitude.
+        theta = 2.0 * np.pi * np.arange(24) / 24
+        points = 1.0e6 + 1.0e-9 * np.exp(1j * theta)
+        center, radius = _smallest_enclosing_disk(points)
+
+        origin = points[0]
+        shifted = points - origin
+        candidates = [(value, 0.0) for value in shifted]
+        pairs = itertools.combinations(range(len(shifted)), 2)
+        candidates.extend((0.5 * (shifted[i] + shifted[j]), abs(shifted[i] - shifted[j]) / 2.0) for i, j in pairs)
+        feasible = [
+            (candidate_center, candidate_radius)
+            for candidate_center, candidate_radius in candidates
+            if np.max(np.abs(shifted - candidate_center)) <= candidate_radius * (1.0 + 1.0e-9)
+        ]
+        reference_center, reference_radius = min(feasible, key=lambda item: item[1])
+
+        assert radius == pytest.approx(reference_radius, rel=1.0e-9)
+        assert abs(center - origin - reference_center) <= 1.0e-9 * reference_radius
+        # Documents the achievable precision at this magnitude rather than
+        # asserting an unrepresentable exact match: the true radius realized
+        # by the stored points differs from the mathematically intended 1e-9
+        # by close to ulp(1e6), so this stays well short of 1.0 (the old
+        # code's factor-of-two error) without pretending float64 can do
+        # better than its own precision at this offset.
+        assert radius == pytest.approx(1.0e-9, rel=0.2)
+
+
+class TestOriginEnclosedScaleInvariance:
+    """The origin-in-hull test must not depend on the boundary's magnitude.
+
+    ``_origin_enclosed`` floored its coordinate tolerance at a scale of 1.0,
+    so a hull well under unit magnitude was judged against a tolerance far
+    larger than every one of its coordinates, which can call the origin
+    enclosed for a hull nowhere near it.
+    """
+
+    @pytest.mark.parametrize("scale", [1.0e-10, 1.0, 1.0e10])
+    def test_hull_excluding_the_origin_is_reported_at_every_scale(self, scale: float) -> None:
+        # The hull of these four points does not contain the origin (its
+        # bounding box does, which is exactly the case a hull test, as
+        # opposed to a bounding-box test, has to get right), regardless of
+        # how small or large the whole configuration is scaled.
+        points = scale * np.asarray([1.0 - 0.1j, -0.1 + 1.0j, 1.0 + 1.0j, 0.6 + 0.6j])
+        assert _origin_enclosed(points) is False
 
 
 class TestSupportConvergenceIsChecked:

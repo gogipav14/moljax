@@ -91,11 +91,18 @@ def arnoldi(
     basis = jnp.zeros((n, k + 1), dtype=jnp.complex128)
     hessenberg = jnp.zeros((k + 1, k), dtype=jnp.complex128)
     basis = basis.at[:, 0].set(initial / initial_norm)
-    tolerance = 64.0 * jnp.finfo(jnp.float64).eps
+    breakdown_factor = 64.0 * jnp.finfo(jnp.float64).eps
     k_eff = k
 
     for column in range(k):
         candidate = _complex_action(matvec, basis[:, column])
+        # The pre-orthogonalization norm is the scale of this Krylov step:
+        # ``A q`` for the current basis vector ``q``.  A fixed absolute
+        # tolerance treats an operator far from unit scale as if every
+        # column were a breakdown (the norm never clears the threshold) or
+        # never one (rounding noise never reaches it); comparing to this
+        # scale instead makes the breakdown test track the operator.
+        action_norm = jnp.linalg.norm(candidate)
         coefficients = basis[:, : column + 1].conj().T @ candidate
         candidate = candidate - basis[:, : column + 1] @ coefficients
         if reorthogonalize:
@@ -105,7 +112,7 @@ def arnoldi(
         hessenberg = hessenberg.at[: column + 1, column].set(coefficients)
         norm = jnp.linalg.norm(candidate)
         hessenberg = hessenberg.at[column + 1, column].set(norm)
-        if float(norm) <= tolerance:
+        if float(norm) <= breakdown_factor * float(action_norm):
             k_eff = column + 1
             break
         basis = basis.at[:, column + 1].set(candidate / norm)

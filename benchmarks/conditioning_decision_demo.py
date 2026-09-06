@@ -338,7 +338,10 @@ def _render_figures(data: list[FigureData], figure_dir: str | None) -> list[str]
         # verdict itself is warning against.  "indeterminate" never has a
         # rate to draw at all.
         if item.verdict in ("adequate", "provisional") and item.predicted_gmres_factor is not None:
-            residuals = item.predicted_gmres_factor ** np.arange(0, 9)
+            # plot_residual_envelope reads residuals[i] as the residual
+            # after i + 1 iterations, matching crouzeix_palencia_envelope's
+            # k = 1, ..., n convention; there is no iteration-zero entry.
+            residuals = item.predicted_gmres_factor ** np.arange(1, 9)
             paths.append(
                 _save_figure(
                     plot_residual_envelope(residuals, item.fov.disk_rate),

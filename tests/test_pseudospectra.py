@@ -142,3 +142,43 @@ def test_arnoldi_breakdown_trims_to_the_completed_invariant_block():
     assert _maximum_matching_error(actual_ritz, np.linalg.eigvals(first_block)) <= 1.0e-9
     expected_epsilon = np.linalg.svd(first_block, compute_uv=False)[-1]
     assert actual_epsilon == pytest.approx(expected_epsilon, abs=1.0e-10)
+
+
+@pytest.mark.parametrize("scale", [1.0, 1.0e-13])
+def test_arnoldi_breakdown_tolerance_is_scale_relative(scale: float):
+    """Breakdown detection must not depend on the operator's overall magnitude.
+
+    The block-diagonal case above is axis-aligned, so the missing block's
+    contribution to each candidate is exactly zero in floating point and any
+    tolerance, fixed or relative, detects it.  A random orthogonal similarity
+    turns that exact zero into rounding noise of size ``eps * ||A q||``
+    instead.  A fixed absolute tolerance of ``64 * eps`` compares that noise
+    to a constant regardless of the operator's scale: at unit scale here the
+    noise (about ``2e-14``) already exceeds the old fixed threshold
+    (``64 * eps`` is about ``1.4e-14``), so breakdown went undetected and
+    Arnoldi ran to the full requested order instead of trimming to the
+    completed invariant block, while at ``1e-13`` the same fixed threshold
+    happened to still exceed the (now much smaller) noise and detected it by
+    coincidence.  Comparing to ``64 * eps * ||A q||`` instead trims to the
+    same ``(4, 3)`` shape at both scales.
+    """
+    first_block = np.diag(np.array([1.0, 2.0, 4.0], dtype=np.complex128))
+    second_block = np.diag(np.array([7.0, 9.0, 12.0], dtype=np.complex128))
+    block_diagonal = np.zeros((6, 6), dtype=np.complex128)
+    block_diagonal[:3, :3] = first_block
+    block_diagonal[3:, 3:] = second_block
+
+    # Seeded to land comfortably clear of the breakdown threshold at both
+    # scales: near tangency to that threshold, the outcome is a coin flip
+    # driven by rounding in the Krylov recurrence itself (see the module
+    # docstring note in the class above), not by the fix under test.
+    rng = np.random.default_rng(15)
+    raw = rng.standard_normal((6, 6))
+    orthogonal, r_factor = np.linalg.qr(raw)
+    orthogonal = orthogonal @ np.diag(np.sign(np.diag(r_factor)))
+    start_in_block_basis = np.concatenate([rng.standard_normal(3), np.zeros(3)])
+    matrix = scale * (orthogonal @ block_diagonal @ orthogonal.conj().T)
+    start = jnp.asarray(orthogonal @ start_in_block_basis, dtype=jnp.complex128)
+
+    _, hessenberg = arnoldi(_matvec(matrix), start, 6)
+    assert hessenberg.shape == (4, 3)

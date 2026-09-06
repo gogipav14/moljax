@@ -86,9 +86,9 @@ class FieldOfValuesResult(NamedTuple):
     origin_enclosed: bool
     cp_prefactor: float
     max_support_residual: float = 0.0
-    supports_corroborated: bool = True
     supports_converged: bool = True
     corroboration_attempted: bool = False
+    supports_corroborated: bool = True
 
     @property
     def supports_consistent(self) -> bool:

@@ -51,15 +51,34 @@ def _contains(circle: tuple[complex, float], point: complex, tolerance: float) -
 
 def _smallest_enclosing_disk(points: np.ndarray) -> tuple[complex, float]:
     """Compute the exact minimum enclosing disk of a finite point set without SciPy."""
-    values = [complex(value) for value in np.asarray(points, dtype=np.complex128)]
+    array = np.asarray(points, dtype=np.complex128)
+    values = [complex(value) for value in array]
     if not values:
         raise ValueError("an enclosing disk requires at least one boundary point")
-    # Tolerances must track the data.  Flooring the scale at 1.0 makes the
-    # containment test meaninglessly loose for small-magnitude spectra.
-    scale = max((abs(value) for value in values), default=0.0)
-    tolerance = 64.0 * np.finfo(np.float64).eps * scale
-    order = np.random.default_rng(0).permutation(len(values))
-    ordered = [values[int(index)] for index in order]
+    # The tolerance has to track the size of the disk being resolved, which
+    # is the point set's own spread, not its distance from the origin.  A
+    # tightly clustered set can sit at an arbitrarily large offset (a
+    # numerical range far from zero, say): scaling by that offset instead of
+    # by the cluster's extent makes the containment test far looser than the
+    # geometry it is supposed to resolve.  A disk of true radius 1e-9
+    # centered at 1e6 read back as radius 2e-9 under the old distance-from-
+    # origin scale, because every point within 1e6's rounding error counted
+    # as already contained.
+    spread = max(float(np.ptp(array.real)), float(np.ptp(array.imag)))
+    tolerance = 64.0 * np.finfo(np.float64).eps * spread
+    # The circumcenter formulas in ``_circle_from_three`` combine coordinates
+    # quadratically (terms like ``ax * ax + ay * ay``).  For a cluster far
+    # from the origin, that squares the large offset before the algebra
+    # cancels it back down to the cluster's own small scale: recovering a
+    # radius of 1e-9 from intermediate terms of size 1e12 asks for 21 digits
+    # of cancellation, far more than float64 carries.  Every quantity in this
+    # function is translation invariant, so working relative to one of the
+    # points and adding it back once at the end is free and removes the
+    # cancellation entirely.
+    origin = values[0]
+    shifted = [value - origin for value in values]
+    order = np.random.default_rng(0).permutation(len(shifted))
+    ordered = [shifted[int(index)] for index in order]
     circle: tuple[complex, float] = (ordered[0], 0.0)
     for first_index, first in enumerate(ordered[1:], start=1):
         if _contains(circle, first, tolerance):
@@ -80,10 +99,11 @@ def _smallest_enclosing_disk(points: np.ndarray) -> tuple[complex, float]:
     # verdict.  Inflating the radius keeps the result correct and errs toward
     # the conservative verdict rather than a false certificate.
     center, radius = circle
-    worst = max((abs(value - center) for value in values), default=0.0)
+    worst = max((abs(value - center) for value in shifted), default=0.0)
     if worst > radius:
         circle = (center, worst)
-    return circle
+    center, radius = circle
+    return center + origin, radius
 
 
 def _convex_hull(points: np.ndarray) -> list[complex]:
@@ -114,7 +134,12 @@ def _convex_hull(points: np.ndarray) -> list[complex]:
 
 def _origin_enclosed(points: np.ndarray) -> bool:
     """Return whether zero is in the convex hull of the boundary points."""
-    scale = max(1.0, *(abs(complex(value)) for value in points))
+    # Flooring the scale at 1.0 makes the tolerance below meaninglessly loose
+    # for a boundary whose points are all well under unit magnitude: at
+    # magnitude 1e-10, say, a tolerance of 64 * eps * 1.0 dwarfs every
+    # coordinate, so the bounding-box check below can call the origin
+    # enclosed for a hull that sits nowhere near it.
+    scale = max((abs(complex(value)) for value in points), default=0.0)
     coordinate_tolerance = 64.0 * np.finfo(np.float64).eps * scale
     if (
         np.min(points.real) > coordinate_tolerance
