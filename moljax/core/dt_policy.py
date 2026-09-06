@@ -104,7 +104,8 @@ def create_initial_controller_state(dtype: jnp.dtype = jnp.float64) -> Controlle
 def heisenberg_cfl_dt(
     grid: GridType,
     params: dict[str, Any],
-    cfl_params: CFLParams
+    cfl_params: CFLParams,
+    dtype: jnp.dtype | None = None
 ) -> jnp.ndarray:
     """
     Compute CFL-limited time step (Heisenberg limiter).
@@ -118,10 +119,17 @@ def heisenberg_cfl_dt(
         grid: Grid defining spacing
         params: Dict with velocities, diffusivities, wave speed
         cfl_params: CFL parameters
+        dtype: dtype of the returned dt. The adaptive integrators carry dt
+            in the model's dtype and combine it with this limit inside
+            lax.cond, whose branches must agree; a float32 model under
+            x64 would otherwise meet a float64 limit. Defaults to JAX's
+            default float type.
 
     Returns:
-        Maximum stable dt
+        Maximum stable dt, as a scalar of the requested dtype
     """
+    if dtype is None:
+        dtype = jnp.result_type(float)
     dx = grid.min_dx
     dx2 = grid.min_dx2
 
@@ -172,7 +180,7 @@ def heisenberg_cfl_dt(
     dt = cfl_params.safety * dt
     dt = jnp.clip(dt, cfl_params.dt_min, cfl_params.dt_max)
 
-    return dt
+    return dt.astype(dtype)
 
 
 def pid_controller_dt(
@@ -382,9 +390,10 @@ def propose_dt(
         rejected_dt
     )
 
-    # For explicit methods (0-2), also enforce CFL
+    # For explicit methods (0-2), also enforce CFL. The limit is taken in
+    # dt_old's dtype so the two lax.cond branches below agree.
     is_explicit = method < 3
-    dt_cfl = heisenberg_cfl_dt(grid, params, cfl_params)
+    dt_cfl = heisenberg_cfl_dt(grid, params, cfl_params, dtype=dt_old.dtype)
 
     dt_final = lax.cond(
         is_explicit,
@@ -430,7 +439,8 @@ def compute_error_order(method: int) -> int:
 def imex_cfl_dt(
     grid,
     params: dict[str, Any],
-    cfl_params: CFLParams
+    cfl_params: CFLParams,
+    dtype: jnp.dtype | None = None
 ) -> jnp.ndarray:
     """
     Compute CFL-limited time step for IMEX methods.
@@ -442,10 +452,15 @@ def imex_cfl_dt(
         grid: Grid defining spacing
         params: Dict with velocities, wave speed, reaction rates
         cfl_params: CFL parameters
+        dtype: dtype of the returned dt (see heisenberg_cfl_dt); defaults
+            to JAX's default float type
 
     Returns:
-        Maximum stable dt for explicit part of IMEX
+        Maximum stable dt for explicit part of IMEX, as a scalar of the
+        requested dtype
     """
+    if dtype is None:
+        dtype = jnp.result_type(float)
     dx = grid.min_dx
 
     # Start with dt_max
@@ -499,7 +514,7 @@ def imex_cfl_dt(
     dt = cfl_params.safety * dt
     dt = jnp.clip(dt, cfl_params.dt_min, cfl_params.dt_max)
 
-    return dt
+    return dt.astype(dtype)
 
 
 def estimate_reaction_stiffness(
@@ -600,8 +615,9 @@ def propose_dt_imex(
         rejected_dt
     )
 
-    # Apply IMEX CFL limit (no diffusion constraint)
-    dt_cfl = imex_cfl_dt(grid, params, cfl_params)
+    # Apply IMEX CFL limit (no diffusion constraint), in dt_old's dtype so
+    # the loop carry keeps the model's dtype.
+    dt_cfl = imex_cfl_dt(grid, params, cfl_params, dtype=dt_old.dtype)
     dt_final = jnp.minimum(dt_adaptive, dt_cfl)
 
     # Final clamp

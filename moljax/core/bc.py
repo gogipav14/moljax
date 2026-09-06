@@ -137,24 +137,30 @@ def _apply_bc_1d_neumann(
     """
     Apply Neumann BC in 1D.
 
-    For zero gradient (flux=0): ghost = interior (mirror)
-    For non-zero gradient: ghost = interior - 2*dx*flux (outward normal convention)
+    The flux is du/dx in the +x direction on both faces (not the outward
+    normal derivative). Ghost layer i is centered (2i+1) dx away from
+    interior layer i, on the other side of the face, so a linear profile
+    with slope flux is continued exactly by
+
+        ghost_i = interior_i - (2i+1) dx flux   (left face)
+        ghost_i = interior_i + (2i+1) dx flux   (right face)
+
+    For zero flux this is the mirror (ghost = interior).
     """
     ng = grid.n_ghost
     dx = grid.dx
 
     # Left boundary: du/dx = flux_left at left face
-    # ghost = interior - 2*dx*flux_left
     for i in range(ng):
         interior_idx = ng + i
         ghost_idx = ng - 1 - i
-        field = field.at[ghost_idx].set(field[interior_idx] - 2.0 * dx * flux_left)
+        field = field.at[ghost_idx].set(field[interior_idx] - (2 * i + 1) * dx * flux_left)
 
-    # Right boundary: du/dx = flux_right at right face (outward normal is +x)
+    # Right boundary: du/dx = flux_right at right face
     for i in range(ng):
         interior_idx = grid.nx + ng - 1 - i
         ghost_idx = grid.nx + ng + i
-        field = field.at[ghost_idx].set(field[interior_idx] + 2.0 * dx * flux_right)
+        field = field.at[ghost_idx].set(field[interior_idx] + (2 * i + 1) * dx * flux_right)
 
     return field
 
@@ -269,8 +275,10 @@ def _apply_bc_2d_neumann(
     """
     Apply Neumann BC in 2D.
 
-    flux_values should have keys: 'left', 'right', 'bottom', 'top'
-    Default is zero gradient.
+    flux_values should have keys: 'left', 'right', 'bottom', 'top', each
+    the derivative in the +x (left, right) or +y (bottom, top) direction.
+    Default is zero gradient. Ghost layer i is (2i+1) dx (or dy) from
+    interior layer i, as in _apply_bc_1d_neumann.
     """
     ng = grid.n_ghost
     nx, ny = grid.nx, grid.ny
@@ -283,27 +291,31 @@ def _apply_bc_2d_neumann(
 
     # X direction
     for i in range(ng):
+        gap = (2 * i + 1) * dx
+
         # Left
         interior_col = ng + i
         ghost_col = ng - 1 - i
-        field = field.at[:, ghost_col].set(field[:, interior_col] - 2.0 * dx * flux_left)
+        field = field.at[:, ghost_col].set(field[:, interior_col] - gap * flux_left)
 
         # Right
         interior_col = nx + ng - 1 - i
         ghost_col = nx + ng + i
-        field = field.at[:, ghost_col].set(field[:, interior_col] + 2.0 * dx * flux_right)
+        field = field.at[:, ghost_col].set(field[:, interior_col] + gap * flux_right)
 
     # Y direction
     for i in range(ng):
+        gap = (2 * i + 1) * dy
+
         # Bottom
         interior_row = ng + i
         ghost_row = ng - 1 - i
-        field = field.at[ghost_row, :].set(field[interior_row, :] - 2.0 * dy * flux_bottom)
+        field = field.at[ghost_row, :].set(field[interior_row, :] - gap * flux_bottom)
 
         # Top
         interior_row = ny + ng - 1 - i
         ghost_row = ny + ng + i
-        field = field.at[ghost_row, :].set(field[interior_row, :] + 2.0 * dy * flux_top)
+        field = field.at[ghost_row, :].set(field[interior_row, :] + gap * flux_top)
 
     return field
 

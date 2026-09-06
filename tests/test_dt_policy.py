@@ -7,17 +7,46 @@ Verifies:
 - PID controller adjusts dt based on error
 """
 
+import jax
 import jax.numpy as jnp
 import pytest
+
+# The dtype tests need float64 to exist so that float32 can differ from it.
+jax.config.update("jax_enable_x64", True)
 
 from moljax.core.dt_policy import (
     CFLParams,
     PIDParams,
     create_initial_controller_state,
     heisenberg_cfl_dt,
+    imex_cfl_dt,
     pid_controller_dt,
 )
 from moljax.core.grid import Grid1D, Grid2D
+
+
+class TestCFLDtype:
+    """The CFL limits come back in the requested dtype.
+
+    adaptive_integrate carries dt in the model's dtype; a float64 CFL limit
+    for a float32 model made lax.cond branches disagree and the loop fail.
+    """
+
+    @pytest.mark.parametrize("cfl_fn", [heisenberg_cfl_dt, imex_cfl_dt])
+    def test_cfl_dt_dtype_follows_argument(self, cfl_fn):
+        grid = Grid2D.uniform(8, 8, 0.0, 1.0, 0.0, 1.0)
+        params = {'Du': 0.16, 'Dv': 0.08, 'F': 0.04, 'k': 0.06, 'vx': 0.3}
+        cfl_params = CFLParams(dt_max=10.0)
+
+        dt32 = cfl_fn(grid, params, cfl_params, dtype=jnp.float32)
+        dt64 = cfl_fn(grid, params, cfl_params, dtype=jnp.float64)
+        dt_default = cfl_fn(grid, params, cfl_params)
+
+        assert dt32.dtype == jnp.float32
+        assert dt64.dtype == jnp.float64
+        assert dt_default.dtype == jnp.result_type(float)
+        assert abs(float(dt32) - float(dt64)) < 1e-6 * float(dt64)
+        assert float(dt64) > 0.0
 
 
 class TestCFLLimiter:

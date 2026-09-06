@@ -7,11 +7,66 @@ Verifies that ghost cells are filled correctly for:
 - Neumann: enforces zero gradient
 """
 
+import jax
 import jax.numpy as jnp
 import pytest
 
+# The flux tests check face gradients to 1e-12, which needs float64.
+jax.config.update("jax_enable_x64", True)
+
 from moljax.core.bc import FieldBCSpec, apply_bc
 from moljax.core.grid import Grid1D, Grid2D
+
+
+class TestNeumannFlux:
+    """Inhomogeneous Neumann fills every ghost layer from a linear profile.
+
+    Ghost layer i is centered (2i+1) dx away from interior layer i, so
+    ghost_i = interior_i -/+ (2i+1) dx flux; the ghosted array of u = 3x
+    with flux 3 must then equal 3x everywhere, and the face gradient must
+    equal the flux. The ghost cells are zeroed on input so the result comes
+    from the interior alone.
+    """
+
+    @pytest.mark.parametrize("n_ghost", [1, 2])
+    def test_neumann_linear_profile_layers_1d(self, n_ghost):
+        grid = Grid1D.uniform(8, 0.0, 1.0, n_ghost=n_ghost)
+        x = grid.x_coords(include_ghost=True)
+        profile = 3.0 * x
+        u = jnp.zeros_like(profile).at[grid.interior_slice].set(profile[grid.interior_slice])
+
+        bc = {'u': FieldBCSpec.neumann(flux=lambda x, t, p: 3.0)}
+        out = apply_bc({'u': u}, grid, bc)['u']
+
+        ng, dx = n_ghost, grid.dx
+        left_face = float((out[ng] - out[ng - 1]) / dx)
+        right_face = float((out[-ng] - out[-ng - 1]) / dx)
+        assert abs(left_face - 3.0) < 1e-12, f"left face gradient {left_face}"
+        assert abs(right_face - 3.0) < 1e-12, f"right face gradient {right_face}"
+        assert float(jnp.max(jnp.abs(out - profile))) < 1e-12
+
+    @pytest.mark.parametrize("n_ghost", [1, 2])
+    def test_neumann_linear_profile_layers_2d(self, n_ghost):
+        grid = Grid2D.uniform(6, 5, 0.0, 1.0, 0.0, 2.0, n_ghost=n_ghost)
+        X, Y = grid.meshgrid(include_ghost=True)
+        profile = 3.0 * X + 2.0 * Y
+        sl_y, sl_x = grid.interior_slice
+        u = jnp.zeros_like(profile).at[sl_y, sl_x].set(profile[sl_y, sl_x])
+
+        flux = {'left': 3.0, 'right': 3.0, 'bottom': 2.0, 'top': 2.0}
+        bc = {'u': FieldBCSpec.neumann(flux=lambda X, Y, t, p: flux)}
+        out = apply_bc({'u': u}, grid, bc)['u']
+
+        ng, dx, dy = n_ghost, grid.dx, grid.dy
+        left = (out[sl_y, ng] - out[sl_y, ng - 1]) / dx
+        right = (out[sl_y, -ng] - out[sl_y, -ng - 1]) / dx
+        bottom = (out[ng, sl_x] - out[ng - 1, sl_x]) / dy
+        top = (out[-ng, sl_x] - out[-ng - 1, sl_x]) / dy
+        for name, face, expected in (("left", left, 3.0), ("right", right, 3.0),
+                                     ("bottom", bottom, 2.0), ("top", top, 2.0)):
+            err = float(jnp.max(jnp.abs(face - expected)))
+            assert err < 1e-12, f"{name} face gradient off by {err}"
+        assert float(jnp.max(jnp.abs(out - profile))) < 1e-12
 
 
 class TestBC1D:

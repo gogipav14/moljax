@@ -19,7 +19,11 @@ jax.config.update("jax_enable_x64", True)
 from moljax.core.bc import FieldBCSpec
 from moljax.core.dt_policy import CFLParams, PIDParams
 from moljax.core.grid import Grid1D, Grid2D
-from moljax.core.model import MOLModel, create_gray_scott_periodic_fft
+from moljax.core.model import (
+    MOLModel,
+    create_gray_scott_model,
+    create_gray_scott_periodic_fft,
+)
 from moljax.core.newton_krylov import NKParams
 from moljax.core.operators import LinearOp
 from moljax.core.stepping import (
@@ -324,6 +328,116 @@ class TestAdaptive:
         from moljax.core.utils import StatusCode
         assert int(result.status) == StatusCode.SUCCESS, f"Status: {int(result.status)}"
         assert float(result.t_final) >= 0.1 - 1e-6
+
+    def test_adaptive_be_completes(self):
+        """Adaptive BE on y' = -y reaches t = 1 with a sensible step count.
+
+        The BE error estimate is the difference to a Crank-Nicolson step,
+        which is the BE local error dt^2/2 y''. The earlier estimate
+        dt F(y_be) never fell below the tolerance and every step was
+        rejected until MAX_STEPS.
+        """
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+
+        def decay_rhs(state, grid, t, params):
+            return {'u': -state['u']}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="decay", apply=decay_rhs),),
+            nonlinear_ops=()
+        )
+        y0 = {'u': jnp.ones(grid.nx_total)}
+
+        result = adaptive_integrate(
+            model, y0, 0.0, 1.0, 0.01, method=IntegratorType.BE,
+            max_steps=2000, nk_params=NKParams(newton_tol=1e-12)
+        )
+
+        assert int(result.status) == 0, f"status {int(result.status)}, t_final {float(result.t_final)}"
+        assert abs(float(result.t_final) - 1.0) < 1e-12
+        assert int(result.n_accepted) < 200, f"{int(result.n_accepted)} accepted steps"
+        assert abs(float(result.y_final['u'][1]) - np.exp(-1.0)) < 5e-3
+
+    def test_adaptive_float32_model_under_x64(self):
+        """A float32 model must integrate while x64 is enabled.
+
+        The CFL limit used to come back as float64, so the lax.cond that
+        picks the initial dt saw branches of different dtypes.
+        """
+        model = create_gray_scott_model(Grid2D.uniform(8, 8, 0, 1, 0, 1), dtype=jnp.float32)
+        y0 = model.create_initial_state(fill_values={'u': 1.0, 'v': 0.1})
+
+        result = adaptive_integrate(model, y0, 0.0, 0.01, 0.001, method=IntegratorType.RK4, max_steps=50)
+
+        assert int(result.status) == 0
+        assert result.y_final['u'].dtype == jnp.float32
+        assert result.t_final.dtype == jnp.float32
+
+
+class TestImplicitPredictor:
+    """The explicit-Euler predictor is only a Newton start; it must not poison the step."""
+
+    def test_be_step_with_non_finite_predictor(self):
+        """A forcing term singular at t = 0.
+
+        y' = -y + t^(-1/2) has an integrable singularity: backward Euler
+        evaluates F only at t + dt and is well defined, but the Euler
+        predictor y + dt F(y, 0) is infinite. The step must start Newton
+        from y instead and return the BE solution.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def forced_decay(state, grid, t, params):
+            return {'u': -state['u'] + 1.0 / jnp.sqrt(t)}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="forced_decay", apply=forced_decay),),
+            nonlinear_ops=()
+        )
+        y0 = {'u': jnp.ones(3)}
+        dt = 0.1
+
+        y1, stats = be_step(model, y0, 0.0, dt, nk_params=NKParams(newton_tol=1e-12))
+
+        expected = (1.0 + dt / np.sqrt(dt)) / (1.0 + dt)
+        assert bool(jnp.all(jnp.isfinite(y1['u'])))
+        assert bool(stats.converged)
+        assert abs(float(y1['u'][1]) - expected) < 1e-8
+
+    def test_implicit_steps_far_above_explicit_limit(self):
+        """BE and CN take a finite step at 100x the explicit diffusion limit."""
+        nx = 32
+        grid = Grid1D.uniform(nx, 0.0, 1.0)
+        D = 1.0
+
+        def diffusion_rhs(state, grid, t, params):
+            from moljax.core.bc import apply_bc
+            from moljax.core.operators import laplacian_1d
+            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
+            return {'u': D * laplacian_1d(state['u'], grid)}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="diffusion", apply=diffusion_rhs),),
+            nonlinear_ops=()
+        )
+        x = grid.x_coords(include_ghost=True)
+        y0 = {'u': jnp.sin(2 * jnp.pi * x)}
+        dt = 100 * 0.5 * grid.dx ** 2 / D
+
+        for step in (be_step, cn_step):
+            y1, stats = step(model, y0, 0.0, dt, nk_params=NKParams(max_krylov_iters=200))
+            assert bool(jnp.all(jnp.isfinite(y1['u'])))
+            assert bool(stats.converged)
+            assert float(jnp.max(jnp.abs(y1['u']))) <= 1.0 + 1e-8
 
 
 def gray_scott_off_equilibrium():

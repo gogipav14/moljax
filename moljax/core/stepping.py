@@ -182,6 +182,21 @@ def rk4_step(
 # Implicit Integrators
 # =============================================================================
 
+def _newton_start(model: MOLModel, y: StateDict, t: float, dt: float) -> StateDict:
+    """
+    Explicit-Euler predictor for the implicit steps, falling back to y.
+
+    The predictor is only a Newton start, but a right-hand side that is
+    singular at t and finite at t + dt (a forcing term like t^(-1/2), or an
+    overflow in dt * F) makes it non-finite, and Newton seeded with inf
+    returns NaN even though the implicit step itself is well posed. The
+    predictor is kept rather than replaced by y, because Newton and GMRES
+    iteration counts depend on the initial residual.
+    """
+    y_pred = euler_step(model, y, t, dt)
+    return lax.cond(is_finite(y_pred), lambda: y_pred, lambda: y)
+
+
 def be_step(
     model: MOLModel,
     y: StateDict,
@@ -212,8 +227,8 @@ def be_step(
     # Create residual: R(y_new) = y_new - y - dt * F(y_new, t_new)
     residual_fn = create_implicit_residual(model, y, t_new, dt, method="be")
 
-    # Initial guess: explicit Euler
-    y_init = euler_step(model, y, t, dt)
+    # Initial guess: explicit Euler, guarded by _newton_start
+    y_init = _newton_start(model, y, t, dt)
 
     # Solve
     result = newton_krylov_solve(
@@ -258,8 +273,8 @@ def cn_step(
     # Create residual for CN
     residual_fn = create_implicit_residual(model, y, t_new, dt, method="cn")
 
-    # Initial guess: explicit Euler
-    y_init = euler_step(model, y, t, dt)
+    # Initial guess: explicit Euler, guarded by _newton_start
+    y_init = _newton_start(model, y, t, dt)
 
     # Solve
     result = newton_krylov_solve(
@@ -547,8 +562,10 @@ def estimate_error_doubling(
     """
     Estimate error using step doubling.
 
-    Takes one full step of size dt and two half steps of size dt/2.
-    Error estimate: (y_half - y_full) / (2^p - 1) where p is the order.
+    Takes one full step of size dt and two half steps of size dt/2. The
+    error returned is the raw difference y_half - y_full, not divided by
+    (2^p - 1); callers that need a Richardson-extrapolated error must
+    apply that scaling themselves using the method's order.
 
     Args:
         model: MOLModel
@@ -816,9 +833,10 @@ def adaptive_integrate(
     # Get method order for error scaling
     order = compute_error_order(method)
 
-    # Compute initial CFL-limited dt for explicit methods
+    # Compute initial CFL-limited dt for explicit methods, in the model's
+    # dtype so both lax.cond branches below agree
     is_explicit = method < 3
-    dt_cfl = heisenberg_cfl_dt(model.grid, model.params, cfl_params)
+    dt_cfl = heisenberg_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
     dt_init = lax.cond(
         is_explicit,
         lambda: jnp.minimum(dt0, dt_cfl),
@@ -881,8 +899,13 @@ def adaptive_integrate(
             # Or for BDF2 after startup, use BE as error estimator
             def be_only():
                 y_be, stats = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                # Use F(y) - F(y_be) as crude error estimate
-                err = tree_scale(model.rhs(y_be, state.t + dt_clamped), dt_clamped)
+                # BE's local error is dt^2/2 y'' + O(dt^3), which the
+                # difference to a Crank-Nicolson step measures. The earlier
+                # estimate dt F(y_be) is the size of the update, not of its
+                # error: it never fell below the tolerance and every step
+                # was rejected.
+                y_cn, _ = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                err = tree_sub(y_cn, y_be)
                 return y_be, err, stats
 
             def cn_with_err():
@@ -1279,8 +1302,9 @@ def adaptive_integrate_imex(
     # Order for error estimation
     order = 2 if use_strang else 1
 
-    # Compute initial IMEX CFL-limited dt (no diffusion limit)
-    dt_cfl = imex_cfl_dt(model.grid, model.params, cfl_params)
+    # Compute initial IMEX CFL-limited dt (no diffusion limit), in the
+    # model's dtype so the loop carry keeps one dtype
+    dt_cfl = imex_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
     dt_init = jnp.minimum(jnp.array(dt0, dtype=dtype), dt_cfl)
 
     # Allocate output buffers
