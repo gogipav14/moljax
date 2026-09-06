@@ -279,6 +279,43 @@ class TestBridgeRejects2DSpectra:
 
 
 # =============================================================================
+# Test: Matching Mode Counts
+# =============================================================================
+
+class TestBridgeRejectsMismatchedLengths:
+    """nilt_solve_linear_pde reads n_modes from eigenvalues.shape[0] alone and
+    combines eigenvalues, u0 and source mode-by-mode; the 1D checks above let
+    a shorter u0 or source through, which either broadcasts into fabricated
+    extra modes or is silently truncated to the wrong field length instead of
+    raising."""
+
+    def test_bridge_rejects_mismatched_lengths(self):
+        """A 4-mode spectrum with a 1-element u0 must not return a 4-element
+        field built from a broadcast, fabricated u0; a 1-mode spectrum with a
+        4-element u0 must not silently return only 1 element; and a source
+        of the wrong length must be rejected the same way."""
+        eigenvalues_4 = jnp.array([-1.0, -2.0, -3.0, -4.0], dtype=jnp.complex128)
+        eigenvalues_1 = jnp.array([-1.0], dtype=jnp.complex128)
+        u0_1 = jnp.array([1.0])
+        u0_4 = jnp.array([1.0, 2.0, 3.0, 4.0])
+
+        # 4-mode spectrum, singleton u0: broadcasting would fabricate 3 modes.
+        with pytest.raises(ValueError, match="u0.shape"):
+            nilt_solve_linear_pde(eigenvalues_4, u0_1, t_end=1.0)
+
+        # 1-mode spectrum, 4-element u0: must not silently return 1 element.
+        with pytest.raises(ValueError, match="u0.shape"):
+            nilt_solve_linear_pde(eigenvalues_1, u0_4, t_end=1.0)
+
+        # Matching lengths but a mismatched source.
+        eigenvalues_2 = jnp.array([-1.0, -2.0], dtype=jnp.complex128)
+        u0_2 = jnp.array([1.0, 2.0])
+        source_3 = jnp.array([1.0, 2.0, 3.0])
+        with pytest.raises(ValueError, match="source.shape"):
+            nilt_solve_linear_pde(eigenvalues_2, u0_2, t_end=1.0, source=source_3)
+
+
+# =============================================================================
 # Test: NILT Speed Advantage for Long Horizons
 # =============================================================================
 

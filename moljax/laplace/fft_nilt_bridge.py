@@ -254,7 +254,12 @@ def nilt_solve_linear_pde(
     spectrum (e.g. from a 2D DiffusionOperator) either fails to broadcast
     against the 1D frequency grid or silently reconstructs a field of the
     wrong shape; both are rejected up front with a ValueError rather than
-    attempted.
+    attempted. eigenvalues must be nonempty, u0.shape must equal
+    eigenvalues.shape, and source (when given) must too: every mode of u0
+    and source is combined with the eigenvalue at the same index, so a
+    mismatched length would otherwise fabricate modes (broadcasting a
+    shorter array against a longer eigenvalues) or silently drop them
+    (returning a field the length of the shorter array) instead of raising.
 
     Args:
         eigenvalues: FFT eigenvalues λ(k), FFT ordering, 1D only
@@ -296,9 +301,26 @@ def nilt_solve_linear_pde(
             f"got u0.shape={u0.shape}. Flatten a multi-dimensional field "
             f"before calling this function; it is not supported here."
         )
+    if eigenvalues.shape[0] == 0:
+        raise ValueError("nilt_solve_linear_pde requires a nonempty eigenvalues array.")
+    if u0.shape != eigenvalues.shape:
+        raise ValueError(
+            f"u0.shape={u0.shape} must match eigenvalues.shape={eigenvalues.shape}: "
+            f"n_modes is read from eigenvalues.shape[0] and every mode of u0 is "
+            f"transformed against the eigenvalue at the same index, so a mismatched "
+            f"length would fabricate or drop modes rather than raise."
+        )
+    if source is not None:
+        source = jnp.asarray(source)
+        if source.shape != eigenvalues.shape:
+            raise ValueError(
+                f"source.shape={source.shape} must match eigenvalues.shape={eigenvalues.shape} "
+                f"for the same reason as u0: source is transformed mode-by-mode against "
+                f"eigenvalues."
+            )
     n_modes = eigenvalues.shape[0]
     u0_hat = jnp.fft.fft(u0)
-    source_hat = jnp.fft.fft(jnp.asarray(source)) if source is not None else None
+    source_hat = jnp.fft.fft(source) if source is not None else None
 
     if nilt_params is None:
         nilt_params = tune_nilt_for_fft_operator(eigenvalues, t_end, dtype=dtype)

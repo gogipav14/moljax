@@ -379,6 +379,17 @@ All notable changes to moljax are documented here.
   `result.f`, overriding the caller's tier to 'poor' and naming the
   offending sensor in the reason.
 
+- **`nilt_solve_linear_pde` did not check that `eigenvalues`, `u0` and
+  `source` had matching lengths.** The 1D checks above reject the wrong
+  number of dimensions but not the wrong number of modes: a 4-mode
+  spectrum with a 1-element `u0` broadcast into a 4-element field with 3
+  fabricated modes, a 1-mode spectrum with a 4-element `u0` silently
+  returned only 1 element, and a mismatched `source` was not checked at
+  all and failed later with an opaque broadcasting error inside
+  `nilt_fft_batch`. It now requires a nonempty `eigenvalues`, `u0.shape ==
+  eigenvalues.shape`, and, when given, `source.shape == eigenvalues.shape`,
+  raising a `ValueError` naming the mismatch before any FFT runs.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the
