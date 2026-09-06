@@ -12,8 +12,13 @@ This example demonstrates:
 The advection-diffusion equation for each species:
     dc_i/dt = D * Laplacian(c_i) - v . grad(c_i)
 
-Run: python -m moljax.examples.advdiff_multispecies
+Run from the repository root: python examples/advdiff_multispecies.py
 """
+
+import jax
+
+# The models use float64; enable it before any array is created.
+jax.config.update("jax_enable_x64", True)
 
 from pathlib import Path
 

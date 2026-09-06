@@ -15,8 +15,13 @@ The 1D linear acoustics equations:
 Wave speed c = sqrt(K/rho).
 CFL condition: dt <= dx / c.
 
-Run: python -m moljax.examples.acoustics_1d
+Run from the repository root: python examples/acoustics_1d.py
 """
+
+import jax
+
+# The models use float64; enable it before any array is created.
+jax.config.update("jax_enable_x64", True)
 
 from pathlib import Path
 

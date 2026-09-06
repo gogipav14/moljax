@@ -2,8 +2,9 @@
 
 **GPU-Portable Adaptive Method-of-Lines in JAX via AD-JVP Newton-Krylov and Spectral/FFT Operators**
 
+[![CI](https://github.com/gogipav14/moljax/actions/workflows/ci.yml/badge.svg)](https://github.com/gogipav14/moljax/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![JAX](https://img.shields.io/badge/JAX-0.8.2+-green.svg)](https://github.com/google/jax)
+[![JAX](https://img.shields.io/badge/JAX-0.4.20+-green.svg)](https://github.com/google/jax)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://img.shields.io/badge/DOI-10.1016%2Fj.cpc.2026.110205-blue.svg)](https://doi.org/10.1016/j.cpc.2026.110205)
 
@@ -39,78 +40,100 @@ If you just want to *use* the library rather than reproduce the paper, use
 
 ## Installation
 
-```bash
-pip install moljax
-```
+moljax is not on PyPI. Install from a clone:
 
-Or install from source:
 ```bash
 git clone https://github.com/gogipav14/moljax.git
 cd moljax
-pip install -e .
+pip install -e ".[dev,viz]"    # or: pip install -e .   (library only)
 ```
+
+Requires Python 3.10+ and JAX 0.4.20+ (`pyproject.toml`); for the pinned
+stacks see `environment.yml` (paper) and `environment-current.yml`.
+
+**float64.** The model factories default to `float64`, and JAX arrays are
+`float32` unless 64-bit mode is on. Enable it before the first array is
+created, either in code or with `JAX_ENABLE_X64=1` in the environment:
+
+```python
+import jax
+
+jax.config.update("jax_enable_x64", True)
+```
+
+Every snippet below assumes this has run.
 
 ## Quick Start
 
-### 2D Diffusion with FFT-CN (Spectral Accuracy)
+### Gray-Scott with Crank-Nicolson and the FFT preconditioner
 
 ```python
 import jax.numpy as jnp
-from moljax.core import Grid2D, fft_solvers
+from moljax.core import Grid2D, IntegratorType, adaptive_integrate, create_fft_cache
+from moljax.core.model import create_gray_scott_model
+from moljax.core.preconditioners import create_gray_scott_fft_preconditioner
+from moljax.core.utils import get_interior
 
-# Create grid
-grid = Grid2D(nx=128, ny=128, Lx=1.0, Ly=1.0, periodic=True)
+grid = Grid2D.uniform(64, 64, 0.0, 2.5, 0.0, 2.5)
+model = create_gray_scott_model(grid, Du=0.16, Dv=0.08, F=0.04, k=0.06)
 
-# Initial condition: sin(2πx)sin(2πy)
-x, y = grid.x, grid.y
-u0 = jnp.sin(2*jnp.pi*x) * jnp.sin(2*jnp.pi*y)
+# States carry one ghost layer per side: shape (ny + 2, nx + 2).
+X, Y = grid.meshgrid(include_ghost=True)
+square = (jnp.abs(X - 1.25) < 0.25) & (jnp.abs(Y - 1.25) < 0.25)
+y0 = {"u": jnp.where(square, 0.5, 1.0), "v": jnp.where(square, 0.25, 0.0)}
 
-# FFT-CN solver for diffusion
-D = 0.1  # Diffusivity
-dt = 0.01
-u = fft_solvers.fft_cn_step(u0, D, grid.dx, dt)
+precond = create_gray_scott_fft_preconditioner(create_fft_cache(grid))
+result = adaptive_integrate(model, y0, t0=0.0, t_end=20.0, dt0=0.5,
+                            method=IntegratorType.CN, preconditioner=precond)
+u = get_interior(result.y_final["u"], grid)   # (64, 64), ghosts stripped
+print(float(result.t_final), int(result.n_accepted), int(result.status))
 ```
 
-### Gray-Scott Reaction-Diffusion (Stiff)
+`adaptive_integrate` runs the whole accept/reject loop inside one
+`lax.while_loop`; `result.status == 0` means it reached `t_end`.
+`IntegratorType` also offers `EULER`, `SSPRK3`, `RK4`, `BE` and `BDF2`.
+
+### IMEX Strang splitting
+
+Diffusion is solved implicitly in Fourier space, the reaction explicitly,
+so the step is not limited by the diffusion CFL:
 
 ```python
-from moljax.core import MOLModel, IntegratorType, adaptive_integrate
-from moljax.core.model import gray_scott_factory
+from moljax.core import adaptive_integrate_imex
+from moljax.core.model import create_gray_scott_periodic_fft
 
-# Create Gray-Scott model
-model = gray_scott_factory(
-    nx=256, ny=256,
-    Du=2e-5, Dv=1e-5,
-    F=0.035, k=0.065
-)
-
-# Solve with IMEX (diffusion implicit, reaction explicit)
-result = adaptive_integrate(
-    model,
-    t_span=(0, 10000),
-    integrator=IntegratorType.IMEX_STRANG,
-    rtol=1e-5, atol=1e-7
-)
+model_fft, fft_cache, diffusivities = create_gray_scott_periodic_fft(
+    grid, Du=0.16, Dv=0.08, F=0.04, k=0.06)
+result = adaptive_integrate_imex(model_fft, y0, 0.0, 20.0, 0.5,
+                                 fft_cache, diffusivities, use_strang=True)
 ```
 
-### Tubular Reactor with Danckwerts BC
+### ETDRK4 on a periodic 1D grid
+
+Exponential integrators take the FFT-diagonalized linear operator exactly
+and treat only the nonlinear term with a Runge-Kutta scheme:
 
 ```python
-from moljax.core import Grid1D, operators, stepping
+from moljax.core import DiffusionOperator, Grid1D, etd_integrate
 
-# 1D reactor grid
-grid = Grid1D(n=128, L=1.0, bc_type='danckwerts')
+grid1d = Grid1D.uniform(128, 0.0, 1.0)
+x = grid1d.x_coords()                          # interior, cell-centered coordinates
+u0 = {"u": 0.5 + 0.3 * jnp.sin(2 * jnp.pi * x)}
+op = DiffusionOperator(grid1d, D=0.01)         # D * Laplacian, diagonalized by the FFT
 
-# Axial dispersion model: ∂c/∂t = (1/Pe)∂²c/∂z² - ∂c/∂z - Da·c
-Pe, Da = 50, 2  # Péclet, Damköhler numbers
+def reaction(state, t):
+    u = state["u"]
+    return {"u": 2.0 * u * (1.0 - u)}
 
-# FD operators for non-periodic BC
-D2 = operators.laplacian_1d(grid, order=2)
-D1 = operators.gradient_1d(grid, upwind=True)
-
-# Time integration
-c = stepping.cn_step(c0, dt, lambda c: (1/Pe)*D2@c - D1@c - Da*c)
+t_hist, states = etd_integrate(u0, (0.0, 1.0), dt=0.05, linear_ops={"u": op},
+                               nonlinear_rhs=reaction, method="etdrk4")
+u_final = states[-1]["u"]                      # (128,)
 ```
+
+`method` may also be `"etd1"` or `"etd2"`. The tubular reactor of the paper
+(Danckwerts boundaries, finite differences) lives in
+`benchmarks/benchmark_tubular_reactor.py`; the core package provides
+periodic, Dirichlet and Neumann boundaries.
 
 ## Features
 
@@ -138,35 +161,39 @@ c = stepping.cn_step(c0, dt, lambda c: (1/Pe)*D2@c - D1@c - Da*c)
 
 ### Adaptive Time Stepping
 
+Explicit methods are limited by a CFL bound (`CFLParams`); every method
+uses a PI controller on the embedded error estimate (`PIDParams`):
+
 ```python
 from moljax.core.dt_policy import CFLParams, PIDParams
 
-# CFL-based for explicit methods
-cfl_params = CFLParams(cfl_target=0.8, safety_factor=0.9)
-
-# PID controller for implicit methods
-pid_params = PIDParams(
-    rtol=1e-6, atol=1e-8,
-    ki=0.25, kp=0.075, kd=0.01  # Gustafsson PI.4.2 controller
-)
+cfl_params = CFLParams(safety=0.9, cfl_diffusion=0.25)   # explicit methods only
+pid_params = PIDParams(atol=1e-6, rtol=1e-4, kI=0.7, kP=0.4, dt_max=1.0)
+result = adaptive_integrate(model, y0, 0.0, 1.0, 1e-3, method=IntegratorType.RK4,
+                            cfl_params=cfl_params, pid_params=pid_params)
 ```
 
 ### Newton-Krylov Solver
 
-```python
-from moljax.core.newton_krylov import newton_krylov_solve
-from moljax.core.preconditioners import DiffusionPreconditioner
+The implicit steps call a matrix-free Newton-Krylov solver (GMRES on
+AD-computed Jacobian-vector products). It is usable on its own; the residual
+maps a state dict to a state dict:
 
-# Matrix-free implicit solve with FFT preconditioner
-precond = DiffusionPreconditioner(D, grid.dx, dt)
-u_new = newton_krylov_solve(
-    residual_fn,
-    u_guess,
-    preconditioner=precond,
-    gmres_restart=30,
-    rtol=1e-8
-)
+```python
+from moljax.core import newton_krylov_solve
+from moljax.core.newton_krylov import NKParams
+
+def residual(x):
+    return {"u": x["u"] ** 3 - 1.0}
+
+x0 = {"u": jnp.full((grid.ny_total, grid.nx_total), 0.5)}
+nk = newton_krylov_solve(residual, x0, grid, params={},
+                         nk_params=NKParams(max_newton_iters=20, newton_tol=1e-10))
+print(bool(nk.stats.converged), int(nk.stats.newton_iters))
 ```
+
+Pass `preconditioner=` (for example `create_gray_scott_fft_preconditioner`
+above) to precondition the GMRES solve.
 
 ## Benchmarks
 
@@ -178,6 +205,10 @@ python benchmark_method_comparison.py    # RK4 vs CN vs IMEX reactor comparison
 python generate_convergence_figure.py    # Spectral accuracy verification
 python benchmark_numpy_jax_pytorch.py    # Cross-framework validation
 ```
+
+The scripts expect a GPU by default; `--backend any` runs them on whatever
+backend JAX has. `bash benchmarks/run_all.sh` runs the whole suite and
+[REPRODUCE.md](REPRODUCE.md) covers the SISC extension.
 
 ### Julia Benchmarks
 
@@ -198,19 +229,27 @@ julia fft_cn_solver_gpu.jl     # GPU version (requires CUDA.jl)
 | `examples/advdiff_multispecies.py` | Multi-species transport with upwind advection |
 | `examples/acoustics_1d.py` | Coupled wave equations with SSPRK3 |
 
+Run them from the repository root with the package installed, for example
+`python examples/gray_scott_2d.py`; each writes to `./output/`.
+
 ## Citation
 
 If you use `moljax` in your research, please cite:
 
 ```bibtex
-@article{pavlov2025moljax,
-  title={Accelerating Stiff Reaction-Diffusion Simulation: {GPU} Method of Lines with {FFT} Preconditioning in {JAX}},
-  author={Pavlov, Gorgi},
-  journal={Journal of Computational Physics},
-  year={2025},
-  note={Submitted}
+@article{pavlov2026moljax,
+  title   = {moljax: {GPU}-accelerated method of lines for stiff reaction-diffusion {PDEs} with {FFT} preconditioning},
+  author  = {Pavlov, Gorgi},
+  journal = {Computer Physics Communications},
+  volume  = {326},
+  pages   = {110205},
+  year    = {2026},
+  doi     = {10.1016/j.cpc.2026.110205}
 }
 ```
+
+[CITATION.cff](CITATION.cff) carries the same record plus the software
+citation.
 
 ## License
 

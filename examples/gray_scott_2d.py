@@ -13,13 +13,17 @@ The Gray-Scott equations:
     du/dt = Du * Laplacian(u) - u*v^2 + F*(1-u)
     dv/dt = Dv * Laplacian(v) + u*v^2 - (F+k)*v
 
-Run: python -m moljax.examples.gray_scott_2d
+Run from the repository root: python examples/gray_scott_2d.py
 """
+
+import jax
+
+# The models use float64; enable it before any array is created.
+jax.config.update("jax_enable_x64", True)
 
 import time
 from pathlib import Path
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 

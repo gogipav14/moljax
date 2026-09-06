@@ -39,24 +39,22 @@ merging.
 ## What CI runs
 
 Every pull request runs the test suite on Python 3.10 and 3.12, CPU-only,
-via `JAX_PLATFORMS=cpu`. This is the required check.
+via `JAX_PLATFORMS=cpu`, and `ruff check .` with the pinned Ruff (0.16.5,
+also in the `dev` extra). The test jobs are required checks; the lint job is
+being promoted to one as well, now that the style backlog that predated CI
+is cleared, so treat a lint finding in your change as blocking.
 
 ```bash
 pip install -e ".[dev,viz]"
 pytest
-```
-
-Linting runs as an **advisory** job. The repository carries a backlog of style
-findings that predates CI, so a failing lint job does not block a merge today.
-Please do not add new findings in code you touch:
-
-```bash
 ruff check .
 ```
 
-`E402` is disabled project-wide: JAX requires
-`jax.config.update("jax_enable_x64", True)` to execute before `jax.numpy` is
-imported, so module-level imports legitimately follow executable statements.
+`E402` (module-level import not at top of file) is waived for `tests/`,
+`benchmarks/` and `examples/` only. Those scripts run
+`jax.config.update("jax_enable_x64", True)` before any array is created, and
+the imports that follow that call trip the rule. The package itself has no
+such sites and carries the full rule set.
 
 ## Tests
 
@@ -64,9 +62,9 @@ imported, so module-level imports legitimately follow executable statements.
   independent reference (an analytic solution, a dense computation, or a
   well-established library), not just a regression snapshot.
 - Mark anything that takes more than about a minute with `@pytest.mark.slow`.
-  Slow tests are deselected by default so the standard run stays fast enough
-  that people actually run it. Use `pytest -m slow` for those, or `pytest -m ""`
-  for everything.
+  Nothing is deselected by default: `pytest` runs all 450 tests, about six
+  minutes on CPU, and that is what CI runs. The marker is for skipping them
+  locally with `pytest -m "not slow"`.
 - Benchmarks live in `benchmarks/` and are not part of the test suite.
 
 ## Benchmarks and comparisons

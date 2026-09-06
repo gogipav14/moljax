@@ -29,9 +29,9 @@ Matching Section 5.1.1 of the paper:
 > the library; use `environment.yml` to *reproduce the paper*.
 
 ### Minimum Requirements
-- NVIDIA GPU with CUDA support (8+ GB VRAM recommended)
-- Python 3.10+
-- JAX with GPU support
+- Python 3.10+ and JAX 0.4.20+
+- For the paper's timings: an NVIDIA GPU (8+ GB VRAM) and JAX with CUDA
+  support. Without one, every script runs on CPU with `--backend any`.
 
 ## Installation
 
@@ -74,8 +74,10 @@ python benchmarks/plot_main_figures.py --list       # what would run
 python benchmarks/plot_main_figures.py --skip-slow  # fast figures only
 ```
 
-CPU-only reproduction takes roughly 3-4 hours. The CuPy and nvmath GPU
-FFT baseline (Table 3) is GPU-only and is skipped without them.
+CPU-only reproduction, `bash benchmarks/run_all.sh --backend any`, takes
+roughly 3-4 hours. The GPU-only stages (the CuPy and nvmath FFT baselines of
+Table 3, the JIT x device factorial and the OFAT study) fail without a GPU;
+the script reports them and continues.
 
 The older `./reproduce_paper.sh` entry point still works, and
 `benchmarks/run_all_benchmarks.sh` now forwards to `run_all.sh`.
@@ -83,7 +85,7 @@ The older `./reproduce_paper.sh` entry point still works, and
 ## Test Suite
 
 ```bash
-pytest        # full suite, 362 tests, ~5.5 min on RTX 5060
+pytest        # full suite, 450 tests, about 6 min on CPU, less on the RTX 5060
 ```
 
 Nothing is deselected by default.
@@ -123,7 +125,7 @@ bash run_all_benchmarks.sh
 
 ## Expected Results
 
-Results will vary depending on hardware. Expected ranges below are for RTX 4090 GPU.
+Results will vary depending on hardware. Expected ranges below are for the RTX 5060.
 
 ### Table 5: SciPy Comparison (128x128 grid, diffusion)
 
@@ -197,7 +199,7 @@ Results will vary depending on hardware. Expected ranges below are for RTX 4090 
 ### Out of Memory
 - Reduce grid size (e.g., 128x128 instead of 256x256)
 - Ensure no other GPU processes running
-- Set `JAX_PLATFORM_NAME=cpu` to run on CPU
+- Set `JAX_PLATFORMS=cpu` and pass `--backend any` to run on CPU
 
 ### Slow Performance
 - Verify GPU is being used: `python -c "import jax; print(jax.devices())"`
@@ -253,7 +255,9 @@ with open(results_dir / 'gray_scott.json') as f:
 
 ## SISC Extended Benchmark Suite
 
-The SISC resubmission includes 14 additional benchmarks for comprehensive coverage.
+The SISC resubmission adds 13 benchmarks, run in order by
+`benchmarks/sisc/run_sisc_suite.sh`. Two `_fast` variants of E1 and E2 and
+`bench_da_pe_robustness.py` sit alongside them and are run by hand.
 
 ### Running the Full SISC Suite
 
@@ -278,8 +282,8 @@ PYTHONPATH=.. python bench_precond_variants.py --backend any
 
 | Script | Description | Purpose |
 |--------|-------------|---------|
-| `bench_iter_vs_grid.py` | GMRES iterations vs grid size (64²-1024²) | Grid scaling validation |
-| `bench_iter_vs_dim.py` | Iterations vs dimension (1D/2D/3D at ~1M DOF) | Dimensionality effects |
+| `bench_iter_vs_grid.py` | GMRES iterations vs grid size (64² to 256²) | Grid scaling validation |
+| `bench_iter_vs_dim.py` | Iterations vs dimension (1D/2D/3D, 1K to 4K DOF) | Dimensionality effects |
 | `bench_newton_policy_ablation.py` | Newton failure policies (terminate/÷2/÷4/÷8) | Failure handling |
 | `bench_precond_variants.py` | Preconditioner comparison (None/Jacobi/FFT) | Ablation study |
 | `bench_bc_matrix.py` | FFT/DST/DCT for different BCs | BC coverage |
@@ -290,6 +294,7 @@ PYTHONPATH=.. python bench_precond_variants.py --backend any
 | `bench_gpu_memory_scaling.py` | Memory vs grid size and GMRES restart | Memory limits |
 | `bench_3d_feasibility.py` | 3D diffusion (32³-128³) | 3D capabilities |
 | `bench_imex_vs_fullimplicit_map.py` | Method selection regime map | Method guidance |
+| `bench_reaction_dominant.py` | Reaction- vs diffusion-dominant regimes | IMEX guidance |
 
 ### Expected SISC Results
 
