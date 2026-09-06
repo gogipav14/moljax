@@ -365,6 +365,20 @@ All notable changes to moljax are documented here.
   `u0` is not 1D; the docstring documents the restriction and 2D support
   is out of scope.
 
+- **`tune_nilt_adaptive_cfl` could rate an all-NaN inversion as
+  'acceptable'.** At the iteration limit, the tier was picked from
+  `len(cfl.violated_conditions)` alone: a NaN `band_edge_ratio` fails the
+  `R_tail <= tau_tail` comparison, which counts as exactly one CFL
+  violation, so a transform where every sensor was NaN and `result.f` was
+  entirely non-finite could report 'acceptable' with no warning at all.
+  The finite-sensor rejection `classify_quality` applies lived in a
+  different function and never ran on this path. Every return from
+  `tune_nilt_adaptive_cfl` now goes through `_quality_from_diagnostics`,
+  which shares `classify_quality`'s missing-or-non-finite check
+  (`_missing_or_non_finite_reason`) and additionally rejects a non-finite
+  `result.f`, overriding the caller's tier to 'poor' and naming the
+  offending sensor in the reason.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the

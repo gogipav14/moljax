@@ -83,8 +83,49 @@ def _read_sensors(diagnostics: dict | None) -> tuple[float, float, float, float,
     )
 
 
-def _quality_from_diagnostics(tier: str, reason: str, diagnostics: dict | None) -> QualityTier:
-    band_edge, tail_energy, tail_ratio, r_late, _missing = _read_sensors(diagnostics)
+def _missing_or_non_finite_reason(
+    band_edge: float, tail_energy: float, tail_ratio: float, missing: list[str]
+) -> str | None:
+    """Reason string for a 'poor' verdict from broken sensors, or None if
+    none of the checked sensors are missing or non-finite.
+
+    Shared by classify_quality and the CFL tuner's _quality_from_diagnostics
+    so a missing or non-finite sensor (F_eval returned NaN/inf somewhere on
+    the contour) cannot slip past either path as 'good' or 'acceptable'.
+    """
+    if missing:
+        return f"missing sensor(s): {', '.join(missing)}"
+    non_finite = [
+        name for name, value in (
+            ('band_edge_ratio', band_edge),
+            ('tail_energy_fraction', tail_energy),
+            ('tail_ratio', tail_ratio),
+        ) if not math.isfinite(value)
+    ]
+    if non_finite:
+        return f"non-finite sensor(s): {', '.join(non_finite)}"
+    return None
+
+
+def _quality_from_diagnostics(
+    tier: str, reason: str, diagnostics: dict | None, result: NILTResult | None = None
+) -> QualityTier:
+    """Build a QualityTier from the CFL loop's own tier/reason, unless the
+    sensors or the inversion itself are broken.
+
+    A missing/non-finite band_edge_ratio, tail_energy_fraction or tail_ratio
+    (via _missing_or_non_finite_reason, the same check classify_quality
+    applies) or a non-finite result.f overrides tier/reason with 'poor' and
+    a reason naming the offending sensor, so the CFL tuner cannot rate a
+    non-finite inversion as 'good' or 'acceptable' just because it ran out
+    of retuning iterations.
+    """
+    band_edge, tail_energy, tail_ratio, r_late, missing = _read_sensors(diagnostics)
+    reason_broken = _missing_or_non_finite_reason(band_edge, tail_energy, tail_ratio, missing)
+    if reason_broken is None and result is not None and not bool(jnp.all(jnp.isfinite(result.f))):
+        reason_broken = "non-finite sensor(s): result.f"
+    if reason_broken is not None:
+        return QualityTier('poor', reason_broken, band_edge, tail_energy, tail_ratio, r_late)
     return QualityTier(tier, reason, band_edge, tail_energy, tail_ratio, r_late)
 
 
@@ -126,18 +167,9 @@ def classify_quality(
     def verdict(level: str, reason: str) -> QualityTier:
         return QualityTier(level, reason, band_edge, tail_energy, tail_ratio, r_late)
 
-    if missing:
-        return verdict('poor', f"missing sensor(s): {', '.join(missing)}")
-
-    non_finite = [
-        name for name, value in (
-            ('band_edge_ratio', band_edge),
-            ('tail_energy_fraction', tail_energy),
-            ('tail_ratio', tail_ratio),
-        ) if not math.isfinite(value)
-    ]
-    if non_finite:
-        return verdict('poor', f"non-finite sensor(s): {', '.join(non_finite)}")
+    reason_broken = _missing_or_non_finite_reason(band_edge, tail_energy, tail_ratio, missing)
+    if reason_broken is not None:
+        return verdict('poor', reason_broken)
 
     bandwidth = f'band_edge_ratio={band_edge:.3f}, tail_energy_fraction={tail_energy:.3f}'
     wraparound = f'tail_ratio={tail_ratio:.3f}'
@@ -501,7 +533,7 @@ def tune_nilt_adaptive_cfl(
             return AdaptiveTuningResult(
                 params=params,
                 result=result,
-                quality=_quality_from_diagnostics('good', 'all CFL conditions satisfied', result.diagnostics),
+                quality=_quality_from_diagnostics('good', 'all CFL conditions satisfied', result.diagnostics, result),
                 iterations=iteration,
                 actions=actions
             )
@@ -510,9 +542,9 @@ def tune_nilt_adaptive_cfl(
         if iteration >= max_iterations:
             tier = 'acceptable' if len(cfl.violated_conditions) == 1 else 'poor'
             quality = _quality_from_diagnostics(
-                tier, f"CFL violations: {', '.join(cfl.violated_conditions)}", result.diagnostics
+                tier, f"CFL violations: {', '.join(cfl.violated_conditions)}", result.diagnostics, result
             )
-            if tier == 'poor':
+            if quality.tier == 'poor':
                 _warnings.warn(
                     f"NILT CFL conditions not fully satisfied after {max_iterations} iterations. "
                     f"Violations: {cfl.violated_conditions}",
@@ -538,7 +570,7 @@ def tune_nilt_adaptive_cfl(
             return AdaptiveTuningResult(
                 params=params,
                 result=result,
-                quality=_quality_from_diagnostics(tier, 'no further adjustments available', result.diagnostics),
+                quality=_quality_from_diagnostics(tier, 'no further adjustments available', result.diagnostics, result),
                 iterations=iteration,
                 actions=actions
             )
@@ -569,7 +601,7 @@ def tune_nilt_adaptive_cfl(
     return AdaptiveTuningResult(
         params=params,
         result=result,
-        quality=_quality_from_diagnostics('poor', 'max iterations exceeded', result.diagnostics),
+        quality=_quality_from_diagnostics('poor', 'max iterations exceeded', result.diagnostics, result),
         iterations=max_iterations,
         actions=actions
     )

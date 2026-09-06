@@ -882,6 +882,53 @@ class TestNonFiniteAndMissingSensors:
         assert partial.tier == 'poor'
         assert 'tail_ratio' in partial.reason
 
+    def test_cfl_tuner_rejects_non_finite_transform(self):
+        """tune_nilt_adaptive_cfl must not rate an all-NaN transform as
+        anything but poor, even after it exhausts its retuning budget.
+
+        Before the fix, the iteration-limit branch (Step 6 of
+        tune_nilt_adaptive_cfl) picked its tier from
+        len(cfl.violated_conditions) alone: a NaN band_edge_ratio makes the
+        R_tail <= tau_tail comparison False, which counts as exactly one
+        CFL violation ("bandwidth"), so the loop reported 'acceptable' with
+        every sensor NaN and result.f entirely non-finite, and raised no
+        warning. classify_quality's missing-or-non-finite rule (b23fb45)
+        lived in a different function and never ran on this path.
+        """
+        def F_nan(s):
+            return jnp.full_like(s, jnp.nan, dtype=complex)
+
+        with pytest.warns(UserWarning, match="CFL conditions not fully satisfied"):
+            adaptive = tune_nilt_adaptive_cfl(F_nan, t_end=1.0, max_iterations=1)
+
+        assert not bool(jnp.all(jnp.isfinite(adaptive.result.f)))
+        assert adaptive.quality.tier == 'poor', adaptive.quality.reason
+        assert 'non-finite' in adaptive.quality.reason
+        assert jnp.isnan(adaptive.quality.band_edge_ratio)
+        assert jnp.isnan(adaptive.quality.tail_energy_fraction)
+
+    def test_cfl_quality_helper_rejects_non_finite_result_f_alone(self):
+        """_quality_from_diagnostics must reject a non-finite result.f even
+        when every sensor in diagnostics happens to be finite: a broken
+        time-domain inversion is 'poor' regardless of what the frequency-
+        domain sensors say.
+        """
+        from moljax.laplace.adaptive_tuning import _quality_from_diagnostics
+        from moljax.laplace.nilt_fft import NILTResult
+
+        diagnostics = {'band_edge_ratio': 0.01, 'tail_energy_fraction': 0.01, 'leakage_localization': {'tail_ratio': 0.01}}
+        broken_result = NILTResult(
+            t=jnp.linspace(0.0, 1.0, 8), f=jnp.full((8,), jnp.nan), dt=0.1, N=8, a=1.0, T=1.0
+        )
+        quality = _quality_from_diagnostics('good', 'all CFL conditions satisfied', diagnostics, broken_result)
+        assert quality.tier == 'poor', quality.reason
+        assert 'result.f' in quality.reason
+
+        # A finite result.f leaves the caller's own tier/reason untouched.
+        finite_result = broken_result._replace(f=jnp.zeros((8,)))
+        quality_ok = _quality_from_diagnostics('good', 'all CFL conditions satisfied', diagnostics, finite_result)
+        assert quality_ok.tier == 'good'
+
 
 if __name__ == '__main__':
     # Run tests with verbose output
