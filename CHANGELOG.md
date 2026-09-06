@@ -390,6 +390,17 @@ All notable changes to moljax are documented here.
   eigenvalues.shape`, and, when given, `source.shape == eigenvalues.shape`,
   raising a `ValueError` naming the mismatch before any FFT runs.
 
+- **`newton_krylov_solve` with `max_backtrack=0` silently turned Newton
+  into a no-op.** `newton_step`'s best-candidate fallback initializes
+  `best_x_flat`/`best_r_norm` from the starting iterate and only updates
+  them inside the backtracking `lax.scan`; with `max_backtrack=0` the scan
+  runs its body zero times, so the fallback always returned the untouched
+  starting iterate no matter what `dx_flat` was, regardless of
+  `NKParams.damping`. `max_backtrack=0` now means "no line search": the
+  configured damped step is applied unconditionally and its residual
+  evaluated, so `res_norm`/`converged` still describe the returned
+  iterate.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the

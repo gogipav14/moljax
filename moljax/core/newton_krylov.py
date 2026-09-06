@@ -37,6 +37,12 @@ class NKParams(NamedTuple):
     residual (all fields, all points, no grid weighting), so it scales
     with sqrt(number of unknowns). max_krylov_iters is the GMRES budget
     per Newton step; see NKStats.lin_iters.
+
+    max_backtrack = 0 means "no line search": the damped step
+    x + damping * dx is applied unconditionally every Newton iteration,
+    with no candidate ever checked against the Armijo-style decrease test.
+    This differs from max_backtrack = 1, which does check that one
+    candidate and falls back to the starting iterate if it fails.
     """
     max_newton_iters: int = 10
     max_krylov_iters: int = 50
@@ -328,23 +334,39 @@ def newton_krylov_solve(
 
             return (new_alpha, new_x_flat, new_r_norm, new_accepted, new_best_x_flat, new_best_r_norm), None
 
-        # Run backtracking. best_x_flat/best_r_norm start at the current
-        # iterate (alpha = 0), so a candidate only replaces them when it is
-        # strictly better than where we started.
-        init_carry = (alpha, state.x_flat, r_norm, jnp.array(False), state.x_flat, r_norm)
-        (_, x_bt_flat, r_bt_norm, accepted, best_x_flat, best_r_norm), _ = lax.scan(
-            backtrack_step, init_carry, None, length=nk_params.max_backtrack
-        )
+        # max_backtrack is a static Python int (a NKParams field, not a
+        # traced value), so branching on it in Python is fine under
+        # lax.while_loop. length=0 means "no line search": lax.scan would
+        # run the body zero times, leaving best_x_flat/best_r_norm at their
+        # initial values (the starting iterate, alpha = 0) and turning the
+        # Newton step into a no-op that never applies the computed dx_flat.
+        # Apply the configured damped step unconditionally instead, and
+        # evaluate its residual so res_norm/converged still describe the
+        # returned iterate (the invariant NewtonState documents).
+        if nk_params.max_backtrack == 0:
+            x_final_flat = state.x_flat + alpha * dx_flat
+            r_final_pytree = residual_fn(unravel(x_final_flat))
+            r_final_flat, _ = ravel_pytree(r_final_pytree)
+            r_final = jnp.linalg.norm(r_final_flat)
+        else:
+            # Run backtracking. best_x_flat/best_r_norm start at the current
+            # iterate (alpha = 0), so a candidate only replaces them when it
+            # is strictly better than where we started.
+            init_carry = (alpha, state.x_flat, r_norm, jnp.array(False), state.x_flat, r_norm)
+            (_, x_bt_flat, r_bt_norm, accepted, best_x_flat, best_r_norm), _ = lax.scan(
+                backtrack_step, init_carry, None, length=nk_params.max_backtrack
+            )
 
-        # If a candidate satisfied the decrease test, take it (the accepted
-        # branch reuses the norm the line search already computed). If none
-        # did, never apply the untried full step: it was never checked
-        # against the decrease test and can be the worst candidate of all
-        # (the whole reason backtracking exists). Instead keep the best
-        # candidate actually tried, which is never worse than the starting
-        # iterate because best_r_norm is initialized from it.
-        x_final_flat = lax.cond(accepted, lambda: x_bt_flat, lambda: best_x_flat)
-        r_final = lax.cond(accepted, lambda: r_bt_norm, lambda: best_r_norm)
+            # If a candidate satisfied the decrease test, take it (the
+            # accepted branch reuses the norm the line search already
+            # computed). If none did, never apply the untried full step: it
+            # was never checked against the decrease test and can be the
+            # worst candidate of all (the whole reason backtracking exists).
+            # Instead keep the best candidate actually tried, which is never
+            # worse than the starting iterate because best_r_norm is
+            # initialized from it.
+            x_final_flat = lax.cond(accepted, lambda: x_bt_flat, lambda: best_x_flat)
+            r_final = lax.cond(accepted, lambda: r_bt_norm, lambda: best_r_norm)
 
         return NewtonState(
             x_flat=x_final_flat,

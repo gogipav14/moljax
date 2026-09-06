@@ -348,6 +348,40 @@ class TestNKRobustness:
         assert jnp.allclose(result.solution['u'], x0['u'])
         assert not bool(result.stats.converged)
 
+    def test_zero_backtrack_applies_the_damped_step(self):
+        """max_backtrack=0 must mean "no line search", not "no step".
+
+        F(x) = x - 1 is linear, so the undamped Newton step from any x0
+        lands exactly on the root in one iteration. With max_backtrack=0,
+        lax.scan ran its backtracking body zero times, so best_x_flat/
+        best_r_norm never left their initial values (the starting iterate,
+        alpha=0) and the fallback returned x0 unchanged: Newton became a
+        no-op that reported the step as not converged despite dx_flat
+        having been computed correctly. The fix applies the configured
+        damped step unconditionally when max_backtrack=0 and evaluates its
+        residual, so a single iteration must converge here exactly as it
+        did before commit 614ccdd introduced the best-candidate fallback.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': x['u'] - 1.0}
+
+        x0 = {'u': jnp.array([0.0])}
+
+        result = newton_krylov_solve(
+            residual_fn=residual,
+            x0=x0,
+            grid=grid,
+            params={},
+            nk_params=NKParams(max_newton_iters=1, max_backtrack=0, newton_tol=1e-12)
+        )
+
+        assert jnp.allclose(result.solution['u'], 1.0), \
+            f"max_backtrack=0 left the iterate at {result.solution['u']}, expected 1.0"
+        assert bool(result.stats.converged)
+        assert float(result.stats.final_res_norm) < 1e-12
+
 
 def decay_model(nx: int = 4) -> MOLModel:
     """y' = -y on every grid point, periodic, so exp(-t) is the exact solution."""
