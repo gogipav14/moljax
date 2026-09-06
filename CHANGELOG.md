@@ -355,6 +355,16 @@ All notable changes to moljax are documented here.
   than where it started, and reports unchanged if nothing tried improved
   on it.
 
+- **`nilt_solve_linear_pde` silently mishandled a spectrum that was not
+  1D.** The bridge reads `n_modes` from `eigenvalues.shape[0]` and applies
+  a 1D `fft`/`irfft` throughout, so a 2D spectrum (e.g. from a 2D
+  `DiffusionOperator`) either failed with an opaque broadcasting error deep
+  inside `nilt_fft_batch` or, depending on shapes, could reconstruct a
+  field of the wrong size instead of failing at all. It now raises a
+  `ValueError` up front naming the unsupported shape when `eigenvalues` or
+  `u0` is not 1D; the docstring documents the restriction and 2D support
+  is out of scope.
+
 ### Changed
 
 - pyproject.toml: author email matches CITATION.cff, `ruff==0.16.5` in the

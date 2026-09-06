@@ -248,9 +248,17 @@ def nilt_solve_linear_pde(
       Hermitian symmetry of the sampled spectrum) applies to each. Inverting
       Re U_k(s) alone is wrong by O(1).
 
+    Restricted to 1D spectra: eigenvalues and u0 must each be a 1D array of
+    length n_modes (FFT ordering). n_modes is read from eigenvalues.shape[0]
+    and a 1D fft/irfft is applied throughout, so a multi-dimensional
+    spectrum (e.g. from a 2D DiffusionOperator) either fails to broadcast
+    against the 1D frequency grid or silently reconstructs a field of the
+    wrong shape; both are rejected up front with a ValueError rather than
+    attempted.
+
     Args:
-        eigenvalues: FFT eigenvalues λ(k), FFT ordering
-        u0: Initial condition (real space, interior only)
+        eigenvalues: FFT eigenvalues λ(k), FFT ordering, 1D only
+        u0: Initial condition (real space, interior only), 1D only
         t_end: End time
         source: Optional constant source term f(x)
         nilt_params: Pre-tuned NILT parameters (auto-tuned if None). The
@@ -273,8 +281,23 @@ def nilt_solve_linear_pde(
               and the solution on it, shape (N, n)
     """
     eigenvalues = jnp.asarray(eigenvalues)
+    u0 = jnp.asarray(u0)
+    if eigenvalues.ndim != 1:
+        raise ValueError(
+            f"nilt_solve_linear_pde only supports a 1D spectrum; got "
+            f"eigenvalues.shape={eigenvalues.shape}. n_modes is read from "
+            f"eigenvalues.shape[0] and a 1D fft/irfft is applied throughout, "
+            f"so a multi-dimensional spectrum (e.g. from a 2D "
+            f"DiffusionOperator) is not supported here."
+        )
+    if u0.ndim != 1:
+        raise ValueError(
+            f"nilt_solve_linear_pde only supports a 1D initial condition; "
+            f"got u0.shape={u0.shape}. Flatten a multi-dimensional field "
+            f"before calling this function; it is not supported here."
+        )
     n_modes = eigenvalues.shape[0]
-    u0_hat = jnp.fft.fft(jnp.asarray(u0))
+    u0_hat = jnp.fft.fft(u0)
     source_hat = jnp.fft.fft(jnp.asarray(source)) if source is not None else None
 
     if nilt_params is None:

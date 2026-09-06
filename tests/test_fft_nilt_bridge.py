@@ -249,6 +249,36 @@ class TestNILTAccuracy:
 
 
 # =============================================================================
+# Test: 1D Restriction
+# =============================================================================
+
+class TestBridgeRejects2DSpectra:
+    """nilt_solve_linear_pde reads n_modes from eigenvalues.shape[0] and runs
+    a 1D fft/irfft throughout; a multi-dimensional spectrum (e.g. from a 2D
+    DiffusionOperator) must be rejected rather than silently mishandled."""
+
+    def test_bridge_rejects_2d_spectra(self):
+        """A 2D eigenvalue array either fails to broadcast against the 1D
+        frequency grid or would reconstruct a wrong-sized field; it must
+        instead raise a clear ValueError before any of that happens."""
+        n = 4
+        eigenvalues_2d = -jnp.ones((n, n)) - jnp.eye(n)
+        u0_1d = jnp.ones(n)
+        u0_2d = jnp.ones((n, n))
+
+        with pytest.raises(ValueError, match="1D"):
+            nilt_solve_linear_pde(eigenvalues_2d, u0_1d, t_end=1.0)
+
+        with pytest.raises(ValueError, match="1D"):
+            nilt_solve_linear_pde(eigenvalues_2d, u0_2d, t_end=1.0)
+
+        # A 1D spectrum with a 2D initial condition must also be rejected.
+        eigenvalues_1d = -jnp.arange(1.0, n + 1)
+        with pytest.raises(ValueError, match="1D"):
+            nilt_solve_linear_pde(eigenvalues_1d, u0_2d, t_end=1.0)
+
+
+# =============================================================================
 # Test: NILT Speed Advantage for Long Horizons
 # =============================================================================
 
