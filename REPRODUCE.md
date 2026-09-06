@@ -85,7 +85,7 @@ The older `./reproduce_paper.sh` entry point still works, and
 ## Test Suite
 
 ```bash
-pytest        # full suite, 450 tests, about 6 min on CPU, less on the RTX 5060
+pytest        # full suite, 653 tests, about 10 min on CPU, less on the RTX 5060
 ```
 
 Nothing is deselected by default.

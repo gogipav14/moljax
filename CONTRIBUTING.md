@@ -62,7 +62,7 @@ such sites and carries the full rule set.
   independent reference (an analytic solution, a dense computation, or a
   well-established library), not just a regression snapshot.
 - Mark anything that takes more than about a minute with `@pytest.mark.slow`.
-  Nothing is deselected by default: `pytest` runs all 450 tests, about six
+  Nothing is deselected by default: `pytest` runs all 653 tests, about ten
   minutes on CPU, and that is what CI runs. The marker is for skipping them
   locally with `pytest -m "not slow"`.
 - Benchmarks live in `benchmarks/` and are not part of the test suite.
