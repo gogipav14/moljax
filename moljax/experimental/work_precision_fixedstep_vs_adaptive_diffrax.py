@@ -18,10 +18,9 @@ from typing import Any, NamedTuple
 
 import diffrax
 import jax
-
-jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
+from moljax._precision import require_x64
 from moljax.core.fft_nonperiodic import laplacian_symbol_dirichlet
 from moljax.core.newton_krylov import NKParams, newton_krylov_solve
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
@@ -633,6 +632,7 @@ def run_work_precision(config: WorkPrecisionConfig | None = None) -> dict[str, A
     the same nonlinear spatial discretization.  It is not a reproduction of a
     linear FFT-Crank--Nicolson comparison.
     """
+    require_x64("nonlinear work-precision benchmark")
     if config is None:
         config = WorkPrecisionConfig()
     _validate_config(config)
@@ -712,6 +712,7 @@ def _print_summary(report: dict[str, Any]) -> None:
 
 def main() -> None:
     """Run the default benchmark or write to an explicitly supplied JSON path."""
+    jax.config.update("jax_enable_x64", True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=WorkPrecisionConfig().output_path)
     args = parser.parse_args()

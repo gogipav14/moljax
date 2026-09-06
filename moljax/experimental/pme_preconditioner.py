@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import jax
-
-jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.core.fft_nonperiodic import laplacian_symbol_dirichlet, solve_helmholtz_dirichlet
