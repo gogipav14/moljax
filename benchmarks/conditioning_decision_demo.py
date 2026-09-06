@@ -409,9 +409,7 @@ def run_decision_demo(config: DemoConfig | None = None) -> dict[str, Any]:
         # conditioning for a point the trajectory never reaches, and the run
         # would still be labelled completed.  Stop instead of advancing from an
         # invalid state.
-        finite = all(
-            bool(jnp.all(jnp.isfinite(value))) for value in jax.tree.leaves(stepped)
-        )
+        finite = all(bool(jnp.all(jnp.isfinite(value))) for value in jax.tree.leaves(stepped))
         if not bool(stats.converged) or not finite:
             failures.append(
                 {

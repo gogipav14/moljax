@@ -7,8 +7,6 @@ from math import hypot, log, sqrt
 from typing import Any, NamedTuple
 
 import jax
-
-jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from moljax.conditioning import (

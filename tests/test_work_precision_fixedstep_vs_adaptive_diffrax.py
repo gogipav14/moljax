@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import importlib
 
+import jax
+
+jax.config.update("jax_enable_x64", True)
 import pytest
 
 if importlib.util.find_spec("diffrax") is None:
