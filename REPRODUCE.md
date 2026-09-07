@@ -298,14 +298,25 @@ PYTHONPATH=.. python bench_precond_variants.py --backend any
 
 ### Expected SISC Results
 
-#### E1: GMRES Iterations vs Grid Size (FFT preconditioned)
-| Grid | σ=1 | σ=10 | σ=100 |
-|------|-----|------|-------|
-| 64² | 3-4 | 4-5 | 5-7 |
-| 256² | 3-4 | 4-5 | 6-8 |
-| 1024² | 4-5 | 5-6 | 7-10 |
+#### E1: GMRES iterations vs grid size (median inner iterations, SciPy count)
+| Grid | σ=1 FFT / none | σ=10 FFT / none | σ=100 FFT / none |
+|------|----------------|-----------------|------------------|
+| 64² | 9 / 14 | cap / cap | cap / cap |
+| 128² | 8 / 14 | 9 / 40 | cap / cap |
+| 256² | 8 / 15 | 8 / 41 | cap / cap |
 
-**Key finding**: Iterations remain nearly constant across grid sizes (preempts "works only at small grids" criticism).
+"cap" is 6000 inner iterations (`GMRES_MAXITER=200` restarts of 30) without
+convergence. Where the solves converge, the FFT-preconditioned count is flat
+in the grid size (8 to 9) while the unpreconditioned count grows with
+stiffness (14 to 41), which is the E1 claim. The capped cells are a defect
+of the benchmark script, not of the preconditioner: its Newton loop applies
+undamped full steps, diverges on the stiffer problems after the first one
+or two time steps (the per-cell minimum is 8 to 19 iterations, the median
+the cap), and hands GMRES the Jacobian of a state that has already blown
+up. E2 shows the same at 16³: 1D and 2D converge in 8 to 9 iterations
+(29 and 41 unpreconditioned), 3D hits the cap under both. Fixing the
+scripts' Newton loop (damping or the library's line search) is a 1.2.1 item;
+until then read the capped cells as "script diverged", not as a count.
 
 **Note on the committed files.** Until 1.2.0 the E1, E2, E4 and E9 scripts
 counted GMRES iterations with a Python counter inside the matvec handed to
@@ -313,16 +324,16 @@ counted GMRES iterations with a Python counter inside the matvec handed to
 matvec (a constant, 5) rather than how many iterations GMRES took. The
 scripts now count with SciPy's GMRES on the same system (`iteration_source`
 in each result's `config` says so) and keep JAX GMRES where a wall time is
-reported. The committed `benchmarks/results/iter_vs_grid.json` and
-`iter_vs_dim.json` predate this fix; they were written by an earlier
-revision of the scripts (their `config` blocks carry keys the current
-scripts do not write) and have not been regenerated. The committed
-`precond_variants.json` shows the defect directly: every count in it is 5.
-`jvp_vs_fd_sweep.json` shows the same 5 for its AD-JVP entry, but its FD
-entries show 200 (`GMRES_MAXITER`): the pre-fix script also preconditioned
-the right-hand side twice (once building `precond_rhs`, again passing
-`precond_flat(precond_rhs)` to `gmres`), a mismatched system fixed in the
-same pass.
+reported. `benchmarks/results/iter_vs_grid.json` and `iter_vs_dim.json` were
+regenerated with the corrected count on 2026-09-06 (RTX 5060, 65 and 15
+minutes; the counting loop is latency-bound because SciPy's Arnoldi runs on
+the host and calls the device once per iteration). The committed
+`precond_variants.json` still shows the old defect directly: every count in
+it is 5. `jvp_vs_fd_sweep.json` shows the same 5 for its AD-JVP entry, but
+its FD entries show 200 (`GMRES_MAXITER`): the pre-fix script also
+preconditioned the right-hand side twice (once building `precond_rhs`,
+again passing `precond_flat(precond_rhs)` to `gmres`), a mismatched system
+fixed in the same pass.
 
 #### E9: JVP vs FD Accuracy
 - Optimal FD epsilon: ~1e-7 (U-shaped error curve)
