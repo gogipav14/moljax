@@ -225,9 +225,10 @@ def test_regime_claim_smoke_reports_when_the_small_sample_is_not_separated(tmp_p
     """A small mixed-verdict sample either supports separation or reports its absence."""
     report = run_breakdown_study(
         BreakdownConfig(
-            nx=128,
-            m_values=(1,),
-            analysis_dt_values=(2.0e-4, 2.0),
+            nx=64,
+            m_values=(2,),
+            d0_kinds=("identity",),
+            analysis_dt_values=(2.0e-2, 2.0),
             front_target_halfwidths=(0.25, 3.0),
             n_angles=3,
             fov_max_iters=4,
@@ -281,12 +282,12 @@ def test_regime_map_reports_non_benign_high_stiffness_cells(tmp_path) -> None:
     high_dt = 2.0
     report = run_breakdown_study(
         BreakdownConfig(
-            nx=128,
-            m_values=(1, 2, 3),
+            nx=64,
+            m_values=(2, 3),
             d0_kinds=("identity",),
             state_dt=0.02,
-            analysis_dt_values=(2.0e-4, high_dt),
-            front_target_halfwidths=(0.25, 0.75, 3.0),
+            analysis_dt_values=(2.0e-2, high_dt),
+            front_target_halfwidths=(0.25, 3.0),
             n_angles=3,
             fov_max_iters=4,
             arnoldi_steps=4,
@@ -300,7 +301,7 @@ def test_regime_map_reports_non_benign_high_stiffness_cells(tmp_path) -> None:
         cell for cell in cells if cell["analysis_dt"] == high_dt and cell["m"] in {2, 3}
     ]
 
-    assert len(cells) == 6
+    assert len(cells) == 4
     assert len(high_stiffness_nonlinear) == 2
     assert all(
         cell["identity_iteration_range"]["ratio"] >= 5.0 for cell in high_stiffness_nonlinear

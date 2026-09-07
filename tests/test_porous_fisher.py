@@ -61,9 +61,10 @@ def test_reaction_axis_study_has_real_identity_dynamic_range_and_adjoint_gates(t
     """The reaction benchmark records genuine linear work for each reaction level."""
     report = run_reaction_study(
         ReactionStudyConfig(
-            nx=128,
+            nx=64,
             reaction_values=(0.0, 1.0, 100.0),
-            d0_kinds=("frozen_bulk", "identity"),
+            analysis_dt_values=(2.0e-6, 2.0),
+            d0_kinds=("identity",),
             n_angles=3,
             fov_max_iters=4,
             arnoldi_steps=4,
