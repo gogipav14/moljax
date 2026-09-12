@@ -6,6 +6,30 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`bdf2_step`'s predictor, `2 y_n - y_{n-1}`, ignored the step ratio and
+  had no finite guard.** This is only correct extrapolation at a constant
+  step; at a ratio `w = dt/dt_prev` away from 1 it silently assumes `w = 1`.
+  On `y' = -y` at `w = 0.1` (`y_prev = 1` at `t = 0`, `y = exp(-1)` at
+  `t = 1`) it predicted `-0.264`, the wrong sign, against the exact
+  `y(1.1) = 0.3329`. `bdf2_step` now uses the ratio-aware
+  `(1+w) y_n - w y_{n-1}` (`0.3047` on the same example, 8.5 percent
+  relative error), guarded against non-finite or wildly amplified values
+  the same way as `_newton_start`. A linear problem hides this (Newton
+  reaches the same converged solution in one step from either predictor
+  start); a nonlinear residual's first evaluation does not.
+
+- **`_newton_start`'s growth guard rejected every nonzero predictor when `y`
+  was identically zero.** The guard compares `max-abs(y_pred)` against
+  `10 * max-abs(y)`; at `y = 0` (a cold start with only an external source
+  term, `F(y, t) != 0`) that bound is exactly 0, so any nonzero, perfectly
+  finite predictor failed the ratio test and the step fell back to `y = 0`
+  again, discarding the only informative predictor available. The shared
+  guard (`_predictor_is_valid`, now also used by the BDF2 predictor above)
+  skips the ratio test when `max-abs(y)` is exactly 0 and accepts any
+  finite predictor there instead; the guard is unchanged away from `y = 0`.
+  A fixed floor was considered and rejected because it would make the guard
+  depend on the state's units.
+
 - **`phi1`, `phi2` and `phi3` returned NaN under `jax.grad` at `z = 0`,
   including through `etd1_step` and `etdrk4_step` in `dt` or `D`.** Every
   periodic grid's `k = 0` Fourier mode gives `z = 0` on every step, so the

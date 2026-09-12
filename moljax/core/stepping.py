@@ -194,6 +194,33 @@ def rk4_step(
 _NEWTON_PREDICTOR_MAX_GROWTH = 10.0
 
 
+def _predictor_is_valid(model: MOLModel, y_pred: StateDict, y: StateDict) -> jnp.ndarray:
+    """
+    Whether a Newton-start predictor is finite and not wildly amplified.
+
+    The growth test is a ratio, max-abs(y_pred) <= growth * max-abs(y),
+    rather than an absolute floor on max-abs(y_pred): an absolute floor
+    would make the guard depend on the state's units (a field measured in
+    different units would trip a fixed floor at a different physical
+    amplification), where the ratio test does not.
+
+    A pure ratio test has its own failure at y = 0: a cold start with only
+    an external source term (y = 0, F(y, t) != 0) makes
+    growth * max-abs(y) exactly 0, so any nonzero, perfectly finite
+    predictor was rejected and the step fell back to y = 0 again, discarding
+    the only informative predictor available. The ratio test is now skipped
+    when max-abs(y) is exactly 0, accepting any finite predictor there
+    instead; away from y = 0 the test is unchanged.
+    """
+    norm_y = tree_norm_inf(y, model.grid)
+    norm_pred = tree_norm_inf(y_pred, model.grid)
+    finite = is_finite(y_pred)
+    not_amplified = jnp.logical_or(
+        norm_y == 0.0, norm_pred <= _NEWTON_PREDICTOR_MAX_GROWTH * norm_y
+    )
+    return jnp.logical_and(finite, not_amplified)
+
+
 def _newton_start(model: MOLModel, y: StateDict, t: float, dt: float) -> StateDict:
     """
     Explicit-Euler predictor for the implicit steps, falling back to y.
@@ -209,15 +236,37 @@ def _newton_start(model: MOLModel, y: StateDict, t: float, dt: float) -> StateDi
     explicit CFL limit, explicit Euler amplifies the Nyquist mode instead of
     damping it, and Newton seeded with an oscillatory, wildly overscaled
     predictor wastes iterations undoing the overshoot rather than benefiting
-    from a good start. See _NEWTON_PREDICTOR_MAX_GROWTH for the threshold and
-    why it is 10x rather than tighter.
+    from a good start. See _predictor_is_valid for the growth guard and
+    _NEWTON_PREDICTOR_MAX_GROWTH for the threshold and why it is 10x rather
+    than tighter.
     """
     y_pred = euler_step(model, y, t, dt)
-    finite = is_finite(y_pred)
-    not_amplified = tree_norm_inf(y_pred, model.grid) <= (
-        _NEWTON_PREDICTOR_MAX_GROWTH * tree_norm_inf(y, model.grid)
-    )
-    return lax.cond(jnp.logical_and(finite, not_amplified), lambda: y_pred, lambda: y)
+    return lax.cond(_predictor_is_valid(model, y_pred, y), lambda: y_pred, lambda: y)
+
+
+def _bdf2_predictor(
+    model: MOLModel, y: StateDict, y_prev: StateDict, dt: float, dt_prev: float
+) -> StateDict:
+    """
+    Ratio-aware BDF2 predictor: (1+w) y_n - w y_{n-1}, w = dt/dt_prev.
+
+    This is linear extrapolation through (t_n - dt_prev, y_prev) and
+    (t_n, y), evaluated at t_n + dt; it reduces to 2 y_n - y_{n-1} only at
+    a constant step (w = 1). The constant-step formula silently assumes
+    w = 1 at every ratio: at w = 0.1 on y' = -y (y_prev = 1 at t = 0,
+    y = exp(-1) at t = 1) it predicts -0.264, the wrong sign, while
+    (1+w) y_n - w y_{n-1} gives 0.305 against the exact 0.333 at t = 1.1
+    (8.5 percent). A linear problem hides this: Newton takes the same one
+    step to the exact solution from either start. A nonlinear residual's
+    first evaluation does not, so a badly signed predictor costs the
+    iterations this fixes.
+
+    Guarded the same way as _newton_start (see _predictor_is_valid): fall
+    back to y if the predictor is not finite or is wildly amplified.
+    """
+    omega = dt / dt_prev
+    y_pred = tree_axpy(tree_scale(y, 1.0 + omega), -omega, y_prev)
+    return lax.cond(_predictor_is_valid(model, y_pred, y), lambda: y_pred, lambda: y)
 
 
 def be_step(
@@ -350,8 +399,8 @@ def bdf2_step(
     # Create residual for BDF2
     residual_fn = create_bdf2_residual(model, y, y_prev, t_new, dt, dt_prev)
 
-    # Initial guess: linear extrapolation
-    y_init = tree_axpy(tree_scale(y, 2.0), -1.0, y_prev)
+    # Initial guess: ratio-aware linear extrapolation (see _bdf2_predictor)
+    y_init = _bdf2_predictor(model, y, y_prev, dt, dt_prev)
 
     # Solve. BDF2's Jacobian is alpha0*I - dt*F'(y_new) (alpha0 = 1.5 at a
     # constant step), so the preconditioner must see dt/alpha0 and its

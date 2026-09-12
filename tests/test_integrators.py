@@ -28,6 +28,7 @@ from moljax.core.newton_krylov import NKParams
 from moljax.core.operators import LinearOp
 from moljax.core.stepping import (
     IntegratorType,
+    _bdf2_predictor,
     _newton_start,
     adaptive_integrate,
     adaptive_integrate_imex,
@@ -575,6 +576,69 @@ class TestImplicitPredictor:
         start_smooth = _newton_start(model, y_smooth, 0.0, dt)
         assert jnp.array_equal(start_smooth['u'], predicted['u']), \
             "a smooth low-mode state at the same dt should still return the predictor"
+
+    def test_newton_start_accepts_predictor_from_zero_state(self):
+        """A cold start (y = 0) with a nonzero forcing must not reject its own predictor.
+
+        The growth guard compares max-abs(y_pred) against
+        _NEWTON_PREDICTOR_MAX_GROWTH * max-abs(y); when y is identically
+        zero that bound is exactly 0, so any nonzero, perfectly finite
+        predictor used to fail the ratio test and the step silently fell
+        back to y = 0 again, discarding the only informative predictor an
+        external source term provides. _predictor_is_valid now skips the
+        ratio test when max-abs(y) is exactly 0.
+        """
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+
+        def forced_rhs(state, grid, t, params):
+            return {'u': jnp.ones_like(state['u'])}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="forced", apply=forced_rhs),),
+            nonlinear_ops=()
+        )
+        y0 = {'u': jnp.zeros(grid.nx_total)}
+        dt = 0.1
+
+        predicted = euler_step(model, y0, 0.0, dt)
+        start = _newton_start(model, y0, 0.0, dt)
+        assert jnp.array_equal(start['u'], predicted['u']), \
+            "a cold start with nonzero forcing should return the Euler predictor, not y"
+        assert not jnp.array_equal(start['u'], y0['u'])
+
+    def test_bdf2_predictor_is_ratio_aware(self):
+        """(1+w) y_n - w y_{n-1} must beat 2 y_n - y_{n-1} when w != 1.
+
+        On y' = -y with y_prev = 1 at t = 0 and y = exp(-1) at t = 1
+        (dt_prev = 1, dt = 0.1, so w = 0.1), the constant-step formula
+        2 y_n - y_{n-1} predicts -0.264: the wrong sign against the exact
+        y(1.1) = exp(-1.1) = 0.3329. The ratio-aware predictor gives 0.3047,
+        an 8.5 percent relative error, well under the 15 percent bound
+        checked here. This is only ever a Newton start: on this linear
+        problem both predictors reach the same converged solution in one
+        Newton step, so the assertion is on the predictor's own value, not
+        on iteration counts.
+        """
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'y': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+        )
+        n = grid.nx_total
+        dt_prev, dt = 1.0, 0.1
+        y_prev = {'y': jnp.ones(n)}
+        y = {'y': jnp.full(n, np.exp(-1.0))}
+
+        pred = _bdf2_predictor(model, y, y_prev, dt, dt_prev)
+        exact = np.exp(-1.1)
+
+        assert float(pred['y'][1]) > 0, "predictor has the wrong sign"
+        rel_err = abs(float(pred['y'][1]) - exact) / exact
+        assert rel_err < 0.15, f"relative error {rel_err:.4f} exceeds 0.15"
 
     def test_implicit_steps_far_above_explicit_limit(self):
         """BE and CN take a finite step at 100x the explicit diffusion limit."""
