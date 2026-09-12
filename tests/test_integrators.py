@@ -28,6 +28,7 @@ from moljax.core.newton_krylov import NKParams
 from moljax.core.operators import LinearOp
 from moljax.core.stepping import (
     IntegratorType,
+    _newton_start,
     adaptive_integrate,
     bdf2_step,
     be_step,
@@ -376,7 +377,6 @@ class TestAdaptive:
         assert result.y_final['u'].dtype == jnp.float32
         assert result.t_final.dtype == jnp.float32
 
-
 class TestImplicitPredictor:
     """The explicit-Euler predictor is only a Newton start; it must not poison the step."""
 
@@ -409,6 +409,49 @@ class TestImplicitPredictor:
         assert bool(jnp.all(jnp.isfinite(y1['u'])))
         assert bool(stats.converged)
         assert abs(float(y1['u'][1]) - expected) < 1e-8
+
+    def test_newton_start_rejects_amplified_predictor(self):
+        """A finite but wildly amplified predictor must fall back to y.
+
+        At 100x the explicit diffusion limit, explicit Euler amplifies the
+        discrete Nyquist mode ((-1)^j, an eigenfunction of the periodic
+        3-point Laplacian) by a factor of about -199: finite, but useless as
+        a Newton start. The pre-existing test at this same dt used
+        sin(2 pi x) instead, whose amplification factor is only about -0.92,
+        which is why it never exercised this guard. A smooth low-mode state
+        at the same dt must still return the predictor unchanged.
+        """
+        nx = 32
+        grid = Grid1D.uniform(nx, 0.0, 1.0)
+        D = 1.0
+
+        def diffusion_rhs(state, grid, t, params):
+            from moljax.core.bc import apply_bc
+            from moljax.core.operators import laplacian_1d
+            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
+            return {'u': D * laplacian_1d(state['u'], grid)}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="diffusion", apply=diffusion_rhs),),
+            nonlinear_ops=()
+        )
+        dt = 100 * 0.5 * grid.dx ** 2 / D
+
+        nyquist = jnp.where(jnp.arange(grid.nx_total) % 2 == 0, 1.0, -1.0)
+        y_nyquist = {'u': nyquist}
+        start = _newton_start(model, y_nyquist, 0.0, dt)
+        assert jnp.array_equal(start['u'], y_nyquist['u']), \
+            "an amplified Nyquist predictor should be rejected, returning y exactly"
+
+        x = grid.x_coords(include_ghost=True)
+        y_smooth = {'u': jnp.sin(2 * jnp.pi * x)}
+        predicted = euler_step(model, y_smooth, 0.0, dt)
+        start_smooth = _newton_start(model, y_smooth, 0.0, dt)
+        assert jnp.array_equal(start_smooth['u'], predicted['u']), \
+            "a smooth low-mode state at the same dt should still return the predictor"
 
     def test_implicit_steps_far_above_explicit_limit(self):
         """BE and CN take a finite step at 100x the explicit diffusion limit."""

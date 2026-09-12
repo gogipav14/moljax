@@ -46,6 +46,7 @@ from moljax.core.state import (
     scaled_error_norm,
     tree_add,
     tree_axpy,
+    tree_norm_inf,
     tree_scale,
     tree_sub,
     tree_zeros_like,
@@ -182,6 +183,16 @@ def rk4_step(
 # Implicit Integrators
 # =============================================================================
 
+# _newton_start rejects a predictor whose max-abs exceeds this many times
+# the max-abs of y. Explicit Euler is only conditionally stable, so past the
+# explicit CFL limit the Nyquist mode is amplified rather than damped: at
+# 100x the limit the amplification factor for diffusion is about -199 (far
+# past this threshold), while at 5x the limit it is only about 10 (this
+# threshold's own value), which is why 5x is not also rejected: the point is
+# to catch a badly amplified predictor, not a merely stiff step.
+_NEWTON_PREDICTOR_MAX_GROWTH = 10.0
+
+
 def _newton_start(model: MOLModel, y: StateDict, t: float, dt: float) -> StateDict:
     """
     Explicit-Euler predictor for the implicit steps, falling back to y.
@@ -192,9 +203,20 @@ def _newton_start(model: MOLModel, y: StateDict, t: float, dt: float) -> StateDi
     returns NaN even though the implicit step itself is well posed. The
     predictor is kept rather than replaced by y, because Newton and GMRES
     iteration counts depend on the initial residual.
+
+    A finite predictor can still be badly wrong: at dt well past the
+    explicit CFL limit, explicit Euler amplifies the Nyquist mode instead of
+    damping it, and Newton seeded with an oscillatory, wildly overscaled
+    predictor wastes iterations undoing the overshoot rather than benefiting
+    from a good start. See _NEWTON_PREDICTOR_MAX_GROWTH for the threshold and
+    why it is 10x rather than tighter.
     """
     y_pred = euler_step(model, y, t, dt)
-    return lax.cond(is_finite(y_pred), lambda: y_pred, lambda: y)
+    finite = is_finite(y_pred)
+    not_amplified = tree_norm_inf(y_pred, model.grid) <= (
+        _NEWTON_PREDICTOR_MAX_GROWTH * tree_norm_inf(y, model.grid)
+    )
+    return lax.cond(jnp.logical_and(finite, not_amplified), lambda: y_pred, lambda: y)
 
 
 def be_step(

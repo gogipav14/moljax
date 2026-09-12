@@ -18,6 +18,15 @@ All notable changes to moljax are documented here.
   `NewtonState` now exits the loop after 1 iteration, `converged` still
   honestly `False`.
 
+- **`_newton_start` could seed Newton with a predictor amplified about 199x
+  by an unstable explicit-Euler stage.** Only a finiteness check guarded the
+  explicit-Euler predictor; at dt well past the explicit CFL limit, the
+  discrete Nyquist mode is amplified rather than damped, and a finite but
+  wildly oscillatory predictor wasted Newton iterations undoing the
+  overshoot instead of benefiting from a good start. `_newton_start` now
+  also falls back to `y` when the predictor's max-abs exceeds 10 times the
+  max-abs of `y`.
+
 ## [1.2.0] - 2026-09-06
 
 ### Added
