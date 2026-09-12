@@ -535,7 +535,11 @@ def imex_ssprk2_step(
     Returns:
         New state at t + dt
     """
-    from moljax.core.fft_solvers import apply_diffusion_inverse_fft, diffusion_rhs_fft
+    from moljax.core.fft_solvers import (
+        apply_diffusion_inverse_fft,
+        embed_interior,
+        extract_interior,
+    )
 
     gamma = 1.0 - 1.0 / 2.0 ** 0.5
 
@@ -544,8 +548,26 @@ def imex_ssprk2_step(
             return model.nonlinear_rhs(state, time)
         return tree_zeros_like(state)
 
-    def diffusion(state):
-        return diffusion_rhs_fft(state, model.grid, diffusivities, fft_cache)
+    def stage_laplacian(U, rhs):
+        """L U for a stage solved as (I - gamma dt L) U = rhs, i.e. U - gamma dt L U = rhs.
+
+        So L U = (U - rhs) / (gamma * dt): the FFT solve that produced U
+        already paid for this Laplacian, so recomputing it with a second
+        FFT round trip through diffusion_rhs_fft (as this replaces) is
+        redundant. Both apply_diffusion_inverse_fft and diffusion_rhs_fft
+        operate on the interior only (the solve's ghost cells come from
+        rhs and diffusion_rhs_fft's are zero), so the identity holds only
+        there; ghost cells are zeroed here to match diffusion_rhs_fft, and
+        do not matter downstream since apply_bcs overwrites them on the
+        final state.
+        """
+        result = {}
+        for name, u_field in U.items():
+            u_interior = extract_interior(u_field, model.grid)
+            rhs_interior = extract_interior(rhs[name], model.grid)
+            lap_interior = (u_interior - rhs_interior) / (gamma * dt)
+            result[name] = embed_interior(lap_interior, model.grid, jnp.zeros_like(u_field))
+        return result
 
     # Apply boundary conditions
     y = model.apply_bcs(y, t)
@@ -554,14 +576,14 @@ def imex_ssprk2_step(
     U1 = apply_diffusion_inverse_fft(y, model.grid, gamma * dt, diffusivities, fft_cache)
     U1 = model.apply_bcs(U1, t + gamma * dt)
     R1 = reaction(U1, t)
-    L1 = diffusion(U1)
+    L1 = stage_laplacian(U1, y)
 
     # Stage 2: U2 = (I - gamma dt L)^-1 [y + dt R1 + (1 - 2 gamma) dt L1]
     rhs2 = tree_axpy(tree_axpy(y, dt, R1), (1.0 - 2.0 * gamma) * dt, L1)
     U2 = apply_diffusion_inverse_fft(rhs2, model.grid, gamma * dt, diffusivities, fft_cache)
     U2 = model.apply_bcs(U2, t + (1.0 - gamma) * dt)
     R2 = reaction(U2, t + dt)
-    L2 = diffusion(U2)
+    L2 = stage_laplacian(U2, rhs2)
 
     # Update: y + dt/2 (R1 + R2) + dt/2 (L1 + L2)
     y_new = tree_axpy(y, 0.5 * dt, tree_add(tree_add(R1, R2), tree_add(L1, L2)))

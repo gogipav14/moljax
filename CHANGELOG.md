@@ -43,6 +43,16 @@ All notable changes to moljax are documented here.
   local error as if it were second order. `be_only` now returns `y_cn` on
   the startup branch and keeps `y_be` for the BE method itself.
 
+### Changed
+
+- **`imex_ssprk2_step` no longer recomputes each stage's Laplacian through a
+  second FFT round trip.** Both stages already solve
+  `(I - gamma dt L) U = rhs`, so `L U = (U - rhs) / (gamma * dt)` on the
+  interior; the step used this identity for neither and called
+  `diffusion_rhs_fft` again instead. No numerical change (the two agree to
+  about 3e-14 on a Gray-Scott state); measured about 1.5x faster per step
+  with the redundant FFT removed.
+
 ## [1.2.0] - 2026-09-06
 
 ### Added

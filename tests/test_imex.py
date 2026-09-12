@@ -21,7 +21,12 @@ from moljax.core.dt_policy import (
     heisenberg_cfl_dt,
     imex_cfl_dt,
 )
-from moljax.core.fft_solvers import create_fft_cache
+from moljax.core.fft_solvers import (
+    apply_diffusion_inverse_fft,
+    create_fft_cache,
+    diffusion_rhs_fft,
+    extract_interior,
+)
 from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.model import (
     MOLModel,
@@ -29,6 +34,7 @@ from moljax.core.model import (
     create_gray_scott_periodic_fft,
 )
 from moljax.core.operators import NonlinearOp
+from moljax.core.state import tree_add, tree_axpy, tree_zeros_like
 from moljax.core.stepping import (
     adaptive_integrate_imex,
     imex_euler_step,
@@ -348,3 +354,103 @@ class TestIMEXSolutionBounds:
         assert u_max < 2.0, f"u_max = {u_max} too large"
         assert v_min > -1.0, f"v_min = {v_min} too negative"
         assert v_max < 2.0, f"v_max = {v_max} too large"
+
+
+def _imex_ssprk2_step_via_fft(model, y, t, dt, fft_cache, diffusivities):
+    """The pre-fix imex_ssprk2_step: L1, L2 from a second FFT round trip
+    through diffusion_rhs_fft, rather than the algebraic identity
+    dt L U = (U - rhs) / gamma the fix uses instead. Kept here, not as
+    literal arrays, so the reference is an independent computation rather
+    than a magic number, and so it still calls diffusion_rhs_fft for the
+    call-count check below.
+    """
+    gamma = 1.0 - 1.0 / 2.0 ** 0.5
+
+    def reaction(state, time):
+        if len(model.nonlinear_ops) > 0:
+            return model.nonlinear_rhs(state, time)
+        return tree_zeros_like(state)
+
+    def diffusion(state):
+        return diffusion_rhs_fft(state, model.grid, diffusivities, fft_cache)
+
+    y = model.apply_bcs(y, t)
+    U1 = apply_diffusion_inverse_fft(y, model.grid, gamma * dt, diffusivities, fft_cache)
+    U1 = model.apply_bcs(U1, t + gamma * dt)
+    R1 = reaction(U1, t)
+    L1 = diffusion(U1)
+
+    rhs2 = tree_axpy(tree_axpy(y, dt, R1), (1.0 - 2.0 * gamma) * dt, L1)
+    U2 = apply_diffusion_inverse_fft(rhs2, model.grid, gamma * dt, diffusivities, fft_cache)
+    U2 = model.apply_bcs(U2, t + (1.0 - gamma) * dt)
+    R2 = reaction(U2, t + dt)
+    L2 = diffusion(U2)
+
+    y_new = tree_axpy(y, 0.5 * dt, tree_add(tree_add(R1, R2), tree_add(L1, L2)))
+    y_new = model.apply_bcs(y_new, t + dt)
+    return y_new, y, U1, L1
+
+
+class TestIMEXSSPRK2StageReuse:
+    """imex_ssprk2_step must reuse the stage FFT solve's own Laplacian."""
+
+    def test_imex_ssprk2_reuses_stage_laplacian(self, monkeypatch):
+        """Matches the pre-fix implementation and stops calling diffusion_rhs_fft.
+
+        The algebraic identity dt L U1 = (U1 - y) / gamma (from the stage 1
+        solve (I - gamma dt L) U1 = y) is checked directly against
+        diffusion_rhs_fft's L1 = L U1 on a Gray-Scott 16x16 state, then the
+        full step is compared to the pre-fix implementation
+        (_imex_ssprk2_step_via_fft, an independent computation, not a
+        literal array), and finally diffusion_rhs_fft is monkeypatched with
+        a call counter to confirm the fixed step no longer calls it.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 2.5, 0.0, 2.5)
+        model, fft_cache, diffusivities = create_gray_scott_periodic_fft(grid)
+
+        def bump(X, Y):
+            return jnp.exp(-((X - 1.25) ** 2 + (Y - 1.25) ** 2))
+
+        y0 = model.create_initial_state(init_fns={
+            'u': lambda X, Y: 1.0 - 0.5 * bump(X, Y),
+            'v': lambda X, Y: 0.25 * bump(X, Y),
+        })
+        dt = 0.05
+        t = 0.3
+        gamma = 1.0 - 1.0 / 2.0 ** 0.5
+
+        y_ref, y_bc, U1_ref, L1_ref = _imex_ssprk2_step_via_fft(
+            model, y0, t, dt, fft_cache, diffusivities
+        )
+
+        # The identity itself, on the interior (it does not hold on ghost cells).
+        identity_max_err = 0.0
+        for name in U1_ref:
+            u_int = extract_interior(U1_ref[name], grid)
+            y_int = extract_interior(y_bc[name], grid)
+            lap_from_identity = (u_int - y_int) / (gamma * dt)
+            lap_direct = extract_interior(L1_ref[name], grid)
+            identity_max_err = max(
+                identity_max_err, float(jnp.max(jnp.abs(lap_from_identity - lap_direct)))
+            )
+        assert identity_max_err < 1e-12, f"identity residual {identity_max_err:.3e}"
+
+        call_count = {"n": 0}
+        original = diffusion_rhs_fft
+
+        def counting_diffusion_rhs_fft(*args, **kwargs):
+            call_count["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "moljax.core.fft_solvers.diffusion_rhs_fft", counting_diffusion_rhs_fft
+        )
+
+        y_new = imex_ssprk2_step(model, y0, t, dt, fft_cache, diffusivities)
+
+        assert call_count["n"] == 0, (
+            f"diffusion_rhs_fft was called {call_count['n']} times inside the step"
+        )
+        for name in y_ref:
+            max_diff = float(jnp.max(jnp.abs(y_new[name] - y_ref[name])))
+            assert max_diff < 1e-12, f"field {name}: max difference {max_diff:.3e}"
