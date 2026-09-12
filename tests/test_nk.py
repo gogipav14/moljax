@@ -16,16 +16,19 @@ import pytest
 # newton_tol=1e-13, which needs float64.
 jax.config.update("jax_enable_x64", True)
 
+import moljax.core.stepping as stepping
 from moljax.core.bc import BCType, FieldBCSpec
+from moljax.core.fft_solvers import laplacian_symbol_1d
 from moljax.core.grid import Grid1D
 from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import (
     NKParams,
     _jvp_matvec,
+    bdf2_alpha0,
     create_bdf2_residual,
     newton_krylov_solve,
 )
-from moljax.core.operators import NonlinearOp
+from moljax.core.operators import LinearOp, NonlinearOp, laplacian_1d
 from moljax.core.preconditioners import BlockJacobiPreconditioner, IdentityPreconditioner
 
 
@@ -192,6 +195,107 @@ class TestPreconditioner:
         expected = r['u'] / scale
 
         assert jnp.allclose(r_precond['u'], expected)
+
+
+def _periodic_diffusion_model(nx: int = 16, D: float = 1.0) -> tuple[MOLModel, Grid1D]:
+    """Linear periodic diffusion model u_t = D*Laplacian(u), for preconditioner tests."""
+    grid = Grid1D.uniform(nx, 0.0, 1.0)
+
+    def diffusion_rhs(state, grid, t, params):
+        return {'u': D * laplacian_1d(state['u'], grid)}
+
+    op = LinearOp(name="diffusion", apply=diffusion_rhs)
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'D': D, 'dtype': jnp.float64},
+        linear_ops=(op,),
+    )
+    return model, grid
+
+
+class TestPreconditionerEffectiveStep:
+    """B1: cn_step and bdf2_step must hand the preconditioner the step that
+    actually appears in their own Newton Jacobian, not the outer dt.
+
+    CN's residual is y_new - y_old - (dt/2)(F_old + F_new), so its Jacobian
+    is I - (dt/2)*F'(y_new): the preconditioner needs dt/2. BDF2's residual
+    is alpha0*y_new + ... - dt*F(y_new) (alpha0 = (1+2w)/(1+w), see
+    bdf2_alpha0), so its Jacobian is alpha0*I - dt*F'(y_new): the
+    preconditioner needs dt/alpha0, and its output needs a 1/alpha0 scale to
+    approximate J^-1 rather than the un-scaled inverse of the left-hand
+    side's non-identity leading coefficient.
+    """
+
+    @staticmethod
+    def _spy_newton_krylov_solve(monkeypatch):
+        """Records the kwargs stepping.py's newton_krylov_solve call site receives."""
+        calls: dict = {}
+        original = stepping.newton_krylov_solve
+
+        def spy(*args, **kwargs):
+            calls.update(kwargs)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(stepping, "newton_krylov_solve", spy)
+        return calls
+
+    def test_cn_step_passes_half_dt_to_preconditioner(self, monkeypatch):
+        model, grid = _periodic_diffusion_model()
+        y0 = {'u': jnp.zeros(grid.nx_total)}
+        dt = 0.37
+
+        calls = self._spy_newton_krylov_solve(monkeypatch)
+        stepping.cn_step(model, y0, 0.0, dt, preconditioner=IdentityPreconditioner())
+
+        assert calls.get("precond_dt") == pytest.approx(dt / 2.0)
+        assert calls.get("precond_scale", 1.0) == pytest.approx(1.0)
+
+    def test_bdf2_step_passes_dt_over_alpha0_and_scales_output(self, monkeypatch):
+        model, grid = _periodic_diffusion_model()
+        y0 = {'u': jnp.zeros(grid.nx_total)}
+        y_prev = {'u': jnp.zeros(grid.nx_total)}
+        dt, dt_prev = 0.4, 0.3
+
+        calls = self._spy_newton_krylov_solve(monkeypatch)
+        stepping.bdf2_step(model, y0, y_prev, 0.0, dt, dt_prev, preconditioner=IdentityPreconditioner())
+
+        alpha0 = bdf2_alpha0(dt, dt_prev)
+        assert calls.get("precond_dt") == pytest.approx(dt / alpha0)
+        assert calls.get("precond_scale") == pytest.approx(1.0 / alpha0)
+
+    def test_fft_preconditioner_eigenvalues_are_one_with_effective_step(self):
+        """Closed-form check on a periodic constant-coefficient grid: with
+        precond_dt matching the Jacobian's own coefficient, M^-1 J is the
+        identity in Fourier space for every mode, not just approximately so.
+
+        On a 16-point grid at dt*D = 1 (constant step, so BDF2's w = 1 and
+        alpha0 = 1.5): passing the outer dt (the pre-fix behavior) gives CN
+        eigenvalues spanning [0.50, 1.0] and BDF2 eigenvalues spanning
+        [1.00, 1.5]; passing dt/2 (CN) or dt/alpha0 with a 1/alpha0 output
+        scale (BDF2) collapses both to 1 within 1e-10.
+        """
+        nx = 16
+        dx = 1.0 / nx
+        D = 1.0
+        dt = 1.0
+        lam = laplacian_symbol_1d(nx, dx)
+
+        # CN: J = I - (dt/2) D L, M^-1 = (I - precond_dt D L)^-1.
+        J_cn = 1.0 - (dt / 2.0) * D * lam
+        eig_cn_before = J_cn / (1.0 - dt * D * lam)
+        eig_cn_after = J_cn / (1.0 - (dt / 2.0) * D * lam)
+        assert float(jnp.min(eig_cn_before)) < 0.6
+        assert float(jnp.max(jnp.abs(eig_cn_after - 1.0))) < 1e-10
+
+        # BDF2 at a constant step: alpha0 = 1.5.
+        dt_prev = dt
+        alpha0 = bdf2_alpha0(dt, dt_prev)
+        J_bdf2 = alpha0 - dt * D * lam
+        eig_bdf2_before = J_bdf2 / (1.0 - dt * D * lam)
+        eig_bdf2_after = (1.0 / alpha0) * J_bdf2 / (1.0 - (dt / alpha0) * D * lam)
+        assert float(jnp.max(eig_bdf2_before)) > 1.4
+        assert float(jnp.max(jnp.abs(eig_bdf2_after - 1.0))) < 1e-10
 
 
 class TestNKRobustness:

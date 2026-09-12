@@ -57,6 +57,21 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **`cn_step` and `bdf2_step` now hand the preconditioner their own effective
+  diffusive step, not the outer `dt`.** `newton_krylov_solve` builds the
+  `PrecondContext` from whatever `dt` it is given, but CN's Newton Jacobian
+  is `I - (dt/2)*F'(y)` and BDF2's is `alpha0*I - dt*F'(y)`
+  (`alpha0 = (1+2w)/(1+w)`, 1.5 at a constant step): passing the outer `dt`
+  to a linear FFT diffusion preconditioner built for `(I - dt*D*Laplacian)`
+  makes it only approximately invert the actual Jacobian. `cn_step` now
+  passes `dt/2`; `bdf2_step` passes `dt/alpha0` and scales the
+  preconditioner's output by `1/alpha0`, via two new `newton_krylov_solve`
+  keywords, `precond_dt` (default `dt`) and `precond_scale` (default 1).
+  Measured on a 16-point periodic grid at `dt*D = 1` (constant step): CN's
+  preconditioned eigenvalues were `[0.50, 1.0]`, now exactly `1`; BDF2's
+  were `[1.00, 1.5]`, now exactly `1`. Performance only (fewer Krylov
+  iterations to converge); no step produces a different result.
+
 - **`imex_ssprk2_step` no longer recomputes each stage's Laplacian through a
   second FFT round trip.** Both stages already solve
   `(I - gamma dt L) U = rhs`, so `L U = (U - rhs) / (gamma * dt)` on the

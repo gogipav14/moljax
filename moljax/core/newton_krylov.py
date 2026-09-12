@@ -198,7 +198,9 @@ def newton_krylov_solve(
     params: dict[str, Any],
     preconditioner: Preconditioner | None = None,
     nk_params: NKParams | None = None,
-    dt: float = 1.0
+    dt: float = 1.0,
+    precond_dt: float | None = None,
+    precond_scale: float = 1.0
 ) -> NKResult:
     """
     Solve F(x) = 0 using Newton-Krylov method.
@@ -218,7 +220,21 @@ def newton_krylov_solve(
         params: Model parameters
         preconditioner: Optional preconditioner
         nk_params: Solver parameters (default created if None)
-        dt: Time step (for preconditioner context)
+        dt: Time step, used for both the residual's own bookkeeping (none,
+            currently) and as the default preconditioner time step
+        precond_dt: Time step the preconditioner's context sees; defaults to
+            dt. A method whose Jacobian is alpha0 * I - dt * F'(y) (BE, CN
+            with alpha0 = 1 and an effective step other than dt, BDF2 with
+            alpha0 != 1) should pass the step that actually appears in that
+            Jacobian's diffusive term, e.g. dt/2 for CN or dt/alpha0 for
+            BDF2, so a linear FFT preconditioner built from
+            (I - precond_dt*D*Laplacian)^-1 matches the operator it
+            preconditions instead of only approximating it.
+        precond_scale: Scalar applied to the preconditioner's output after
+            precond_dt corrects its argument; BDF2's alpha0 != 1 multiplies
+            the whole left-hand side, so M^-1 must be scaled by 1/alpha0 to
+            approximate J^-1 = (1/alpha0)(I - (dt/alpha0)*D*Laplacian)^-1
+            rather than (I - (dt/alpha0)*D*Laplacian)^-1 alone.
 
     Returns:
         NKResult containing solution and statistics (see NKStats for what
@@ -235,9 +251,12 @@ def newton_krylov_solve(
         nk_params = NKParams()
     if preconditioner is None:
         preconditioner = IdentityPreconditioner()
+    if precond_dt is None:
+        precond_dt = dt
 
-    # Create preconditioner context
-    precond_context = PrecondContext(grid=grid, dt=dt, params=params)
+    # Create preconditioner context using the method's effective diffusive
+    # step, which may differ from the outer dt (see precond_dt above).
+    precond_context = PrecondContext(grid=grid, dt=precond_dt, params=params)
 
     # Get flattening structure from x0
     flat_x0, unravel = ravel_pytree(x0)
@@ -256,7 +275,7 @@ def newton_krylov_solve(
         v = unravel(v_flat)
         Mv = preconditioner.apply(v, precond_context)
         Mv_flat, _ = ravel_pytree(Mv)
-        return Mv_flat
+        return precond_scale * Mv_flat
 
     # Newton iteration state. Invariant at every loop boundary: res_norm is
     # ||F(x)|| at the current x and converged is res_norm < newton_tol, so
@@ -477,6 +496,20 @@ def create_implicit_residual(
     return residual
 
 
+def bdf2_alpha0(dt: float, dt_prev: float) -> float:
+    """The y_new coefficient (1+2w)/(1+w) of the scaled BDF2 residual, w = dt/dt_prev.
+
+    Shared with create_bdf2_residual so the Newton Jacobian's y_new
+    coefficient and the preconditioner's effective step (stepping.py's
+    bdf2_step passes dt/alpha0, scaled by 1/alpha0) never drift apart: the
+    Jacobian of the residual below is alpha0*I - dt*F'(y_new), so a linear
+    preconditioner approximating (I - dt_eff*D*Laplacian)^-1 needs
+    dt_eff = dt/alpha0 and a 1/alpha0 output scale to approximate J^-1.
+    """
+    omega = dt / dt_prev
+    return (1.0 + 2.0 * omega) / (1.0 + omega)
+
+
 def create_bdf2_residual(
     model: "MOLModel",
     y_n: StateDict,
@@ -515,7 +548,7 @@ def create_bdf2_residual(
         Residual function R: StateDict -> StateDict
     """
     omega = dt / dt_prev
-    alpha0 = (1.0 + 2.0 * omega) / (1.0 + omega)
+    alpha0 = bdf2_alpha0(dt, dt_prev)
     alpha1 = -(1.0 + omega)
     alpha2 = omega ** 2 / (1.0 + omega)
     beta = dt

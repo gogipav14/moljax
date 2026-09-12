@@ -36,6 +36,7 @@ from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import (
     NKParams,
     NKStats,
+    bdf2_alpha0,
     create_bdf2_residual,
     create_implicit_residual,
     newton_krylov_solve,
@@ -298,7 +299,10 @@ def cn_step(
     # Initial guess: explicit Euler, guarded by _newton_start
     y_init = _newton_start(model, y, t, dt)
 
-    # Solve
+    # Solve. CN's Jacobian is I - (dt/2)*F'(y_new), so the preconditioner
+    # must see dt/2, not the outer dt: a linear FFT diffusion preconditioner
+    # built from the wrong step only approximately inverts the Jacobian
+    # (measured eigenvalues in [0.6, 1.0] at dt*D = 1 instead of exactly 1).
     result = newton_krylov_solve(
         residual_fn=residual_fn,
         x0=y_init,
@@ -306,7 +310,8 @@ def cn_step(
         params=model.params,
         preconditioner=preconditioner,
         nk_params=nk_params,
-        dt=dt
+        dt=dt,
+        precond_dt=dt / 2.0
     )
 
     return result.solution, result.stats
@@ -348,7 +353,11 @@ def bdf2_step(
     # Initial guess: linear extrapolation
     y_init = tree_axpy(tree_scale(y, 2.0), -1.0, y_prev)
 
-    # Solve
+    # Solve. BDF2's Jacobian is alpha0*I - dt*F'(y_new) (alpha0 = 1.5 at a
+    # constant step), so the preconditioner must see dt/alpha0 and its
+    # output must be scaled by 1/alpha0 to approximate J^-1; passing the raw
+    # dt alone left measured eigenvalues in [1.1, 1.5] instead of exactly 1.
+    alpha0 = bdf2_alpha0(dt, dt_prev)
     result = newton_krylov_solve(
         residual_fn=residual_fn,
         x0=y_init,
@@ -356,7 +365,9 @@ def bdf2_step(
         params=model.params,
         preconditioner=preconditioner,
         nk_params=nk_params,
-        dt=dt
+        dt=dt,
+        precond_dt=dt / alpha0,
+        precond_scale=1.0 / alpha0
     )
 
     return result.solution, result.stats
