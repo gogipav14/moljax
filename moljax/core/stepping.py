@@ -930,7 +930,15 @@ def adaptive_integrate(
                 # was rejected.
                 y_cn, _ = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
                 err = tree_sub(y_cn, y_be)
-                return y_be, err, stats
+                # This branch also runs for the BDF2 startup step (use_be is
+                # is_be OR bdf2_startup), where y_cn is already computed for
+                # err and is itself second-order accurate. Returning y_be
+                # there made the startup step first order while the
+                # controller's error scaling (order 2 for BDF2 everywhere)
+                # still treated err as a second-order estimate. The BE
+                # method itself must keep y_be: y_cn is not its solution.
+                y_result = lax.cond(bdf2_startup, lambda: y_cn, lambda: y_be)
+                return y_result, err, stats
 
             def cn_with_err():
                 y_cn, stats = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)

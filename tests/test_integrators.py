@@ -452,6 +452,53 @@ class TestAdaptive:
         assert float(t_hist_imex[-1]) == float(result_imex.t_final)
         assert jnp.all(jnp.diff(t_hist_imex) > 0), "duplicate or out-of-order save"
 
+    def test_bdf2_startup_is_second_order(self):
+        """The BDF2 startup step (step_count < 1) must itself be second order.
+
+        be_only always returned y_be, even on the branch taken for BDF2
+        startup (use_be = is_be OR bdf2_startup), where y_cn is already
+        computed for the error estimate and is second-order accurate. Since
+        this measures a single step's local truncation error against the
+        exact solution (one order higher than the corresponding global
+        order), a first-order local solution (y_be, LTE O(dt^2)) gives an
+        error ratio near 4 across a halving, and the second-order local
+        solution (y_cn, LTE O(dt^3)) this fix returns gives a ratio near 8.
+        Measured: about 3.69 before the fix, about 7.62 after. Tolerances
+        are set loose enough that both steps are accepted at their input dt
+        unconditionally.
+        """
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+
+        def decay_rhs(state, grid, t, params):
+            return {'u': -state['u']}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="decay", apply=decay_rhs),),
+            nonlinear_ops=()
+        )
+        nk_params = NKParams(newton_tol=1e-13, max_newton_iters=20)
+        pid_params = PIDParams(atol=1.0, rtol=1.0)
+
+        errors = []
+        for dt in (0.1, 0.05):
+            y0 = {'u': jnp.ones(grid.nx_total)}
+            result = adaptive_integrate(
+                model, y0, 0.0, dt, dt,
+                method=IntegratorType.BDF2,
+                max_steps=1,
+                pid_params=pid_params,
+                nk_params=nk_params
+            )
+            assert int(result.n_accepted) == 1, "the single startup step must be accepted"
+            assert abs(float(result.t_final) - dt) < 1e-12
+            errors.append(abs(float(result.y_final['u'][1]) - np.exp(-dt)))
+
+        ratio = errors[0] / errors[1]
+        assert 7.0 <= ratio <= 8.5, f"errors {errors}, ratio {ratio:.3f}"
+
 
 class TestImplicitPredictor:
     """The explicit-Euler predictor is only a Newton start; it must not poison the step."""

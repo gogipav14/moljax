@@ -35,6 +35,14 @@ All notable changes to moljax are documented here.
   such a boundary. `should_save` now uses the post-increment count, and the
   final accepted step is always saved regardless of alignment.
 
+- **The BDF2 startup step in `adaptive_integrate` was first order, not
+  second.** `be_only` always returned `y_be`, including on the branch also
+  taken for the BDF2 startup step, where `y_cn` (second order, already
+  computed for the error estimate) was available but discarded. The PID
+  controller assumes order 2 for BDF2 everywhere, so it scaled a first-order
+  local error as if it were second order. `be_only` now returns `y_cn` on
+  the startup branch and keeps `y_be` for the BE method itself.
+
 ## [1.2.0] - 2026-09-06
 
 ### Added
