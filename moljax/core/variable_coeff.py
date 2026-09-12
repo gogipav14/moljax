@@ -206,8 +206,13 @@ def apply_variable_diffusion_1d(
 
     # Handle D shape
     if D.shape[0] == nx:
-        # D is interior-only, pad with edge values
-        D_full = jnp.pad(D, ng, mode='edge')
+        # D is interior-only; this module's FFT preconditioner (see the
+        # module docstring) treats the domain as periodic, so the ghost
+        # values must wrap around, not replicate the edge: 'edge' gives the
+        # boundary stencil the wrong neighbor (D[0] on both sides instead of
+        # D[nx-1] on the left), an inconsistency that does not shrink under
+        # grid refinement (see test_variable_diffusion_matches_periodic_solution).
+        D_full = jnp.pad(D, ng, mode='wrap')
     else:
         D_full = D
 
@@ -255,9 +260,10 @@ def apply_variable_diffusion_2d(
     dy2 = dy * dy
     result = jnp.zeros_like(u)
 
-    # Handle D shape
+    # Handle D shape. Periodic wrap, not edge replication: see
+    # apply_variable_diffusion_1d.
     if D.shape == (ny, nx):
-        D_full = jnp.pad(D, ng, mode='edge')
+        D_full = jnp.pad(D, ng, mode='wrap')
     else:
         D_full = D
 
@@ -374,8 +380,9 @@ def richardson_iteration_varcoeff_1d(
         (solution, residual_history)
     """
     def residual(u_interior):
-        # Pad for FD stencil
-        u_padded = jnp.pad(u_interior, ng, mode='edge')
+        # Pad for FD stencil, periodic wrap to match the FFT preconditioner
+        # (see apply_variable_diffusion_1d)
+        u_padded = jnp.pad(u_interior, ng, mode='wrap')
         Lu = apply_variable_diffusion_1d(u_padded, D, dx, ng, nx)
         Lu_interior = Lu[ng:ng + nx]
         return rhs - (u_interior - dt * Lu_interior)
@@ -413,7 +420,9 @@ def richardson_iteration_varcoeff_2d(
     2D Richardson iteration with FFT preconditioner.
     """
     def residual(u_interior):
-        u_padded = jnp.pad(u_interior, ng, mode='edge')
+        # Periodic wrap to match the FFT preconditioner (see
+        # apply_variable_diffusion_1d)
+        u_padded = jnp.pad(u_interior, ng, mode='wrap')
         Lu = apply_variable_diffusion_2d(u_padded, D, dy, dx, ng, ny, nx)
         Lu_interior = Lu[ng:ng + ny, ng:ng + nx]
         return rhs - (u_interior - dt * Lu_interior)

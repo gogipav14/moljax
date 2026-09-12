@@ -6,6 +6,25 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`apply_variable_diffusion_1d`/`2d` and the Richardson-iteration residual
+  closures padded ghost cells with `'edge'` replication instead of periodic
+  `'wrap'`, inconsistent with the circulant FFT preconditioner
+  (`create_circulant_approx_1d`/`2d`) that treats the domain as periodic.**
+  The boundary stencil's left neighbor used `D[0]` (replicated) instead of
+  the correct periodic neighbor `D[n-1]`, an inconsistency, not a
+  discretization error: on a manufactured periodic solution
+  (`u = sin(x)`, `D = 1 + 0.3 sin(x)` on `[0, 2*pi)`), the domain's first
+  grid point's error grew with resolution under `'edge'` padding (0.040 at
+  n=32 to 0.088 at n=256, a negative convergence order) instead of shrinking
+  at the conservative stencil's own second order, which `'wrap'` padding now
+  gives (orders 1.995, 1.999, 1.9997 across 32→64→128→256). No caller
+  documents a non-periodic (Neumann) use of these functions, so the padding
+  mode is changed outright rather than gated behind a new parameter.
+  `tests/test_variable_coeff.py::TestRichardsonIteration::test_constant_coeff_converges_quickly`
+  (which noted this exact mismatch in a comment) is renamed
+  `test_variable_diffusion_matches_periodic_solution` and now asserts the
+  convergence order directly.
+
 - **`bdf2_step`'s predictor, `2 y_n - y_{n-1}`, ignored the step ratio and
   had no finite guard.** This is only correct extrapolation at a constant
   step; at a ratio `w = dt/dt_prev` away from 1 it silently assumes `w = 1`.

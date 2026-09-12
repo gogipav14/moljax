@@ -2,7 +2,9 @@
 Tests for variable coefficient operators with FFT-based preconditioning.
 """
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from moljax.core.variable_coeff import (
@@ -219,24 +221,66 @@ class TestCirculantSolvers:
 class TestRichardsonIteration:
     """Test iterative refinement with FFT preconditioner."""
 
-    def test_constant_coeff_converges_quickly(self):
-        """For constant D, residual should decrease rapidly."""
-        n = 64
-        ng = 1
-        dx = 2 * jnp.pi / n
+    def test_variable_diffusion_matches_periodic_solution(self):
+        """The FD stencil's boundary node must converge at its own order, not
+        an O(1) defect that survives grid refinement.
 
-        D = jnp.ones(n) * 1.0
-        approx = create_circulant_approx_1d(D, dx)
+        Manufactured solution on the periodic domain [0, 2*pi): u(x) = sin(x),
+        D(x) = 1 + 0.3*sin(x), so rhs = u - dt*(D u')' has a closed form and
+        u is the exact continuous solution of (I - dt*d/dx(D d/dx)) for any
+        n. apply_variable_diffusion_1d/2d padded the ghost cells with 'edge'
+        replication instead of periodic 'wrap', even though this module's
+        preconditioner (create_circulant_approx_1d) treats the domain as
+        periodic: the boundary stencil's left neighbor used D[0] (replicated)
+        instead of the correct periodic neighbor D[n-1]. The dense linear
+        solve's error at the domain's first grid point, x = 0, does not
+        shrink with 'edge' padding (it grows: 0.040 at n=32 to 0.088 at
+        n=256, a negative convergence order) while it shrinks at very close
+        to the conservative stencil's own second order with 'wrap' (orders
+        1.995, 1.999, 1.9997 for the doublings 32->64->128->256).
+        """
+        dt = 0.01
 
-        rhs = jnp.sin(jnp.linspace(0, 2 * jnp.pi, n, endpoint=False))
+        def manufactured(n):
+            dx = 2 * jnp.pi / n
+            x = jnp.arange(n) * dx
+            D = 1.0 + 0.3 * jnp.sin(x)
+            u_exact = jnp.sin(x)
+            D_prime = 0.3 * jnp.cos(x)
+            u_prime = jnp.cos(x)
+            u_double_prime = -jnp.sin(x)
+            Lu_exact = D_prime * u_prime + D * u_double_prime  # (D u')'
+            rhs = u_exact - dt * Lu_exact
+            return dx, D, u_exact, rhs
 
-        u, residuals = richardson_iteration_varcoeff_1d(
-            rhs, D, approx.fft_symbol, dx, ng, n, n_iters=5, dt=0.01
-        )
+        def boundary_error(n: int, mode: str) -> float:
+            """|u_numeric(0) - u_exact(0)| from a dense solve of the FD system."""
+            dx, D, u_exact, rhs = manufactured(n)
+            ng = 1
 
-        # Residuals should decrease (note: FD uses edge padding, FFT uses periodic)
-        # So there's a small mismatch, but convergence should still be good
-        assert float(residuals[-1]) < float(residuals[0]) * 0.5
+            def apply_op(u_interior):
+                u_padded = jnp.pad(u_interior, ng, mode=mode)
+                Lu = apply_variable_diffusion_1d(u_padded, D, dx, ng, n)
+                return Lu[ng:ng + n]
+
+            identity = jnp.eye(n)
+            L_cols = jax.vmap(apply_op, in_axes=1, out_axes=1)(identity)
+            A = identity - dt * L_cols
+            u_numeric = jnp.linalg.solve(A, rhs)
+            return float(jnp.abs(u_numeric[0] - u_exact[0]))
+
+        ns = (32, 64, 128, 256)
+        errors_wrap = [boundary_error(n, 'wrap') for n in ns]
+        orders_wrap = [
+            np.log(errors_wrap[i] / errors_wrap[i + 1]) / np.log(2.0)
+            for i in range(len(errors_wrap) - 1)
+        ]
+        assert all(o > 1.8 for o in orders_wrap), f"orders {orders_wrap}, errors {errors_wrap}"
+        assert errors_wrap[0] < 1e-3, f"boundary error at n=32 too large: {errors_wrap[0]}"
+
+        errors_edge = [boundary_error(n, 'edge') for n in ns]
+        assert errors_edge[-1] > errors_edge[0], \
+            f"'edge' boundary error should not shrink with n: {errors_edge}"
 
     def test_varying_coeff_converges(self):
         """Variable coefficient should converge with iterations."""
