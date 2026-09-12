@@ -7,8 +7,12 @@ module finds a dominant eigenvector of the rotated Hermitian part
 under ``A``.  The resulting boundary supplies an enclosing-disk estimate for
 stationary-iteration behavior.
 
-The ``cp_prefactor`` result field records the universal Crouzeix--Palencia
-spectral-set constant ``1 + sqrt(2)``.
+The ``cp_prefactor`` result field records the universal spectral-set
+constant, 2 (Jin, "The Numerical Range Is a 2-Spectral Set",
+Preprints.org, doi:10.20944/preprints202607.1919.v4, 2026; Lorist and
+Schwenninger, "A solution to Crouzeix's conjecture", arXiv:2608.03841,
+2026), superseding the 1 + sqrt(2) prefactor of Crouzeix and Palencia,
+SIAM J. Matrix Anal. Appl. 38(2), 2017, doi:10.1137/17M1116672.
 """
 
 from __future__ import annotations
@@ -30,7 +34,10 @@ from moljax.conditioning._geometry import (
 )
 
 Matvec = Callable[[jax.Array], jax.Array]
-_CP_PREFACTOR = 1.0 + math.sqrt(2.0)
+# The numerical range is a 2-spectral set (Jin 2026; Lorist and Schwenninger
+# 2026), superseding the 1 + sqrt(2) prefactor of Crouzeix and Palencia
+# (2017). See the module docstring for full citations.
+_CP_PREFACTOR = 2.0
 
 
 class FieldOfValuesResult(NamedTuple):
@@ -51,7 +58,8 @@ class FieldOfValuesResult(NamedTuple):
             bound on the true support, this separates the origin only under
             the same condition as the outer bound.  ``True`` means no
             separating direction was found and the caller should abstain.
-        cp_prefactor: The Crouzeix--Palencia spectral-set prefactor.
+        cp_prefactor: The universal spectral-set prefactor, 2 (see the
+            module docstring for citations).
         max_support_residual: Largest eigenpair residual over the support
             directions, in units of the operator's scale (the largest
             spectral radius of a rotated Hermitian part met during the sweep,

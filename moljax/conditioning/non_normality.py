@@ -16,9 +16,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from moljax.conditioning._geometry import _origin_enclosed, _smallest_enclosing_disk
-from moljax.conditioning.field_of_values import FieldOfValuesResult
+from moljax.conditioning.field_of_values import _CP_PREFACTOR, FieldOfValuesResult
 
-_CP_PREFACTOR = 1.0 + math.sqrt(2.0)
 _RATE_AGREEMENT_TOLERANCE = 0.05
 _MAX_OUTLIER_FRACTION = 0.2
 _BULK_OUTLIER_FACTOR = 3.0
@@ -268,7 +267,15 @@ def crouzeix_palencia_envelope(
     *,
     prefactor: float = _CP_PREFACTOR,
 ) -> jax.Array:
-    """Return ``prefactor * disk_rate**k`` for iterations ``k = 1, ..., n``."""
+    """Return ``prefactor * disk_rate**k`` for iterations ``k = 1, ..., n``.
+
+    The default prefactor is 2, the universal spectral-set constant of Jin,
+    "The Numerical Range Is a 2-Spectral Set", Preprints.org,
+    doi:10.20944/preprints202607.1919.v4 (2026), and Lorist and Schwenninger,
+    "A solution to Crouzeix's conjecture", arXiv:2608.03841 (2026),
+    superseding the 1 + sqrt(2) prefactor of Crouzeix and Palencia, SIAM J.
+    Matrix Anal. Appl. 38(2) 2017, doi:10.1137/17M1116672.
+    """
     if n_iters < 0:
         raise ValueError("n_iters must be nonnegative")
     iterations = jnp.arange(1, n_iters + 1, dtype=jnp.float64)

@@ -22,6 +22,7 @@ from moljax.conditioning import (
     plot_rate_scaling,
     plot_residual_envelope,
 )
+from moljax.conditioning.field_of_values import _CP_PREFACTOR
 
 
 def _field_of_values() -> FieldOfValuesResult:
@@ -34,7 +35,7 @@ def _field_of_values() -> FieldOfValuesResult:
         radius=0.25,
         disk_rate=0.125,
         origin_enclosed=False,
-        cp_prefactor=1.0 + math.sqrt(2.0),
+        cp_prefactor=_CP_PREFACTOR,
     )
 
 
@@ -61,7 +62,7 @@ def _near_real_field_of_values() -> FieldOfValuesResult:
         radius=1.0e-8,
         disk_rate=5.0e-9,
         origin_enclosed=False,
-        cp_prefactor=1.0 + math.sqrt(2.0),
+        cp_prefactor=_CP_PREFACTOR,
     )
 
 

@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from moljax.conditioning import FieldOfValuesResult, numerical_range
+from moljax.conditioning.field_of_values import _CP_PREFACTOR
 
 
 def _matrix_actions(matrix: np.ndarray) -> tuple[Callable[[jax.Array], jax.Array], ...]:
@@ -123,7 +124,7 @@ def test_origin_enclosure_and_disk_rate():
     assert positive_result.disk_rate == pytest.approx(5.0 / 7.0, abs=1.0e-12)
     assert straddling_result.origin_enclosed
     assert straddling_result.disk_rate == pytest.approx(1.5, abs=1.0e-12)
-    assert positive_result.cp_prefactor == pytest.approx(1.0 + math.sqrt(2.0))
+    assert positive_result.cp_prefactor == pytest.approx(_CP_PREFACTOR)
 
 
 @pytest.mark.slow

@@ -27,6 +27,7 @@ from moljax.conditioning import (
     ritz_values,
     traced_boundary_rate,
 )
+from moljax.conditioning.field_of_values import _CP_PREFACTOR
 
 
 def _grcar(n: int) -> np.ndarray:
@@ -181,7 +182,7 @@ def _fov_from_boundary(boundary: np.ndarray) -> FieldOfValuesResult:
         radius=radius,
         disk_rate=radius / abs(center),
         origin_enclosed=False,
-        cp_prefactor=1.0 + math.sqrt(2.0),
+        cp_prefactor=_CP_PREFACTOR,
     )
 
 
@@ -216,11 +217,28 @@ def test_rate_estimates_match_independent_dense_references(matrix: np.ndarray):
         )
 
 
+def test_spectral_set_constant_is_two():
+    """The spectral-set prefactor is 2, and both modules share one definition.
+
+    Crouzeix's conjecture (spectral-set constant 1 + sqrt(2)) was proved
+    with the sharp constant 2 in 2026 (Jin, Preprints.org,
+    doi:10.20944/preprints202607.1919.v4; Lorist and Schwenninger,
+    arXiv:2608.03841), superseding Crouzeix and Palencia, SIAM J. Matrix
+    Anal. Appl. 38(2) 2017, doi:10.1137/17M1116672. non_normality.py used to
+    define its own copy of this constant rather than importing
+    field_of_values.py's.
+    """
+    from moljax.conditioning import field_of_values, non_normality
+
+    assert _CP_PREFACTOR == 2.0
+    assert non_normality._CP_PREFACTOR is field_of_values._CP_PREFACTOR
+
+
 def test_crouzeix_palencia_envelope_matches_formula_and_decreases():
     """The envelope is the universal prefactor times the geometric disk rate."""
     disk_rate = 0.4
     actual = np.asarray(crouzeix_palencia_envelope(disk_rate, 5))
-    expected = (1.0 + math.sqrt(2.0)) * disk_rate ** np.arange(1, 6)
+    expected = _CP_PREFACTOR * disk_rate ** np.arange(1, 6)
     np.testing.assert_allclose(actual, expected, atol=1.0e-15, rtol=0.0)
     assert np.all(np.diff(actual) < 0.0)
 
@@ -246,7 +264,7 @@ def _assessment_fov(
         radius=radius,
         disk_rate=radius / abs(center) if center else math.inf,
         origin_enclosed=origin_enclosed,
-        cp_prefactor=1.0 + math.sqrt(2.0),
+        cp_prefactor=_CP_PREFACTOR,
         corroboration_attempted=True,
     )
 

@@ -53,6 +53,18 @@ All notable changes to moljax are documented here.
   about 3e-14 on a Gray-Scott state); measured about 1.5x faster per step
   with the redundant FFT removed.
 
+- **The numerical range is a 2-spectral set, not a `1 + sqrt(2)`-spectral
+  set.** Crouzeix's conjecture was proved in 2026 with the sharp constant 2
+  (Jin, "The Numerical Range Is a 2-Spectral Set", Preprints.org,
+  doi:10.20944/preprints202607.1919.v4; Lorist and Schwenninger, "A solution
+  to Crouzeix's conjecture", arXiv:2608.03841), superseding Crouzeix and
+  Palencia, SIAM J. Matrix Anal. Appl. 38(2) 2017, doi:10.1137/17M1116672.
+  `_CP_PREFACTOR` is now a single definition in `field_of_values.py`
+  (`non_normality.py` carried its own duplicate), imported by
+  `non_normality.py` and `figures.py`. The drawn Crouzeix-Palencia envelopes
+  tighten by a factor of `(1 + sqrt(2)) / 2`, about 1.21x; no verdict in
+  `assess_preconditioner` depends on the constant's value.
+
 ## [1.2.0] - 2026-09-06
 
 ### Added

@@ -30,7 +30,11 @@ from benchmarks.conditioning_decision_demo import (  # noqa: E402
     run_decision_demo,
 )
 from moljax.conditioning._geometry import _origin_enclosed, _smallest_enclosing_disk  # noqa: E402
-from moljax.conditioning.field_of_values import FieldOfValuesResult, numerical_range  # noqa: E402
+from moljax.conditioning.field_of_values import (  # noqa: E402
+    _CP_PREFACTOR,
+    FieldOfValuesResult,
+    numerical_range,
+)
 
 
 class TestEnclosingDiskScaleInvariance:
@@ -655,7 +659,7 @@ class TestProvisionalVerdictReflectsCorroboration:
             boundary=jnp.asarray([1.0 + 0.0j, 2.0 + 0.0j], dtype=jnp.complex128),
             center=1.5 + 0.0j, radius=0.9,
             disk_rate=0.6, origin_enclosed=False,
-            cp_prefactor=1.0 + math.sqrt(2.0),
+            cp_prefactor=_CP_PREFACTOR,
             corroboration_attempted=False,
         )
         result = assess_preconditioner(
@@ -684,7 +688,7 @@ class TestOutlierGateFailsClosed:
             boundary=jnp.asarray([left, right], dtype=jnp.complex128),
             center=center + 0.0j, radius=radius,
             disk_rate=radius / abs(center), origin_enclosed=False,
-            cp_prefactor=1.0 + math.sqrt(2.0),
+            cp_prefactor=_CP_PREFACTOR,
             corroboration_attempted=True,
         )
 
