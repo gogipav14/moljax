@@ -98,7 +98,24 @@ All notable changes to moljax are documented here.
   local error as if it were second order. `be_only` now returns `y_cn` on
   the startup branch and keeps `y_be` for the BE method itself.
 
+### Removed
+
+- **The unused inner `step` closure in `make_etd1_integrator`.** `integrate`
+  builds its own `lax.scan` body inline and never called it; the closure's
+  own carry unpacking (`u, t = carry`) did not match how it then indexed
+  `carry[2]`, so any future caller would have hit an `IndexError`
+  immediately. Dead code with no callers (checked at the bytecode level in
+  `test_jit_kernels.py::test_etd1_integrator_has_no_dead_step`).
+
 ### Changed
+
+- **`exact_cfl_dt('imex')` and `exact_cfl_dt('etd')` now raise
+  `NotImplementedError` instead of returning `safety * 1.0`.** Both
+  branches ignored `op.eigenvalues` entirely and returned a literal
+  constant that looked like a real stability bound; no caller in the tree
+  uses either branch (grep confirms). A wrong number that resembles a
+  real answer is worse than a refusal, so both now name the unimplemented
+  branch in the raised error instead. `'explicit'` is unaffected.
 
 - **`cn_step` and `bdf2_step` now hand the preconditioner their own effective
   diffusive step, not the outer `dt`.** `newton_krylov_solve` builds the

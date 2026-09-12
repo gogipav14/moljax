@@ -349,13 +349,6 @@ def make_etd1_integrator(eigenvalues: jnp.ndarray, nonlinear_fn):
     Returns:
         JIT-compiled function (u0, t0, dt, n_steps) -> (u_final, t_final)
     """
-    @jax.jit
-    def step(carry, _):
-        u, t = carry
-        N_u = nonlinear_fn(u)
-        u_new = etd1_kernel_1d(u, N_u, eigenvalues, carry[2])
-        return (u_new, t + carry[2], carry[2]), None
-
     @partial(jax.jit, static_argnums=(3,))
     def integrate(u0: jnp.ndarray, t0: float, dt: float, n_steps: int):
         """Run n_steps of ETD1."""

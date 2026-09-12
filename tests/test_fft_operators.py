@@ -382,6 +382,27 @@ class TestCFL:
         # Strictly below the real-axis formula, which ignores Im(lambda)
         assert dt_cfl < 2.0 / float(np.max(np.abs(lam)))
 
+    def test_exact_cfl_dt_rejects_unimplemented_methods(self, grid_128):
+        """'imex' and 'etd' must raise, not return a fabricated constant.
+
+        Both branches used to return the literal `safety * 1.0`, ignoring
+        op.eigenvalues entirely; no caller in the tree uses either branch
+        (grep confirms), and a wrong number that looks like a real stability
+        bound is worse than a refusal. 'explicit' must be unaffected.
+        """
+        op = DiffusionOperator(grid_128, D=0.1)
+
+        with pytest.raises(NotImplementedError):
+            exact_cfl_dt(op, method='imex', safety=1.0)
+
+        with pytest.raises(NotImplementedError):
+            exact_cfl_dt(op, method='etd', safety=1.0)
+
+        # 'explicit' is untouched by this change.
+        dt_cfl = exact_cfl_dt(op, method='explicit', safety=1.0)
+        expected_dt = grid_128.dx**2 / (2 * 0.1)
+        assert abs(dt_cfl - expected_dt) / expected_dt < 0.01
+
     def test_etd_allows_large_dt(self, grid_128):
         """ETD should remain stable with dt > CFL."""
         grid = grid_128

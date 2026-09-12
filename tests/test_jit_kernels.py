@@ -371,6 +371,23 @@ class TestETDIntegratorFactory:
         assert rel_error < 1e-6
         assert abs(t_final - t_end) < 1e-12
 
+    def test_etd1_integrator_has_no_dead_step(self):
+        """make_etd1_integrator must not define an unused inner `step`.
+
+        `integrate` builds its own lax.scan body inline and never called
+        the closure; the closure's own carry unpacking (`u, t = carry`)
+        did not match how it then indexed `carry[2]`, so any future caller
+        would hit an IndexError immediately. Checked at the bytecode level
+        (nested code objects in make_etd1_integrator's constants) so the
+        test does not depend on how the source is formatted.
+        """
+        nested_names = [
+            const.co_name
+            for const in make_etd1_integrator.__code__.co_consts
+            if hasattr(const, 'co_name')
+        ]
+        assert 'step' not in nested_names, f"dead 'step' closure reappeared: {nested_names}"
+
 
 # =============================================================================
 # Test: ETD Step Differentiability

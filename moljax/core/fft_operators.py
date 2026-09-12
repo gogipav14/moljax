@@ -309,6 +309,15 @@ def exact_cfl_dt(
         advection has no stable explicit dt). The real-axis formula 2/rho
         that was used before ignored Im(λ) and returned a positive dt for
         pure advection.
+
+    Raises:
+        NotImplementedError: for 'imex' or 'etd'. Both branches used to
+            return the literal `safety * 1.0`, ignoring op.eigenvalues
+            entirely, which is only correct by coincidence; no caller uses
+            either branch (grep the tree). A wrong constant that looks like
+            a real stability bound is worse than a refusal, so these raise
+            instead until the actual bound (the explicit part's spectrum for
+            'imex', a nonlinear-accuracy bound for 'etd') is implemented.
     """
     lam = op.eigenvalues
 
@@ -321,14 +330,19 @@ def exact_cfl_dt(
         return safety * max(dt_max, 0.0)
 
     elif method == 'imex':
-        # Only explicit part matters (diffusion handled implicitly)
-        # Return large dt if fully implicit
-        return safety * 1.0
+        raise NotImplementedError(
+            "exact_cfl_dt('imex') is not implemented: the explicit part's "
+            "own stability bound has never been computed here (the prior "
+            "return value, safety * 1.0, ignored op.eigenvalues entirely)."
+        )
 
     elif method == 'etd':
-        # No stability limit from L (exact exponential)
-        # Limited only by accuracy of nonlinear terms
-        return safety * 1.0
+        raise NotImplementedError(
+            "exact_cfl_dt('etd') is not implemented: ETD has no linear "
+            "stability limit, but no nonlinear-accuracy bound has been "
+            "computed here either (the prior return value, safety * 1.0, "
+            "ignored op.eigenvalues entirely)."
+        )
 
     else:
         raise ValueError(f"Unknown method: {method}")
