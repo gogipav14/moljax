@@ -348,6 +348,38 @@ class TestNKRobustness:
         assert jnp.allclose(result.solution['u'], x0['u'])
         assert not bool(result.stats.converged)
 
+    def test_stagnated_newton_exits_early(self):
+        """A stagnated step must exit the loop instead of repeating it.
+
+        atan(x) from x0 = 10 is the same overshoot case as
+        test_failed_line_search_does_not_increase_residual: no candidate in
+        the line search improves on the entering iterate, so every
+        subsequent Newton step recomputes the identical residual, the
+        identical GMRES solve and the identical rejected candidates. Before
+        the fix, newton_cond only checked iter_count and converged, so with
+        max_newton_iters=20 the loop ran all 20 iterations doing nothing.
+        The fix adds a stagnated flag that exits after the first such step.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': jnp.arctan(x['u'])}
+
+        x0 = {'u': jnp.array([10.0, 10.0, 10.0])}
+
+        result = newton_krylov_solve(
+            residual_fn=residual,
+            x0=x0,
+            grid=grid,
+            params={},
+            nk_params=NKParams(max_newton_iters=20, max_backtrack=3, newton_tol=1e-12)
+        )
+
+        assert int(result.stats.newton_iters) < 20, \
+            f"stagnated step should exit early, got {int(result.stats.newton_iters)} iterations"
+        assert int(result.stats.newton_iters) == 1
+        assert not bool(result.stats.converged)
+
     def test_zero_backtrack_applies_the_damped_step(self):
         """max_backtrack=0 must mean "no line search", not "no step".
 

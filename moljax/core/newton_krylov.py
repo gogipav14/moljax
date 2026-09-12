@@ -261,12 +261,20 @@ def newton_krylov_solve(
     # Newton iteration state. Invariant at every loop boundary: res_norm is
     # ||F(x)|| at the current x and converged is res_norm < newton_tol, so
     # the statistics returned describe the iterate that is returned.
+    # stagnated marks a line search that accepted no candidate and whose
+    # best-tried residual is no better than the entering one (best_r_norm
+    # >= r_norm): the returned iterate is then identical to state.x_flat, so
+    # every subsequent Newton step would recompute the same residual, the
+    # same GMRES solve and the same rejected candidates. Without this flag
+    # newton_cond only checks iter_count and converged, so such a step
+    # repeats until max_newton_iters (see test_stagnated_newton_exits_early).
     class NewtonState(NamedTuple):
         x_flat: jnp.ndarray
         res_norm: jnp.ndarray
         iter_count: jnp.ndarray
         lin_iters_total: jnp.ndarray
         converged: jnp.ndarray
+        stagnated: jnp.ndarray
 
     def newton_step(state: NewtonState) -> NewtonState:
         """Single Newton iteration."""
@@ -348,6 +356,8 @@ def newton_krylov_solve(
             r_final_pytree = residual_fn(unravel(x_final_flat))
             r_final_flat, _ = ravel_pytree(r_final_pytree)
             r_final = jnp.linalg.norm(r_final_flat)
+            # No line search to stagnate: the damped step is always applied.
+            stagnated = jnp.array(False)
         else:
             # Run backtracking. best_x_flat/best_r_norm start at the current
             # iterate (alpha = 0), so a candidate only replaces them when it
@@ -367,20 +377,30 @@ def newton_krylov_solve(
             # initialized from it.
             x_final_flat = lax.cond(accepted, lambda: x_bt_flat, lambda: best_x_flat)
             r_final = lax.cond(accepted, lambda: r_bt_norm, lambda: best_r_norm)
+            # accepted is False and best_r_norm >= r_norm means no candidate
+            # tried in the line search improved on the entering iterate, so
+            # x_final_flat is exactly state.x_flat: the step is a no-op.
+            stagnated = jnp.logical_and(jnp.logical_not(accepted), best_r_norm >= r_norm)
 
         return NewtonState(
             x_flat=x_final_flat,
             res_norm=r_final,
             iter_count=state.iter_count + 1,
             lin_iters_total=state.lin_iters_total + lin_iters,
-            converged=r_final < nk_params.newton_tol
+            converged=r_final < nk_params.newton_tol,
+            stagnated=stagnated
         )
 
     def newton_cond(state: NewtonState) -> jnp.ndarray:
-        """Continue condition for Newton loop."""
+        """Continue condition for Newton loop.
+
+        stagnated exits the loop early (converged stays False) instead of
+        repeating an unchanged iterate, the same GMRES solve and the same
+        rejected line-search candidates until max_newton_iters.
+        """
         return jnp.logical_and(
             state.iter_count < nk_params.max_newton_iters,
-            jnp.logical_not(state.converged)
+            jnp.logical_not(jnp.logical_or(state.converged, state.stagnated))
         )
 
     # Initial residual norm
@@ -394,7 +414,8 @@ def newton_krylov_solve(
         res_norm=r0_norm,
         iter_count=jnp.array(0, dtype=jnp.int32),
         lin_iters_total=jnp.array(0, dtype=jnp.int32),
-        converged=r0_norm < nk_params.newton_tol
+        converged=r0_norm < nk_params.newton_tol,
+        stagnated=jnp.array(False)
     )
 
     final_state = lax.while_loop(newton_cond, newton_step, init_state)

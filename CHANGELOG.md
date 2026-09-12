@@ -2,6 +2,22 @@
 
 All notable changes to moljax are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **A Newton step that stagnates behind a rejected line search now exits
+  instead of repeating itself to `max_newton_iters`.** The fallback added to
+  keep the best line-search candidate (see the v1.2.0 entry below) left
+  `newton_cond` checking only `iter_count` and `converged`, so a step whose
+  line search accepted no candidate and made no progress (`best_r_norm >=
+  r_norm`) returned the same iterate unchanged, and the next iteration
+  recomputed the identical residual, JVP and rejected GMRES step. `atan(x)`
+  from `x0 = [10, 10, 10]` with `max_backtrack=3` ran the full
+  `max_newton_iters=20` doing nothing; a new `stagnated` field on
+  `NewtonState` now exits the loop after 1 iteration, `converged` still
+  honestly `False`.
+
 ## [1.2.0] - 2026-09-06
 
 ### Added
