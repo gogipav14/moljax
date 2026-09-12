@@ -27,6 +27,14 @@ All notable changes to moljax are documented here.
   also falls back to `y` when the predictor's max-abs exceeds 10 times the
   max-abs of `y`.
 
+- **`adaptive_integrate` and `adaptive_integrate_imex` saved history entries
+  one step early and dropped the final accepted state.** `should_save`
+  compared the pre-increment accepted-step count against `save_every`, so a
+  run saved after accepted steps 1, 6, 11, ... instead of 5, 10, 15, ..., and
+  `t_end` was never written to the history unless it happened to land on
+  such a boundary. `should_save` now uses the post-increment count, and the
+  final accepted step is always saved regardless of alignment.
+
 ## [1.2.0] - 2026-09-06
 
 ### Added

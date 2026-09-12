@@ -865,8 +865,10 @@ def adaptive_integrate(
         lambda: jnp.array(dt0, dtype=dtype)
     )
 
-    # Allocate output buffers
-    max_saves = max_steps // save_every + 1
+    # Allocate output buffers. +1 for the initial state at t0, +1 more for
+    # a forced save of the final accepted state when it does not land on a
+    # save_every boundary (see should_save in accept_step).
+    max_saves = max_steps // save_every + 2
     t_history = allocate_scalar_history(max_saves, dtype)
     y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
     dt_history = allocate_scalar_history(max_saves, dtype)
@@ -999,8 +1001,16 @@ def adaptive_integrate(
 
         # Update state based on accept/reject
         def accept_step():
-            # Update history if it's time to save
-            should_save = (state.n_accepted % save_every) == 0
+            # should_save is evaluated on the accepted-step count *after*
+            # this step, so saves land on steps save_every, 2*save_every,
+            # ... instead of one step early (the pre-increment count starts
+            # at 0, so `% save_every == 0` was true on the very first
+            # accepted step). The final accepted step is always saved too,
+            # so t_end is in the history even when it falls short of the
+            # next save_every boundary.
+            next_n_accepted = state.n_accepted + 1
+            is_final_step = dt_clamped >= (t_end - state.t)
+            should_save = jnp.logical_or((next_n_accepted % save_every) == 0, is_final_step)
             new_t_hist = lax.cond(
                 should_save,
                 lambda: state.t_history.at[state.write_idx].set(state.t + dt_clamped),
@@ -1329,8 +1339,10 @@ def adaptive_integrate_imex(
     dt_cfl = imex_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
     dt_init = jnp.minimum(jnp.array(dt0, dtype=dtype), dt_cfl)
 
-    # Allocate output buffers
-    max_saves = max_steps // save_every + 1
+    # Allocate output buffers. +1 for the initial state at t0, +1 more for
+    # a forced save of the final accepted state when it does not land on a
+    # save_every boundary (see should_save in accept_step).
+    max_saves = max_steps // save_every + 2
     t_history = allocate_scalar_history(max_saves, dtype)
     y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
     dt_history = allocate_scalar_history(max_saves, dtype)
@@ -1402,7 +1414,12 @@ def adaptive_integrate_imex(
 
         # Update state based on accept/reject
         def accept_step():
-            should_save = (state.n_accepted % save_every) == 0
+            # See adaptive_integrate.accept_step: evaluate should_save on
+            # the post-increment accepted count, and always save the final
+            # accepted step so t_end is in the history.
+            next_n_accepted = state.n_accepted + 1
+            is_final_step = dt_clamped >= (t_end - state.t)
+            should_save = jnp.logical_or((next_n_accepted % save_every) == 0, is_final_step)
             new_t_hist = lax.cond(
                 should_save,
                 lambda: state.t_history.at[state.write_idx].set(state.t + dt_clamped),

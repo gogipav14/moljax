@@ -30,6 +30,7 @@ from moljax.core.stepping import (
     IntegratorType,
     _newton_start,
     adaptive_integrate,
+    adaptive_integrate_imex,
     bdf2_step,
     be_step,
     cn_step,
@@ -376,6 +377,81 @@ class TestAdaptive:
         assert int(result.status) == 0
         assert result.y_final['u'].dtype == jnp.float32
         assert result.t_final.dtype == jnp.float32
+
+    def test_adaptive_save_every_includes_t_end(self):
+        """save_every must land on multiples of save_every and always keep t_end.
+
+        should_save compared state.n_accepted (the pre-increment count,
+        starting at 0) against save_every, so a run saved after accepted
+        steps 1, 6, 11, 16, 21 instead of 5, 10, 15, 20: with dt0=0.125,
+        t_end=2.875 (23 accepted steps) and save_every=5, the saved times
+        were [0, 0.125, 0.75, 1.375, 2.0, 2.625] (measured) and the run's
+        final state at t_end=2.875 was never saved at all. The fix
+        evaluates should_save on the post-increment count and forces a
+        save of the final accepted step, giving
+        [0, 0.625, 1.25, 1.875, 2.5, 2.875] here: t0, every fifth accepted
+        time, and t_end, with no duplicate of the first entry.
+
+        Checked on both adaptive integrators: BE (a Newton-Krylov implicit
+        method) on scalar decay, and IMEX Euler on the Gray-Scott model.
+        dt0 and t_end are exact binary fractions (multiples of 0.125) so
+        the accepted step count and save times are exact, not merely
+        close, and PIDParams(dt_max=dt0, atol/rtol huge) keeps dt pinned
+        at dt0 and every step accepted so the count is deterministic.
+        """
+        dt0 = 0.125
+        n_steps = 23
+        t_end = dt0 * n_steps
+        save_every = 5
+        expected_t = [0.0, 0.625, 1.25, 1.875, 2.5, 2.875]
+        pid_params = PIDParams(dt_max=dt0, atol=1e6, rtol=1e6)
+
+        # BE on scalar decay (Newton-Krylov implicit).
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+
+        def decay_rhs(state, grid, t, params):
+            return {'u': -state['u']}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="decay", apply=decay_rhs),),
+            nonlinear_ops=()
+        )
+        y0 = {'u': jnp.ones(grid.nx_total)}
+
+        result = adaptive_integrate(
+            model, y0, 0.0, t_end, dt0,
+            method=IntegratorType.BE,
+            max_steps=100,
+            pid_params=pid_params,
+            nk_params=NKParams(newton_tol=1e-12),
+            save_every=save_every
+        )
+
+        assert int(result.n_accepted) == n_steps
+        t_hist = result.t_history[:int(result.n_steps)]
+        assert jnp.allclose(t_hist, jnp.array(expected_t)), f"BE history: {t_hist}"
+        assert abs(float(result.t_final) - t_end) < 1e-12
+        assert float(t_hist[-1]) == float(result.t_final)
+        assert jnp.all(jnp.diff(t_hist) > 0), "duplicate or out-of-order save"
+
+        # IMEX Euler on Gray-Scott (a different accept_step body entirely).
+        imex_model, fft_cache, diffusivities, y0_imex = gray_scott_off_equilibrium()
+
+        result_imex = adaptive_integrate_imex(
+            imex_model, y0_imex, 0.0, t_end, dt0, fft_cache, diffusivities,
+            use_strang=False, max_steps=100, pid_params=pid_params, save_every=save_every
+        )
+
+        assert int(result_imex.n_accepted) == n_steps
+        t_hist_imex = result_imex.t_history[:int(result_imex.n_steps)]
+        assert jnp.allclose(t_hist_imex, jnp.array(expected_t)), f"IMEX history: {t_hist_imex}"
+        assert abs(float(result_imex.t_final) - t_end) < 1e-12
+        assert float(t_hist_imex[-1]) == float(result_imex.t_final)
+        assert jnp.all(jnp.diff(t_hist_imex) > 0), "duplicate or out-of-order save"
+
 
 class TestImplicitPredictor:
     """The explicit-Euler predictor is only a Newton start; it must not poison the step."""
