@@ -6,6 +6,18 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`phi1`, `phi2` and `phi3` returned NaN under `jax.grad` at `z = 0`,
+  including through `etd1_step` and `etdrk4_step` in `dt` or `D`.** Every
+  periodic grid's `k = 0` Fourier mode gives `z = 0` on every step, so the
+  bug was not exotic. `jnp.where` evaluates and differentiates both
+  branches, and the direct formula's `0/0` at `z = 0` produced a NaN
+  cotangent even though the series branch was the one selected there. Each
+  direct branch now evaluates at a safe placeholder `z` (1.0) instead of the
+  true `z` when the series branch is selected, the idiom already used for
+  the Helmholtz denominators (`fft_solvers.py:338`). `jax.grad(phi1)(0.0)`
+  is now `0.5` (was NaN), `phi2` and `phi3` similarly finite and matching
+  the series derivative; forward values are bit-identical.
+
 - **A Newton step that stagnates behind a rejected line search now exits
   instead of repeating itself to `max_newton_iters`.** The fallback added to
   keep the best line-search candidate (see the v1.2.0 entry below) left

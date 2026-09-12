@@ -73,3 +73,27 @@ def test_phi_matches_direct_formula_away_from_zero():
     }
     for n, fn in PHI.items():
         assert np.allclose(np.asarray(fn(z)), expected[n], rtol=1e-13, atol=0)
+
+
+# phi1(z) = 1 + z/2 + z^2/6 + ..., so phi1'(0) = 1/2; phi2'(0) = 1/6;
+# phi3'(0) = 1/24 from the same series shifted by n. Before the fix, the
+# direct branch's 0/0 at z = 0 produced a NaN cotangent through jnp.where
+# even though the series branch is the one selected there.
+EXPECTED_GRAD_AT_ZERO = {1: 0.5, 2: 1.0 / 6.0, 3: 1.0 / 24.0}
+
+
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_phi_gradients_finite_at_zero(n):
+    """jax.grad(phi_n) at z = 0 must be finite and match the series derivative."""
+    fn = PHI[n]
+
+    def scalar(z):
+        return fn(jnp.array([z], dtype=jnp.float64))[0]
+
+    grad = jax.grad(scalar)(0.0)
+    assert jnp.isfinite(grad), f"phi{n}'(0) is not finite: {grad}"
+    assert abs(float(grad) - EXPECTED_GRAD_AT_ZERO[n]) < 1e-12
+
+    grad_jit = jax.jit(jax.grad(scalar))(0.0)
+    assert jnp.isfinite(grad_jit), f"jitted phi{n}'(0) is not finite: {grad_jit}"
+    assert abs(float(grad_jit) - EXPECTED_GRAD_AT_ZERO[n]) < 1e-12

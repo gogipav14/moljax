@@ -55,23 +55,42 @@ def _phi_series_radius(z: jnp.ndarray) -> float:
 
 @jax.jit
 def phi1(z: jnp.ndarray) -> jnp.ndarray:
-    """φ₁(z) = (exp(z) - 1) / z, series below the precision-dependent radius."""
-    direct = (jnp.exp(z) - 1.0) / z
-    return jnp.where(jnp.abs(z) < _phi_series_radius(z), _phi_taylor(z, 1), direct)
+    """φ₁(z) = (exp(z) - 1) / z, series below the precision-dependent radius.
+
+    jnp.where evaluates both branches and their gradients, so the direct
+    branch's 0/0 at z = 0 would otherwise produce a NaN cotangent even
+    though the series branch is selected there; z is swapped for a safe
+    placeholder inside the unused branch first (the idiom already used for
+    the Helmholtz denominators, e.g. fft_solvers.py:338).
+    """
+    small = jnp.abs(z) < _phi_series_radius(z)
+    safe_z = jnp.where(small, 1.0, z)
+    direct = (jnp.exp(safe_z) - 1.0) / safe_z
+    return jnp.where(small, _phi_taylor(z, 1), direct)
 
 
 @jax.jit
 def phi2(z: jnp.ndarray) -> jnp.ndarray:
-    """φ₂(z) = (exp(z) - 1 - z) / z², series below the precision-dependent radius."""
-    direct = (jnp.exp(z) - 1.0 - z) / (z * z)
-    return jnp.where(jnp.abs(z) < _phi_series_radius(z), _phi_taylor(z, 2), direct)
+    """φ₂(z) = (exp(z) - 1 - z) / z², series below the precision-dependent radius.
+
+    See phi1 for why the direct branch uses a safe placeholder for z.
+    """
+    small = jnp.abs(z) < _phi_series_radius(z)
+    safe_z = jnp.where(small, 1.0, z)
+    direct = (jnp.exp(safe_z) - 1.0 - safe_z) / (safe_z * safe_z)
+    return jnp.where(small, _phi_taylor(z, 2), direct)
 
 
 @jax.jit
 def phi3(z: jnp.ndarray) -> jnp.ndarray:
-    """φ₃(z) = (exp(z) - 1 - z - z²/2) / z³, series below the precision-dependent radius."""
-    direct = (jnp.exp(z) - 1.0 - z - z**2/2.0) / (z**3)
-    return jnp.where(jnp.abs(z) < _phi_series_radius(z), _phi_taylor(z, 3), direct)
+    """φ₃(z) = (exp(z) - 1 - z - z²/2) / z³, series below the precision-dependent radius.
+
+    See phi1 for why the direct branch uses a safe placeholder for z.
+    """
+    small = jnp.abs(z) < _phi_series_radius(z)
+    safe_z = jnp.where(small, 1.0, z)
+    direct = (jnp.exp(safe_z) - 1.0 - safe_z - safe_z**2/2.0) / (safe_z**3)
+    return jnp.where(small, _phi_taylor(z, 3), direct)
 
 
 # =============================================================================

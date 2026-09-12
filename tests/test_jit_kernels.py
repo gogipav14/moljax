@@ -14,6 +14,7 @@ import pytest
 # Enable float64 for precision
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core.fft_integrators import etd1_step, etdrk4_step
 from moljax.core.fft_solvers import laplacian_symbol_1d, laplacian_symbol_2d
 from moljax.core.jit_kernels import (
     advdiff_solve_1d,
@@ -369,6 +370,75 @@ class TestETDIntegratorFactory:
         # Tolerance accounts for φ-function Taylor approximation at small |z|
         assert rel_error < 1e-6
         assert abs(t_final - t_end) < 1e-12
+
+
+# =============================================================================
+# Test: ETD Step Differentiability
+# =============================================================================
+
+class _EigOnlyOperator:
+    """Stand-in for FFTLinearOperator exposing only what etd*_step reads.
+
+    etd1_step/etdrk4_step and their _fft_pair helper only need `.eigenvalues`
+    and `._is_rfft`; building the real DiffusionOperator dataclass here would
+    trip its `D > 0` validation on a traced D under jax.grad.
+    """
+
+    def __init__(self, eigenvalues):
+        self.eigenvalues = eigenvalues
+        self._is_rfft = False
+
+
+class TestETDGradients:
+    """phi1/phi2/phi3 are evaluated at z = dt*D*lambda(k), and the k=0 mode
+    of a periodic Laplacian symbol is exactly zero for every dt and D. Before
+    the safe-denominator fix in phi1/phi2/phi3, differentiating etd1_step or
+    etdrk4_step in dt or D produced NaN from that mode alone.
+    """
+
+    @staticmethod
+    def _zero_rhs(state, t):
+        return {name: jnp.zeros_like(v) for name, v in state.items()}
+
+    def _setup(self):
+        nx = 16
+        dx = 1.0 / nx
+        lap_sym = laplacian_symbol_1d(nx, dx)
+        x = jnp.linspace(0, 1.0, nx, endpoint=False)
+        u0 = jnp.sin(2 * jnp.pi * x)
+        return lap_sym, u0
+
+    @pytest.mark.parametrize("step_fn", [etd1_step, etdrk4_step])
+    def test_etd_steps_differentiable_in_dt(self, step_fn):
+        """jax.grad of an ETD step in dt must be finite, jitted and not."""
+        lap_sym, u0 = self._setup()
+
+        def loss(dt):
+            op = _EigOnlyOperator(1.0 * lap_sym)
+            state = step_fn({'u': u0}, 0.0, dt, {'u': op}, self._zero_rhs)
+            return jnp.sum(state['u'])
+
+        grad = jax.grad(loss)(0.01)
+        assert jnp.isfinite(grad), f"{step_fn.__name__} d/d(dt) is not finite: {grad}"
+
+        grad_jit = jax.jit(jax.grad(loss))(0.01)
+        assert jnp.isfinite(grad_jit), f"jitted {step_fn.__name__} d/d(dt) is not finite: {grad_jit}"
+
+    @pytest.mark.parametrize("step_fn", [etd1_step, etdrk4_step])
+    def test_etd_steps_differentiable_in_D(self, step_fn):
+        """jax.grad of an ETD step in the diffusion coefficient D must be finite."""
+        lap_sym, u0 = self._setup()
+
+        def loss(D):
+            op = _EigOnlyOperator(D * lap_sym)
+            state = step_fn({'u': u0}, 0.0, 0.01, {'u': op}, self._zero_rhs)
+            return jnp.sum(state['u'])
+
+        grad = jax.grad(loss)(1.0)
+        assert jnp.isfinite(grad), f"{step_fn.__name__} d/dD is not finite: {grad}"
+
+        grad_jit = jax.jit(jax.grad(loss))(1.0)
+        assert jnp.isfinite(grad_jit), f"jitted {step_fn.__name__} d/dD is not finite: {grad_jit}"
 
 
 # =============================================================================
