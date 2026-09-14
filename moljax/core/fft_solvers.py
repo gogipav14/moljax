@@ -416,6 +416,117 @@ def solve_helmholtz(
         return solve_helmholtz_2d(rhs_interior, laplacian_symbol, dt, D, use_rfft=use_rfft)
 
 
+def solve_helmholtz_1d_with_laplacian(
+    rhs_interior: jnp.ndarray,
+    laplacian_symbol: jnp.ndarray,
+    dt: float,
+    D: float
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Solve (I - dt * D * Δ) u = rhs and also return D * Δ u, both from u_hat.
+
+    u_hat = RHS_hat / (1 - dt * D * lam) is the same spectral coefficient
+    solve_helmholtz_1d computes; D * Δ u is D * lam * u_hat transformed
+    back, one extra inverse FFT reusing u_hat rather than a second forward
+    transform of u itself. This avoids recovering D * Δ u algebraically as
+    (u - rhs) / (dt * gamma) in the caller: that subtracts nearly equal
+    values and divides by dt, which amplifies roundoff when u and rhs are
+    close (small stage update) or dt is small, badly so in float32.
+
+    Args:
+        rhs_interior: Right-hand side, interior only, shape (nx,)
+        laplacian_symbol: Precomputed Laplacian symbol
+        dt: Time step
+        D: Diffusion coefficient
+
+    Returns:
+        Tuple (u, D * Δ u), both on the interior, shape (nx,)
+    """
+    denom = 1.0 - dt * D * laplacian_symbol
+    denom = jnp.where(jnp.abs(denom) < 1e-14, 1e-14, denom)
+
+    rhs_hat = jnp.fft.fft(rhs_interior)
+    u_hat = rhs_hat / denom
+
+    u = jnp.fft.ifft(u_hat).real
+    lap_u = jnp.fft.ifft(D * laplacian_symbol * u_hat).real
+
+    return u, lap_u
+
+
+def solve_helmholtz_2d_with_laplacian(
+    rhs_interior: jnp.ndarray,
+    laplacian_symbol: jnp.ndarray,
+    dt: float,
+    D: float,
+    use_rfft: bool = False
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Solve (I - dt * D * Δ) u = rhs and also return D * Δ u, both from u_hat.
+
+    See solve_helmholtz_1d_with_laplacian: the same reasoning applies here,
+    2D and rfft2 layouts included.
+
+    Args:
+        rhs_interior: Right-hand side, interior only, shape (ny, nx)
+        laplacian_symbol: Precomputed Laplacian symbol
+        dt: Time step
+        D: Diffusion coefficient
+        use_rfft: If True, use rfft2/irfft2 (faster for real fields)
+
+    Returns:
+        Tuple (u, D * Δ u), both on the interior, shape (ny, nx)
+    """
+    denom = 1.0 - dt * D * laplacian_symbol
+    denom = jnp.where(jnp.abs(denom) < 1e-14, 1e-14, denom)
+
+    if use_rfft:
+        ny, nx = rhs_interior.shape
+        rhs_hat = jnp.fft.rfft2(rhs_interior)
+        u_hat = rhs_hat / denom
+        u = jnp.fft.irfft2(u_hat, s=(ny, nx))
+        lap_u = jnp.fft.irfft2(D * laplacian_symbol * u_hat, s=(ny, nx))
+    else:
+        rhs_hat = jnp.fft.fft2(rhs_interior)
+        u_hat = rhs_hat / denom
+        u = jnp.fft.ifft2(u_hat).real
+        lap_u = jnp.fft.ifft2(D * laplacian_symbol * u_hat).real
+
+    return u, lap_u
+
+
+def solve_helmholtz_with_laplacian(
+    rhs_interior: jnp.ndarray,
+    laplacian_symbol: jnp.ndarray,
+    dt: float,
+    D: float,
+    use_rfft: bool = False
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Solve (I - dt * D * Δ) u = rhs and also return D * Δ u.
+
+    Automatically dispatches to 1D or 2D based on array shape. See
+    solve_helmholtz_1d_with_laplacian for why D * Δ u is recovered from
+    u_hat rather than algebraically from u and rhs.
+
+    Args:
+        rhs_interior: Right-hand side, interior only
+        laplacian_symbol: Precomputed Laplacian symbol
+        dt: Time step
+        D: Diffusion coefficient
+        use_rfft: If True, use rfft2/irfft2 for 2D (faster for real fields)
+
+    Returns:
+        Tuple (u, D * Δ u), both on the interior
+    """
+    if rhs_interior.ndim == 1:
+        return solve_helmholtz_1d_with_laplacian(rhs_interior, laplacian_symbol, dt, D)
+    else:
+        return solve_helmholtz_2d_with_laplacian(
+            rhs_interior, laplacian_symbol, dt, D, use_rfft=use_rfft
+        )
+
+
 # =============================================================================
 # Ghost Cell Integration
 # =============================================================================
@@ -496,6 +607,44 @@ def solve_diffusion_fft_field(
     return u_padded
 
 
+def solve_diffusion_fft_field_with_laplacian(
+    rhs_padded: jnp.ndarray,
+    grid: GridType,
+    dt: float,
+    D: float,
+    fft_cache
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Solve (I - dt * D * Δ) u = rhs and also return D * Δ u for a single field.
+
+    Operates on interior only, then writes both results back to padded
+    arrays; see solve_helmholtz_1d_with_laplacian for why D * Δ u comes
+    from u_hat rather than algebraically from u and rhs.
+
+    Args:
+        rhs_padded: Right-hand side with ghost cells
+        grid: Grid instance
+        dt: Time step
+        D: Diffusion coefficient
+        fft_cache: Precomputed FFT cache
+
+    Returns:
+        Tuple (u, D * Δ u), both with ghost cells (u's from rhs_padded,
+        D * Δ u's zeroed, matching diffusion_rhs_fft)
+    """
+    rhs_interior = extract_interior(rhs_padded, grid)
+
+    use_rfft = getattr(fft_cache, 'use_rfft', False)
+    u_interior, lap_interior = solve_helmholtz_with_laplacian(
+        rhs_interior, fft_cache.laplacian_symbol, dt, D, use_rfft=use_rfft
+    )
+
+    u_padded = embed_interior(u_interior, grid, rhs_padded)
+    lap_padded = embed_interior(lap_interior, grid, jnp.zeros_like(rhs_padded))
+
+    return u_padded, lap_padded
+
+
 # =============================================================================
 # Multi-Field Operations
 # =============================================================================
@@ -540,6 +689,55 @@ def apply_diffusion_inverse_fft(
             result[name] = rhs_field
 
     return result
+
+
+def apply_diffusion_inverse_fft_with_laplacian(
+    state_rhs: StateDict,
+    grid: GridType,
+    dt: float,
+    diffusivities: dict[str, float],
+    fft_cache
+) -> tuple[StateDict, StateDict]:
+    """
+    Apply (I - dt * D * Δ)^{-1} to each diffusive field and also return D * Δ u.
+
+    Companion to apply_diffusion_inverse_fft for callers (such as
+    imex_ssprk2_step) that need the stage Laplacian D * Δ u alongside the
+    solved state u: both come from the same u_hat inside the Helmholtz
+    solve (see solve_helmholtz_1d_with_laplacian), so this costs one extra
+    inverse FFT per field rather than a second full forward-and-inverse
+    round trip through diffusion_rhs_fft, and avoids recovering D * Δ u as
+    (u - rhs) / dt, which amplifies roundoff for a small stage update.
+
+    Non-diffusive fields (D = 0 or not in diffusivities) pass u through
+    unchanged and return a zero Laplacian, matching diffusion_rhs_fft.
+
+    Args:
+        state_rhs: Right-hand side StateDict (with ghost cells)
+        grid: Grid instance
+        dt: Time step
+        diffusivities: Dict mapping field name to diffusion coefficient
+        fft_cache: Precomputed FFT cache
+
+    Returns:
+        Tuple (u, D * Δ u), each a StateDict with one entry per field
+    """
+    result = {}
+    laplacian = {}
+
+    for name, rhs_field in state_rhs.items():
+        D = diffusivities.get(name, 0.0)
+
+        if D > 1e-14:
+            result[name], laplacian[name] = solve_diffusion_fft_field_with_laplacian(
+                rhs_field, grid, dt, D, fft_cache
+            )
+        else:
+            # Pass through unchanged
+            result[name] = rhs_field
+            laplacian[name] = jnp.zeros_like(rhs_field)
+
+    return result, laplacian
 
 
 def apply_diffusion_exp_fft(

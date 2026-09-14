@@ -6,6 +6,24 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`imex_ssprk2_step`'s stage Laplacian amplified float32 roundoff.** The
+  stage Laplacian was recovered algebraically as `dt L U = (U - rhs) /
+  gamma` on the interior, which subtracts nearly equal states and divides
+  by a small number: exact in infinite precision, since `U` solves
+  `(I - gamma dt L) U = rhs`, but this amplifies FFT roundoff badly in
+  float32, and gets worse rather than better as `dt` shrinks. On 32
+  periodic cells on `[0, 2 pi]`, `u0 = cos(x)`, `D = 1`, float32,
+  integrated to `t = 1`: the max error against the exact discrete solution
+  was 1.94e-7 at `dt = 1e-4` before the regression (commit `5823ad5`) but
+  7.57e-4 after it, and `dt = 1e-5` made it worse still (1.92e-3) instead
+  of better. The stage Laplacian is now read off the Helmholtz solve's own
+  spectral coefficients (`apply_diffusion_inverse_fft_with_laplacian` in
+  `fft_solvers.py`, one inverse FFT reusing the `u_hat` the solve already
+  computed) instead of recovered from real-space states, matching the
+  pre-regression accuracy without paying for a second full FFT round trip.
+  `tests/test_imex.py::TestIMEXSSPRK2Float32StageLaplacian::test_float32_stage_laplacian_accuracy`
+  covers this at `dt = 1e-4` and `dt = 1e-5`.
+
 - **The BDF2 startup step accepted a failed Crank-Nicolson solve using
   backward Euler's convergence status.** `be_only`, the branch adaptive
   BDF2 shares with backward Euler startup, returns the Crank-Nicolson

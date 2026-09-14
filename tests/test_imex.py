@@ -11,6 +11,7 @@ Validates:
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 # The order and exactness tests resolve errors at 1e-6 and below.
 jax.config.update("jax_enable_x64", True)
@@ -357,12 +358,12 @@ class TestIMEXSolutionBounds:
 
 
 def _imex_ssprk2_step_via_fft(model, y, t, dt, fft_cache, diffusivities):
-    """The pre-fix imex_ssprk2_step: L1, L2 from a second FFT round trip
-    through diffusion_rhs_fft, rather than the algebraic identity
-    dt L U = (U - rhs) / gamma the fix uses instead. Kept here, not as
-    literal arrays, so the reference is an independent computation rather
-    than a magic number, and so it still calls diffusion_rhs_fft for the
-    call-count check below.
+    """The original imex_ssprk2_step: L1, L2 from a second FFT round trip
+    through diffusion_rhs_fft, rather than reading them off the stage
+    solve's own spectral coefficients as the current step does. Kept
+    here, not as literal arrays, so the reference is an independent
+    computation rather than a magic number, and so it still calls
+    diffusion_rhs_fft for the call-count check below.
     """
     gamma = 1.0 - 1.0 / 2.0 ** 0.5
 
@@ -395,15 +396,23 @@ class TestIMEXSSPRK2StageReuse:
     """imex_ssprk2_step must reuse the stage FFT solve's own Laplacian."""
 
     def test_imex_ssprk2_reuses_stage_laplacian(self, monkeypatch):
-        """Matches the pre-fix implementation and stops calling diffusion_rhs_fft.
+        """Matches the original implementation and stops calling diffusion_rhs_fft.
 
         The algebraic identity dt L U1 = (U1 - y) / gamma (from the stage 1
         solve (I - gamma dt L) U1 = y) is checked directly against
-        diffusion_rhs_fft's L1 = L U1 on a Gray-Scott 16x16 state, then the
-        full step is compared to the pre-fix implementation
-        (_imex_ssprk2_step_via_fft, an independent computation, not a
-        literal array), and finally diffusion_rhs_fft is monkeypatched with
-        a call counter to confirm the fixed step no longer calls it.
+        diffusion_rhs_fft's L1 = L U1 on a Gray-Scott 16x16 state, as a
+        sanity check that the identity is mathematically valid; it is not
+        what the step itself uses, since at float32 it subtracts nearly
+        equal states and divides by a small number, amplifying roundoff
+        (see test_imex_ssprk2_float32_stage_laplacian_accuracy). The step
+        instead reads L U off the Helmholtz solve's own spectral
+        coefficients (apply_diffusion_inverse_fft_with_laplacian), which
+        this test does not distinguish from the identity at float64 (both
+        agree to rounding). The full step is compared to the original
+        implementation (_imex_ssprk2_step_via_fft, an independent
+        computation, not a literal array), and finally diffusion_rhs_fft is
+        monkeypatched with a call counter to confirm the step still never
+        calls it.
         """
         grid = Grid2D.uniform(16, 16, 0.0, 2.5, 0.0, 2.5)
         model, fft_cache, diffusivities = create_gray_scott_periodic_fft(grid)
@@ -454,3 +463,87 @@ class TestIMEXSSPRK2StageReuse:
         for name in y_ref:
             max_diff = float(jnp.max(jnp.abs(y_new[name] - y_ref[name])))
             assert max_diff < 1e-12, f"field {name}: max difference {max_diff:.3e}"
+
+
+def _cos_diffusion_1d_float32(nx=32):
+    """Model, FFT cache and exact discrete solution for the float32 stage-Laplacian check.
+
+    32 periodic cells on [0, 2 pi], u0 = cos(x), D = 1, no reaction: the
+    exact discrete solution is cos(x) * exp(lambda_1 * t), lambda_1 the
+    discrete symbol of the periodic 3-point Laplacian at wavenumber 1.
+    """
+    grid = Grid1D.uniform(nx, 0.0, 2.0 * jnp.pi)
+    dtype = jnp.float32
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'dtype': dtype},
+        linear_ops=(),
+        nonlinear_ops=()
+    )
+    fft_cache = create_fft_cache(grid, dtype=dtype)
+    diffusivities = {'u': 1.0}
+    x = grid.x_coords(include_ghost=True)
+    y0 = {'u': jnp.cos(x).astype(dtype)}
+    lam = (2.0 * np.cos(grid.dx) - 2.0) / grid.dx ** 2
+
+    def exact(t_end):
+        x_interior = np.asarray(grid.x_coords(include_ghost=False))
+        return np.cos(x_interior) * np.exp(lam * t_end)
+
+    return model, fft_cache, diffusivities, y0, exact
+
+
+class TestIMEXSSPRK2Float32StageLaplacian:
+    """imex_ssprk2_step's stage Laplacian must not amplify float32 roundoff.
+
+    The stage_laplacian helper recovered dt * L * U algebraically as
+    (U - rhs) / gamma: correct in exact arithmetic, since U solves
+    (I - gamma dt L) U = rhs, but it subtracts nearly equal states and
+    divides by a small number, which amplifies FFT roundoff in float32.
+    The regression signature is refinement making things worse: dt = 1e-4
+    measured 7.57e-4 and dt = 1e-5 measured 1.92e-3, both far above the
+    1.94e-7 the pre-regression implementation got at dt = 1e-4. The fix
+    reads L U off the Helmholtz solve's own spectral coefficients
+    (apply_diffusion_inverse_fft_with_laplacian) instead of recomputing it
+    from real-space states.
+    """
+
+    @pytest.mark.parametrize("dt,max_error", [
+        pytest.param(1e-4, 1e-6, id="dt=1e-4"),
+        pytest.param(1e-5, 5e-4, id="dt=1e-5"),
+    ])
+    def test_float32_stage_laplacian_accuracy(self, dt, max_error):
+        """Reviewer's reproduction, plus a finer dt to check refinement no longer misbehaves.
+
+        At dt = 1e-4 the fix measures about 4.2e-7 here, matching the
+        order of magnitude of the pre-regression commit 5823ad5's 1.94e-7
+        and well under the bug's 7.57e-4, asserted below 1e-6.
+
+        At dt = 1e-5 the fix measures about 9.6e-5: this is not smaller
+        than the dt = 1e-4 case, since by 100,000 steps float32 rounding
+        accumulated over the run dominates the (already tiny) truncation
+        error, a generic float32 effect and not the bug. The historical
+        diffusion_rhs_fft-based implementation this replaces shows the
+        same non-monotonic error across dt to within rounding (checked by
+        hand, not asserted here, since it is not the code under test).
+        What distinguishes the fix from the bug is magnitude: 9.6e-5 is
+        still about 20x below the bug's 1.92e-3 at the same dt, asserted
+        below 5e-4.
+        """
+        model, fft_cache, diffusivities, y0, exact = _cos_diffusion_1d_float32()
+        t_end = 1.0
+        n_steps = round(t_end / dt)
+
+        step = jax.jit(
+            lambda y, t: imex_ssprk2_step(model, y, t, dt, fft_cache, diffusivities)
+        )
+        y = y0
+        t = 0.0
+        for _ in range(n_steps):
+            y = step(y, t)
+            t += dt
+
+        u_interior = np.asarray(y['u'][model.grid.interior_slice])
+        err = float(np.max(np.abs(u_interior - exact(t_end))))
+        assert err < max_error, f"dt={dt:.0e}: max error {err:.3e}"
