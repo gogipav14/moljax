@@ -500,6 +500,59 @@ class TestAdaptive:
         ratio = errors[0] / errors[1]
         assert 7.0 <= ratio <= 8.5, f"errors {errors}, ratio {ratio:.3f}"
 
+    def test_bdf2_startup_rejects_unconverged_cn(self):
+        """A BDF2 startup step must be rejected when its CN solve fails, even if BE converges.
+
+        be_only returns y_cn (the second-order state) on the BDF2 startup
+        branch, but until now it still returned BE's NKStats. u' = 2u with
+        u0 = 1e-7 and dt = 1 makes BE (one evaluation at t + dt) converge
+        to the default Newton tolerance while CN (which must satisfy the
+        trapezoidal residual at both endpoints) does not: CN's residual is
+        about 3.46e-7, above the 1e-8 default. With BE's converged = True
+        standing in for the whole step, the accept/reject check let this
+        unconverged CN state through, seeding the BDF2 history with it.
+
+        The fix returns CN's stats alongside y_cn on this branch, so the
+        adaptive integrator rejects the dt = 1 attempt and subdivides
+        instead. Checked two ways: directly, that be_step converges and
+        cn_step does not at this state; and through adaptive_integrate,
+        that the startup attempt is rejected at least once and the run
+        still lands close to the exact solution once it does converge.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def growth_rhs(state, grid, t, params):
+            return {'u': 2.0 * state['u']}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="growth", apply=growth_rhs),),
+            nonlinear_ops=()
+        )
+        y0 = {'u': jnp.full(grid.nx_total, 1e-7)}
+        dt = 1.0
+        nk_params = NKParams()  # default newton_tol = 1e-8
+
+        _, stats_be = be_step(model, y0, 0.0, dt, nk_params=nk_params)
+        _, stats_cn = cn_step(model, y0, 0.0, dt, nk_params=nk_params)
+        assert bool(stats_be.converged), "BE must converge for this case to exercise the regression"
+        assert not bool(stats_cn.converged), "CN must fail to converge for this case to exercise the regression"
+
+        result = adaptive_integrate(
+            model, y0, 0.0, dt, dt,
+            method=IntegratorType.BDF2,
+            max_steps=200,
+            pid_params=PIDParams(),
+            nk_params=nk_params
+        )
+        assert int(result.n_rejected) >= 1, \
+            "the dt = 1 startup attempt must be rejected since its CN solve did not converge"
+        exact = 1e-7 * np.exp(2.0)
+        error = abs(float(result.y_final['u'][1]) - exact)
+        assert error < 2e-7, f"error {error:.3e} too large; startup should have subdivided to converge"
+
 
 class TestImplicitPredictor:
     """The explicit-Euler predictor is only a Newton start; it must not poison the step."""

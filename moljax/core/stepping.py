@@ -1004,13 +1004,13 @@ def adaptive_integrate(
             # For implicit: use BE + CN comparison for error
             # Or for BDF2 after startup, use BE as error estimator
             def be_only():
-                y_be, stats = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
                 # BE's local error is dt^2/2 y'' + O(dt^3), which the
                 # difference to a Crank-Nicolson step measures. The earlier
                 # estimate dt F(y_be) is the size of the update, not of its
                 # error: it never fell below the tolerance and every step
                 # was rejected.
-                y_cn, _ = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                y_cn, stats_cn = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
                 err = tree_sub(y_cn, y_be)
                 # This branch also runs for the BDF2 startup step (use_be is
                 # is_be OR bdf2_startup), where y_cn is already computed for
@@ -1019,8 +1019,14 @@ def adaptive_integrate(
                 # controller's error scaling (order 2 for BDF2 everywhere)
                 # still treated err as a second-order estimate. The BE
                 # method itself must keep y_be: y_cn is not its solution.
+                # The convergence stats must follow the same choice: the
+                # BDF2 startup step is accepted or rejected on whether CN
+                # converged, not on BE's status, otherwise an unconverged
+                # CN state could be accepted as the startup history entry
+                # just because BE happened to converge.
                 y_result = lax.cond(bdf2_startup, lambda: y_cn, lambda: y_be)
-                return y_result, err, stats
+                stats_result = lax.cond(bdf2_startup, lambda: stats_cn, lambda: stats_be)
+                return y_result, err, stats_result
 
             def cn_with_err():
                 y_cn, stats = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)

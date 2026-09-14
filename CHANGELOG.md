@@ -6,6 +6,23 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **The BDF2 startup step accepted a failed Crank-Nicolson solve using
+  backward Euler's convergence status.** `be_only`, the branch adaptive
+  BDF2 shares with backward Euler startup, returns the Crank-Nicolson
+  state `y_cn` on the startup branch (it is second order, `y_be` is not),
+  but still returned backward Euler's `NKStats` regardless of branch. On
+  `u' = 2u`, `u0 = 1e-7`, `dt = 1` with default tolerances, Crank-Nicolson
+  does not converge (residual about 3.46e-7 against the 1e-8 tolerance)
+  while backward Euler does, and the accept/reject check reads
+  `nk_stats.converged` from whichever stats came back: with backward
+  Euler's `converged = True` standing in, the adaptive integrator accepted
+  the unconverged Crank-Nicolson state and seeded its history with it.
+  `be_only` now returns Crank-Nicolson's own stats alongside `y_cn` on the
+  startup branch, so a non-converged startup solve is rejected the same
+  way a failed backward Euler solve is; the plain backward Euler path is
+  unchanged. `tests/test_integrators.py::TestAdaptive::test_bdf2_startup_rejects_unconverged_cn`
+  covers this.
+
 - **`apply_variable_diffusion_1d`/`2d` and the Richardson-iteration residual
   closures padded ghost cells with `'edge'` replication instead of periodic
   `'wrap'`, inconsistent with the circulant FFT preconditioner
