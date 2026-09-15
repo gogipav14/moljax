@@ -35,6 +35,12 @@ from moljax.laplace.nilt_fft import nilt_fft_batch
 from moljax.laplace.spectral_bounds import SpectralBounds
 from moljax.laplace.tuning import TunedNILTParams, tune_nilt_params
 
+# tau: nilt_solve_linear_pde hands a mode to the NILT only when
+# |lambda_k| t_end exceeds this; below it the mode is evaluated entirely in
+# closed form. See nilt_solve_linear_pde's docstring for the measurement
+# that sets the value.
+TRANSIENT_TAU = 1e-2
+
 
 class FFTSpectralBounds(NamedTuple):
     """Exact spectral bounds from FFT eigenvalues."""
@@ -233,46 +239,143 @@ def nilt_solve_linear_pde(
 ) -> dict:
     """
     Solve u_t = L*u + f(x), u(0) = u0, by evaluating everything the closed
-    form already knows and inverting only the leftover homogeneous
-    transient.
+    form already knows and inverting only the residual-driven transient.
 
     In Fourier space the PDE decouples into scalar ODEs
     u_k' = λ_k u_k + f_k, one per wavenumber, whose exact solution is
 
-        u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k,   φ₁(z) = (e^z - 1)/z
+        u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k,  φ₁(z) = (e^z - 1)/z
 
     for every λ_k, λ_k = 0 included: φ₁(0) = 1, so the one formula
-    degenerates to u0_k + f_k t on its own and needs no separate branch.
-    This is the form used here because it contains no 1/λ_k. The algebraically
-    equivalent split u_k(t) = w_k e^{λ_k t} - f_k/λ_k, w_k = u0_k + f_k/λ_k,
+    degenerates to u0_k + f_k t on its own and needs no separate branch. It
+    contains no 1/λ_k. The algebraically equivalent split
+    u_k(t) = w_k e^{λ_k t} - f_k/λ_k, w_k = u0_k + f_k/λ_k, instead
     evaluates an O(1) answer as the difference of two terms of size
     |f_k/λ_k|, and for a λ_k small but not exactly zero that difference is
     all roundoff: eight eigenvalues -1e-16 with u0 = 0, f = 1, t_end = 1
     returned 2 instead of 1, and the same case at -1e-8 in float32 returned 0.
 
-    The forced part t φ₁(λ_k t) f_k is exact for a source constant in time,
-    so it is evaluated directly in the time domain (via
+    Collecting the per-mode residual
+
+        r_k = λ_k u0_k + f_k,   u_k(t) = u0_k + r_k t φ₁(λ_k t)
+
+    (substitute f_k = r_k - λ_k u0_k above) instead groups the solution
+    around the quantity that drives the mode away from its initial value: a
+    stationary mode has r_k = 0 and stands still. That form is what the
+    inverted weight is built from, and only that; every value this function
+    evaluates is evaluated in the e^{λ_k t} u0_k + t φ₁(λ_k t) f_k form,
+    where an f_k far smaller than λ_k u0_k survives instead of being
+    rounded away inside r_k.
+
+    Everything above is evaluated in the time domain (via
     moljax.core.jit_kernels.phi1, whose Taylor branch below |z| = 0.5 in
-    double precision carries the small-|λ_k t| limit) and never enters the
-    inversion. Only the homogeneous transient is inverted, with the weight
-    w_k = u0_k, through
+    double precision carries the small-|λ_k t| limit). What the NILT is
+    given is the transient
 
-        H_k(s) = u0_k * [1/(s - λ_k) - 1/(s + c_k)],   c_k = -Re(λ_k)
+        H_k(s) = w_k * [1/(s - λ_k) - 1/(s + c_k)],   c_k = -Re(λ_k)
 
-    all of them in one nilt_fft_batch call. No weight anywhere in the
-    reconstruction is O(1/λ_k), so no mode's answer rests on a
-    cancellation. The closed form (the full solution, not just the forced
-    part evaluated here) is returned alongside as ``u_analytical`` so the
-    two can be compared; it is not what ``u_final`` reports.
+    whose inverse is w_k (e^{λ_k t} - e^{-c_k t}), all modes in one
+    nilt_fft_batch call, with the residual-weighted
 
-    The 1/(s + c_k) term is the same t = 0 jump correction used previously
-    (see below), now placed to cancel exactly at the abscissa of the pole
-    it is removing instead of at an unrelated c = 1/t_end. For a real λ_k,
-    c_k = -λ_k, so both poles of H_k sit at the same point s = λ_k and H_k
-    is identically zero: on a real spectrum the NILT inverts nothing and
-    the bridge reproduces the closed form to rounding. The NILT budget is
-    spent entirely on modes with a nonzero imaginary part (or, more
-    precisely, on any mode whose transient coefficient w_k is nonzero and
+        w_k = r_k/λ_k  if |λ_k| t_end > τ,   w_k = 0  otherwise
+
+    so a mode with no residual is not inverted at all and the inversion's
+    own error cannot reach it. Only the weight is written in the residual.
+    The rest is added back in closed form, in u0_k and f_k: substituting
+    w_k = u0_k + f_k/λ_k (the same number as r_k/λ_k) into
+    u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k,
+
+        u_k(t) - w_k (e^{λ_k t} - e^{-c_k t})
+            = u0_k e^{-c_k t}
+              + f_k [t φ₁(λ_k t) - (e^{λ_k t} - e^{-c_k t})/λ_k]
+            = u0_k e^{-c_k t} + f_k (e^{-c_k t} - 1)/λ_k
+            = u0_k e^{-c_k t} + f_k t φ₁(-c_k t) Re(λ_k)/λ_k
+
+    (the middle step is t φ₁(λ_k t) = (e^{λ_k t} - 1)/λ_k, which cancels
+    the e^{λ_k t} the transient took away) on the inverted modes, and the
+    whole exact solution e^{λ_k t} u0_k + t φ₁(λ_k t) f_k on the modes with
+    w_k = 0. Neither branch cancels: the u0_k term is a plain decay,
+    Re(λ_k)/λ_k is bounded by 1 in modulus, φ₁ carries its own
+    small-argument branch, and the division by λ_k happens only on modes
+    whose |λ_k| t_end clears τ.
+
+    Writing that remainder in the residual instead, as
+    u0_k + r_k t φ₁(-c_k t) Re(λ_k)/λ_k, is algebraically the same and
+    loses f_k whenever |λ_k u0_k| ≫ |f_k|: r_k = λ_k u0_k + f_k rounds to
+    λ_k u0_k, and what is left is u0_k against a second term of size
+    |r_k/λ_k| = |u0_k|, an O(1) answer read off the difference of two
+    O(u0_k) terms. Four eigenvalues -1, u0 = 1e16, f = 1, t_end = 50
+    returned 0 everywhere, u_analytical included, against the exact
+    1.000001928749848 = 1e16 e^{-50} + (1 - e^{-50}); at λ = -1 + 5j with
+    u0_k = 1e12, f_k = 1 and t_end = 30 the closed form was off by 1.3e-4
+    relative. In the form above both are exact to rounding.
+
+    The closed form (the full solution, not just the part evaluated here)
+    is returned alongside as ``u_analytical`` so the two can be compared;
+    it is not what ``u_final`` reports.
+
+    The weight has to be r_k-proportional rather than u0_k-proportional,
+    which is what it was between the removal of the 1/λ_k cancellation and
+    this fix. With w_k = u0_k a stationary mode still had its homogeneous
+    part e^{λ_k t} u0_k inverted numerically, and nothing cancelled the
+    inversion's error any more, because the forcing that used to cancel it
+    is now evaluated in closed form: λ = [0, -1+100j, 0, -1-100j],
+    u0 = [1, 0, -1, 0], f = [1, 100, -1, -100], t_end = 1 is stationary
+    (r_k = 0 for every k) and returned [0.98499821, 0.00121119, -0.98499821,
+    -0.00121119] instead of u0, a max error of 1.5e-2, the raw NILT error
+    on the lightly damped 100j pair.
+
+    τ = TRANSIENT_TAU = 1e-2, a module constant. Both branches are exact
+    in exact arithmetic, so τ is not a choice between two approximations:
+    it decides which modes are handed to the NILT at all, and every mode
+    handed over is charged the inversion's own error, which the closed form
+    below τ does not pay.
+
+    That error does not shrink as λ_k → 0. It is tempting to read the
+    weight r_k/λ_k as amplifying the inversion's truncation error by
+    1/(|λ_k| t_end), but the two poles of H_k coalesce in the same limit:
+
+        H_k(s) = w_k (λ_k + c_k)/((s - λ_k)(s + c_k))
+               = r_k [i Im(λ_k)/λ_k] / ((s - λ_k)(s + c_k))
+
+    and |i Im(λ_k)/λ_k| ≤ 1, so what the NILT is handed is O(|r_k|), not
+    O(|w_k|), and its truncation error is flat in |λ_k| t_end. Measured
+    with λ = ±ib, u0 = 0, f_hat = 2, t_end = 1, the inverted branch is
+    1.861e-5 away from the exact answer at every b from 1e-7 to 3, while
+    the closed form is exact. What the weight does amplify is the
+    floating-point cancellation in forming 1/(s - λ_k) - 1/(s + c_k), of
+    relative size eps |s|/|Im(λ_k)| at the contour's top frequency
+    π/dt ≈ 200 in that case: 3e-6 at sqrt(eps), 5e-12 at τ = 1e-2. The old
+    τ = sqrt(eps) bounded that roundoff correctly; it was simply not the
+    binding term.
+
+    A flat error cannot be made small by moving τ, so τ goes where the
+    jump it creates is no larger than the answer's own sensitivity to λ_k
+    there. In the real field a conjugate pair's first-order term i Im(λ_k)t
+    cancels against its partner, so below τ the mode is the straight line
+    the closed form would draw to within (|λ_k| t_end)^2/6 of itself: at
+    τ = 1e-2 that is 1.667e-5, against the 1.861e-5 the inversion costs.
+    The two sides of τ therefore differ by about as much as the answer
+    itself differs across the band τ separates, which is the most that can
+    be asked of a threshold with an exact branch on one side of it.
+    sqrt(eps) instead put that same 1.9e-5 jump where the exact answer
+    changes by 4e-17: b = 1.49e-8 returned 1.0 and b = 1.491e-8 returned
+    0.9999813. τ is not tied to eps_tail = 1e-8, the tuner's wraparound
+    tolerance, which the inversion of a transient this slowly decaying does
+    not reach in the first place.
+
+    The 1/(s + c_k) term is the t = 0 jump correction, placed to cancel
+    exactly at the abscissa of the pole it is removing instead of at an
+    unrelated c = 1/t_end. For a real λ_k, c_k = -λ_k, so both poles of H_k
+    sit at the same point s = λ_k and H_k is identically zero; in the
+    remainder Re(λ_k)/λ_k is then exactly 1 and φ₁(-c_k t) is φ₁(λ_k t), so
+    the remainder is the whole exact solution, and the two branches of the
+    remainder agree bit for bit, so a real spectrum has no discontinuity at
+    τ at all. On a real spectrum the NILT inverts nothing and the bridge
+    reproduces the closed form to rounding.
+
+    The NILT budget is spent entirely on modes with a nonzero imaginary
+    part (or, more precisely, on any mode whose weight w_k is nonzero and
     whose two poles therefore do not coincide); a purely real, decaying
     spectrum needs no numerical inversion at all. This also removes the
     pole G_k(s) = U_k(s) - u0_k/(s + c) used to carry, with c = 1/t_end: it
@@ -281,16 +384,17 @@ def nilt_solve_linear_pde(
     Bromwich contour off by orders of magnitude (see the module's git log
     for the a = full(8, -10), u0 = ones(8), t_end = 1 regression this fixed).
 
-    Two details make the inversion accurate to the tuner's design tolerance
-    instead of first order in dt:
+    Two details make the inversion accurate to the grid's own truncation
+    error instead of first order in dt:
 
     - The t = 0 jump is removed analytically, as above: the uniform-grid
       inversion samples the periodic extension at the jump between h_k(0+)
       and h_k(2T-), where the Fourier partial sums converge to the
       midpoint, and the ringing this leaves is multiplied by e^{a t} (about
-      100 at the tuned shift). Inverting H_k(s) (whose inverse vanishes at
-      t = 0 by construction) and adding w_k e^{-c_k t} back afterwards
-      removes the jump.
+      100 at the tuned shift). The inverse of H_k(s) vanishes at t = 0 by
+      construction, so there is no jump to ring; the -e^{-c_k t} it
+      subtracts is restored by the closed-form remainder above, not by a
+      separate add-back.
     - Complex modes are inverted as two real transforms. For real u,
       u_{-k}(t) = conj(u_k(t)), so P_k = (H_k + H_{-k})/2 and
       Q_k = (H_k - H_{-k})/(2i) are the transforms of the real functions
@@ -298,14 +402,13 @@ def nilt_solve_linear_pde(
       Hermitian symmetry of the sampled spectrum) applies to each. Inverting
       Re H_k(s) alone is wrong by O(1).
 
-    There is no spectral-zero branch in the reconstruction: the single
-    formula above is used for every mode. The one remaining threshold
-    decides whether a NILT grid is built at all, and compares |λ_k| t_end
-    against the working precision's epsilon rather than against max|λ_k|:
-    when every |λ_k| t_end is at or below eps, e^{λ_k t} is 1 and
-    t φ₁(λ_k t) is t to rounding, H_k contributes nothing, and the closed
-    form is returned directly. Both sides of that test evaluate the same
-    continuous formula, so nothing jumps across it.
+    There is no spectral-zero branch in the reconstruction: the same
+    continuous formula is evaluated on both sides of τ, and τ decides only
+    which part of it the NILT is asked to supply. When no |λ_k| t_end
+    clears τ, every w_k is zero, no grid is built at all, and the closed
+    form is returned directly; that subsumes the old "the spectrum is
+    numerically the origin" early return, which tested max|λ_k| t_end
+    against eps.
 
     64-bit precision is required, as everywhere else in the NILT stack: the
     Bromwich contour's e^{a t} factor (about 100 at the tuned shift)
@@ -341,11 +444,12 @@ def nilt_solve_linear_pde(
             it ever were.
         nilt_params: Pre-tuned NILT parameters (auto-tuned if None). The
             Bromwich shift must exceed sigma_H = max Re(λ_k) over modes
-            with a nonzero transient coefficient w_k = u0_k, the abscissa
-            of the transform H_k actually being inverted; modes with
-            u0_k = 0 carry no transient and do not constrain it, and there
-            is no source-pole positivity requirement (H_k has no pole at
-            the origin regardless of source).
+            with a nonzero weight w_k = r_k/λ_k, the abscissa of the
+            transform H_k actually being inverted; stationary modes
+            (r_k = 0) and modes below τ carry no transient and do not
+            constrain it, and there is no source-pole positivity
+            requirement (H_k has no pole at the origin regardless of
+            source).
         return_full_history: If True, also return u on every NILT grid
             time. Meaningless (and not populated) when there is no
             transient to invert, since no NILT grid is built in that case.
@@ -356,21 +460,22 @@ def nilt_solve_linear_pde(
 
     Returns:
         Dict with:
-            - u_final: solution at t_final (the NILT-inverted homogeneous
-              transient plus the closed-form forced part)
+            - u_final: solution at t_final (the NILT-inverted transient
+              plus the closed-form remainder)
             - t_final: The NILT grid time nearest t_end (the tuned grid,
               2T = 4 t_end = N dt, contains t_end exactly), or exactly
               t_end when there is no transient to invert
-            - u_analytical: Closed form e^{λ t} u0 + t φ₁(λ t) f at t_final
+            - u_analytical: Closed form e^{λ t} u0 + t φ₁(λ t) f at
+              t_final
             - nilt_dc: value of the k = 0 mode at t_final
             - nilt_result: The batch NILTResult (rows: Re h_k then Im h_k,
-              k = 0..n//2, before the jump term and closed-form part are
-              added back), or None when there is no transient to invert
+              k = 0..n//2, before the closed-form remainder is added
+              back), or None when there is no transient to invert
             - params: NILT parameters used, or None when there is no
               transient to invert
             - note: only present when there is nothing to invert (every
-              u0_k is zero, or every |λ_k| t_end is at or below the working
-              precision); explains that the closed form was returned directly
+              residual r_k is zero, or every |λ_k| t_end is at or below τ);
+              explains that the closed form was returned directly
             - t_history, u_history: if return_full_history, the NILT grid
               and the solution on it, shape (N, n)
     """
@@ -411,7 +516,12 @@ def nilt_solve_linear_pde(
             )
     n_modes = eigenvalues.shape[0]
     u0_hat = jnp.fft.fft(u0)
-    source_hat = jnp.fft.fft(source) if source is not None else None
+    # Zeros rather than None when there is no source: every formula below
+    # carries an f_k term, and a zero one costs one multiply.
+    source_hat = (
+        jnp.fft.fft(source) if source is not None
+        else jnp.zeros_like(u0_hat)
+    )
 
     # Only the self-paired Hermitian check below uses this: an imaginary
     # part this far under the spectrum's own scale is roundoff in the symbol
@@ -438,51 +548,81 @@ def nilt_solve_linear_pde(
 
     real_dtype = u0_hat.real.dtype
 
-    def forced_hat(t: jnp.ndarray) -> jnp.ndarray:
-        """t φ₁(λ_k t) f_k per mode, shape (n_modes, len(t)); zero with no source.
+    # r_k = lambda_k u0_k + f_k, the residual that drives the mode off its
+    # initial value: u_k(t) = u0_k + r_k t phi1(lambda_k t). A stationary
+    # mode has r_k = 0 to the last bit and must invert nothing at all,
+    # which is why the weight below is proportional to r_k and not to u0_k.
+    # Only the weight is: what is added back in closed form is written in
+    # u0_k and f_k, where it has no cancellation.
+    residual_hat = eigenvalues * u0_hat + source_hat
 
-        This is the whole forced response for a source constant in time, and
-        it is exact: φ₁ carries the small-|λ_k t| limit in its own series
-        branch, so no 1/λ_k ever appears and no mode is reconstructed as the
-        difference of two large terms.
-        """
-        t = jnp.atleast_1d(jnp.asarray(t)).astype(real_dtype)
-        if source_hat is None:
-            return jnp.zeros((n_modes, t.shape[0]), dtype=u0_hat.dtype)
-        return t[None, :] * phi1(eigenvalues[:, None] * t[None, :]) * source_hat[:, None]
+    c = -jnp.real(eigenvalues)  # per-mode jump-cancellation rate
+
+    # tau = TRANSIENT_TAU = 1e-2 on |lambda_k| t_end. Both branches are
+    # exact in exact arithmetic, so tau trades the inversion's own error
+    # against the answer's sensitivity to lambda_k: a mode below tau is a
+    # straight line to within (|lambda_k| t_end)^2/6 of itself, which at
+    # tau is 1.7e-5, the same size as the 1.9e-5 the NILT costs on such a
+    # mode. Below tau the closed form is therefore not merely cheaper but
+    # indistinguishable, and the division by lambda_k never happens there.
+    inverted = jnp.abs(eigenvalues) * abs(float(t_end)) > TRANSIENT_TAU
+    lambda_safe = jnp.where(inverted, eigenvalues, 1.0)  # placeholder; w is 0 there
+    # w_k = r_k/lambda_k, with r_k = lambda_k u0_k + f_k formed first and
+    # not as the algebraically equal u0_k + f_k/lambda_k: a stationary mode
+    # has r_k = 0 to the last bit, so its weight is exactly zero and it is
+    # not inverted at all.
+    w = jnp.where(inverted, residual_hat / lambda_safe, 0.0)
 
     def closed_form_hat(t: jnp.ndarray) -> jnp.ndarray:
-        """e^{λ_k t} u0_k + t φ₁(λ_k t) f_k per mode, shape (n_modes, len(t))."""
+        """e^{lambda_k t} u0_k + t phi1(lambda_k t) f_k, shape (n_modes, len(t))."""
         t = jnp.atleast_1d(jnp.asarray(t)).astype(real_dtype)
-        homogeneous = jnp.exp(eigenvalues[:, None] * t[None, :]) * u0_hat[:, None]
-        return homogeneous + forced_hat(t)
+        z = eigenvalues[:, None] * t[None, :]
+        return jnp.exp(z) * u0_hat[:, None] + (
+            t[None, :] * phi1(z) * source_hat[:, None]
+        )
+
+    def remainder_hat(t: jnp.ndarray) -> jnp.ndarray:
+        """u_k(t) minus the inverted transient, per mode, shape (n_modes, len(t)).
+
+        e^{-c_k t} u0_k + t phi1(-c_k t) Re(lambda_k)/lambda_k f_k on the
+        inverted modes (the exact solution less
+        w_k (e^{lambda_k t} - e^{-c_k t})), and the whole exact solution
+        e^{lambda_k t} u0_k + t phi1(lambda_k t) f_k on the rest. Both are
+        written in u0_k and f_k rather than in the residual r_k: the
+        residual is what the weight must be built from, but a remainder
+        built from it reads r_k/lambda_k against u0_k, two terms of the
+        same size whose difference is the answer, and that difference is
+        where an f_k much smaller than lambda_k u0_k is lost. Here the u0_k
+        term is a plain decay, Re(lambda_k)/lambda_k is bounded by 1 in
+        modulus, and phi1 carries its own small-argument branch, so neither
+        term is a cancellation. For a real lambda_k the two branches are
+        the same expression (c_k = -lambda_k, the ratio is 1).
+        """
+        t = jnp.atleast_1d(jnp.asarray(t)).astype(real_dtype)
+        decay = -c[:, None] * t[None, :]  # Re(lambda_k) t
+        damped = jnp.exp(decay) * u0_hat[:, None] + (
+            t[None, :]
+            * phi1(decay)
+            * (jnp.real(eigenvalues) / lambda_safe)[:, None]
+            * source_hat[:, None]
+        )
+        return jnp.where(inverted[:, None], damped, closed_form_hat(t))
 
     def closed_form(t: float) -> jnp.ndarray:
         """The exact field at a single time t."""
         return jnp.real(jnp.fft.ifft(closed_form_hat(jnp.asarray(t))[:, 0]))
 
-    # What is left for the NILT is the homogeneous transient alone, so its
-    # weight is w_k = u0_k: no 1/lambda_k enters the inversion either.
-    w = u0_hat
-    c = -jnp.real(eigenvalues)  # per-mode jump-cancellation rate
-
-    # When every |lambda_k| t_end is at or below the working precision's
-    # epsilon, e^{lambda_k t} is 1 and t phi1(lambda_k t) is t to rounding on
-    # the whole interval: H_k contributes nothing and the closed form is the
-    # answer, so no grid is built and the tuner is never asked to place a
-    # contour around a spectrum that is numerically the origin. The test is
-    # |lambda_k| t_end against eps, not a fraction of max|lambda_k|; the
-    # closed form is the same continuous formula on both sides of it.
-    eps = float(jnp.finfo(real_dtype).eps)
-    spectrum_is_zero = max_abs_lambda * abs(float(t_end)) <= eps
-
+    # Nothing is inverted for a mode with no residual, and nothing at all is
+    # inverted when no |lambda_k| t_end clears tau: that subsumes the old
+    # "the spectrum is numerically the origin" early return, which compared
+    # max|lambda_k| t_end against eps.
     transient_mask = w != 0
-    has_transient = bool(jnp.any(transient_mask)) and not spectrum_is_zero
+    has_transient = bool(jnp.any(transient_mask))
 
     if not has_transient:
-        # Nothing to invert: either every transient weight u0_k is zero, or
-        # the spectrum is the origin to working precision. The closed form
-        # is the exact solution in both cases.
+        # Nothing to invert: either every residual r_k is zero (the field is
+        # stationary), or no |lambda_k| t_end clears tau. The closed form is
+        # the exact solution in both cases.
         u_final = closed_form(t_end)
         result = {
             'u_final': u_final,
@@ -492,8 +632,8 @@ def nilt_solve_linear_pde(
             'nilt_result': None,
             'params': None,
             'note': (
-                "empty transient: every transient weight u0_k is zero, or every "
-                "|lambda_k| t_end is at or below the working precision, so "
+                "empty transient: every residual lambda_k u0_k + f_k is zero, or "
+                f"no |lambda_k| t_end clears tau = {TRANSIENT_TAU:g}, so "
                 "nilt_solve_linear_pde returned the closed form "
                 "e^{lambda t} u0 + t phi1(lambda t) f directly with no NILT "
                 "inversion."
@@ -522,7 +662,7 @@ def nilt_solve_linear_pde(
     k_neg = (-k_pos) % n_modes
 
     def transfer_pairs(s: jnp.ndarray) -> jnp.ndarray:
-        """P_k rows then Q_k rows of H_k(s) = u0_k*[1/(s-lambda_k) - 1/(s+c_k)]."""
+        """P_k rows then Q_k rows of H_k(s) = w_k*[1/(s-lambda_k) - 1/(s+c_k)]."""
         s = s[None, :]
         # Modes with no transient are zeroed by w_k anyway; the placeholder
         # denominators keep a 0 * inf out of that product if the contour ever
@@ -543,12 +683,15 @@ def nilt_solve_linear_pde(
         dtype=dtype,
     )
 
-    # Reassemble the transient h_k(t) = Re + i Im and add back the jump term
-    # w_k e^{-c_k t}; the two together are the homogeneous e^{lambda_k t} u0_k.
-    # The forced part is then added in closed form, mode by mode.
-    decay = jnp.exp(-c[k_pos][:, None] * batch.t[None, :])
-    transient_pos = batch.f[:n_half] + 1j * batch.f[n_half:] + w[k_pos][:, None] * decay
-    u_hat_pos = transient_pos + forced_hat(batch.t)[k_pos]
+    # Reassemble the transient h_k(t) = Re + i Im, which is
+    # w_k (e^{lambda_k t} - e^{-c_k t}) and vanishes at t = 0, then add the
+    # closed-form remainder u_k(t) - h_k(t), mode by mode. The -e^{-c_k t}
+    # that H_k subtracts is restored inside that remainder, not by a
+    # separate add-back: doing it separately would rebuild w_k e^{lambda_k t}
+    # and leave the remainder u0_k - r_k/lambda_k, an O(1/lambda_k) term
+    # again.
+    transient_pos = batch.f[:n_half] + 1j * batch.f[n_half:]
+    u_hat_pos = transient_pos + remainder_hat(batch.t)[k_pos]
 
     t_idx = int(jnp.argmin(jnp.abs(batch.t - t_end)))
     t_final = float(batch.t[t_idx])

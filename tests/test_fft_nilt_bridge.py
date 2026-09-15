@@ -23,6 +23,7 @@ jax.config.update("jax_enable_x64", True)
 from moljax.core.fft_operators import AdvectionDiffusionOperator, DiffusionOperator
 from moljax.core.grid import Grid1D
 from moljax.laplace.fft_nilt_bridge import (
+    TRANSIENT_TAU,
     compare_nilt_vs_timestepping,
     exact_spectral_bounds_from_fft,
     fft_bounds_to_spectral_bounds,
@@ -405,27 +406,91 @@ class TestSmallEigenvalueReconstruction:
         assert max_error < 1e-12, f"max error {max_error:.3e} at lambda = -1e-16"
 
     def test_exactly_zero_matches_the_tiny_eigenvalue_limit(self):
-        """lambda = 0 gives u0 + f t, and lambda = -1e-14 agrees with it.
+        """lambda = 0 gives u0 + f t, and the two sides of tau agree.
 
-        phi1's own series branch carries the limit, so the single formula
-        e^{lambda t} u0 + t phi1(lambda t) f is continuous across the
-        threshold that decides whether a NILT grid is built at all: the
-        lambda = 0 spectrum takes the closed-form path, the -1e-14 one does
-        not, and they agree to the difference between e^{-2e-14} and 1.
+        phi1's own series branch carries the limit, so the closed form
+        e^{lambda t} u0 + t phi1(lambda t) f is continuous across
+        tau = TRANSIENT_TAU, the threshold that decides whether a mode is
+        inverted at all. At t_end = 2 that threshold sits at
+        |lambda| = 5e-3: -4.999999e-3 stays under it and is returned in
+        closed form, -5.000001e-3 clears it and builds a grid. Both match
+        their own exact solution to rounding (the spectrum is real, so H_k
+        is identically zero either way) and differ from each other only by
+        the 2e-9 between the two spectra.
         """
         n = 8
         u0 = jnp.array([1.0, 2.0, -1.0, 0.5, 0.25, -0.75, 1.5, 0.0])
         source = jnp.array([0.5, -0.5, 1.0, 0.0, 0.3, 0.2, -0.1, 0.4])
         t_end = 2.0
+        edge = TRANSIENT_TAU / t_end
 
         zero = nilt_solve_linear_pde(jnp.zeros(n), u0, t_end, source=source)
         ramp_error = float(jnp.max(jnp.abs(zero['u_final'] - (u0 + source * t_end))))
         assert ramp_error < 1e-12, f"max error {ramp_error:.3e} on u0 + f t"
 
-        tiny = nilt_solve_linear_pde(jnp.full(n, -1e-14), u0, t_end, source=source)
-        assert 'note' not in tiny, "a -1e-14 spectrum should still build a grid"
-        jump = float(jnp.max(jnp.abs(tiny['u_final'] - zero['u_final'])))
-        assert jump < 1e-12, f"discontinuity {jump:.3e} across the closed-form branch"
+        lam_below, lam_above = -(edge - 1e-9), -(edge + 1e-9)
+        below = nilt_solve_linear_pde(jnp.full(n, lam_below), u0, t_end, source=source)
+        above = nilt_solve_linear_pde(jnp.full(n, lam_above), u0, t_end, source=source)
+        assert 'note' in below, f"|lambda| t_end just under tau = {TRANSIENT_TAU:g}"
+        assert 'note' not in above, "just over tau, the mode should build a grid"
+
+        for lam, result in ((lam_below, below), (lam_above, above)):
+            exact = self._exact(jnp.full(n, lam), u0, source, result['t_final'])
+            error = float(jnp.max(jnp.abs(result['u_final'] - exact)))
+            assert error < 1e-12, f"max error {error:.3e} at lambda = {lam:.6e}"
+
+        jump = float(jnp.max(jnp.abs(above['u_final'] - below['u_final'])))
+        assert jump < 1e-7, f"discontinuity {jump:.3e} across tau"
+
+    def test_imaginary_pair_straddling_tau_agrees_on_both_sides(self):
+        """A conjugate imaginary pair on either side of tau, t_end = 1.
+
+        A real spectrum makes H_k identically zero, so it cannot see where
+        tau sits; a pair at +-ib can. The transient handed to the NILT is
+        r_k i Im(lambda_k)/(lambda_k (s - lambda_k)(s + c_k)), which stays
+        O(|r_k|) as b -> 0 because the two poles coalesce, so the
+        inversion's error on it is flat in b: 1.861e-5 at every b from 1e-7
+        to 3, where the closed form is exact. tau = 1e-2 is placed where
+        that flat error is no larger than the answer's own variation across
+        the band tau separates, (b t_end)^2/6 = 1.667e-5 -- the first-order
+        term i b t is a phase and cancels against the conjugate partner.
+        At the old tau = sqrt(eps) the same 1.9e-5 jump sat where the exact
+        answer varies by 4e-17: b = 1.49e-8 returned 1.0 and b = 1.491e-8
+        returned 0.9999813.
+        """
+        u0 = jnp.zeros(4)
+        source = jnp.array([1.0, 0.0, -1.0, 0.0])  # f_hat = [0, 2, 0, 2]
+
+        results = {}
+        for side, b in (('below', TRANSIENT_TAU * (1 - 1e-6)),
+                        ('above', TRANSIENT_TAU * (1 + 1e-6))):
+            eigenvalues = jnp.array([0.0, 1j * b, 0.0, -1j * b])
+            result = nilt_solve_linear_pde(eigenvalues, u0, 1.0, source=source)
+            exact = self._exact(eigenvalues, u0, source, result['t_final'])
+            results[side] = (result, exact)
+
+        below, below_exact = results['below']
+        above, above_exact = results['above']
+        assert 'note' in below, "just under tau the mode is closed form"
+        assert 'note' not in above, "just over tau the mode is inverted"
+
+        below_error = float(jnp.max(jnp.abs(below['u_final'] - below_exact)))
+        above_error = float(jnp.max(jnp.abs(above['u_final'] - above_exact)))
+        assert below_error < 1e-12, f"closed-form side off by {below_error:.3e}"
+        assert above_error < 5e-5, f"inverted side off by {above_error:.3e}"
+
+        # The jump across tau against the answer's own variation over
+        # |lambda| t_end in [0, tau], which is what sets tau.
+        jump = float(jnp.max(jnp.abs(above['u_final'] - below['u_final'])))
+        edge = jnp.array([0.0, 1j * TRANSIENT_TAU, 0.0, -1j * TRANSIENT_TAU])
+        variation = float(jnp.max(jnp.abs(
+            self._exact(edge, u0, source, 1.0)
+            - self._exact(jnp.zeros(4), u0, source, 1.0)
+        )))
+        assert jump < 3 * variation, (
+            f"discontinuity {jump:.3e} across tau exceeds the answer's own "
+            f"{variation:.3e} variation over the band tau separates"
+        )
 
     def test_mixed_spectrum_matches_the_per_mode_closed_form(self):
         """Magnitudes from 1e-12 to 1e3, nonzero u0 and f, several times.
@@ -483,6 +548,200 @@ class TestSmallEigenvalueReconstruction:
         assert '64-bit precision' in out.stdout
         assert 'jax_enable_x64' in out.stdout
 
+
+# =============================================================================
+# Test: A Stationary Mode Inverts Nothing
+# =============================================================================
+
+class TestStationaryModeIsNotInverted:
+    """The inverted weight is w_k = r_k/lambda_k, r_k = lambda_k u0_k + f_k.
+
+    While the weight was w_k = u0_k, a stationary mode (r_k = 0, so
+    u_k(t) = u0_k for every t) still had its homogeneous part e^{lambda_k t}
+    u0_k inverted numerically, and nothing cancelled the inversion's error
+    any more: the forcing that used to cancel it against a particular term
+    -f_k/lambda_k is now evaluated in closed form. Weighting the transient
+    by the residual instead leaves a stationary mode with nothing to invert.
+    """
+
+    @staticmethod
+    def _exact(eigenvalues, u0_hat, residual_hat, t):
+        """ifft(u0_hat + (e^{lambda t} - 1)/lambda r_hat), via expm1."""
+        lam = jnp.asarray(eigenvalues)
+        z = lam * t
+        nonzero = jnp.abs(lam) > 0
+        growth = jnp.where(
+            nonzero, jnp.expm1(z) / jnp.where(nonzero, lam, 1.0), t
+        )
+        return jnp.real(jnp.fft.ifft(u0_hat + growth * residual_hat))
+
+    # lambda_k u0_k + f_k = 0 for every k, so u(t) = u0 for every t. The
+    # spectrum is self-conjugate (index 0 and the Nyquist index 2 are real)
+    # and the 100j pair is damped by only Re(lambda) = -1, which is where
+    # the NILT error lives.
+    STATIONARY = dict(
+        eigenvalues=jnp.array([0.0, -1 + 100j, 0.0, -1 - 100j]),
+        u0=jnp.array([1.0, 0.0, -1.0, 0.0]),
+        source=jnp.array([1.0, 100.0, -1.0, -100.0]),
+    )
+
+    def test_stationary_field_is_returned_unchanged(self):
+        """u_final = u0 to rounding (2.8e-17); HEAD was off by 1.5e-2.
+
+        With w_k = u0_k this returned
+        [0.98499821, 0.00121119, -0.98499821, -0.00121119]: the raw NILT
+        error on the lightly damped 100j pair, no longer cancelled by
+        anything.
+        """
+        u0 = self.STATIONARY['u0']
+        result = nilt_solve_linear_pde(
+            self.STATIONARY['eigenvalues'], u0, 1.0,
+            source=self.STATIONARY['source'],
+        )
+        max_error = float(jnp.max(jnp.abs(result['u_final'] - u0)))
+        assert max_error < 1e-12, f"max error {max_error:.3e} on a stationary field"
+
+    def test_every_mode_stationary_inverts_nothing(self):
+        """No mode has a weight, so no NILT grid is built at all.
+
+        The weights are not exposed, but w_k = 0 for every k is exactly the
+        condition the empty-transient branch reports.
+        """
+        result = nilt_solve_linear_pde(
+            self.STATIONARY['eigenvalues'], self.STATIONARY['u0'], 1.0,
+            source=self.STATIONARY['source'],
+        )
+        assert result['nilt_result'] is None
+        assert result['params'] is None
+        assert 'empty transient' in result['note']
+        assert result['t_final'] == 1.0
+
+    def test_near_stationary_error_scales_with_the_residual(self):
+        """Scaling the residual by 1e-2 scales the error by 1e-2.
+
+        The inverted weight is proportional to r_k, so the inversion's
+        error on the 100j pair is too: at a residual 1e-6 of the source the
+        error is 1.50e-8, and at 1e-8 it is 1.50e-10, against the 1.50e-2
+        the full source would give. With w_k = u0_k the error was 1.50e-2
+        at every residual, the initial condition being what it was scaled
+        by.
+        """
+        eigenvalues = self.STATIONARY['eigenvalues']
+        u0 = self.STATIONARY['u0']
+        u0_hat = jnp.fft.fft(u0)
+
+        errors = []
+        for delta in (1e-6, 1e-8):
+            source = self.STATIONARY['source'] * (1.0 - delta)
+            result = nilt_solve_linear_pde(eigenvalues, u0, 1.0, source=source)
+            residual_hat = eigenvalues * u0_hat + jnp.fft.fft(source)
+            exact = self._exact(eigenvalues, u0_hat, residual_hat, result['t_final'])
+            errors.append(float(jnp.max(jnp.abs(result['u_final'] - exact))))
+
+        assert errors[0] < 1e-7, f"max error {errors[0]:.3e} at a 1e-6 residual"
+        ratio = errors[0] / errors[1]
+        assert 90.0 < ratio < 110.0, f"error ratio {ratio:.1f} is not the residual's 100"
+
+    def test_stationary_modes_stay_exact_beside_live_ones(self):
+        """A stationary pair inside an otherwise live spectrum is untouched.
+
+        The error is read off mode by mode: modes 1 and 7 have r_k = 0 and
+        must come back at rounding level even though the inversion is
+        carrying real error on modes 2, 3, 5 and 6.
+        """
+        eigenvalues = jnp.array(
+            [0.0, -1 + 100j, -2 + 30j, -3 + 10j, -5.0, -3 - 10j, -2 - 30j, -1 - 100j]
+        )
+        u0_hat = jnp.array([0.0, 2.0, 1 - 1j, 0.5, 1.0, 0.5, 1 + 1j, 2.0]) + 0j
+        residual_hat = jnp.array(
+            [0.3, 0.0, 0.7 - 0.2j, 0.1, -0.4, 0.1, 0.7 + 0.2j, 0.0]
+        ) + 0j
+        u0 = jnp.real(jnp.fft.ifft(u0_hat))
+        source = jnp.real(jnp.fft.ifft(residual_hat - eigenvalues * u0_hat))
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, 1.0, source=source)
+        assert result['nilt_result'] is not None, "the live modes need a grid"
+
+        exact = self._exact(eigenvalues, u0_hat, residual_hat, result['t_final'])
+        error_hat = jnp.abs(jnp.fft.fft(result['u_final'] - exact))
+        for k in (1, 7):
+            assert float(error_hat[k]) < 1e-12, (
+                f"stationary mode {k} carries error {float(error_hat[k]):.3e}"
+            )
+        assert float(jnp.max(error_hat[jnp.array([2, 3, 5, 6])])) > 1e-12, (
+            "the live modes should be inverted, not copied from the closed form"
+        )
+
+
+# =============================================================================
+# Test: the closed form under a large initial condition
+# =============================================================================
+
+class TestClosedFormKeepsTheSourceUnderALargeInitialCondition:
+    """The closed form is written in u0_k and f_k, not in the residual.
+
+    r_k = lambda_k u0_k + f_k is what the inverted weight must be built
+    from (it is exactly zero on a stationary mode), but a closed form built
+    from it evaluates the answer as u0_k against a second term of size
+    |r_k/lambda_k| = |u0_k|, and f_k is gone twice over: rounded away in
+    forming r_k, and then subtracted out of the difference. Four
+    eigenvalues -1 with u0 = 1e16, f = 1 and t_end = 50 returned 0
+    everywhere, u_analytical included, against 1.000001928749848.
+    """
+
+    def test_real_decay_keeps_a_source_16_decades_under_u0(self):
+        """lambda = -1, u0 = 1e16, f = 1, t_end = 50.
+
+        The spectrum is real, so H_k is identically zero and the NILT
+        contributes nothing: what is measured is the remainder branch
+        e^{-c_k t} u0_k + t phi1(-c_k t) Re(lambda_k)/lambda_k f_k on its
+        own. e^{-50} 1e16 = 1.93e-6 and 1 - e^{-50} = 1, and the residual
+        form loses both (r_k = -1e16 + 1 rounds to -1e16, whose ramp is
+        -u0_k exactly).
+        """
+        n = 4
+        result = nilt_solve_linear_pde(
+            jnp.full(n, -1.0), jnp.full(n, 1e16), 50.0, source=jnp.ones(n)
+        )
+        assert result['nilt_result'] is not None, "|lambda| t_end = 50 clears tau"
+        expected = float(1e16 * np.exp(-50.0) - np.expm1(-50.0))
+        for key in ('u_final', 'u_analytical'):
+            error = float(jnp.max(jnp.abs(result[key] - expected))) / expected
+            assert error < 1e-12, f"{key} off by {error:.3e} relative"
+
+    def test_complex_mode_closed_form_keeps_the_source(self):
+        """lambda = -1 + 5j on a conjugate pair, u0_hat = 1e12, f_hat = 1.
+
+        At t_end = 30 the initial condition has decayed to 1e12 e^{-30} =
+        0.094 while the forced part is still -f_k/lambda_k = 0.19, so the
+        answer is the smaller of two contributions separated by 13 decades
+        at t = 0. The residual form read it off the difference of two 1e12
+        terms and was 1.3e-4 out relative.
+
+        Only u_analytical is checked. The transient this mode hands the
+        NILT is weighted by w_k = r_k/lambda_k, of size 1e12, and the
+        inversion's relative accuracy on a transform of that scale (about
+        1e-5) leaves u_final meaningless here -- which is a statement about
+        what a Bromwich inversion can do with a 13-decade dynamic range,
+        not about the reconstruction.
+        """
+        eigenvalues = jnp.array([0.0, -1 + 5j, 0.0, -1 - 5j])
+        u0_hat = jnp.array([0.0, 1e12, 0.0, 1e12]) + 0j
+        source_hat = jnp.array([0.0, 1.0, 0.0, 1.0]) + 0j
+        u0 = jnp.real(jnp.fft.ifft(u0_hat))
+        source = jnp.real(jnp.fft.ifft(source_hat))
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, 30.0, source=source)
+        t = result['t_final']
+        z = eigenvalues * t
+        nonzero = jnp.abs(eigenvalues) > 0
+        growth = jnp.where(
+            nonzero, jnp.expm1(z) / jnp.where(nonzero, eigenvalues, 1.0), t
+        )
+        exact = jnp.real(jnp.fft.ifft(jnp.exp(z) * u0_hat + growth * source_hat))
+        scale = float(jnp.max(jnp.abs(exact)))
+        error = float(jnp.max(jnp.abs(result['u_analytical'] - exact))) / scale
+        assert error < 1e-9, f"u_analytical off by {error:.3e} relative"
 
 
 # =============================================================================

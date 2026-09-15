@@ -107,20 +107,98 @@ All notable changes to moljax are documented here.
   branch below `|z| = 0.5` in double precision carries the small-argument
   limit), which contains no `1/lambda_k`: the forced part is exact for a
   source constant in time and is evaluated in the time domain, and the NILT
-  inverts the homogeneous transient alone,
-  `H_k(s) = u0_k [1/(s - lambda_k) - 1/(s + c_k)]`, whose weight is `u0_k`
-  rather than `u0_k + f_k/lambda_k`. The same formula covers `lambda_k = 0`
+  inverts the transient alone,
+  `H_k(s) = w_k [1/(s - lambda_k) - 1/(s + c_k)]`, with a weight that is no
+  longer `u0_k + f_k/lambda_k`. The same formula covers `lambda_k = 0`
   (`phi1(0) = 1`), so there is no spectral-zero branch in the
-  reconstruction; the one threshold left decides only whether a NILT grid is
-  built at all, and compares `|lambda_k| t_end` against the working
-  precision's epsilon instead of a fraction of `max|lambda_k|`. On a real
-  spectrum spanning `1e-12` to `1e3` in magnitude with nonzero `u0` and
+  reconstruction; the one threshold left decides only whether a mode is
+  inverted at all, and compares `|lambda_k| t_end` against the working
+  precision rather than a fraction of `max|lambda_k|`. (That commit set
+  `w_k = u0_k` and put the threshold at the working precision's epsilon;
+  the entry below corrects the weight to `r_k/lambda_k` and the threshold
+  to `tau = 1e-2` on `|lambda_k| t_end`. The numbers here are unaffected:
+  every spectrum involved is real, so `H_k` is identically zero under
+  either weight.) On a
+  real spectrum spanning `1e-12` to `1e3` in magnitude with nonzero `u0` and
   source, the max error against the per-mode closed form falls from 4.0e-10
   to 4.4e-16 at `t = 0.05`, and the jump across the old spectral-zero
   threshold (`lambda = 0` against `lambda = -1e-14`, `t_end = 2`) falls from
   7.8e-3 to 3.0e-14.
   `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction` covers
   all of these.
+
+- **A stationary mode had its transient inverted numerically, with nothing
+  left to cancel the inversion's error.** Once the forced response was
+  evaluated in closed form (previous entry), `nilt_solve_linear_pde`
+  inverted `H_k(s) = u0_k [1/(s - lambda_k) - 1/(s + c_k)]`, weighted by
+  the initial condition. A stationary mode, one whose residual
+  `r_k = lambda_k u0_k + f_k` is zero and whose solution is therefore
+  `u_k(t) = u0_k` for every `t`, still had `e^{lambda_k t} u0_k` inverted,
+  and the particular term `-f_k/lambda_k` whose own NILT error used to
+  cancel it was gone. On `eigenvalues = [0, -1+100j, 0, -1-100j]`,
+  `u0 = [1, 0, -1, 0]`, `source = [1, 100, -1, -100]`, `t_end = 1` (every
+  `r_k` exactly zero), the bridge returned
+  `[0.98499821, 0.00121119, -0.98499821, -0.00121119]` instead of `u0`, a
+  max error of 1.5e-2, the raw NILT error on the lightly damped `100j`
+  pair. The inverted weight is now residual-proportional,
+  `w_k = r_k/lambda_k` for modes with `|lambda_k| t_end > tau` and `w_k = 0`
+  below, `r_k` being formed as `lambda_k u0_k + f_k` so that a stationary
+  mode's weight is zero to the last bit. Everything added back in closed
+  form stays in `u0_k` and `f_k`:
+  `u_k(t) - w_k (e^{lambda_k t} - e^{-c_k t}) = u0_k e^{-c_k t}
+  + f_k t phi1(-c_k t) Re(lambda_k)/lambda_k` on the inverted modes and the
+  whole `e^{lambda_k t} u0_k + t phi1(lambda_k t) f_k` below `tau`, which
+  is also what `u_analytical` reports. Writing that remainder in the
+  residual instead reads `u0_k` against a second term of size
+  `|r_k/lambda_k| = |u0_k|` and loses `f_k` whenever
+  `|lambda_k u0_k| >> |f_k|`: four eigenvalues `-1` with `u0 = 1e16`,
+  `f = 1` and `t_end = 50` returned 0 everywhere, `u_analytical` included,
+  against the exact `1e16 e^{-50} + (1 - e^{-50}) = 1.000001928749848`, and
+  a `lambda = -1 + 5j` mode with `u0_k = 1e12`, `f_k = 1` at `t_end = 30`
+  was 1.3e-4 out relative. In the `u0_k`, `f_k` form both are exact to
+  rounding: the `u0_k` term is a plain decay, `Re(lambda_k)/lambda_k` is
+  bounded by 1 in modulus, and the division by `lambda_k` happens only
+  above `tau`.
+  `tau = TRANSIENT_TAU = 1e-2` on `|lambda_k| t_end`, a module constant,
+  up from `sqrt(eps)`. Both branches are exact in exact arithmetic, so
+  `tau` decides only which modes are charged the inversion's own error. It
+  is tempting to read `w_k = r_k/lambda_k` as amplifying the NILT's
+  truncation error by `1/(|lambda_k| t_end)`, but the two poles of `H_k`
+  coalesce in the same limit --
+  `H_k(s) = r_k [i Im(lambda_k)/lambda_k]/((s - lambda_k)(s + c_k))` -- so
+  the transform handed over is `O(|r_k|)` and its error is flat: with
+  `lambda = +-ib`, `u0 = 0`, `f_hat = 2`, `t_end = 1`, the inverted branch
+  is 1.861e-5 from the exact answer at every `b` from 1e-7 to 3, where the
+  closed form is exact. A flat error cannot be made small by moving `tau`,
+  so `tau` goes where the jump it creates matches the answer's own
+  variation across the band it separates, `(|lambda_k| t_end)^2/6 =
+  1.667e-5` at 1e-2 (the first-order term is a phase and cancels against
+  the conjugate partner). `sqrt(eps)` put the same 1.9e-5 jump where the
+  exact answer varies by 4e-17: `b = 1.49e-8` returned 1.0 and
+  `b = 1.491e-8` returned 0.9999813. What the weight does amplify is the
+  cancellation in forming `1/(s - lambda_k) - 1/(s + c_k)`, relative size
+  `eps |s|/|Im(lambda_k)|` at the contour's top frequency, 3e-6 at
+  `sqrt(eps)` and 5e-12 at 1e-2; the old threshold bounded that correctly,
+  it was simply not the binding term.
+  The stationary reproduction above now returns `u0` to rounding (2.8e-17
+  against 1.5e-2), a near-stationary case at a residual `1e-6` of the
+  source falls from 1.5e-2 to 1.5e-8 and at `1e-8` to 1.5e-10 (the error
+  scales with `r_k`, as the weight does), a stationary mode sitting inside
+  an otherwise live spectrum comes back at 1.2e-16 against 3.0e-2, and the
+  same spectrum with `source = 0`, which is not stationary, is unchanged at
+  1.500179e-2.
+  `tests/test_fft_nilt_bridge.py::TestStationaryModeIsNotInverted` covers
+  the stationary field, the empty-transient report when every mode is
+  stationary, the residual scaling, and the mode-by-mode check beside live
+  modes;
+  `TestClosedFormKeepsTheSourceUnderALargeInitialCondition` covers the two
+  large-`u0` cases; and `TestSmallEigenvalueReconstruction` gains
+  `test_imaginary_pair_straddling_tau_agrees_on_both_sides`, which measures
+  the jump at `tau` against that variation. The threshold moved, so the
+  `lambda = -1e-14`, `t_end = 2` leg of
+  `test_exactly_zero_matches_the_tiny_eigenvalue_limit` is now
+  `-4.999999e-3` and `-5.000001e-3`, one on each side of `tau`, both
+  checked against their own exact solution.
 
 - **`moljax.conditioning.pseudospectra` and `moljax.conditioning.non_normality`
   never checked for 64-bit precision.** `numerical_range`
