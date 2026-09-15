@@ -305,7 +305,7 @@ def _speed(v) -> float:
     return abs(v)
 
 
-def _odd_symbol_wavenumber(k: jnp.ndarray, spacing: float) -> jnp.ndarray:
+def _odd_symbol_wavenumber(k: jnp.ndarray, n: int, axis: int = -1) -> jnp.ndarray:
     """
     Wavenumbers for a first-derivative symbol, with the Nyquist mode zeroed.
 
@@ -317,9 +317,37 @@ def _odd_symbol_wavenumber(k: jnp.ndarray, spacing: float) -> jnp.ndarray:
     two disagreed by 2.1e-3. Setting the derivative of the Nyquist mode to
     zero is the usual convention for a real grid function; it keeps the
     spectrum Hermitian and the two paths agree to rounding.
+
+    The Nyquist bin is identified by integer index, not by comparing
+    floating-point wavenumbers with a relative tolerance: fftfreq's
+    float32 rounding error at that bin is about 1.4e-6 relative, which
+    swamped a 1e-12 tolerance and let the mode through unmasked (the
+    Nyquist advection eigenvalue on a float32 Grid1D.uniform(10, 0, 1)
+    stayed 31.4159j instead of 0). For an even-length axis of size ``n``,
+    that bin sits at index ``n // 2`` whether ``k`` is a full fftfreq
+    spectrum of length ``n`` or an rfftfreq half-spectrum of length
+    ``n // 2 + 1`` (its last index): rfftfreq only ever covers
+    ``0 .. n // 2``, so the same index works for both layouts. An
+    odd-length axis has no bin exactly at +-pi/dx, so there is nothing to
+    mask.
+
+    Args:
+        k: Wavenumber array; may be broadcast to more dimensions than the
+            transformed axis (e.g. a 2D cache's kx/ky), so long as ``axis``
+            names the axis that varies over ``n`` (or ``n // 2 + 1``) bins.
+        n: Number of grid points along the transformed axis (the full
+            length, even for an rfft half-spectrum array).
+        axis: Axis of ``k`` corresponding to ``n``.
     """
-    k_nyquist = jnp.pi / spacing
-    return jnp.where(jnp.abs(jnp.abs(k) - k_nyquist) < 1e-12 * k_nyquist, 0.0, k)
+    if n % 2 != 0:
+        return k
+    nyquist_idx = n // 2
+    size = k.shape[axis]
+    positions = jnp.arange(size)
+    shape = [1] * k.ndim
+    shape[axis] = size
+    is_nyquist = (positions == nyquist_idx).reshape(shape)
+    return jnp.where(is_nyquist, 0.0, k)
 
 
 @dataclass(frozen=True)
@@ -401,15 +429,18 @@ class FFTAdvectionDiffusionPreconditioner:
                 lam_diff = D * self.fft_cache.laplacian_symbol if D > 1e-14 else 0.0
 
                 if isinstance(grid, Grid1D):
-                    k = _odd_symbol_wavenumber(self.fft_cache.k, grid.dx)
+                    k = _odd_symbol_wavenumber(self.fft_cache.k, grid.nx)
                     lam_adv = -1j * v * k if speed > 1e-14 else 0.0
                     denom = 1.0 - dt * (lam_diff + lam_adv)
                     denom = jnp.where(jnp.abs(denom) < 1e-14, 1e-14, denom)
                     x_interior = jnp.real(jnp.fft.ifft(jnp.fft.fft(r_interior) / denom))
                 else:
-                    # 2D case; v may be a tuple (vx, vy)
-                    kx = _odd_symbol_wavenumber(self.fft_cache.kx, grid.dx)
-                    ky = _odd_symbol_wavenumber(self.fft_cache.ky, grid.dy)
+                    # 2D case; v may be a tuple (vx, vy). kx varies along the
+                    # last axis (columns) and ky along the first (rows,
+                    # broadcast across columns) regardless of whether the
+                    # cache is full-spectrum or half-spectrum (rfft) in x.
+                    kx = _odd_symbol_wavenumber(self.fft_cache.kx, grid.nx, axis=-1)
+                    ky = _odd_symbol_wavenumber(self.fft_cache.ky, grid.ny, axis=0)
                     vx, vy = v if isinstance(v, (tuple, list)) else (v, 0.0)
                     lam_adv = -1j * (vx * kx + vy * ky) if speed > 1e-14 else 0.0
                     denom = 1.0 - dt * (lam_diff + lam_adv)

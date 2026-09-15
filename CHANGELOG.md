@@ -6,6 +6,29 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`_odd_symbol_wavenumber` identified the Nyquist mode by comparing
+  floating-point wavenumbers with a relative tolerance, which float32
+  rounding defeats.** fftfreq's own float32 rounding error at the Nyquist
+  bin is about 1.4e-6 relative, well past the helper's 1e-12 tolerance, so
+  the mask never fired in float32: on `Grid1D.uniform(10, 0, 1)`, `v = 1`,
+  `D = 0`, float32, x64 disabled, the Nyquist advection eigenvalue stayed
+  `31.4159j` instead of `0`, `exp_matvec((-1)**i, 0.1)` returned `-u`
+  instead of `u`, and the Helmholtz solve residual reached `0.908` instead
+  of float32 rounding level. Fixed by identifying the Nyquist bin by
+  integer index and axis parity instead of by value: for an even-length
+  axis of size `n` it is index `n // 2`, whether `k` is a full fftfreq
+  spectrum of length `n` or an rfftfreq half-spectrum of length
+  `n // 2 + 1` (its last index); an odd-length axis has no bin exactly at
+  `+-pi/dx`, so nothing is masked there. `_odd_symbol_wavenumber` now
+  takes the axis length `n` and an `axis` argument instead of the grid
+  spacing. `tests/test_preconditioners.py` covers the masking helper
+  directly (a float32 array whose Nyquist entry is perturbed by a
+  relative 2e-7, both full- and half-spectrum layouts, the odd-length
+  no-op case, and a 2D broadcast array masked along a named axis) and, in
+  a subprocess with x64 left disabled (the main suite runs with x64
+  enabled, where the bug does not show), the exact 1D reproduction above
+  plus a 2D case with the Nyquist mode along both axes.
+
 - **The Neumann ETD1 coefficients and both Neumann Poisson solvers divided
   by a possibly-zero eigenvalue before `jnp.where` masked the result,
   poisoning reverse-mode gradients.** Every Neumann layout has a k = 0

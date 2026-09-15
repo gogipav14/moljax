@@ -250,7 +250,7 @@ class AdvectionDiffusionOperator:
         partner, so a real field cannot carry a nonzero derivative there.
         """
         # Negative sign on advection: u_t = -v*u_x means exp(-i*v*k*t) phase shift
-        lam_adv = -1j * self.v * _odd_symbol_wavenumber(self._k, self.grid.dx)
+        lam_adv = -1j * self.v * _odd_symbol_wavenumber(self._k, self.grid.nx)
         lam_diff = self.D * self._cache.laplacian_symbol if self.D > 0 else 0.0
         return lam_adv + lam_diff
 
