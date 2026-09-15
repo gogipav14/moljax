@@ -8,8 +8,13 @@ Verifies:
 4. NILT faster for long time horizons (t_end > 100 dt_cfl)
 """
 
+import os
+import subprocess
+import sys
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 # Enable float64 for precision
@@ -25,6 +30,8 @@ from moljax.laplace.fft_nilt_bridge import (
     print_comparison_table,
     tune_nilt_for_fft_operator,
 )
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # =============================================================================
 # Test Fixtures
@@ -334,6 +341,148 @@ class TestTransientOnlyInversion:
         assert 'empty transient' in result_src['note']
         assert result_src['nilt_result'] is None
         assert result_src['params'] is None
+
+
+# =============================================================================
+# Test: Small Eigenvalues Do Not Cancel the Answer Away
+# =============================================================================
+
+class TestSmallEigenvalueReconstruction:
+    """The forced part of each mode is evaluated as t phi1(lambda_k t) f_k,
+    which has no 1/lambda_k in it.
+
+    The reconstruction used to split the mode into w_k e^{lambda_k t} with
+    w_k = u0_k + f_k/lambda_k and a particular constant -f_k/lambda_k, and
+    add the two as plain floats. For a |lambda_k| small but above the old
+    relative spectral-zero threshold max(1e-12 max|lambda|, 1e-300) the two
+    O(1/lambda_k) terms had to cancel to an O(1) answer, which they cannot
+    do in floating point: eight eigenvalues -1e-8 with u0 = 0, f = 1,
+    t_end = 1 returned 0 in float32, and -1e-16 returned 2 in float64,
+    against about 1 in both cases.
+    """
+
+    @staticmethod
+    def _exact(eigenvalues, u0, source, t):
+        """ifft(e^{lambda t} u0_hat + (e^{lambda t} - 1)/lambda f_hat), via expm1."""
+        lam = jnp.asarray(eigenvalues)
+        z = lam * t
+        nonzero = jnp.abs(lam) > 0
+        growth = jnp.where(
+            nonzero, jnp.expm1(z) / jnp.where(nonzero, lam, 1.0), t
+        )
+        u_hat = jnp.exp(z) * jnp.fft.fft(u0) + growth * jnp.fft.fft(source)
+        return jnp.real(jnp.fft.ifft(u_hat))
+
+    def test_tiny_eigenvalue_with_source_is_t_phi1(self):
+        """Eight eigenvalues -1e-8, u0 = 0, f = 1, t_end = 1.
+
+        The exact answer is t phi1(lambda t) f = (e^{lambda t} - 1)/lambda =
+        0.999999995. The old reconstruction returned 0.0 in float32 and was
+        good to 8 digits at best in float64.
+        """
+        lam = -1e-8
+        n = 8
+        result = nilt_solve_linear_pde(
+            jnp.full(n, lam), jnp.zeros(n), 1.0, source=jnp.ones(n)
+        )
+        expected = float(np.expm1(lam * 1.0) / lam)
+        max_error = float(jnp.max(jnp.abs(result['u_final'] - expected)))
+        assert max_error < 1e-10, f"max error {max_error:.3e} at lambda = {lam:.1e}"
+
+    def test_subepsilon_eigenvalue_with_source_is_the_ramp(self):
+        """Eight eigenvalues -1e-16, u0 = 0, f = 1, t_end = 1: returns 1.0.
+
+        |lambda| t_end sits under the double-precision epsilon, so the mode
+        is the ramp f t to rounding. The old reconstruction returned 2.0:
+        w = f/lambda = -1e16 and the particular term +1e16 differ by one
+        unit in the last place of 1e16, which is 2.
+        """
+        n = 8
+        result = nilt_solve_linear_pde(
+            jnp.full(n, -1e-16), jnp.zeros(n), 1.0, source=jnp.ones(n)
+        )
+        max_error = float(jnp.max(jnp.abs(result['u_final'] - 1.0)))
+        assert max_error < 1e-12, f"max error {max_error:.3e} at lambda = -1e-16"
+
+    def test_exactly_zero_matches_the_tiny_eigenvalue_limit(self):
+        """lambda = 0 gives u0 + f t, and lambda = -1e-14 agrees with it.
+
+        phi1's own series branch carries the limit, so the single formula
+        e^{lambda t} u0 + t phi1(lambda t) f is continuous across the
+        threshold that decides whether a NILT grid is built at all: the
+        lambda = 0 spectrum takes the closed-form path, the -1e-14 one does
+        not, and they agree to the difference between e^{-2e-14} and 1.
+        """
+        n = 8
+        u0 = jnp.array([1.0, 2.0, -1.0, 0.5, 0.25, -0.75, 1.5, 0.0])
+        source = jnp.array([0.5, -0.5, 1.0, 0.0, 0.3, 0.2, -0.1, 0.4])
+        t_end = 2.0
+
+        zero = nilt_solve_linear_pde(jnp.zeros(n), u0, t_end, source=source)
+        ramp_error = float(jnp.max(jnp.abs(zero['u_final'] - (u0 + source * t_end))))
+        assert ramp_error < 1e-12, f"max error {ramp_error:.3e} on u0 + f t"
+
+        tiny = nilt_solve_linear_pde(jnp.full(n, -1e-14), u0, t_end, source=source)
+        assert 'note' not in tiny, "a -1e-14 spectrum should still build a grid"
+        jump = float(jnp.max(jnp.abs(tiny['u_final'] - zero['u_final'])))
+        assert jump < 1e-12, f"discontinuity {jump:.3e} across the closed-form branch"
+
+    def test_mixed_spectrum_matches_the_per_mode_closed_form(self):
+        """Magnitudes from 1e-12 to 1e3, nonzero u0 and f, several times.
+
+        The spectrum is real and conjugate-symmetric, so H_k(s) is
+        identically zero and the bridge is exact by construction; what is
+        measured is the reconstruction's arithmetic. The mode at
+        lambda = -5.6e-9 sat just above the old threshold (1e-12 max|lambda|
+        = 1e-9) and cost about 2e-8 there, the size of f_k/lambda_k times
+        the double-precision epsilon.
+        """
+        magnitudes = np.logspace(-12, 3, 9)
+        spectrum = -np.concatenate([magnitudes, magnitudes[1:-1][::-1]])
+        eigenvalues = jnp.asarray(spectrum)
+        n = eigenvalues.shape[0]
+
+        rng = np.random.default_rng(0)
+        u0 = jnp.asarray(rng.standard_normal(n))
+        source = jnp.asarray(rng.standard_normal(n))
+
+        for t_end in (0.05, 0.5, 2.0):
+            result = nilt_solve_linear_pde(eigenvalues, u0, t_end, source=source)
+            u_exact = self._exact(eigenvalues, u0, source, result['t_final'])
+            max_error = float(jnp.max(jnp.abs(result['u_final'] - u_exact)))
+            assert max_error < 1e-10, f"max error {max_error:.3e} at t_end = {t_end}"
+
+    def test_bridge_requires_x64(self):
+        """Without x64 the bridge raises instead of inverting in float32.
+
+        Every other NILT entry point guards on moljax._precision.require_x64;
+        the bridge did not, so a float32 call went all the way through the
+        inversion and returned numbers the e^{a t} factor had already ruined
+        (the -1e-8 case above came back as exactly 0).
+        """
+        code = (
+            "import jax\n"
+            "jax.config.update('jax_enable_x64', False)\n"
+            "import jax.numpy as jnp\n"
+            "from moljax.laplace.fft_nilt_bridge import nilt_solve_linear_pde\n"
+            "try:\n"
+            "    nilt_solve_linear_pde(jnp.full(8, -1e-8, dtype=jnp.float32),\n"
+            "                          jnp.zeros(8, dtype=jnp.float32), 1.0,\n"
+            "                          source=jnp.ones(8, dtype=jnp.float32),\n"
+            "                          dtype=jnp.float32)\n"
+            "except RuntimeError as e:\n"
+            "    print('RAISED', e)\n"
+        )
+        env = dict(os.environ, JAX_PLATFORMS='cpu', PYTHONPATH=ROOT)
+        out = subprocess.run(
+            [sys.executable, '-c', code], capture_output=True, text=True,
+            env=env, cwd=ROOT, check=True
+        )
+        assert 'RAISED' in out.stdout, out.stdout + out.stderr
+        assert 'nilt_solve_linear_pde' in out.stdout
+        assert '64-bit precision' in out.stdout
+        assert 'jax_enable_x64' in out.stdout
+
 
 
 # =============================================================================

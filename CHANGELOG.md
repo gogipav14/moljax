@@ -70,6 +70,37 @@ All notable changes to moljax are documented here.
   `tests/test_jit_kernels.py::TestETDGradients::test_etd1_kernel_gradient_wrt_diffusion_stiff_mode_float32`
   covers the same defect through `etd1_kernel_1d`.
 
+- **The NILT bridge reconstructed each mode as a cancellation of two
+  `1/lambda_k` terms.** `nilt_solve_linear_pde` split every mode with
+  `|lambda_k|` above a relative spectral-zero threshold
+  (`max(1e-12 max|lambda|, 1e-300)`) into a transient weight
+  `w_k = u0_k + f_k/lambda_k` and a particular constant `-f_k/lambda_k`, and
+  added the two back as plain floats. For a small but not spectrally zero
+  `lambda_k` both are `O(1/lambda_k)` and have to cancel to an `O(1)`
+  answer, which floating point cannot do: eight eigenvalues `-1e-8` with
+  `u0 = 0`, `source = 1`, `t_end = 1` returned `0` instead of about `1` in
+  float32, and `lambda = -1e-16` returned `2` instead of `1` in float64.
+  The reconstruction now uses the form the exact mode solution already has,
+  `u_k(t) = e^{lambda_k t} u0_k + t phi1(lambda_k t) f_k` with
+  `phi1(z) = (e^z - 1)/z` (`moljax.core.jit_kernels.phi1`, whose Taylor
+  branch below `|z| = 0.5` in double precision carries the small-argument
+  limit), which contains no `1/lambda_k`: the forced part is exact for a
+  source constant in time and is evaluated in the time domain, and the NILT
+  inverts the homogeneous transient alone,
+  `H_k(s) = u0_k [1/(s - lambda_k) - 1/(s + c_k)]`, whose weight is `u0_k`
+  rather than `u0_k + f_k/lambda_k`. The same formula covers `lambda_k = 0`
+  (`phi1(0) = 1`), so there is no spectral-zero branch in the
+  reconstruction; the one threshold left decides only whether a NILT grid is
+  built at all, and compares `|lambda_k| t_end` against the working
+  precision's epsilon instead of a fraction of `max|lambda_k|`. On a real
+  spectrum spanning `1e-12` to `1e3` in magnitude with nonzero `u0` and
+  source, the max error against the per-mode closed form falls from 4.0e-10
+  to 4.4e-16 at `t = 0.05`, and the jump across the old spectral-zero
+  threshold (`lambda = 0` against `lambda = -1e-14`, `t_end = 2`) falls from
+  7.8e-3 to 3.0e-14.
+  `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction` covers
+  all of these.
+
 - **`imex_ssprk2_step`'s stage Laplacian amplified float32 roundoff.** The
   stage Laplacian was recovered algebraically as `dt L U = (U - rhs) /
   gamma` on the interior, which subtracts nearly equal states and divides
@@ -196,6 +227,17 @@ All notable changes to moljax are documented here.
   controller assumes order 2 for BDF2 everywhere, so it scaled a first-order
   local error as if it were second order. `be_only` now returns `y_cn` on
   the startup branch and keeps `y_be` for the BE method itself.
+
+### Added
+
+- **`nilt_solve_linear_pde` and `compare_nilt_vs_timestepping` require
+  64-bit precision.** They now call `moljax._precision.require_x64`, as
+  `gaver_stehfest_method` and the rest of the NILT stack do, so a float32
+  call raises the same clear `RuntimeError` naming the entry point instead
+  of running the inversion at a precision the Bromwich contour's `e^{a t}`
+  factor (about 100 at the tuned shift) immediately spends.
+  `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction::test_bridge_requires_x64`
+  covers this.
 
 ### Removed
 

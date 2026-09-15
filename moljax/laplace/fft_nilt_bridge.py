@@ -29,6 +29,8 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
+from moljax._precision import require_x64
+from moljax.core.jit_kernels import phi1
 from moljax.laplace.nilt_fft import nilt_fft_batch
 from moljax.laplace.spectral_bounds import SpectralBounds
 from moljax.laplace.tuning import TunedNILTParams, tune_nilt_params
@@ -230,25 +232,37 @@ def nilt_solve_linear_pde(
     dtype=jnp.float64,
 ) -> dict:
     """
-    Solve u_t = L*u + f(x), u(0) = u0, by removing everything the closed
-    form already knows and inverting only the leftover transient.
+    Solve u_t = L*u + f(x), u(0) = u0, by evaluating everything the closed
+    form already knows and inverting only the leftover homogeneous
+    transient.
 
     In Fourier space the PDE decouples into scalar ODEs
     u_k' = λ_k u_k + f_k, one per wavenumber, whose exact solution is
 
-        u_k(t) = w_k e^{λ_k t} - f_k/λ_k      if λ_k != 0, w_k = u0_k + f_k/λ_k
-        u_k(t) = u0_k + f_k t                 if λ_k == 0 (w_k := 0)
+        u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k,   φ₁(z) = (e^z - 1)/z
 
-    Everything except the e^{λ_k t} term is known in closed form (the
-    particular constant -f_k/λ_k, or the whole polynomial u0_k + f_k t when
-    λ_k is spectrally zero) and is added back directly in the time domain.
-    NILT inverts only the transient's transform
+    for every λ_k, λ_k = 0 included: φ₁(0) = 1, so the one formula
+    degenerates to u0_k + f_k t on its own and needs no separate branch.
+    This is the form used here because it contains no 1/λ_k. The algebraically
+    equivalent split u_k(t) = w_k e^{λ_k t} - f_k/λ_k, w_k = u0_k + f_k/λ_k,
+    evaluates an O(1) answer as the difference of two terms of size
+    |f_k/λ_k|, and for a λ_k small but not exactly zero that difference is
+    all roundoff: eight eigenvalues -1e-16 with u0 = 0, f = 1, t_end = 1
+    returned 2 instead of 1, and the same case at -1e-8 in float32 returned 0.
 
-        H_k(s) = w_k * [1/(s - λ_k) - 1/(s + c_k)],   c_k = -Re(λ_k)
+    The forced part t φ₁(λ_k t) f_k is exact for a source constant in time,
+    so it is evaluated directly in the time domain (via
+    moljax.core.jit_kernels.phi1, whose Taylor branch below |z| = 0.5 in
+    double precision carries the small-|λ_k t| limit) and never enters the
+    inversion. Only the homogeneous transient is inverted, with the weight
+    w_k = u0_k, through
 
-    all of them in one nilt_fft_batch call. The closed form
-    u_k(t) = e^{λ_k t} u0_k + t φ₁(λ_k t) f_k (the full solution, not just
-    the part inverted here) is returned alongside as ``u_analytical`` so the
+        H_k(s) = u0_k * [1/(s - λ_k) - 1/(s + c_k)],   c_k = -Re(λ_k)
+
+    all of them in one nilt_fft_batch call. No weight anywhere in the
+    reconstruction is O(1/λ_k), so no mode's answer rests on a
+    cancellation. The closed form (the full solution, not just the forced
+    part evaluated here) is returned alongside as ``u_analytical`` so the
     two can be compared; it is not what ``u_final`` reports.
 
     The 1/(s + c_k) term is the same t = 0 jump correction used previously
@@ -284,6 +298,20 @@ def nilt_solve_linear_pde(
       Hermitian symmetry of the sampled spectrum) applies to each. Inverting
       Re H_k(s) alone is wrong by O(1).
 
+    There is no spectral-zero branch in the reconstruction: the single
+    formula above is used for every mode. The one remaining threshold
+    decides whether a NILT grid is built at all, and compares |λ_k| t_end
+    against the working precision's epsilon rather than against max|λ_k|:
+    when every |λ_k| t_end is at or below eps, e^{λ_k t} is 1 and
+    t φ₁(λ_k t) is t to rounding, H_k contributes nothing, and the closed
+    form is returned directly. Both sides of that test evaluate the same
+    continuous formula, so nothing jumps across it.
+
+    64-bit precision is required, as everywhere else in the NILT stack: the
+    Bromwich contour's e^{a t} factor (about 100 at the tuned shift)
+    multiplies the inversion's roundoff, and φ₁'s direct branch already
+    costs a decade of relative accuracy per decade below |z| = 1.
+
     A self-paired mode (index 0, or N//2 on an even grid) has no distinct
     conjugate partner; a real field cannot have a nonzero imaginary part
     there; eigenvalues with one raise a ValueError before any of the above
@@ -306,24 +334,30 @@ def nilt_solve_linear_pde(
         eigenvalues: FFT eigenvalues λ(k), FFT ordering, 1D only
         u0: Initial condition (real space, interior only), 1D only
         t_end: End time
-        source: Optional constant source term f(x)
+        source: Optional source term f(x), constant in time. A
+            time-dependent or polynomial-in-t source is not accepted by
+            this signature, so only φ₁ is needed here; the higher φ₂, φ₃
+            of moljax.core.jit_kernels would be the ones to reach for if
+            it ever were.
         nilt_params: Pre-tuned NILT parameters (auto-tuned if None). The
             Bromwich shift must exceed sigma_H = max Re(λ_k) over modes
-            with a nonzero transient coefficient w_k, the abscissa of the
-            transform H_k actually being inverted; modes handled entirely
-            in closed form (λ_k ~ 0) do not constrain it, and there is no
-            longer a source-pole positivity requirement (H_k has no pole
-            at the origin regardless of source).
+            with a nonzero transient coefficient w_k = u0_k, the abscissa
+            of the transform H_k actually being inverted; modes with
+            u0_k = 0 carry no transient and do not constrain it, and there
+            is no source-pole positivity requirement (H_k has no pole at
+            the origin regardless of source).
         return_full_history: If True, also return u on every NILT grid
-            time. Meaningless (and not populated) when every eigenvalue is
-            within tolerance of zero, since no NILT grid is built in that
-            case.
+            time. Meaningless (and not populated) when there is no
+            transient to invert, since no NILT grid is built in that case.
         dtype: Output data type
+
+    Raises:
+        RuntimeError: If JAX is not running with 64-bit precision.
 
     Returns:
         Dict with:
-            - u_final: solution at t_final (closed form plus NILT-inverted
-              transient)
+            - u_final: solution at t_final (the NILT-inverted homogeneous
+              transient plus the closed-form forced part)
             - t_final: The NILT grid time nearest t_end (the tuned grid,
               2T = 4 t_end = N dt, contains t_end exactly), or exactly
               t_end when there is no transient to invert
@@ -334,11 +368,14 @@ def nilt_solve_linear_pde(
               added back), or None when there is no transient to invert
             - params: NILT parameters used, or None when there is no
               transient to invert
-            - note: only present when every eigenvalue is within tolerance
-              of zero; explains that the closed form was returned directly
+            - note: only present when there is nothing to invert (every
+              u0_k is zero, or every |λ_k| t_end is at or below the working
+              precision); explains that the closed form was returned directly
             - t_history, u_history: if return_full_history, the NILT grid
               and the solution on it, shape (N, n)
     """
+    require_x64("nilt_solve_linear_pde")
+
     eigenvalues = jnp.asarray(eigenvalues)
     u0 = jnp.asarray(u0)
     if eigenvalues.ndim != 1:
@@ -376,8 +413,12 @@ def nilt_solve_linear_pde(
     u0_hat = jnp.fft.fft(u0)
     source_hat = jnp.fft.fft(source) if source is not None else None
 
+    # Only the self-paired Hermitian check below uses this: an imaginary
+    # part this far under the spectrum's own scale is roundoff in the symbol
+    # rather than a complex eigenvalue. The reconstruction itself has no
+    # spectral-zero threshold to set.
     max_abs_lambda = float(jnp.max(jnp.abs(eigenvalues)))
-    tol = max(1e-12 * max_abs_lambda, 1e-300)
+    im_tol = max(1e-12 * max_abs_lambda, 1e-300)
 
     # A self-paired mode (its own conjugate partner) cannot carry a nonzero
     # imaginary eigenvalue for a real field: index 0 always, and N//2 on an
@@ -386,7 +427,7 @@ def nilt_solve_linear_pde(
     self_paired = [0] if n_modes % 2 else [0, n_modes // 2]
     self_paired_idx = jnp.array(self_paired)
     im_self_paired = jnp.imag(eigenvalues)[self_paired_idx]
-    if bool(jnp.any(jnp.abs(im_self_paired) > tol)):
+    if bool(jnp.any(jnp.abs(im_self_paired) > im_tol)):
         bad = int(self_paired_idx[int(jnp.argmax(jnp.abs(im_self_paired)))])
         raise ValueError(
             f"eigenvalues[{bad}] = {complex(eigenvalues[bad])!r} has a nonzero "
@@ -395,60 +436,67 @@ def nilt_solve_linear_pde(
             f"a real field cannot have a complex eigenvalue there."
         )
 
+    real_dtype = u0_hat.real.dtype
+
+    def forced_hat(t: jnp.ndarray) -> jnp.ndarray:
+        """t φ₁(λ_k t) f_k per mode, shape (n_modes, len(t)); zero with no source.
+
+        This is the whole forced response for a source constant in time, and
+        it is exact: φ₁ carries the small-|λ_k t| limit in its own series
+        branch, so no 1/λ_k ever appears and no mode is reconstructed as the
+        difference of two large terms.
+        """
+        t = jnp.atleast_1d(jnp.asarray(t)).astype(real_dtype)
+        if source_hat is None:
+            return jnp.zeros((n_modes, t.shape[0]), dtype=u0_hat.dtype)
+        return t[None, :] * phi1(eigenvalues[:, None] * t[None, :]) * source_hat[:, None]
+
+    def closed_form_hat(t: jnp.ndarray) -> jnp.ndarray:
+        """e^{λ_k t} u0_k + t φ₁(λ_k t) f_k per mode, shape (n_modes, len(t))."""
+        t = jnp.atleast_1d(jnp.asarray(t)).astype(real_dtype)
+        homogeneous = jnp.exp(eigenvalues[:, None] * t[None, :]) * u0_hat[:, None]
+        return homogeneous + forced_hat(t)
+
     def closed_form(t: float) -> jnp.ndarray:
-        """u(t) = ifft(e^{λt} u0_hat + t φ₁(λt) f_hat), φ₁(z) = (e^z - 1)/z."""
-        z = eigenvalues * t
-        exp_z = jnp.exp(z)
-        u_hat_t = exp_z * u0_hat
-        if source_hat is not None:
-            small = jnp.abs(z) < 1e-10
-            phi1 = jnp.where(
-                small,
-                1.0 + z / 2 + z**2 / 6,
-                (exp_z - 1.0) / jnp.where(small, 1.0, z),
-            )
-            u_hat_t = u_hat_t + t * phi1 * source_hat
-        return jnp.real(jnp.fft.ifft(u_hat_t))
+        """The exact field at a single time t."""
+        return jnp.real(jnp.fft.ifft(closed_form_hat(jnp.asarray(t))[:, 0]))
 
-    # Split each mode into the part the closed form already knows and the
-    # e^{lambda_k t} transient NILT is asked to invert. mask is False for
-    # modes with lambda_k ~ 0 (within a relative tolerance of the largest
-    # eigenvalue): those are entirely closed form (u0_k + f_k t) and have no
-    # transient (w_k := 0).
-    mask = jnp.abs(eigenvalues) > tol
-    lambda_safe = jnp.where(mask, eigenvalues, 1.0)  # avoids 0/0 below; w is 0 there regardless
-    if source_hat is not None:
-        w = jnp.where(mask, u0_hat + source_hat / lambda_safe, 0.0)
-        particular = jnp.where(mask, -source_hat / lambda_safe, 0.0)
-    else:
-        w = jnp.where(mask, u0_hat, 0.0)
-        particular = jnp.zeros_like(u0_hat)
-    c = jnp.where(mask, -jnp.real(eigenvalues), 0.0)  # per-mode jump-cancellation rate
+    # What is left for the NILT is the homogeneous transient alone, so its
+    # weight is w_k = u0_k: no 1/lambda_k enters the inversion either.
+    w = u0_hat
+    c = -jnp.real(eigenvalues)  # per-mode jump-cancellation rate
 
-    def analytic_part(t: jnp.ndarray) -> jnp.ndarray:
-        """-f_k/lambda_k for transient modes, u0_k + f_k t for lambda_k ~ 0 modes."""
-        t = jnp.atleast_1d(t).astype(u0_hat.real.dtype)
-        ramp = u0_hat[:, None] + (source_hat[:, None] * t[None, :] if source_hat is not None else 0.0)
-        return jnp.where(mask[:, None], particular[:, None], ramp)
+    # When every |lambda_k| t_end is at or below the working precision's
+    # epsilon, e^{lambda_k t} is 1 and t phi1(lambda_k t) is t to rounding on
+    # the whole interval: H_k contributes nothing and the closed form is the
+    # answer, so no grid is built and the tuner is never asked to place a
+    # contour around a spectrum that is numerically the origin. The test is
+    # |lambda_k| t_end against eps, not a fraction of max|lambda_k|; the
+    # closed form is the same continuous formula on both sides of it.
+    eps = float(jnp.finfo(real_dtype).eps)
+    spectrum_is_zero = max_abs_lambda * abs(float(t_end)) <= eps
 
     transient_mask = w != 0
-    has_transient = bool(jnp.any(transient_mask))
+    has_transient = bool(jnp.any(transient_mask)) and not spectrum_is_zero
 
     if not has_transient:
-        # Every eigenvalue is within tolerance of zero: the closed form
-        # u0 + f*t is the exact solution and there is nothing to invert.
+        # Nothing to invert: either every transient weight u0_k is zero, or
+        # the spectrum is the origin to working precision. The closed form
+        # is the exact solution in both cases.
         u_final = closed_form(t_end)
         result = {
             'u_final': u_final,
             't_final': float(t_end),
             'u_analytical': u_final,
-            'nilt_dc': float(jnp.real(analytic_part(jnp.asarray(t_end))[0, 0])),
+            'nilt_dc': float(jnp.real(closed_form_hat(jnp.asarray(t_end))[0, 0])),
             'nilt_result': None,
             'params': None,
             'note': (
-                "empty transient: every eigenvalue is within tolerance of zero, "
-                "so nilt_solve_linear_pde returned the closed form u0 + f*t "
-                "directly with no NILT inversion."
+                "empty transient: every transient weight u0_k is zero, or every "
+                "|lambda_k| t_end is at or below the working precision, so "
+                "nilt_solve_linear_pde returned the closed form "
+                "e^{lambda t} u0 + t phi1(lambda t) f directly with no NILT "
+                "inversion."
             ),
         }
         return result
@@ -474,10 +522,13 @@ def nilt_solve_linear_pde(
     k_neg = (-k_pos) % n_modes
 
     def transfer_pairs(s: jnp.ndarray) -> jnp.ndarray:
-        """P_k rows then Q_k rows of H_k(s) = w_k*[1/(s-lambda_k) - 1/(s+c_k)]."""
+        """P_k rows then Q_k rows of H_k(s) = u0_k*[1/(s-lambda_k) - 1/(s+c_k)]."""
         s = s[None, :]
-        denom1 = jnp.where(mask[:, None], s - eigenvalues[:, None], 1.0)
-        denom2 = jnp.where(mask[:, None], s + c[:, None], 1.0)
+        # Modes with no transient are zeroed by w_k anyway; the placeholder
+        # denominators keep a 0 * inf out of that product if the contour ever
+        # passes through such a mode's pole.
+        denom1 = jnp.where(transient_mask[:, None], s - eigenvalues[:, None], 1.0)
+        denom2 = jnp.where(transient_mask[:, None], s + c[:, None], 1.0)
         H = w[:, None] * (1.0 / denom1 - 1.0 / denom2)
         P = 0.5 * (H[k_pos] + H[k_neg])
         Q = -0.5j * (H[k_pos] - H[k_neg])
@@ -492,11 +543,12 @@ def nilt_solve_linear_pde(
         dtype=dtype,
     )
 
-    # Reassemble the transient h_k(t) = Re + i Im, add back the jump term
-    # w_k e^{-c_k t}, then add the closed-form part for every mode.
+    # Reassemble the transient h_k(t) = Re + i Im and add back the jump term
+    # w_k e^{-c_k t}; the two together are the homogeneous e^{lambda_k t} u0_k.
+    # The forced part is then added in closed form, mode by mode.
     decay = jnp.exp(-c[k_pos][:, None] * batch.t[None, :])
     transient_pos = batch.f[:n_half] + 1j * batch.f[n_half:] + w[k_pos][:, None] * decay
-    u_hat_pos = transient_pos + analytic_part(batch.t)[k_pos]
+    u_hat_pos = transient_pos + forced_hat(batch.t)[k_pos]
 
     t_idx = int(jnp.argmin(jnp.abs(batch.t - t_end)))
     t_final = float(batch.t[t_idx])
@@ -573,9 +625,14 @@ def compare_nilt_vs_timestepping(
         n_warmup: Warmup iterations for timing
         n_runs: Number of timing runs
 
+    Raises:
+        RuntimeError: If JAX is not running with 64-bit precision.
+
     Returns:
         NILTvsTSSComparison with accuracy and timing results
     """
+    require_x64("compare_nilt_vs_timestepping")
+
     import time
 
     from moljax.core.fft_integrators import etd_integrate
