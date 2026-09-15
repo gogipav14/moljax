@@ -14,6 +14,8 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
+from moljax._precision import require_x64
+
 Matvec = Callable[[jax.Array], jax.Array]
 
 
@@ -74,7 +76,11 @@ def arnoldi(
         breakdown occurs, in which case the factorization is trimmed after
         the completed column.  The rectangular convention is retained, so
         ``A @ Q[:, :k_eff] == Q @ H`` also holds at breakdown.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     if k < 1:
         raise ValueError("k must be positive")
 
@@ -143,7 +149,11 @@ def reduced_pseudospectrum(
     :func:`arnoldi`; only its square leading block ``H_k`` is used.  This is
     the Ritz projection whose eigenvalues and shifted singular values define
     the reduced pseudospectrum.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     projection = _square_hessenberg(hessenberg)
     real = jnp.asarray(real_grid, dtype=jnp.float64)
     imag = jnp.asarray(imag_grid, dtype=jnp.float64)
@@ -155,13 +165,23 @@ def reduced_pseudospectrum(
 
 
 def epsilon_zero(hessenberg: jax.Array) -> float:
-    """Return the continuous epsilon at which zero enters the pseudospectrum."""
+    """Return the continuous epsilon at which zero enters the pseudospectrum.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
+    """
+    require_x64("conditioning diagnostics")
     projection = _square_hessenberg(hessenberg)
     return float(jnp.linalg.svd(projection, compute_uv=False)[-1])
 
 
 def ritz_values(hessenberg: jax.Array) -> jax.Array:
-    """Return eigenvalues of the square leading Arnoldi projection."""
+    """Return eigenvalues of the square leading Arnoldi projection.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
+    """
+    require_x64("conditioning diagnostics")
     return jnp.linalg.eigvals(_square_hessenberg(hessenberg))
 
 
@@ -177,7 +197,11 @@ def pseudospectrum_dense(
     vectors.  This validation helper is intended only for small systems and
     figures; use :func:`arnoldi` plus :func:`reduced_pseudospectrum` for large
     matrix-free operators.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     if n < 1:
         raise ValueError("n must be positive")
 

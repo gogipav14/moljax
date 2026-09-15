@@ -101,6 +101,29 @@ All notable changes to moljax are documented here.
   `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction` covers
   all of these.
 
+- **`moljax.conditioning.pseudospectra` and `moljax.conditioning.non_normality`
+  never checked for 64-bit precision.** `numerical_range`
+  (`field_of_values.py`) and `linearized_operator` (`linearization.py`) both
+  call `moljax._precision.require_x64` before doing any work, but none of
+  `pseudospectra.py`'s public functions (`arnoldi`, `epsilon_zero`,
+  `pseudospectrum_dense`, `reduced_pseudospectrum`, `ritz_values`) or
+  `non_normality.py`'s (`assess_preconditioner`, `estimate_rates`,
+  `clustering_rate`, `crouzeix_palencia_envelope`, `enclosing_disk_rate`,
+  `real_bulk_outliers`, `right_real_outliers`, `traced_boundary_rate`) did.
+  With x64 disabled, `epsilon_zero(np.full((2, 2), 1e8))` returned
+  `11.313709` for an exactly singular matrix instead of raising, and a
+  `complex128` request was silently downgraded to `complex64` throughout
+  both modules. Every public entry point in both modules now calls
+  `require_x64("conditioning diagnostics")` first, matching
+  `numerical_range` and `linearized_operator`; internal callers between
+  public functions (`estimate_rates` calling `enclosing_disk_rate`,
+  `assess_preconditioner` calling `estimate_rates`, and so on) each pay one
+  extra, cheap guard call rather than skip it, and no guard sits inside a
+  loop. `tests/test_conditioning_precision_guard.py` runs a fresh
+  subprocess with x64 left disabled and checks that `epsilon_zero`,
+  `pseudospectrum_dense`, `arnoldi`, and `assess_preconditioner` each raise
+  `require_x64`'s `RuntimeError`.
+
 - **`etd_integrate` floored its step count and could allocate history
   proportional to every step taken instead of every step saved.** The step
   count was `int((t_end - t_start) / dt)`, which truncates rather than

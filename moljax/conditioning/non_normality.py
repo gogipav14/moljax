@@ -15,6 +15,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from moljax._precision import require_x64
 from moljax.conditioning._geometry import _origin_enclosed, _smallest_enclosing_disk
 from moljax.conditioning.field_of_values import _CP_PREFACTOR, FieldOfValuesResult
 
@@ -124,7 +125,12 @@ class PreconditionerAssessment(NamedTuple):
 
 
 def enclosing_disk_rate(fov: FieldOfValuesResult) -> float:
-    """Return ``r1 = rho / abs(c)`` from an enclosing numerical-range disk."""
+    """Return ``r1 = rho / abs(c)`` from an enclosing numerical-range disk.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
+    """
+    require_x64("conditioning diagnostics")
     return float(fov.disk_rate)
 
 
@@ -186,7 +192,11 @@ def traced_boundary_rate(boundary: jax.Array) -> float:
     sides of the origin, and the minimax value is exactly 1; this is checked
     directly rather than left to the search, which would need an unbounded
     domain to discover it.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     values = jnp.asarray(boundary, dtype=jnp.complex128)
     if values.ndim != 1 or values.size == 0:
         raise ValueError("boundary must be a nonempty one-dimensional array")
@@ -256,7 +266,11 @@ def clustering_rate(ritz: jax.Array) -> float:
     Up to 20% of the rightmost Ritz values may be removed only when they lie
     beyond ``center.real + 3 * radius`` and close to the real axis.  ``r3`` is
     then the bulk disk's ``radius / abs(center)``.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     center, radius = _bulk_disk(ritz)
     return math.inf if abs(center) == 0.0 else float(radius / abs(center))
 
@@ -275,7 +289,11 @@ def crouzeix_palencia_envelope(
     "A solution to Crouzeix's conjecture", arXiv:2608.03841 (2026),
     superseding the 1 + sqrt(2) prefactor of Crouzeix and Palencia, SIAM J.
     Matrix Anal. Appl. 38(2) 2017, doi:10.1137/17M1116672.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     if n_iters < 0:
         raise ValueError("n_iters must be nonnegative")
     iterations = jnp.arange(1, n_iters + 1, dtype=jnp.float64)
@@ -292,7 +310,12 @@ def right_real_outliers(
     *,
     factor: float = 1.0,
 ) -> int:
-    """Count Ritz values with real part beyond ``center.real + factor * radius``."""
+    """Count Ritz values with real part beyond ``center.real + factor * radius``.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
+    """
+    require_x64("conditioning diagnostics")
     values = jnp.asarray(ritz, dtype=jnp.complex128)
     if values.ndim != 1:
         raise ValueError("ritz must be a one-dimensional array")
@@ -383,7 +406,11 @@ def real_bulk_outliers(ritz: jax.Array, *, factor: float = _REAL_BULK_WIDTH_FACT
     value makes every comparison vacuous; both raise ``ValueError`` here.
     ``assess_preconditioner`` turns the same conditions into an
     ``indeterminate`` verdict instead.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     defect = _ritz_defect(ritz)
     if defect is not None:
         raise ValueError(defect)
@@ -414,7 +441,12 @@ def _rate_agreement(rates: tuple[float, float, float]) -> bool:
 
 
 def estimate_rates(fov: FieldOfValuesResult, ritz: jax.Array) -> RateEstimates:
-    """Combine the ``r1``, ``r2``, and ``r3`` diagnostics for one operator state."""
+    """Combine the ``r1``, ``r2``, and ``r3`` diagnostics for one operator state.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
+    """
+    require_x64("conditioning diagnostics")
     r1 = enclosing_disk_rate(fov)
     r2 = traced_boundary_rate(fov.boundary)
     r3 = clustering_rate(ritz)
@@ -460,7 +492,11 @@ def assess_preconditioner(
     These defaults are not tuned to a specific problem.  They should be
     assessed on states a solver actually visits; synthetic stress states are
     diagnostic complements rather than a standalone performance verdict.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
     """
+    require_x64("conditioning diagnostics")
     # A degraded upstream computation shows up here as a short or non-finite
     # Ritz spectrum or a reading outside its domain.  None of these is a
     # measurement, yet each would be scored as one: a NaN reading fails its
