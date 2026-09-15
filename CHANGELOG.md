@@ -6,6 +6,25 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`phi1`, `phi2`, and `phi3` fed their unused Taylor branch a raw, unmasked
+  `z`, so its gradient could be NaN even where the direct branch was
+  selected and finite.** `jnp.where` evaluates both branches and their
+  cotangents; the direct branch already substitutes a safe placeholder for
+  `z` where it is not selected, but the Taylor branch's degree-15 Horner
+  polynomial (`_phi_taylor`) still received the real `z` regardless of
+  which branch was chosen (commit `a7040ad` masked only the direct
+  branch). At float32 `z = -1e4` the polynomial overflows to `-inf`, and
+  `jnp.where`'s zero cotangent times `inf` is NaN: `jax.grad(phi1)` at
+  that point was NaN (forward value `1e-4`, finite) instead of matching
+  the analytic derivative `1/z^2 = 1e-8`. `phi2` and `phi3` had the same
+  defect. Fixed by substituting a safe placeholder (`z` where the branch
+  is selected, `0.0` otherwise) into the Taylor branch too, mirroring the
+  direct branch's existing idiom. `tests/test_phi.py::test_phi_gradients_finite_at_large_negative_z_float32`
+  covers `phi1`/`phi2`/`phi3` at float32 `z = -1e4` and `z = -1e2` against
+  the closed-form derivative, jitted and not;
+  `tests/test_jit_kernels.py::TestETDGradients::test_etd1_kernel_gradient_wrt_diffusion_stiff_mode_float32`
+  covers the same defect through `etd1_kernel_1d`.
+
 - **`imex_ssprk2_step`'s stage Laplacian amplified float32 roundoff.** The
   stage Laplacian was recovered algebraically as `dt L U = (U - rhs) /
   gamma` on the interior, which subtracts nearly equal states and divides

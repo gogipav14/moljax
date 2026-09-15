@@ -7,6 +7,7 @@ series below a dtype-dependent threshold. Reference values come from the
 series in exact rational arithmetic.
 """
 
+import math
 from fractions import Fraction
 from math import factorial
 
@@ -97,3 +98,52 @@ def test_phi_gradients_finite_at_zero(n):
     grad_jit = jax.jit(jax.grad(scalar))(0.0)
     assert jnp.isfinite(grad_jit), f"jitted phi{n}'(0) is not finite: {grad_jit}"
     assert abs(float(grad_jit) - EXPECTED_GRAD_AT_ZERO[n]) < 1e-12
+
+
+# Closed-form derivatives of phi_n obtained from the direct formula
+# phi_n(z) = (exp(z) - sum_{j<n} z^j/j!) / z^n by the quotient rule; e^z is
+# negligible at the z values tested here so no cancellation occurs when
+# evaluating them in float64. Used as the reference for the float32
+# gradient test below: before the fix, phi1/phi2/phi3 called _phi_taylor
+# on the raw (unmasked) z even when the direct branch was selected, and a
+# degree-15 Horner polynomial in float32 z = -1e4 overflows to -inf; the
+# resulting 0 (unselected-branch cotangent) times inf is NaN in jax.grad
+# even though the forward value only uses the finite direct branch.
+def _analytic_phi_grad(n: int, z: float) -> float:
+    z = float(z)
+    ez = math.exp(z)
+    if n == 1:
+        return ((z - 1.0) * ez + 1.0) / z**2
+    if n == 2:
+        return ((z - 2.0) * ez + z + 2.0) / z**3
+    if n == 3:
+        return ((z - 3.0) * ez + 0.5 * z**2 + 2.0 * z + 3.0) / z**4
+    raise ValueError(n)
+
+
+@pytest.mark.parametrize("n", [1, 2, 3])
+@pytest.mark.parametrize("z0", [-1e4, -1e2])
+def test_phi_gradients_finite_at_large_negative_z_float32(n, z0):
+    """jax.grad(phi_n) at float32 z = -1e4 and z = -1e2 must be finite.
+
+    z = +1e2 is excluded: exp(100) already overflows float32 in the
+    forward pass, which is a separate, unfixable limitation.
+    """
+    fn = PHI[n]
+
+    def scalar(z):
+        return fn(jnp.array([z], dtype=jnp.float32))[0]
+
+    ref = _analytic_phi_grad(n, z0)
+
+    grad = jax.grad(scalar)(jnp.float32(z0))
+    assert jnp.isfinite(grad), f"phi{n}'({z0}) is not finite: {grad}"
+    assert abs(float(grad) - ref) / abs(ref) < 1e-2, (
+        f"phi{n}'({z0}) = {float(grad)} vs analytic {ref}"
+    )
+
+    grad_jit = jax.jit(jax.grad(scalar))(jnp.float32(z0))
+    assert jnp.isfinite(grad_jit), f"jitted phi{n}'({z0}) is not finite: {grad_jit}"
+    assert abs(float(grad_jit) - ref) / abs(ref) < 1e-2, (
+        f"jitted phi{n}'({z0}) = {float(grad_jit)} vs analytic {ref}"
+    )

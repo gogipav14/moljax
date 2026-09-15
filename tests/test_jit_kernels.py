@@ -457,6 +457,34 @@ class TestETDGradients:
         grad_jit = jax.jit(jax.grad(loss))(1.0)
         assert jnp.isfinite(grad_jit), f"jitted {step_fn.__name__} d/dD is not finite: {grad_jit}"
 
+    def test_etd1_kernel_gradient_wrt_diffusion_stiff_mode_float32(self):
+        """A stiff mode with |dt*lambda| >> 2 selects phi1's direct branch.
+
+        Before the A4 fix, phi1 evaluated its unused Taylor branch on the
+        raw (unmasked) z; the degree-15 Horner polynomial overflows to -inf
+        in float32 at this magnitude, and jnp.where's zero cotangent times
+        inf is NaN even though the direct branch alone is finite and
+        selected. This exercises the same bug through the ETD1 kernel
+        rather than phi1 directly, differentiating with respect to a
+        diffusion scaling factor on a stiff mode.
+        """
+        nx = 8
+        dt = 1.0
+        lam = jnp.array([-1e4] + [0.0] * (nx - 1), dtype=jnp.float32)
+        u = jnp.ones(nx, dtype=jnp.float32)
+        N = jnp.zeros(nx, dtype=jnp.float32)
+
+        def loss(D_scale):
+            eigenvalues = (D_scale * lam).astype(jnp.float32)
+            result = etd1_kernel_1d(u, N, eigenvalues, dt)
+            return jnp.sum(result)
+
+        grad = jax.grad(loss)(jnp.float32(1.0))
+        assert jnp.isfinite(grad), f"d/dD_scale is not finite: {grad}"
+
+        grad_jit = jax.jit(jax.grad(loss))(jnp.float32(1.0))
+        assert jnp.isfinite(grad_jit), f"jitted d/dD_scale is not finite: {grad_jit}"
+
 
 # =============================================================================
 # Test: Benchmark Utility
