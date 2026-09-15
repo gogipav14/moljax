@@ -418,8 +418,6 @@ def etd_integrate(
             return c
 
     n_rem = n_steps - n_done
-    n_saves = n_rem // save_every
-    n_tail = n_rem - n_saves * save_every
 
     def run_block(c, step_offset, count):
         """Advance `c` by `count` steps. The i-th (0-based) step lands on
@@ -433,9 +431,35 @@ def etd_integrate(
 
         return lax.fori_loop(0, count, body, c)
 
+    # ETD2's eager seed step (n_done == 1) lands on absolute step 1, which
+    # is a save boundary only when save_every == 1; for any larger
+    # save_every it sits mid-block. `lead` is the number of extra steps
+    # needed to reach the next boundary at a multiple of save_every (0 for
+    # ETD1/ETDRK4, whose n_done == 0 is already a boundary). Running it as
+    # its own short block first re-anchors every subsequent save to the
+    # same absolute-step grid ETD1/ETDRK4 use, instead of offsetting all of
+    # them by the seed step (the bug this fixes: save_every == 2 saved at
+    # steps 3, 5, ... instead of 2, 4, ...).
+    lead = min((save_every - n_done % save_every) % save_every, n_rem)
+    n_done_aligned = n_done + lead
+    if lead > 0:
+        carry = run_block(carry, 0, lead)
+    lead_state = state_of(carry)
+    # True only when the lead block reaches a genuine intermediate save
+    # point; if it consumes every remaining step, n_done_aligned == n_steps
+    # and that state is the final state, handled by the block below instead
+    # (this is also why a plain save_every == 1 seed step, lead == 0, is
+    # still recorded here: n_done_aligned == n_done == 1 is itself already
+    # the first save boundary).
+    record_lead = 0 < n_done_aligned < n_steps
+
+    n_rem -= lead
+    n_saves = n_rem // save_every
+    n_tail = n_rem - n_saves * save_every
+
     if n_saves > 0:
         def save_body(c, block_index):
-            c = run_block(c, block_index * save_every, save_every)
+            c = run_block(c, lead + block_index * save_every, save_every)
             return c, state_of(c)
 
         carry, stacked = lax.scan(save_body, carry, jnp.arange(n_saves))
@@ -443,14 +467,19 @@ def etd_integrate(
         stacked = None
 
     if n_tail > 0:
-        carry = run_block(carry, n_saves * save_every, n_tail)
+        carry = run_block(carry, lead + n_saves * save_every, n_tail)
 
     final_state = state_of(carry)
 
     t_history = [t_start]
     state_history = [u0]
+
+    if record_lead:
+        t_history.append(t_start + dt * n_done_aligned)
+        state_history.append(lead_state)
+
     for block_index in range(n_saves):
-        step_count = n_done + (block_index + 1) * save_every
+        step_count = n_done_aligned + (block_index + 1) * save_every
         t_history.append(t_start + dt * step_count)
         state_history.append(jax.tree.map(lambda a, i=block_index: a[i], stacked))
 

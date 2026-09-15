@@ -720,6 +720,80 @@ class TestETDIntegrateStepSchedule:
             )
             assert rel_vs_exact < 1e-3, f"{key} vs exact: {rel_vs_exact:.3e}"
 
+    @pytest.mark.parametrize("save_every", [1, 2, 3])
+    def test_etd2_history_times_match_etd1(self, save_every):
+        """ETD2's snapshot times must land on the same absolute steps ETD1 uses.
+
+        ETD2 takes its first step eagerly (n_done=1) to seed the multistep
+        history before the compiled loop, which used to anchor every save
+        to n_done + save_every rather than the next multiple of
+        save_every: t_span=(0, 1), dt=0.25 (4 steps) returned [0, 0.75, 1]
+        at save_every=2 instead of [0, 0.5, 1], and dropped the t=0.25
+        snapshot entirely at save_every=1. save_every=3 does not divide
+        the 4 steps, exercising the leftover-tail path too
+        ([0, 0.75, 1]). Fails on the parent commit for save_every in
+        {1, 2} (save_every=3 happens to still land on the right boundary
+        by coincidence of 4 steps); passes after the fix for all three.
+        """
+        n = 4
+        op = self._zero_eigenvalue_op(n)
+
+        def rhs(state, t):
+            return {"u": jnp.ones(n)}
+
+        u0 = {"u": jnp.zeros(n)}
+        t_span = (0.0, 1.0)
+        dt = 0.25
+
+        t_etd1, _ = etd_integrate(
+            u0, t_span, dt, {"u": op}, rhs, method="etd1", save_every=save_every,
+        )
+        t_etd2, _ = etd_integrate(
+            u0, t_span, dt, {"u": op}, rhs, method="etd2", save_every=save_every,
+        )
+        np.testing.assert_allclose(
+            np.asarray(t_etd2), np.asarray(t_etd1), atol=1e-12,
+        )
+
+    def test_etd2_trajectory_unchanged_by_save_every(self, grid_128):
+        """ETD2's final state must not depend on save_every.
+
+        Uses a genuine reaction-diffusion nonlinearity (not a zero rhs)
+        so that ETD2's carried nonlinear-term history actually matters:
+        the fix shortens the first compiled block to (save_every - 1)
+        steps to re-align saves, so this checks that the carried N_prev
+        threads correctly across that shortened first block (and every
+        later full block) regardless of where save points fall.
+        """
+        grid = grid_128
+        D = 0.05
+        alpha = 0.3
+        t_span = (0.0, 1.0)
+        dt = 0.25  # 4 steps
+
+        x = get_interior_coords(grid)
+        u0 = 0.5 + 0.3 * jnp.sin(2 * jnp.pi * x)
+        op = DiffusionOperator(grid, D)
+
+        def reaction(state, t):
+            u = state["u"]
+            return {"u": alpha * u * (1 - u)}
+
+        finals = {}
+        for save_every in (1, 2, 3):
+            _, hist = etd_integrate(
+                {"u": u0}, t_span, dt, {"u": op}, reaction,
+                method="etd2", save_every=save_every,
+            )
+            finals[save_every] = hist[-1]["u"]
+
+        reference = finals[1]
+        for save_every, u_final in finals.items():
+            np.testing.assert_allclose(
+                u_final, reference, atol=1e-13,
+                err_msg=f"etd2 save_every={save_every} final state diverged",
+            )
+
 
 # =============================================================================
 # Edge Cases

@@ -6,6 +6,27 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`etd_integrate`'s ETD2 path anchored saved snapshots to the wrong
+  absolute step.** The 266c898 rewrite (an outer `lax.scan` over
+  save-sized blocks) sized every block at `save_every` steps, but ETD2
+  takes its first step eagerly to seed the multistep history before that
+  loop, so the first block started one step late: `t_span = (0, 1)`,
+  `dt = 0.25`, `save_every = 2` returned history times `[0, 0.75, 1]`
+  instead of `[0, 0.5, 1]`, and `save_every = 1` dropped the `t = 0.25`
+  snapshot entirely. ETD1 and ETDRK4, which have no eager seed step, were
+  unaffected. Fixed by sizing the first compiled block to
+  `save_every - 1` steps (or, when `save_every == 1`, treating the seed
+  step's own state as the first snapshot) so every later save lands on
+  the same absolute-step grid ETD1 and ETDRK4 use; the total step count
+  and the always-returned final state at `t_end` are unchanged.
+  `tests/test_fft_operators.py::TestETDIntegrateStepSchedule` adds
+  `test_etd2_history_times_match_etd1` (`save_every` in `{1, 2, 3}`,
+  the last a non-divisor of the 4-step schedule, checked against ETD1's
+  history times on the same inputs) and
+  `test_etd2_trajectory_unchanged_by_save_every` (ETD2's final state on a
+  reaction-diffusion problem agrees to `1e-13` across `save_every` in
+  `{1, 2, 3}`).
+
 - **`_odd_symbol_wavenumber` identified the Nyquist mode by comparing
   floating-point wavenumbers with a relative tolerance, which float32
   rounding defeats.** fftfreq's own float32 rounding error at the Nyquist
