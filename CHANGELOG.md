@@ -101,6 +101,34 @@ All notable changes to moljax are documented here.
   `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction` covers
   all of these.
 
+- **`etd_integrate` floored its step count and could allocate history
+  proportional to every step taken instead of every step saved.** The step
+  count was `int((t_end - t_start) / dt)`, which truncates rather than
+  rounds: `t_span = (0, 0.3)`, `dt = 0.1` took 2 steps and stopped at
+  `t = 0.2` instead of 3 steps to `t = 0.3` (`0.3 / 0.1` is
+  `2.9999999999999996` in floating point). Because the returned state was
+  also only ever a step already in the fixed history list, `t_span = (0, 1)`,
+  `dt = 0.25`, `save_every = 10` returned only `u0`: none of the 4 computed
+  steps landed on a `(step + 1) % save_every == 0` boundary, so the final
+  state at `t = 1` was silently discarded. Separately, whenever any
+  intermediate history was requested the compiled loop was a single
+  `lax.scan` over every step, stacking the full state at every step before
+  `save_every` thinned it: 1000 steps of two 8x8 float64 fields with
+  `save_every = 500` allocated 1,024,000 bytes internally for 3,072 bytes
+  returned, and a 1e5-step, two-256x256-field run would have needed about
+  98 GiB. `etd_integrate` now takes `round((t_end - t_start) / dt)` steps
+  and raises `ValueError` when `dt` does not divide the interval exactly,
+  always returns the final state as the last history entry regardless of
+  `save_every`, and runs an outer `lax.scan` over saved snapshots with an
+  inner `lax.fori_loop` of `save_every` steps (the same shape
+  `moljax.core.stepping.integrate_fixed_dt` already used), so the stacked
+  history scales with the number of snapshots kept, not the number of
+  steps taken. ETD2's carried nonlinear term threads through both loop
+  levels unchanged. `tests/test_fft_operators.py::TestETDIntegrateStepSchedule`
+  covers the schedule, the forced endpoint, the divisibility check, the
+  scan allocation, and agreement across `etd1`/`etd2`/`etdrk4` and
+  `save_every` values.
+
 - **`imex_ssprk2_step`'s stage Laplacian amplified float32 roundoff.** The
   stage Laplacian was recovered algebraically as `dt L U = (U - rhs) /
   gamma` on the interior, which subtracts nearly equal states and divides

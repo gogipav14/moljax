@@ -692,14 +692,19 @@ def compare_nilt_vs_timestepping(
     # Only the final state is used below, so ask etd_integrate to retain
     # just the endpoint. Otherwise it materializes every intermediate
     # step, which for long horizons on fine grids is hundreds of MB that
-    # are immediately discarded.
+    # are immediately discarded. (etd_integrate always returns the final
+    # state as the last history entry regardless of save_every, so this is
+    # purely a memory choice, not a correctness requirement.)
     #
-    # etd_integrate floors (t_end - t_start)/dt internally. save_every must
-    # match the number of steps actually taken, or no sample is ever retained
-    # and the "final" state is still u0; the same count is what the
-    # comparison reports.
-    n_steps_taken = int(t_end / tss_dt)
-    save_every = max(n_steps_taken, 1)
+    # etd_integrate now takes round(t_end / tss_dt) steps and requires that
+    # to divide the interval exactly (matching stepping.py's fixed-step
+    # schedule), raising rather than silently flooring and falling short of
+    # t_end. The auto-selected tss_dt above has no reason to divide t_end
+    # evenly, so it is snapped to the nearest step count that does; the
+    # comparison reports the same, adjusted dt.
+    n_steps_taken = max(round(t_end / tss_dt), 1)
+    tss_dt = t_end / n_steps_taken
+    save_every = n_steps_taken
 
     def _integrate():
         return etd_integrate(

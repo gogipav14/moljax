@@ -314,6 +314,28 @@ def etdrk4_step(
     return result
 
 
+def _etd_step_count(t0: float, t_end: float, dt: float) -> int:
+    """
+    Number of ETD steps of size dt that cover [t0, t_end] exactly.
+
+    Same schedule as moljax.core.stepping._fixed_step_count: rounding
+    absorbs the floating point error of the division ((0.3 - 0.0) / 0.1 is
+    2.9999999999999996) and the check below rejects a genuine mismatch,
+    rather than truncating int((t_end - t0) / dt), which silently falls
+    short of the endpoint (the same span and dt gave 2 steps instead of 3).
+    """
+    span = t_end - t0
+    if dt <= 0.0 or span <= 0.0:
+        raise ValueError(f"need dt > 0 and t_end > t0, got dt={dt}, t0={t0}, t_end={t_end}")
+    n_steps = int(round(span / dt))
+    if n_steps < 1 or abs(n_steps * dt - span) > 1e-9 * span:
+        raise ValueError(
+            f"dt={dt} does not divide the interval [{t0}, {t_end}] into whole steps "
+            f"({span / dt:.12g} steps); pick dt = (t_end - t0)/n for an integer n"
+        )
+    return n_steps
+
+
 def etd_integrate(
     u0: StateDict,
     t_span: tuple[float, float],
@@ -327,7 +349,9 @@ def etd_integrate(
 
     Args:
         u0: Initial state (interior values, no ghost cells)
-        t_span: (t_start, t_end)
+        t_span: (t_start, t_end). dt must divide the span into a whole
+            number of steps (see _etd_step_count); a non-divisible span
+            raises ValueError rather than silently falling short of t_end.
         dt: Time step
         linear_ops: Dict mapping field name to FFTLinearOperator
         nonlinear_rhs: Function computing N(u)
@@ -335,37 +359,47 @@ def etd_integrate(
         save_every: Save solution every N steps
 
     Returns:
-        Tuple of (t_array, state_history)
+        Tuple of (t_array, state_history). The last entry of state_history
+        is always the state at t_end, independent of save_every.
 
     Notes:
-        The time-stepping loop is compiled. Previously this was an eager
-        Python ``for`` loop, so every step paid full XLA dispatch and
-        long integrations (tens of thousands of steps) took many minutes
-        to hours. Stepping now runs inside ``lax.fori_loop`` when only
-        the endpoint is retained, and ``lax.scan`` when intermediate
-        states are saved.
+        The time-stepping loop is compiled as an outer ``lax.scan`` over
+        saved snapshots, each covering ``save_every`` steps taken by an
+        inner ``lax.fori_loop``, with any leftover steps (when
+        ``save_every`` does not divide the step count evenly) run in a
+        final ``lax.fori_loop`` after the scan. This is the same shape
+        moljax.core.stepping's ``integrate_fixed_dt`` uses (see
+        ``_run_fixed_steps``).
 
-        When ``save_every >= n_steps`` no intermediate state is
-        materialized, which matters for long horizons: collecting every
-        step of a 256-point, 130k-step run would allocate hundreds of MB
-        that the caller usually discards.
+        Previously the compiled loop was a single ``lax.scan`` over every
+        step whenever intermediate history was requested, so the stacked
+        output held every step's full state before ``save_every`` was
+        applied: memory scaled with the total step count rather than the
+        number of saved snapshots. 1000 steps of two 8x8 float64 fields
+        with save_every=500 allocated 1,024,000 bytes internally for 3,072
+        bytes returned, and a 1e5-step, two-256x256-field run would have
+        needed about 98 GiB. The outer scan now stacks one snapshot per
+        ``save_every`` steps, so memory scales with the number of
+        snapshots kept, not the number of steps taken.
     """
     if method not in ('etd1', 'etd2', 'etdrk4'):
         raise ValueError(f"Unknown method: {method}. Use 'etd1', 'etd2', or 'etdrk4'")
+    if save_every < 1:
+        raise ValueError(f"save_every must be at least 1, got {save_every}")
 
     t_start, t_end = t_span
-    n_steps = int((t_end - t_start) / dt)
-
-    if n_steps <= 0:
-        return jnp.array([t_start]), [u0]
+    n_steps = _etd_step_count(t_start, t_end, dt)
 
     # Hoist the method dispatch out of the loop. ETD2 carries the previous
-    # nonlinear term; its first step seeds that term from None, so it is
-    # taken eagerly and the compiled loop covers the remainder.
+    # nonlinear term; its first step seeds that term from None, which is a
+    # Python-level branch inside etd2_step, so it is taken eagerly before
+    # the compiled loop. The loop itself only ever sees a concrete N_prev
+    # array threaded through the carry, both across fori_loop steps and
+    # across scan iterations, so it is never re-seeded at a block boundary.
     if method == 'etd2':
         seed_state, seed_N = etd2_step(u0, t_start, dt, linear_ops, nonlinear_rhs, None)
         carry = (seed_state, seed_N)
-        eager_states = [seed_state]
+        n_done = 1
 
         def advance(c, t):
             return etd2_step(c[0], t, dt, linear_ops, nonlinear_rhs, c[1])
@@ -375,7 +409,7 @@ def etd_integrate(
     else:
         step_impl = etd1_step if method == 'etd1' else etdrk4_step
         carry = u0
-        eager_states = []
+        n_done = 0
 
         def advance(c, t):
             return step_impl(c, t, dt, linear_ops, nonlinear_rhs)
@@ -383,46 +417,54 @@ def etd_integrate(
         def state_of(c):
             return c
 
-    n_done = len(eager_states)
     n_rem = n_steps - n_done
+    n_saves = n_rem // save_every
+    n_tail = n_rem - n_saves * save_every
 
-    # Step indices (0-based) whose result is retained, matching the
-    # original `(step + 1) % save_every == 0` rule.
-    save_steps = [s for s in range(n_steps) if (s + 1) % save_every == 0]
+    def run_block(c, step_offset, count):
+        """Advance `c` by `count` steps. The i-th (0-based) step lands on
+        absolute step n_done + step_offset + i, so the time passed to
+        `advance` matches the pre-rewrite single scan's per-step time
+        exactly (t_start + dt * absolute_step_index)."""
 
-    needs_history = any(s >= n_done and s != n_steps - 1 for s in save_steps)
+        def body(i, c):
+            t = t_start + dt * (n_done + step_offset + i)
+            return advance(c, t)
 
-    if not needs_history:
-        # Only the endpoint (at most) is kept: loop without collecting.
-        if n_rem > 0:
-            def fori_body(i, c):
-                return advance(c, t_start + dt * (n_done + i))
+        return lax.fori_loop(0, count, body, c)
 
-            carry = lax.fori_loop(0, n_rem, fori_body, carry)
+    if n_saves > 0:
+        def save_body(c, block_index):
+            c = run_block(c, block_index * save_every, save_every)
+            return c, state_of(c)
 
-        def state_after(step_idx):
-            if step_idx < n_done:
-                return eager_states[step_idx]
-            return state_of(carry)
+        carry, stacked = lax.scan(save_body, carry, jnp.arange(n_saves))
     else:
-        ts = t_start + dt * (n_done + jnp.arange(n_rem, dtype=jnp.result_type(float)))
+        stacked = None
 
-        def scan_body(c, t):
-            c_new = advance(c, t)
-            return c_new, state_of(c_new)
+    if n_tail > 0:
+        carry = run_block(carry, n_saves * save_every, n_tail)
 
-        carry, stacked = lax.scan(scan_body, carry, ts)
-
-        def state_after(step_idx):
-            if step_idx < n_done:
-                return eager_states[step_idx]
-            return jax.tree.map(lambda a: a[step_idx - n_done], stacked)
+    final_state = state_of(carry)
 
     t_history = [t_start]
     state_history = [u0]
-    for s in save_steps:
-        t_history.append(t_start + (s + 1) * dt)
-        state_history.append(state_after(s))
+    for block_index in range(n_saves):
+        step_count = n_done + (block_index + 1) * save_every
+        t_history.append(t_start + dt * step_count)
+        state_history.append(jax.tree.map(lambda a, i=block_index: a[i], stacked))
+
+    # The last entry is always the true final state at t_end: either the
+    # last block above already reached it (n_tail == 0), or it is appended
+    # here regardless of where the last save_every boundary fell. Either
+    # way it represents exactly n_steps steps, so its label is the caller's
+    # own t_end rather than a recomputed t_start + n_steps * dt, which can
+    # differ from t_end at the last bit or two of precision.
+    if n_saves > 0 and n_tail == 0:
+        t_history[-1] = t_end
+    else:
+        t_history.append(t_end)
+        state_history.append(final_state)
 
     return jnp.array(t_history), state_history
 

@@ -501,6 +501,226 @@ class TestETDIntegration:
         assert error < 1e-3, f"etd_integrate error: {error:.2e}"
 
 
+class TestETDIntegrateStepSchedule:
+    """etd_integrate's step count and history allocation.
+
+    Before this fix, `etd_integrate` computed its step count with
+    `int((t_end - t_start) / dt)`, which floors and silently drops the
+    endpoint on a non-exact division, and materialized every step's full
+    state in a single `lax.scan` whenever any intermediate history was
+    requested, before `save_every` thinned it -- 1000 steps of two 8x8
+    float64 fields with save_every=500 allocated 1,024,000 bytes
+    internally for 3,072 bytes returned. It now takes
+    `round((t_end - t_start) / dt)` steps, raises if dt does not divide the
+    interval exactly, always returns the final state regardless of
+    save_every, and its outer `lax.scan` stacks one snapshot per
+    save_every steps rather than one per step (matching
+    `moljax.core.stepping.integrate_fixed_dt`'s outer-scan/inner-fori_loop
+    shape).
+    """
+
+    def _zero_eigenvalue_op(self, n):
+        op = type("Op", (), {})()
+        op.eigenvalues = jnp.zeros(n)
+        return op
+
+    def test_scan_history_scales_with_snapshots_not_steps(self, monkeypatch):
+        """The stacked scan output's leading dimension is n_steps // save_every.
+
+        1000 steps, save_every=500 -> 2 saved snapshots. Before the fix the
+        internal scan stacked all 1000 steps (a (1000, 8, 8) float64 array
+        per field, 1,024,000 bytes) regardless of save_every; this test
+        fails on the parent commit because the captured leading dimension
+        is 1000, not 2.
+        """
+        from jax import lax as real_lax
+
+        import moljax.core.fft_integrators as fi
+
+        captured = {}
+
+        def spying_scan(f, init, xs, length=None):
+            carry, ys = real_lax.scan(f, init, xs, length=length)
+            captured["shapes"] = [leaf.shape for leaf in jax.tree_util.tree_leaves(ys)]
+            return carry, ys
+
+        lax_proxy = type(
+            "LaxProxy",
+            (),
+            {
+                "scan": staticmethod(spying_scan),
+                "fori_loop": staticmethod(real_lax.fori_loop),
+                "cond": staticmethod(real_lax.cond),
+            },
+        )
+        monkeypatch.setattr(fi, "lax", lax_proxy)
+
+        shape = (8, 8)
+        op = type("Op", (), {})()
+        op._is_rfft = False
+        op.eigenvalues = jnp.zeros(shape)
+
+        def rhs(state, t):
+            return {"u": jnp.zeros(shape), "v": jnp.zeros(shape)}
+
+        u0 = {"u": jnp.zeros(shape, dtype=jnp.float64), "v": jnp.zeros(shape, dtype=jnp.float64)}
+        n_steps = 1000
+        dt = 1.0 / n_steps
+
+        t_hist, hist = fi.etd_integrate(
+            u0, (0.0, 1.0), dt=dt, linear_ops={"u": op, "v": op},
+            nonlinear_rhs=rhs, method="etd1", save_every=500,
+        )
+
+        assert captured.get("shapes"), "lax.scan was never called"
+        for leaf_shape in captured["shapes"]:
+            assert leaf_shape[0] == 2, (
+                "expected the scan to stack n_steps // save_every = 2 "
+                f"snapshots, got a stacked leading dimension of {leaf_shape[0]}"
+            )
+        assert len(hist) == 3
+        assert len(t_hist) == 3
+
+    def test_no_length_n_steps_array_in_jaxpr(self):
+        """The traced program never materializes an array of length n_steps."""
+        shape = (8, 8)
+        op = self._zero_eigenvalue_op(shape)
+        op._is_rfft = False
+
+        def rhs(state, t):
+            return {"u": jnp.zeros(shape)}
+
+        u0 = {"u": jnp.zeros(shape, dtype=jnp.float64)}
+        n_steps = 400
+        dt = 1.0 / n_steps
+
+        def run(u0):
+            return etd_integrate(
+                u0, (0.0, 1.0), dt=dt, linear_ops={"u": op},
+                nonlinear_rhs=rhs, method="etd1", save_every=50,
+            )
+
+        jaxpr = jax.make_jaxpr(run)(u0)
+        for eqn in jaxpr.eqns:
+            for var in eqn.outvars:
+                shape_out = getattr(getattr(var, "aval", None), "shape", ())
+                assert n_steps not in shape_out, (
+                    f"found an array of length n_steps={n_steps} in the "
+                    f"traced program: {var.aval}"
+                )
+
+    def test_reaches_requested_endpoint_exactly(self):
+        """t_span=(0, 0.3), dt=0.1 must reach t=0.3, not truncate to t=0.2.
+
+        int((0.3 - 0.0) / 0.1) == 2 in floating point (0.3/0.1 is
+        2.9999999999999996), so the pre-fix code took only 2 steps.
+        round((0.3 - 0.0) / 0.1) == 3, the correct step count.
+        """
+        n = 4
+        op = self._zero_eigenvalue_op(n)
+
+        def rhs(state, t):
+            return {"u": jnp.ones(n)}
+
+        u0 = {"u": jnp.zeros(n)}
+        t_hist, hist = etd_integrate(
+            u0, (0.0, 0.3), dt=0.1, linear_ops={"u": op}, nonlinear_rhs=rhs,
+            method="etd1", save_every=1,
+        )
+        assert float(t_hist[-1]) == pytest.approx(0.3, abs=1e-12)
+        np.testing.assert_allclose(hist[-1]["u"], 0.3, atol=1e-12)
+
+    def test_final_state_always_returned_regardless_of_save_every(self):
+        """save_every larger than n_steps must still return the final state.
+
+        t_span=(0, 1), dt=0.25 takes 4 steps; save_every=10 never satisfies
+        the old `(step + 1) % save_every == 0` rule, so the pre-fix code
+        returned only u0 and silently discarded the 4 computed steps.
+        """
+        n = 4
+        op = self._zero_eigenvalue_op(n)
+
+        def rhs(state, t):
+            return {"u": jnp.ones(n)}
+
+        u0 = {"u": jnp.zeros(n)}
+        t_hist, hist = etd_integrate(
+            u0, (0.0, 1.0), dt=0.25, linear_ops={"u": op}, nonlinear_rhs=rhs,
+            method="etd1", save_every=10,
+        )
+        assert len(hist) == 2, "expected u0 plus the forced final state"
+        assert float(t_hist[-1]) == pytest.approx(1.0, abs=1e-12)
+        np.testing.assert_allclose(hist[-1]["u"], 1.0, atol=1e-12)
+
+    def test_non_divisible_span_raises(self):
+        """dt must divide (t_end - t_start) into a whole number of steps."""
+        n = 4
+        op = self._zero_eigenvalue_op(n)
+
+        def rhs(state, t):
+            return {"u": jnp.zeros(n)}
+
+        u0 = {"u": jnp.zeros(n)}
+        with pytest.raises(ValueError, match="does not divide"):
+            etd_integrate(
+                u0, (0.0, 1.0), dt=0.3, linear_ops={"u": op}, nonlinear_rhs=rhs,
+                method="etd1",
+            )
+
+    def test_methods_agree_across_save_every_on_zero_nonlinear_term(self, grid_128):
+        """ETD1, ETD2 and ETDRK4 with save_every=1 and save_every=3 agree.
+
+        With N(u) = 0 every ETD method's per-step update is exp(dt*L)*u,
+        exact for the linear part regardless of dt, so n steps of size dt
+        compose to exactly exp(t_end*L)*u0 whatever dt or save_every is:
+        the step-schedule rewrite only changes how intermediate states are
+        collected, never the per-step update itself. All six
+        (method, save_every) combinations below must therefore agree with
+        each other to rounding (verified bit-for-bit against an etd1,
+        save_every=1 baseline).
+
+        They are also compared to the closed-form exponential solution,
+        but only loosely: DiffusionOperator's discrete eigenvalue at k=1
+        is a finite-difference symbol, not exactly -4*pi**2*D, so a fixed
+        ~1e-4 spatial discretization error is common to every combination
+        (confirmed identical across all six above) and is not evidence
+        about the time-stepping schedule under test here.
+        """
+        grid = grid_128
+        D = 0.05
+        t_span = (0.0, 0.3)
+        dt = 0.05  # 6 steps: divisible by both save_every=1 and save_every=3
+
+        x = get_interior_coords(grid)
+        u0 = jnp.sin(2 * jnp.pi * x)
+        op = DiffusionOperator(grid, D)
+
+        def zero_rhs(state, t):
+            return {name: jnp.zeros_like(v) for name, v in state.items()}
+
+        u_exact = jnp.exp(-4 * jnp.pi**2 * D * t_span[1]) * jnp.sin(2 * jnp.pi * x)
+
+        finals = {}
+        for method in ("etd1", "etd2", "etdrk4"):
+            for save_every in (1, 3):
+                _, hist = etd_integrate(
+                    {"u": u0}, t_span, dt, {"u": op}, zero_rhs,
+                    method=method, save_every=save_every,
+                )
+                finals[(method, save_every)] = hist[-1]["u"]
+
+        reference = finals[("etd1", 1)]
+        for key, u_final in finals.items():
+            rel_vs_ref = float(
+                jnp.linalg.norm(u_final - reference) / jnp.linalg.norm(reference)
+            )
+            assert rel_vs_ref < 1e-12, f"{key} vs reference: {rel_vs_ref:.3e}"
+            rel_vs_exact = float(
+                jnp.linalg.norm(u_final - u_exact) / jnp.linalg.norm(u_exact)
+            )
+            assert rel_vs_exact < 1e-3, f"{key} vs exact: {rel_vs_exact:.3e}"
+
+
 # =============================================================================
 # Edge Cases
 # =============================================================================
