@@ -6,6 +6,28 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **The Neumann ETD1 coefficients and both Neumann Poisson solvers divided
+  by a possibly-zero eigenvalue before `jnp.where` masked the result,
+  poisoning reverse-mode gradients.** Every Neumann layout has a k = 0
+  mode with eigenvalue exactly zero (the constant mode), and `jnp.where`
+  differentiates both of its branches regardless of which one is selected
+  in the forward pass. `_etd1_coefficients` computed `(exp(z)-1)/z`
+  unmasked before selecting it via `jnp.where`, and
+  `solve_poisson_neumann_node`/`solve_poisson_neumann_cell` divided by the
+  raw `laplacian_symbol` before masking the k = 0 component to zero: on
+  `N = 4`, `dx = 1`, `u = N_u = ones(4)`, `dt = 0.1`, `d/dD` of the summed
+  ETD1 Neumann step was NaN for every `D` for both centerings (expected
+  `0.0`, since the k = 0 mode never contributes to the sum), and `d/drhs`
+  of the squared Poisson solution norm at `rhs = [2, -1, 0, 0]` was four
+  NaNs. `_etd1_coefficients` now calls `jit_kernels.phi1` (safe on both
+  branches after the phi-function fix above) instead of duplicating the
+  formula, and the Poisson solves mask the denominator to a safe
+  placeholder before dividing, then mask the k = 0 component of the
+  quotient to zero, the idiom already used at `fft_solvers.py:338`.
+  `tests/test_fft_nonperiodic.py::TestNeumannGradients` covers all four
+  gradients (both centerings, ETD1 and Poisson) against a finite-difference
+  reference.
+
 - **`phi1`, `phi2`, and `phi3` fed their unused Taylor branch a raw, unmasked
   `z`, so its gradient could be NaN even where the direct branch was
   selected and finite.** `jnp.where` evaluates both branches and their

@@ -20,16 +20,22 @@ from moljax.core.fft_nonperiodic import (
     dst_I_fast,
     etd1_dirichlet,
     etd1_neumann,
+    etd1_neumann_cell,
+    etd1_neumann_node,
     idct_I,
     idct_I_2d,
     idst_I,
     idst_I_fast,
     laplacian_symbol_dirichlet,
     laplacian_symbol_neumann,
+    laplacian_symbol_neumann_cell,
+    laplacian_symbol_neumann_node,
     project_to_compatible,
     solve_helmholtz_dirichlet,
     solve_helmholtz_neumann,
     solve_poisson_dirichlet,
+    solve_poisson_neumann_cell,
+    solve_poisson_neumann_node,
 )
 
 
@@ -287,3 +293,83 @@ class TestCache:
         """Cache accepts string BC type."""
         cache = create_nonperiodic_fft_cache(32, 0.1, 'dirichlet')
         assert cache.bc_type == 'dirichlet'
+
+
+class TestNeumannGradients:
+    """Neumann layouts always carry a k=0 mode with eigenvalue exactly zero
+    (the constant mode has no Laplacian response). _etd1_coefficients and
+    solve_poisson_neumann_{node,cell} used to divide by that eigenvalue
+    before jnp.where masked the result; jnp.where differentiates both of
+    its branches, so the 0/0 in the unselected branch produced a NaN
+    gradient even though it was never the branch in effect.
+    """
+
+    N, DX, DT = 4, 1.0, 0.1
+
+    def test_etd1_neumann_node_grad_wrt_D_finite_and_matches_fd(self):
+        u = jnp.ones(self.N)
+        N_u = jnp.ones(self.N)
+        lam = laplacian_symbol_neumann_node(self.N, self.DX)
+
+        def loss(D):
+            return jnp.sum(etd1_neumann_node(u, N_u, D * lam, self.DT))
+
+        for D0 in (0.0, 1.0):
+            grad = jax.grad(loss)(D0)
+            assert jnp.isfinite(grad), f"d/dD at D={D0} is not finite: {grad}"
+            eps = 1e-6
+            fd = (loss(D0 + eps) - loss(D0 - eps)) / (2 * eps)
+            assert abs(float(grad) - float(fd)) < 1e-5, (
+                f"D={D0}: grad={float(grad)} vs finite-difference={float(fd)}"
+            )
+
+    def test_etd1_neumann_cell_grad_wrt_D_finite_and_matches_fd(self):
+        u = jnp.ones(self.N)
+        N_u = jnp.ones(self.N)
+        lam = laplacian_symbol_neumann_cell(self.N, self.DX)
+
+        def loss(D):
+            return jnp.sum(etd1_neumann_cell(u, N_u, D * lam, self.DT))
+
+        for D0 in (0.0, 1.0):
+            grad = jax.grad(loss)(D0)
+            assert jnp.isfinite(grad), f"d/dD at D={D0} is not finite: {grad}"
+            eps = 1e-6
+            fd = (loss(D0 + eps) - loss(D0 - eps)) / (2 * eps)
+            assert abs(float(grad) - float(fd)) < 1e-5, (
+                f"D={D0}: grad={float(grad)} vs finite-difference={float(fd)}"
+            )
+
+    def test_poisson_neumann_node_grad_finite_and_matches_fd(self):
+        lam = laplacian_symbol_neumann_node(self.N, self.DX)
+        rhs = jnp.array([2.0, -1.0, 0.0, 0.0])
+
+        def loss(rhs):
+            return jnp.sum(solve_poisson_neumann_node(rhs, lam) ** 2)
+
+        grad = jax.grad(loss)(rhs)
+        assert jnp.all(jnp.isfinite(grad)), f"grad is not finite: {grad}"
+
+        eps = 1e-6
+        fd = jnp.array([
+            (loss(rhs.at[i].add(eps)) - loss(rhs.at[i].add(-eps))) / (2 * eps)
+            for i in range(self.N)
+        ])
+        assert jnp.allclose(grad, fd, atol=1e-4), f"grad={grad} vs finite-difference={fd}"
+
+    def test_poisson_neumann_cell_grad_finite_and_matches_fd(self):
+        lam = laplacian_symbol_neumann_cell(self.N, self.DX)
+        rhs = jnp.array([2.0, -1.0, 0.0, 0.0])
+
+        def loss(rhs):
+            return jnp.sum(solve_poisson_neumann_cell(rhs, lam) ** 2)
+
+        grad = jax.grad(loss)(rhs)
+        assert jnp.all(jnp.isfinite(grad)), f"grad is not finite: {grad}"
+
+        eps = 1e-6
+        fd = jnp.array([
+            (loss(rhs.at[i].add(eps)) - loss(rhs.at[i].add(-eps))) / (2 * eps)
+            for i in range(self.N)
+        ])
+        assert jnp.allclose(grad, fd, atol=1e-4), f"grad={grad} vs finite-difference={fd}"

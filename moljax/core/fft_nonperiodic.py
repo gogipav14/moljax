@@ -56,6 +56,8 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.fft import dct, idct
 
+from moljax.core.jit_kernels import phi1
+
 
 class BCType(Enum):
     """Boundary condition types for non-periodic domains.
@@ -460,12 +462,16 @@ def solve_poisson_neumann_cell(
     rhs_hat = dct(rhs, type=2, norm='ortho')
 
     # Handle null space: set DC component to zero
-    # (compatibility condition: ∫f = 0 for existence)
-    u_hat = jnp.where(
-        jnp.abs(laplacian_symbol) < 1e-14,
-        0.0,
-        rhs_hat / laplacian_symbol
-    )
+    # (compatibility condition: ∫f = 0 for existence). The denominator is
+    # masked to a safe placeholder before dividing, then the DC component
+    # of the result is masked to zero: dividing by the raw (zero)
+    # laplacian_symbol first and masking the quotient afterward still
+    # differentiates through a 0/0 in the unselected branch (jnp.where
+    # evaluates both branches, so a NaN there survives even when it is
+    # multiplied by a zero cotangent), the same idiom as fft_solvers.py:338.
+    is_null = jnp.abs(laplacian_symbol) < 1e-14
+    safe_symbol = jnp.where(is_null, 1.0, laplacian_symbol)
+    u_hat = jnp.where(is_null, 0.0, rhs_hat / safe_symbol)
 
     # Transform back using inverse DCT (DCT-III)
     return idct(u_hat, type=2, norm='ortho')
@@ -483,11 +489,11 @@ def solve_poisson_neumann_node(
     """
     rhs_hat = dct_I(rhs)
 
-    u_hat = jnp.where(
-        jnp.abs(laplacian_symbol) < 1e-14,
-        0.0,
-        rhs_hat / laplacian_symbol
-    )
+    # See solve_poisson_neumann_cell for why the denominator is masked
+    # before dividing rather than after.
+    is_null = jnp.abs(laplacian_symbol) < 1e-14
+    safe_symbol = jnp.where(is_null, 1.0, laplacian_symbol)
+    u_hat = jnp.where(is_null, 0.0, rhs_hat / safe_symbol)
 
     return idct_I(u_hat)
 
@@ -644,14 +650,20 @@ def etd1_dirichlet(
 
 
 def _etd1_coefficients(eigenvalues: jnp.ndarray, dt: float):
-    """exp(z) and φ₁(z) = (exp(z)-1)/z, regularized near z = 0."""
+    """exp(z) and phi1(z) = (exp(z)-1)/z, regularized near z = 0.
+
+    Delegates to jit_kernels.phi1 rather than duplicating a jnp.where(small,
+    series, direct) formula: the direct branch here divided by the raw
+    (possibly zero) z before jnp.where selected between the branches, and
+    jnp.where's reverse-mode rule differentiates both branches regardless of
+    which one is selected, so the 0/0 at z = 0 (the DC mode, always present
+    for Neumann boundaries) produced a NaN gradient even though the series
+    branch was the one in effect. phi1 already avoids this on both its
+    branches.
+    """
     z = dt * eigenvalues
     exp_z = jnp.exp(z)
-    phi1_z = jnp.where(
-        jnp.abs(z) < 1e-4,
-        1.0 + z / 2.0 + z**2 / 6.0,
-        (jnp.exp(z) - 1.0) / z
-    )
+    phi1_z = phi1(z)
     return exp_z, phi1_z
 
 
