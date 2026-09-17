@@ -25,7 +25,7 @@ from moljax.core.model import (
     create_gray_scott_periodic_fft,
 )
 from moljax.core.newton_krylov import NKParams
-from moljax.core.operators import LinearOp
+from moljax.core.operators import LinearOp, NonlinearOp
 from moljax.core.stepping import (
     IntegratorType,
     _bdf2_predictor,
@@ -42,6 +42,7 @@ from moljax.core.stepping import (
     rk4_step,
     ssprk3_step,
 )
+from moljax.core.utils import StatusCode
 
 
 class TestExplicitIntegrators:
@@ -830,6 +831,121 @@ class TestFixedStep:
             integrate_fixed_dt(model, y0, 0.0, self.T_END, 0.03, method=IntegratorType.RK4)
         with pytest.raises(ValueError):
             integrate_imex_fixed_dt(model, y0, 0.0, self.T_END, 0.03, fft_cache, diffusivities)
+
+
+
+def cubic_decay_model():
+    """u' = -u^3 on a one-cell periodic grid, the reviewer's fixed-step reproduction.
+
+    Backward Euler at u0 = 1, dt = 1 needs more than one Newton iteration:
+    capped at one, it stops at u = 0.5 with a residual of 0.6495 against
+    the 1e-8 tolerance.
+    """
+    grid = Grid1D.uniform(1, 0.0, 1.0)
+    op = NonlinearOp(name="cubic", apply=lambda s, g, t, p: {'u': -s['u'] ** 3})
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'dtype': jnp.float64},
+        linear_ops=(),
+        nonlinear_ops=(op,)
+    )
+    return model, {'u': jnp.ones(grid.nx_total)}
+
+
+class TestFixedStepReportsFailedSolves:
+    """integrate_fixed_dt must not return a failed Newton solve as a normal result.
+
+    do_be, do_cn and do_bdf2 each dropped the NKStats their step function
+    returns (`y_new, _ = be_step(...)`) and the scan carry had no status
+    field at all, so the fixed-step path had nothing to report with, where
+    the adaptive path carries a StatusCode and rejects on
+    nk_stats.converged. On u' = -u^3, u0 = 1, dt = 1 with
+    max_newton_iters = 1, be_step returns u = 0.5 with converged = False
+    and residual 0.6495, and integrate_fixed_dt returned that 0.5 with no
+    indication whatsoever.
+    """
+
+    def test_unconverged_solve_is_reported(self):
+        """The reproduction: a raise by default, NK_FAILED with return_status."""
+        model, y0 = cubic_decay_model()
+        nk = NKParams(max_newton_iters=1)
+
+        y_step, stats = be_step(model, y0, 0.0, 1.0, nk_params=nk)
+        assert not bool(stats.converged)
+        assert abs(float(y_step['u'][1]) - 0.5) < 1e-12
+        assert abs(float(stats.final_res_norm) - 0.6495190528383293) < 1e-12
+
+        with pytest.raises(RuntimeError, match="NK_FAILED"):
+            integrate_fixed_dt(
+                model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, nk_params=nk
+            )
+
+        _, _, y_final, status = integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, nk_params=nk,
+            return_status=True
+        )
+        assert int(status) == StatusCode.NK_FAILED
+        # The failed step does not advance the state: the 0.5 is not returned.
+        assert float(y_final['u'][1]) == 1.0
+
+    def test_failure_freezes_the_remaining_steps(self):
+        """Every step after the first failure is a no-op, not a further wrong step."""
+        model, y0 = cubic_decay_model()
+        nk = NKParams(max_newton_iters=1)
+        t_hist, y_hist, y_final, status = integrate_fixed_dt(
+            model, y0, 0.0, 5.0, 1.0, method=IntegratorType.BE, nk_params=nk,
+            return_status=True
+        )
+        assert int(status) == StatusCode.NK_FAILED
+        assert t_hist.shape == (5,)
+        # All five saved states are the frozen initial state.
+        assert float(jnp.max(jnp.abs(y_hist['u'] - 1.0))) == 0.0
+        assert float(y_final['u'][1]) == 1.0
+
+    def test_converging_run_reports_success_and_is_bit_identical(self):
+        """A converging run reports SUCCESS and matches an eager loop exactly.
+
+        Bit-identical, not merely close: the fix only adds a status to the
+        scan carry and a lax.cond that keeps the state on failure, so a
+        run in which nothing fails must produce exactly the arithmetic it
+        produced before.
+        """
+        model, _, _, y0 = gray_scott_off_equilibrium()
+        nk = NKParams(newton_tol=1e-12)
+        dt, n_steps = 0.05, 10
+
+        y = y0
+        for i in range(n_steps):
+            y, stats = be_step(model, y, i * dt, dt, nk_params=nk)
+            assert bool(stats.converged)
+
+        t_hist, y_hist, y_final, status = integrate_fixed_dt(
+            model, y0, 0.0, dt * n_steps, dt, method=IntegratorType.BE,
+            save_every=5, nk_params=nk, return_status=True
+        )
+        assert int(status) == StatusCode.SUCCESS
+        for name in y:
+            assert jnp.array_equal(y_final[name], y[name]), f"field {name} not bit-identical"
+        assert t_hist.shape == (2,)
+        assert y_hist['u'].shape[0] == 2
+
+    def test_explicit_blowup_is_reported(self):
+        """A non-finite explicit state stops the run with NON_FINITE_VALUES."""
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+        op = NonlinearOp(name="blowup", apply=lambda s, g, t, p: {'u': s['u'] ** 3})
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(),
+            nonlinear_ops=(op,)
+        )
+        y0 = {'u': jnp.full(grid.nx_total, 1e3)}
+        _, _, _, status = integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.EULER, return_status=True
+        )
+        assert int(status) == StatusCode.NON_FINITE_VALUES
 
 
 if __name__ == "__main__":

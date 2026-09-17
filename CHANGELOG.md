@@ -656,6 +656,31 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **`integrate_fixed_dt` no longer returns a failed Newton solve as an
+  ordinary result; it raises.** `do_be`, `do_cn` and `do_bdf2` each dropped
+  the `NKStats` their step function returns (`y_new, _ = be_step(...)`) and
+  the scan carry had no status field at all, where the adaptive integrator
+  carries a `StatusCode` and rejects a step on `nk_stats.converged`. On
+  `u' = -u^3`, `u0 = 1`, `dt = 1` with `max_newton_iters = 1`, `be_step`
+  returns `u = 0.5` with `converged = False` and residual `0.6495`, and
+  `integrate_fixed_dt` returned that `0.5` with no indication of any kind.
+  The scan now carries a status: a step whose state is not finite, or whose
+  Newton-Krylov solve did not converge, records `NON_FINITE_VALUES` or
+  `NK_FAILED`, keeps the last good state, and turns every later step into a
+  no-op. **Public surface:** the default return is still the same
+  three-element tuple (every caller in the tree and every documented
+  example unpacks exactly three values), and a run that did not finish now
+  raises `RuntimeError` naming the status. The new `return_status=True`
+  keyword returns the `StatusCode` as a fourth element instead of raising,
+  which is what a caller tracing this function under `jit` must use, since
+  raising on a tracer is not possible. A run in which nothing fails is
+  unchanged: the four fixed-step methods on the 8x8 Gray-Scott model
+  (`t_end = 0.5`, `dt = 0.05`) produce bit-identical histories and final
+  states before and after.
+  `tests/test_integrators.py::TestFixedStepReportsFailedSolves` covers the
+  reproduction, the frozen tail, the explicit blow-up, and the
+  bit-identical converging run.
+
 - **`exact_cfl_dt('imex')` and `exact_cfl_dt('etd')` now raise
   `NotImplementedError` instead of returning `safety * 1.0`.** Both
   branches ignored `op.eigenvalues` entirely and returned a literal

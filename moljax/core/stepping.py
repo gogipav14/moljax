@@ -20,6 +20,7 @@ from collections.abc import Callable
 from enum import IntEnum
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 from jax import lax
 
@@ -826,6 +827,24 @@ def step_explicit_with_error(
 # Adaptive Integration with lax.while_loop
 # =============================================================================
 
+def _converged_stats(dtype: jnp.dtype) -> NKStats:
+    """
+    NKStats standing in for a step that involved no Newton solve.
+
+    The explicit branches of the integrators and the frozen no-op step of
+    a failed fixed-step run both have to produce an NKStats to keep the
+    two sides of a lax.cond in agreement; a converged, zero-iteration,
+    zero-residual record is the neutral element for the accept/reject
+    logic that reads it.
+    """
+    return NKStats(
+        converged=jnp.array(True),
+        newton_iters=jnp.array(0, dtype=jnp.int32),
+        lin_iters=jnp.array(0, dtype=jnp.int32),
+        final_res_norm=jnp.array(0.0, dtype=dtype)
+    )
+
+
 class AdaptiveState(NamedTuple):
     """State for adaptive integration while_loop."""
     # Current solution
@@ -976,14 +995,7 @@ def adaptive_integrate(
         # Take step based on method type
         def explicit_step():
             y_new, err = step_explicit_with_error(model, state.y, state.t, dt_clamped, method)
-            # Create dummy NK stats
-            nk_stats = NKStats(
-                converged=jnp.array(True),
-                newton_iters=jnp.array(0, dtype=jnp.int32),
-                lin_iters=jnp.array(0, dtype=jnp.int32),
-                final_res_norm=jnp.array(0.0, dtype=dtype)
-            )
-            return y_new, err, nk_stats
+            return y_new, err, _converged_stats(dtype)
 
         def implicit_step():
             # For implicit: use BE + CN comparison for error
@@ -1253,6 +1265,36 @@ def _run_fixed_steps(advance: Callable, carry, n_steps: int, save_every: int, gr
     return t_history, y_history, carry
 
 
+_FIXED_STATUS_NAMES = {
+    StatusCode.NK_FAILED: "NK_FAILED (a Newton-Krylov solve did not converge)",
+    StatusCode.NON_FINITE_VALUES: "NON_FINITE_VALUES (the state stopped being finite)",
+}
+
+
+def _raise_on_failed_fixed_run(status: jnp.ndarray, caller: str) -> None:
+    """
+    Raise if a fixed-step run's status is anything but SUCCESS.
+
+    A fixed-step run has no accept/reject machinery to fall back on, so a
+    failed step is fatal rather than merely informative and an exception
+    is the honest report. Raising is impossible under jit, where status is
+    a tracer; the check is skipped there (the caller is expected to pass
+    return_status=True and check for itself, which the docstring says).
+    """
+    try:
+        failed = bool(status != StatusCode.SUCCESS)
+    except jax.errors.ConcretizationTypeError:
+        return
+    if failed:
+        code = int(status)
+        name = _FIXED_STATUS_NAMES.get(code, f"status {code}")
+        raise RuntimeError(
+            f"{caller} stopped advancing: {name}. The state returned is the last "
+            f"one before the failure. Pass return_status=True to get the status "
+            f"as a fourth return value instead of this exception."
+        )
+
+
 def integrate_fixed_dt(
     model: MOLModel,
     y0: StateDict,
@@ -1262,7 +1304,8 @@ def integrate_fixed_dt(
     method: int = IntegratorType.RK4,
     save_every: int = 1,
     preconditioner: Preconditioner | None = None,
-    nk_params: NKParams | None = None
+    nk_params: NKParams | None = None,
+    return_status: bool = False
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], StateDict]:
     """
     Fixed time step integration with compiled loops.
@@ -1270,6 +1313,13 @@ def integrate_fixed_dt(
     Faster than adaptive for problems where stable dt is known. Takes
     exactly (t_end - t0)/dt steps; dt must divide the interval (see
     _fixed_step_count).
+
+    Every step is checked the way the adaptive integrator checks one: the
+    step's state must be finite and, for the implicit methods, its
+    Newton-Krylov solve must have converged. The first step that fails
+    freezes the state (it and every later step become no-ops) and records
+    a StatusCode, so a failed solve can no longer be returned as an
+    ordinary result.
 
     Args:
         model: MOLModel
@@ -1281,6 +1331,8 @@ def integrate_fixed_dt(
         save_every: Keep the state after every save_every-th step
         preconditioner: For implicit methods
         nk_params: For implicit methods
+        return_status: Return the run's StatusCode as a fourth element
+            instead of raising on failure (see below)
 
     Returns:
         Tuple of (t_history, y_history, final_state). The histories hold
@@ -1288,6 +1340,26 @@ def integrate_fixed_dt(
         the saved fields are interior points only, shape
         (n_steps // save_every, *interior_shape); final_state is the full
         padded state at t_end.
+
+        With return_status=True the tuple is
+        (t_history, y_history, final_state, status), status being one of
+        StatusCode.SUCCESS, StatusCode.NK_FAILED or
+        StatusCode.NON_FINITE_VALUES as a JAX scalar.
+
+    Raises:
+        RuntimeError: if the run did not reach t_end with every step
+            converged and finite and return_status is False.
+
+    Notes:
+        The public surface was chosen to keep the default return a
+        three-element tuple: every caller in the tree (and every
+        documented example) unpacks exactly three values, and the
+        adaptive integrator's AdaptiveResult, whose status field this
+        mirrors, is a different type entirely. Failure is therefore
+        surfaced as an exception by default, and as data only when asked
+        for. Raising is not possible under jit, so a caller that traces
+        this function must pass return_status=True and check the status
+        itself; the check is skipped rather than failing on a tracer.
     """
     if preconditioner is None:
         preconditioner = IdentityPreconditioner()
@@ -1302,34 +1374,33 @@ def integrate_fixed_dt(
         y_prev: StateDict
         dt_prev: jnp.ndarray
         step: jnp.ndarray
+        status: jnp.ndarray
 
     def advance(carry: ScanState) -> ScanState:
-        """Single fixed step."""
+        """Single fixed step, a no-op once an earlier step has failed."""
 
         def explicit():
-            return step_explicit(model, carry.y, carry.t, dt, method)
+            y_new = step_explicit(model, carry.y, carry.t, dt, method)
+            return y_new, _converged_stats(model.dtype)
 
         def implicit():
             is_be = method == 3
             is_cn = method == 4
 
             def do_be():
-                y_new, _ = be_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
-                return y_new
+                return be_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
 
             def do_cn():
-                y_new, _ = cn_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
-                return y_new
+                return cn_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
 
             def do_bdf2():
                 # BDF2 with BE startup for first step
                 use_be = carry.step < 1
-                y_new = lax.cond(
+                return lax.cond(
                     use_be,
-                    lambda: be_step(model, carry.y, carry.t, dt, preconditioner, nk_params)[0],
-                    lambda: bdf2_step(model, carry.y, carry.y_prev, carry.t, dt, carry.dt_prev, preconditioner, nk_params)[0]
+                    lambda: be_step(model, carry.y, carry.t, dt, preconditioner, nk_params),
+                    lambda: bdf2_step(model, carry.y, carry.y_prev, carry.t, dt, carry.dt_prev, preconditioner, nk_params)
                 )
-                return y_new
 
             return lax.cond(
                 is_be,
@@ -1337,14 +1408,41 @@ def integrate_fixed_dt(
                 lambda: lax.cond(is_cn, do_cn, do_bdf2)
             )
 
-        y_new = lax.cond(method < 3, explicit, implicit)
+        def take_step():
+            return lax.cond(method < 3, explicit, implicit)
+
+        def frozen():
+            # A failed run stops advancing: the state is already the last
+            # good one, so repeating it costs nothing and keeps the scan's
+            # shapes and the history layout exactly as they were.
+            return carry.y, _converged_stats(model.dtype)
+
+        running = carry.status == StatusCode.RUNNING
+        y_step, nk_stats = lax.cond(running, take_step, frozen)
+
+        finite = is_finite(y_step)
+        ok = jnp.logical_and(finite, nk_stats.converged)
+        failure = jnp.where(
+            finite,
+            jnp.array(StatusCode.NK_FAILED, dtype=jnp.int32),
+            jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)
+        )
+        new_status = jnp.where(ok, carry.status, failure)
+
+        # On failure keep the last good state and its BDF2 history.
+        y_new, y_prev_new = lax.cond(
+            ok,
+            lambda: (y_step, carry.y),
+            lambda: (carry.y, carry.y_prev)
+        )
 
         return ScanState(
             t=carry.t + dt,
             y=y_new,
-            y_prev=carry.y,
+            y_prev=y_prev_new,
             dt_prev=jnp.array(dt, dtype=model.dtype),
-            step=carry.step + 1
+            step=carry.step + 1,
+            status=new_status
         )
 
     init_carry = ScanState(
@@ -1352,13 +1450,24 @@ def integrate_fixed_dt(
         y=y0,
         y_prev=y0,
         dt_prev=jnp.array(dt, dtype=model.dtype),
-        step=jnp.array(0, dtype=jnp.int32)
+        step=jnp.array(0, dtype=jnp.int32),
+        status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
     )
 
     t_history, y_history, final_carry = _run_fixed_steps(
         advance, init_carry, n_steps, save_every, model.grid
     )
 
+    status = jnp.where(
+        final_carry.status == StatusCode.RUNNING,
+        jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
+        final_carry.status
+    )
+
+    if return_status:
+        return t_history, y_history, final_carry.y, status
+
+    _raise_on_failed_fixed_run(status, "integrate_fixed_dt")
     return t_history, y_history, final_carry.y
 
 
