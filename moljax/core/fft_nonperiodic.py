@@ -734,21 +734,74 @@ def etd1_neumann(
 # Utility Functions
 # =============================================================================
 
-def check_compatibility_neumann(rhs: jnp.ndarray, tol: float = 1e-10) -> bool:
+def _neumann_integral(rhs: jnp.ndarray, centering: str) -> jnp.ndarray:
+    """Return the discrete integral of ``rhs`` in its Laplacian's own null-vector weights.
+
+    The node-centred (DCT-I) Laplacian has end rows ``[-2, 2]/dx**2``
+    rather than the interior ``[1, -2, 1]/dx**2``, so its left null vector
+    -- the discrete analogue of the constant function -- is trapezoidal,
+    ``(1, 2, ..., 2, 1)``, not uniform: a solution exists only when ``rhs``
+    is orthogonal to *that* vector, half weight at each endpoint. The
+    cell-centred (DCT-II) Laplacian's null vector is uniform, so a plain
+    sum is already correct there.
     """
-    Check if RHS satisfies Neumann compatibility condition: ∫f = 0.
+    if centering == "node":
+        if rhs.shape[0] < 2:
+            raise ValueError("node centering requires at least two points")
+        return 0.5 * rhs[0] + jnp.sum(rhs[1:-1]) + 0.5 * rhs[-1]
+    if centering == "cell":
+        return jnp.sum(rhs)
+    raise ValueError(f"centering must be 'node' or 'cell', got {centering!r}")
+
+
+def check_compatibility_neumann(
+    rhs: jnp.ndarray, tol: float = 1e-10, centering: str = "node"
+) -> bool:
+    """
+    Check if RHS satisfies Neumann compatibility condition: integral(f) = 0.
 
     For Neumann BCs, the Poisson equation Δu = f has a solution only if
-    the integral of f over the domain is zero.
+    the integral of f over the domain is zero, where "integral" means the
+    discrete pairing with the Laplacian's left null vector (see
+    :func:`_neumann_integral`): trapezoidal for node centering, a plain
+    sum for cell centering. Using a plain sum regardless of centering
+    accepts an incompatible node-centred RHS and rejects a compatible one:
+    for ``N = 4``, ``dx = 1``, ``rhs = [1, -1, 0, 0]`` was (wrongly)
+    accepted -- the default solver's solution then has residual 1/6
+    everywhere -- while the solvable ``rhs = [2, -1, 0, 0]`` was (wrongly)
+    rejected.
+
+    Args:
+        rhs: Right-hand side to check.
+        tol: Absolute tolerance on the discrete integral.
+        centering: ``'node'`` (DCT-I, default, matching
+            ``solve_poisson_neumann``'s default) or ``'cell'`` (DCT-II).
     """
-    integral = jnp.sum(rhs)
+    integral = _neumann_integral(rhs, centering)
     return float(jnp.abs(integral)) < tol
 
 
-def project_to_compatible(rhs: jnp.ndarray) -> jnp.ndarray:
+def project_to_compatible(rhs: jnp.ndarray, centering: str = "node") -> jnp.ndarray:
     """
     Project RHS to be compatible with Neumann BCs.
 
-    Subtracts the mean to ensure ∫f = 0.
+    Subtracts the constant that zeroes the discrete integral in the
+    Laplacian's own null-vector weights (see
+    :func:`check_compatibility_neumann`): the trapezoidal-weighted mean for
+    node centering, the plain mean for cell centering. A plain mean
+    projection leaves a node-centred RHS incompatible in general, since it
+    zeroes the wrong (uniformly weighted) integral.
+
+    Args:
+        rhs: Right-hand side to project.
+        centering: ``'node'`` (DCT-I, default) or ``'cell'`` (DCT-II).
     """
-    return rhs - jnp.mean(rhs)
+    if centering == "node":
+        n = rhs.shape[0]
+        if n < 2:
+            raise ValueError("node centering requires at least two points")
+        weighted_mean = _neumann_integral(rhs, "node") / (n - 1)
+        return rhs - weighted_mean
+    if centering == "cell":
+        return rhs - jnp.mean(rhs)
+    raise ValueError(f"centering must be 'node' or 'cell', got {centering!r}")

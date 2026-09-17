@@ -167,6 +167,84 @@ class TestPoissonSolver:
         rhs_good = project_to_compatible(rhs_bad)
         assert check_compatibility_neumann(rhs_good)
 
+    def test_node_centered_compatibility_uses_trapezoidal_weights(self):
+        """The node-centred (DCT-I) null vector is trapezoidal, not uniform.
+
+        The default DCT-I Laplacian's end rows are [-2, 2]/dx**2, so its
+        left null vector is (1, 2, ..., 2, 1): half weight at each
+        endpoint.  A plain sum instead accepts rhs = [1, -1, 0, 0] (whose
+        plain sum is zero, but whose trapezoidal-weighted sum is -0.5) and
+        rejects the solvable rhs = [2, -1, 0, 0] (plain sum 1, trapezoidal
+        sum exactly 0).
+        """
+        N, dx = 4, 1.0
+        rhs_bad = jnp.array([1.0, -1.0, 0.0, 0.0])
+        rhs_good = jnp.array([2.0, -1.0, 0.0, 0.0])
+
+        assert not check_compatibility_neumann(rhs_bad, centering="node")
+        assert check_compatibility_neumann(rhs_good, centering="node")
+
+        # Solving the wrongly-accepted rhs anyway leaves a uniform residual
+        # of exactly 1/6 (the projection of rhs onto the excluded null
+        # mode, spread by the pseudo-inverse), not the rounding-level
+        # residual a genuinely compatible rhs solves to.
+        lam = laplacian_symbol_neumann_node(N, dx)
+        u_bad = solve_poisson_neumann_node(rhs_bad, lam)
+        end_row = jnp.array([-2.0, 2.0, 0.0, 0.0]) / dx**2
+        residual_bad = jnp.dot(end_row, u_bad) - rhs_bad[0]
+        assert residual_bad == pytest.approx(1.0 / 6.0, abs=1.0e-9)
+
+        u_good = solve_poisson_neumann_node(rhs_good, lam)
+        residual_good = jnp.dot(end_row, u_good) - rhs_good[0]
+        assert abs(residual_good) < 1.0e-10
+
+    @pytest.mark.parametrize("centering", ["node", "cell"])
+    def test_projected_random_rhs_solves_at_rounding_level(self, centering):
+        """A projected random RHS is compatible and solves to rounding error.
+
+        Exercises the fix end to end for both centerings: project a random
+        (generically incompatible) RHS, confirm the projection reports
+        compatible under its own centering, solve, and check the discrete
+        Laplacian residual directly (not through ``check_compatibility``,
+        which would not catch a projection that zeroes the wrong integral).
+        """
+        N, dx = 4, 1.0
+        rng = np.random.default_rng(0)
+        random_rhs = jnp.asarray(rng.standard_normal(N))
+        projected = project_to_compatible(random_rhs, centering=centering)
+        assert check_compatibility_neumann(projected, centering=centering)
+
+        if centering == "node":
+            lam = laplacian_symbol_neumann_node(N, dx)
+            solved = solve_poisson_neumann_node(projected, lam)
+            columns = [
+                idct_I(lam * dct_I(jnp.zeros(N).at[i].set(1.0))) for i in range(N)
+            ]
+        else:
+            lam = laplacian_symbol_neumann_cell(N, dx)
+            solved = solve_poisson_neumann_cell(projected, lam)
+            columns = [
+                idct(lam * dct(jnp.zeros(N).at[i].set(1.0), type=2, norm="ortho"), type=2, norm="ortho")
+                for i in range(N)
+            ]
+        dense_laplacian = jnp.stack(columns, axis=1)
+        residual = dense_laplacian @ solved - projected
+        assert float(jnp.max(jnp.abs(residual))) < 1.0e-10
+
+    def test_cell_centered_compatibility_is_unaffected_by_the_fix(self):
+        """Cell-centred (DCT-II) compatibility already used the right measure.
+
+        Its null vector is uniform, so a plain sum was already correct;
+        this pins that ``centering='cell'`` continues to behave exactly as
+        the historical (centering-less) implementation did.
+        """
+        N = 8
+        rhs_bad = jnp.ones(N)
+        assert not check_compatibility_neumann(rhs_bad, centering="cell")
+        rhs_good = project_to_compatible(rhs_bad, centering="cell")
+        assert check_compatibility_neumann(rhs_good, centering="cell")
+        np.testing.assert_allclose(np.asarray(rhs_good), np.zeros(N), atol=1.0e-12)
+
 
 class TestHelmholtzSolver:
     """Test Helmholtz equation solvers."""

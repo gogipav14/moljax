@@ -338,6 +338,28 @@ All notable changes to moljax are documented here.
   `tests/test_integrators.py::TestErrorEstimateRequiresEverySolve` covers
   all three branches.
 
+- **`check_compatibility_neumann` and `project_to_compatible` used a plain
+  sum/mean, which is the wrong measure for the default node-centred (DCT-I)
+  Neumann layout.** The node-centred Laplacian's end rows are `[-2, 2]/dx**2`
+  rather than the interior `[1, -2, 1]/dx**2`, so its left null vector is
+  trapezoidal, `(1, 2, ..., 2, 1)` (half weight at each endpoint), not
+  uniform. With `N = 4`, `dx = 1`: `rhs = [1, -1, 0, 0]` has plain sum zero
+  and was accepted, but its trapezoidal-weighted sum is `-0.5`, and solving
+  it anyway leaves a residual of exactly `1/6` at every point; the solvable
+  `rhs = [2, -1, 0, 0]` has plain sum `1` and was rejected, but its
+  trapezoidal-weighted sum is exactly `0`. The cell-centred (DCT-II) layout
+  was unaffected: its null vector is already uniform. Fixed by adding a
+  `centering` argument (`'node'` default, matching `solve_poisson_neumann`'s
+  default; `'cell'` for DCT-II) to both functions, using trapezoidal weights
+  for node centering and the previous plain sum/mean for cell centering.
+  `tests/test_fft_nonperiodic.py::TestPoissonSolver::test_node_centered_compatibility_uses_trapezoidal_weights`
+  reproduces both flips (rejecting `[1, -1, 0, 0]`, accepting
+  `[2, -1, 0, 0]`) and the `1/6` residual;
+  `::test_projected_random_rhs_solves_at_rounding_level` checks a random
+  vector's projection solves to rounding error for both centerings;
+  `::test_cell_centered_compatibility_is_unaffected_by_the_fix` pins that
+  `centering='cell'` still matches the historical (centering-less) behavior.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real
