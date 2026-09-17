@@ -19,8 +19,12 @@ Each test demonstrates QUANTITATIVE improvement:
 
 import warnings
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
+
+jax.config.update("jax_enable_x64", True)
 
 from moljax.laplace import (
     QualityLevel,
@@ -36,6 +40,7 @@ from moljax.laplace import (
     retune_based_on_diagnostics,
     sine_F,
     sine_f,
+    suggest_parameter_adjustments,
     tune_nilt_adaptive,
     tune_nilt_adaptive_cfl,
     tune_nilt_params,
@@ -821,6 +826,111 @@ class TestCFLGuidedTuning:
         res = nilt_fft_uniform(F_small, dt=params.dt, N=params.N, a=params.a, dtype=jnp.float64)
         cfl = check_spectral_cfl_conditions(res, F_small, 10.0, params.a, params.T, params.dt)
         assert not cfl.endpoint_compatible
+
+
+class TestSpectralPlacementGuard:
+    """The Bromwich abscissa must stay to the right of the transform's own.
+
+    The four original CFL conditions are all blind to where the contour
+    sits relative to the singularities of F: tail energy, phase step,
+    amplification and endpoint jump are all small for a contour that has
+    been pulled across a pole, and the inversion it produces is not merely
+    inaccurate but divergent. Before the fix the conditioning guard could
+    halve a without anyone checking, and the tuner reported 'good, all CFL
+    conditions satisfied' on the result.
+    """
+
+    def test_placement_condition_fires_when_a_sits_left_of_sigma(self):
+        """check_spectral_cfl_conditions reports the placement violation and
+        the abscissa the shift would have needed."""
+        def F(s):
+            return 1.0 / (s - 10.0)
+
+        bounds = SpectralBounds(rho=10.0, re_max=10.0, im_max=0.0, methods_used={'analytic': 'test'}, warnings=[])
+        params = tune_nilt_params(t_end=1.0, bounds=bounds, dtype=jnp.float64)
+        assert params.a == pytest.approx(14.605, abs=1e-3)
+
+        res = nilt_fft_uniform(F, dt=params.dt, N=params.N, a=params.a, dtype=jnp.float64, t_end=1.0)
+
+        # The tuned shift itself is admissible.
+        cfl_ok = check_spectral_cfl_conditions(
+            res, F, 1.0, params.a, params.T, params.dt, sigma=10.0
+        )
+        assert cfl_ok.spectral_placement_ok
+        assert cfl_ok.sigma == pytest.approx(10.0)
+        assert cfl_ok.a_required == pytest.approx(14.605, abs=1e-3)
+
+        # Halving it crosses the pole at 10.
+        cfl_bad = check_spectral_cfl_conditions(
+            res, F, 1.0, params.a / 2.0, params.T, params.dt, sigma=10.0
+        )
+        assert not cfl_bad.spectral_placement_ok
+        assert not cfl_bad.all_conditions_met
+        assert any('spectral_placement' in v for v in cfl_bad.violated_conditions)
+
+        # Without a sigma the condition is reported as unknown, not as passing
+        # on evidence it does not have.
+        cfl_blind = check_spectral_cfl_conditions(
+            res, F, 1.0, params.a / 2.0, params.T, params.dt
+        )
+        assert np.isnan(cfl_blind.a_required)
+        assert np.isnan(cfl_blind.sigma)
+
+    def test_suggest_refuses_to_reduce_a_below_the_required_abscissa(self):
+        """The conditioning remedy stops at the abscissa floor instead of
+        halving a into the pole."""
+        def F(s):
+            return 1.0 / (s - 10.0)
+
+        bounds = SpectralBounds(rho=10.0, re_max=10.0, im_max=0.0, methods_used={'analytic': 'test'}, warnings=[])
+        params = tune_nilt_params(t_end=1.0, bounds=bounds, dtype=jnp.float64)
+        res = nilt_fft_uniform(F, dt=params.dt, N=params.N, a=params.a, dtype=jnp.float64, t_end=1.0)
+
+        # A_max below exp(14.605) = 2.2e6 makes the conditioning guard fire.
+        cfl = check_spectral_cfl_conditions(
+            res, F, 1.0, params.a, params.T, params.dt, sigma=10.0, A_max=1e6
+        )
+        assert not cfl.conditioning_safe
+        assert cfl.spectral_placement_ok
+
+        # CFL-1 outranks the conditioning guard and the half-step switch
+        # settles it, exactly as the tuner does before it gets here.
+        cfl = cfl._replace(endpoint_compatible=True)
+
+        adjustments, action = suggest_parameter_adjustments(cfl, params, bounds)
+        assert 'a' not in adjustments, action
+        assert 'required abscissa' in action
+
+    def test_cfl_tuner_never_pulls_the_contour_across_a_pole(self):
+        """F(s) = 1/(s - 10) on t_end = 1: the conditioning guard used to
+        halve a from 14.605 to 7.303, crossing the pole at 10, and then
+        reported 'good, all CFL conditions satisfied' while returning
+        -0.38 where exp(10 t) is 2.0e4."""
+        def F(s):
+            return 1.0 / (s - 10.0)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = tune_nilt_adaptive_cfl(
+                F, t_end=1.0, bounds={'rho': 10.0, 're_max': 10.0, 'im_max': 0.0}
+            )
+
+        # Never 'good': either the window is feasible and the answer right,
+        # or it is reported as infeasible.
+        assert result.quality.tier != 'good', result.quality.reason
+
+        # The shift is never reduced below re_max plus the wraparound margin.
+        assert result.params.a >= 10.0 + np.log(1e8) / (2.0 * result.params.T)
+        assert not any('reduce a' in action for action in result.actions), result.actions
+
+        t = np.asarray(result.result.t)
+        f = np.asarray(result.result.f)
+        valid = t <= 1.0
+        t_last = float(t[valid][-1])
+        f_last = float(f[valid][-1])
+        assert f_last == pytest.approx(float(np.exp(10.0 * t_last)), rel=1e-2), (
+            f"f({t_last}) = {f_last}, expected {np.exp(10.0 * t_last)}"
+        )
 
 
 class TestNonFiniteAndMissingSensors:

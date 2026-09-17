@@ -73,6 +73,35 @@ All notable changes to moljax are documented here.
   the file was run in isolation. Added the same `jax_enable_x64` enable the other test
   modules use.
 
+- **`tune_nilt_adaptive_cfl` accepted a retuned Bromwich shift without
+  rechecking where the contour had landed, so the conditioning guard could
+  halve `a` across a pole and still report "good, all CFL conditions
+  satisfied".** `SpectralCFLConditions` had no placement field, and the
+  four conditions it did carry are all blind to the pole: tail energy,
+  phase step, amplification and endpoint jump are no larger for a divergent
+  inversion than for a convergent one. `F(s) = 1/(s - 10)`, `t_end = 1`,
+  `bounds = {rho: 10, re_max: 10, im_max: 0}` tuned `a = 14.605`, hit the
+  `A_exp = 2.2e6 > A_max = 1e6` conditioning violation, halved `a` to
+  7.303, crossed the pole at 10, and returned -0.393 at `t = 0.977` where
+  `exp(10 t)` is 17424; the verdict was `good`. It now returns 17454.8 at
+  the same point (0.17% relative error) with the verdict `acceptable` and
+  the reason "no further adjustments available". Fixed by adding the
+  spectral placement condition `a >= sigma + max(delta_min,
+  ln(1/eps_tail)/(2T))` to `SpectralCFLConditions` (fields `sigma`,
+  `a_required`, `spectral_placement_ok`) and to
+  `check_spectral_cfl_conditions`, which takes the abscissa as a new
+  `sigma` argument; by clamping the conditioning remedy in
+  `suggest_parameter_adjustments` at that floor (new
+  `endpoint_diagnostics.required_abscissa`) instead of halving `a`
+  unconditionally; and by re-running the placement check in
+  `tune_nilt_adaptive_cfl` against the re-normalized triad after every
+  adjustment, refusing the window with a `poor` verdict and a `UserWarning`
+  when the adjusted shift falls through the floor. The tuner passes the
+  abscissa `tune_nilt_params` recorded in `diagnostics['alpha']`, so no
+  caller has to supply it. `tests/test_adaptive_tuning_quality.py::TestSpectralPlacementGuard`
+  adds the reproduction plus unit coverage of the new condition and of the
+  clamped remedy.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real

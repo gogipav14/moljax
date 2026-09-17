@@ -442,6 +442,11 @@ def tune_nilt_adaptive_cfl(
     2. Bandwidth coverage (R_tail): controls dt refinement
     3. Quadrature resolution (chi): controls T expansion
     4. Conditioning (A_exp): controls the Bromwich shift a
+    5. Spectral placement (a vs sigma + wraparound margin): bounds that
+       shift from below. Conditions 1 to 4 are all satisfied by a contour
+       that has been pulled across a pole, so the shift is re-checked
+       against required_abscissa after every adjustment and a window that
+       needs an inadmissible a is reported as infeasible.
 
     The default tolerances are met by tune_nilt_params' own defaults on a
     well-posed transform (tau_chi = 2.0 admits chi = pi/2 at
@@ -466,7 +471,11 @@ def tune_nilt_adaptive_cfl(
     Returns:
         AdaptiveTuningResult with CFL-based diagnostics
     """
-    from .endpoint_diagnostics import check_spectral_cfl_conditions, suggest_parameter_adjustments
+    from .endpoint_diagnostics import (
+        check_spectral_cfl_conditions,
+        required_abscissa,
+        suggest_parameter_adjustments,
+    )
     from .nilt_fft import nilt_fft_halfstep_ivt
 
     actions = []
@@ -480,6 +489,14 @@ def tune_nilt_adaptive_cfl(
         **tune_kwargs
     )
     actions.append("initial autotuning (CFL-guided)")
+
+    # The abscissa the placement condition is measured against, and the two
+    # tolerances that set its margin. tune_nilt_params records the abscissa
+    # it used (bounds.re_max, or the conservative default when no bounds
+    # were given), so this is the same sigma the initial shift was built on.
+    delta_min = tune_kwargs.get('delta_min', 1e-3)
+    eps_tail = tune_kwargs.get('eps_tail', 1e-8)
+    sigma = params.diagnostics.get('alpha')
 
     for iteration in range(max_iterations + 1):
         # Step 2: Run NILT with diagnostics
@@ -505,6 +522,9 @@ def tune_nilt_adaptive_cfl(
             tau_tail=tau_tail,
             tau_chi=tau_chi,
             A_max=A_max,
+            sigma=sigma,
+            delta_min=delta_min,
+            eps_tail=eps_tail,
         )
 
         # Step 4: Endpoint jump -> half-step sampling with IVT. CFL-2 to 4
@@ -584,6 +604,32 @@ def tune_nilt_adaptive_cfl(
         new_N = next_power_of_two(int(round(2 * new_T / new_dt)))
         new_N = min(new_N, tune_kwargs.get('N_max', 8192))
         new_dt = 2 * new_T / new_N
+
+        # Re-check spectral placement against the adjusted triad before the
+        # adjustment is adopted. T can change here, which moves the
+        # wraparound margin and so the required abscissa; an a that was
+        # admissible for the old period need not be for the new one. A shift
+        # at or below the required abscissa puts the contour on or left of a
+        # singularity: the inversion diverges, and the other four conditions
+        # cannot see it, so the window is refused rather than inverted.
+        a_required_new = required_abscissa(sigma, new_T, delta_min=delta_min, eps_tail=eps_tail)
+        if not math.isnan(a_required_new) and new_a < a_required_new:
+            reason = (
+                f"infeasible: adjusted a={new_a:.3f} is below the required abscissa "
+                f"{a_required_new:.3f} (sigma={sigma:.3f}, T={new_T:.3f}); "
+                "split the interval or invert in higher precision"
+            )
+            _warnings.warn(
+                f"NILT CFL retuning refused: {reason}", UserWarning, stacklevel=2
+            )
+            actions.append(f"refused: {reason}")
+            return AdaptiveTuningResult(
+                params=params,
+                result=result,
+                quality=_quality_from_diagnostics('poor', reason, result.diagnostics, result),
+                iterations=iteration,
+                actions=actions,
+            )
 
         params = TunedNILTParams(
             dt=new_dt,
