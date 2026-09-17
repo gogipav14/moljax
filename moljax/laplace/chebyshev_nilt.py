@@ -291,6 +291,18 @@ def talbot_contour(
     multiplied the sum by another π/N; together they returned 0.098 of the
     true value at N = 32 and diverged at N = 64.
 
+    θ = 0 is on the grid whenever N is odd (2k + 1 = N at k = (N-1)/2), and
+    θ cot(αθ) has a removable singularity there. Evaluating the cotangent
+    directly made every contour point NaN for odd N, which the API did not
+    prohibit; the two limits
+
+        θ cot(αθ) → 1/α,   cot(u) - u/sin²(u) → 0   as u = αθ → 0
+
+    are taken from their series, 1 - u²/3 - u⁴/45 and -2u/3 - 4u³/45, on a
+    small-|u| branch. The series are used rather than the bare limits so
+    that a θ that lands near but not exactly on zero (the grid is built by
+    floating-point arithmetic) is as accurate as the rest of the contour.
+
     Args:
         t: Time (positive scalar; may be traced)
         n_points: Number of contour points N
@@ -305,9 +317,25 @@ def talbot_contour(
 
     alpha, beta, gamma, delta = 0.6407, 0.5017, 0.2645, 0.6122
 
-    cot = jnp.cos(alpha * theta) / jnp.sin(alpha * theta)
-    s = (N / t) * (beta * theta * cot - delta + 1j * gamma * theta) + sigma
-    ds_dtheta = (N / t) * (beta * (cot - alpha * theta / jnp.sin(alpha * theta) ** 2) + 1j * gamma)
+    u = alpha * theta
+    small = jnp.abs(u) < 1e-4
+    u_safe = jnp.where(small, 1.0, u)  # keep the unused branch finite
+
+    sin_u = jnp.sin(u_safe)
+    theta_cot = jnp.where(
+        small,
+        (1.0 - u ** 2 / 3.0 - u ** 4 / 45.0) / alpha,
+        u_safe * jnp.cos(u_safe) / sin_u / alpha,
+    )
+    # d/dθ [θ cot(αθ)] = cot(u) - u/sin²(u), with u = αθ
+    dtheta_cot = jnp.where(
+        small,
+        -2.0 * u / 3.0 - 4.0 * u ** 3 / 45.0,
+        jnp.cos(u_safe) / sin_u - u_safe / sin_u ** 2,
+    )
+
+    s = (N / t) * (beta * theta_cot - delta + 1j * gamma * theta) + sigma
+    ds_dtheta = (N / t) * (beta * dtheta_cot + 1j * gamma)
 
     weights = jnp.exp(s * t) * ds_dtheta / (1j * N)
     return s, weights
@@ -327,6 +355,12 @@ def talbot_method(
     each time in one call. Converges geometrically for transforms analytic
     off the negative real axis: exp(-t) to 6e-10 at N = 16 and 5e-14 at
     N = 32.
+
+    Every n_points is admissible. An odd one puts a contour point on the
+    removable singularity of θ cot(αθ) at θ = 0, which talbot_contour
+    handles analytically; the error estimate below halves n_points, so an
+    even n_points whose half is odd (34, whose half is 17) used to produce
+    a NaN estimate beside a perfectly good answer.
 
     Args:
         F_eval: Laplace transform F(s), evaluated on an array of s

@@ -20,6 +20,7 @@ from moljax.laplace.chebyshev_nilt import (
     gaver_stehfest_method,
     gaver_stehfest_weights,
     laguerre_coefficients,
+    talbot_contour,
     talbot_method,
     weeks_method,
 )
@@ -88,6 +89,51 @@ class TestWeeks:
         a = laguerre_coefficients(F_exp, 12, sigma=0.5, b=1.0)
         expected = 0.8 * 0.2 ** jnp.arange(12)
         assert float(jnp.max(jnp.abs(a - expected))) < 1e-14
+
+
+class TestTalbotRemovableSingularity:
+    """theta = 0 is on the midpoint grid whenever n_points is odd.
+
+    talbot_contour evaluated cot(alpha theta) there directly, so every
+    contour point came out NaN for odd n_points; n_points = 34 produced a
+    NaN error estimate on its own, because the estimate halves the point
+    count and 17 is odd. Neither count was prohibited by the API.
+    """
+
+    @pytest.mark.parametrize("n_points", [31, 32, 33, 34])
+    def test_every_point_count_inverts_and_estimates(self, n_points):
+        t = jnp.array([0.5, 1.0, 2.0])
+        res = talbot_method(F_exp, t, n_points=n_points)
+        assert bool(jnp.all(jnp.isfinite(res.f))), res.f
+        assert float(jnp.max(jnp.abs(res.f - jnp.exp(-t)))) < 1e-9
+        assert np.isfinite(res.error_estimate), res.error_estimate
+        assert res.error_estimate < 1e-8
+
+    def test_the_contour_is_finite_at_theta_zero(self):
+        """The grid point at theta = 0 takes the analytic limits
+        theta cot(alpha theta) -> 1/alpha and cot(u) - u/sin^2(u) -> 0, so
+        s is real there and the weight is finite."""
+        alpha, beta, delta = 0.6407, 0.5017, 0.6122
+        n_points = 31
+        s, w = talbot_contour(1.0, n_points, 0.0)
+        assert bool(jnp.all(jnp.isfinite(s)))
+        assert bool(jnp.all(jnp.isfinite(w)))
+
+        mid = n_points // 2  # 2k + 1 = N here, so theta = 0
+        expected_s = n_points * (beta / alpha - delta)
+        assert float(jnp.real(s[mid])) == pytest.approx(expected_s, rel=1e-12)
+        assert float(jnp.imag(s[mid])) == pytest.approx(0.0, abs=1e-12)
+
+    def test_the_limit_branch_agrees_with_the_cotangent_nearby(self):
+        """The small-|u| series and the direct evaluation must join
+        smoothly: an odd contour differs from its even neighbours only by
+        the usual quadrature error, not by a jump at theta = 0."""
+        t = jnp.array([1.0])
+        errors = [
+            float(jnp.abs(talbot_method(F_exp, t, n_points=n).f[0] - jnp.exp(-1.0)))
+            for n in (30, 31, 32)
+        ]
+        assert max(errors) < 1e-12, errors
 
 
 class TestWeeksErrorEstimate:

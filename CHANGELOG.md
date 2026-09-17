@@ -73,6 +73,27 @@ All notable changes to moljax are documented here.
   the file was run in isolation. Added the same `jax_enable_x64` enable the other test
   modules use.
 
+- **`chebyshev_nilt.talbot_method` returned all NaNs for every odd
+  `n_points`, and a NaN error estimate for every even one whose half is
+  odd.** The midpoint grid `theta_k = -pi + (2k + 1) pi / N` contains
+  `theta = 0` exactly when `N` is odd, and `talbot_contour` evaluated
+  `theta cot(alpha theta)` and its derivative `cot(u) - u/sin^2(u)` there
+  directly, dividing by `sin(0)`. `talbot_method(lambda s: 1/(s + 1),
+  jnp.array([0.5, 1, 2]), n_points=31)` returned `[nan, nan, nan]`;
+  `n_points = 34` returned the right values but a NaN `error_estimate`,
+  since the estimate halves the point count and 17 is odd. Neither count
+  was prohibited by the API. All four of `n_points` 31, 32, 33, 34 now
+  return `exp(-t)` to better than 1e-9 with a finite estimate. Fixed by
+  taking the removable singularity analytically on a small-`|alpha theta|`
+  branch of a `jnp.where`, using the series `theta cot(alpha theta) =
+  (1 - u^2/3 - u^4/45)/alpha` and `cot(u) - u/sin^2(u) = -2u/3 - 4u^3/45`
+  rather than the bare limits, so a `theta` that lands near but not exactly
+  on zero is as accurate as the rest of the contour.
+  `tests/test_chebyshev_nilt.py::TestTalbotRemovableSingularity` covers the
+  four point counts, the contour value at `theta = 0`
+  (`s = N (beta/alpha - delta)`, real), and the smooth join between the two
+  branches.
+
 - **`chebyshev_nilt.weeks_method` reported its error estimate before the
   `e^{sigma t}` prefactor, so a result that was wrong by 9.0e4 came back
   with an estimate of 9.7e-15.** The estimate was `max |coeffs[-3:]|`, the
