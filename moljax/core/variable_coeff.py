@@ -52,7 +52,11 @@ class CirculantApprox:
     D_mean: float
     fft_symbol: jnp.ndarray  # Laplacian symbol scaled by D_mean
     stats: VariableCoeffStats
-    is_valid_approx: bool  # True if variation is small enough
+    is_valid_approx: bool  # True if D's max deviation from its mean is small
+    # (see create_circulant_approx_1d); this is a diagnostic of the
+    # approximation's local quality, not a Richardson-convergence
+    # guarantee. richardson_iteration_varcoeff_1d/2d converge regardless,
+    # via the omega bound in richardson_omega_bound.
 
 
 def compute_coeff_stats(D: jnp.ndarray) -> VariableCoeffStats:
@@ -101,7 +105,7 @@ def create_circulant_approx_1d(
     Args:
         D: Variable diffusion coefficient, shape (nx,)
         dx: Grid spacing
-        threshold: Maximum variation ratio for "valid" approximation
+        threshold: Maximum allowed (D_max/D_mean - 1) for "valid" approximation
         dtype: Data type
 
     Returns:
@@ -117,7 +121,15 @@ def create_circulant_approx_1d(
     # Scale by mean coefficient
     fft_symbol = stats.mean * laplacian_symbol
 
-    is_valid = stats.variation_ratio < threshold
+    # is_valid_approx flags whether D's *maximum* deviation from the mean
+    # is small, not whether Richardson iteration will converge: with omega
+    # chosen by richardson_omega_bound, the iteration always contracts
+    # (for any D bounded away from 0), regardless of this flag. This is a
+    # diagnostic for how good the constant-coefficient approximation
+    # itself is (a single spike can be small in std/mean while still
+    # ruining the local approximation there), not a convergence guarantee.
+    max_ratio = stats.max / (abs(stats.mean) + 1e-14) - 1.0
+    is_valid = max_ratio < threshold
 
     return CirculantApprox(
         D_mean=stats.mean,
@@ -140,7 +152,7 @@ def create_circulant_approx_2d(
     Args:
         D: Variable diffusion coefficient, shape (ny, nx)
         dy, dx: Grid spacings
-        threshold: Maximum variation ratio for "valid" approximation
+        threshold: Maximum allowed (D_max/D_mean - 1) for "valid" approximation
         dtype: Data type
 
     Returns:
@@ -161,7 +173,10 @@ def create_circulant_approx_2d(
 
     fft_symbol = stats.mean * (lam_x + lam_y)
 
-    is_valid = stats.variation_ratio < threshold
+    # See create_circulant_approx_1d for why this uses the max deviation
+    # from the mean rather than std/mean.
+    max_ratio = stats.max / (abs(stats.mean) + 1e-14) - 1.0
+    is_valid = max_ratio < threshold
 
     return CirculantApprox(
         D_mean=stats.mean,
@@ -346,6 +361,56 @@ def solve_helmholtz_circulant_2d(
 # Iterative Refinement with FFT Preconditioner
 # =============================================================================
 
+def richardson_omega_bound(D_max: jnp.ndarray, D_ref: jnp.ndarray, safety: float = 0.9) -> jnp.ndarray:
+    """
+    Upper bound on the Richardson damping factor omega for the
+    circulant-preconditioned iteration to contract.
+
+    Derivation
+    ----------
+    Richardson iterates x_{n+1} = x_n + omega * M^-1 (rhs - A x_n), where
+    A = I - dt*L_D is the true variable-coefficient Helmholtz operator and
+    M = I - dt*D_ref*Laplacian is the circulant operator the FFT solve
+    inverts exactly (D_ref is the constant coefficient used to build the
+    circulant, normally D_ref = mean(D)). Both A and M are symmetric
+    positive definite (apply_variable_diffusion_1d/2d discretize L_D in
+    conservative flux-difference form, which is self-adjoint), so
+    M^-1*A's eigenvalues equal the generalized Rayleigh quotient
+    (u^T A u)/(u^T M u), and the iteration's error contracts
+    (spectral radius of I - omega*M^-1*A below 1) for
+    0 < omega < 2/lambda_max(M^-1*A).
+
+    The conservative discretization's quadratic form is the D-weighted
+    Dirichlet energy, u^T(-L_D)u = sum_i D_{i+1/2}(u_{i+1}-u_i)^2/dx^2,
+    which is sandwiched pointwise between D_min and D_max times the
+    constant-coefficient (D=1) Dirichlet energy u^T(-Laplacian)u. Writing
+    t = u^T(-Laplacian)u / u^T u >= 0 (the Rayleigh quotient of
+    -Laplacian, bounded since -Laplacian is a fixed finite matrix):
+
+        (u^T A u)/(u^T M u) <= (1 + dt*D_max*t) / (1 + dt*D_ref*t)
+
+    The right side increases monotonically in t and approaches D_max/D_ref
+    as t -> infinity, so it is bounded above by D_max/D_ref for every
+    finite t. Hence lambda_max(M^-1*A) < D_max/D_ref, and
+    omega < 2*D_ref/D_max is sufficient for contraction for *any* D
+    bounded away from 0 (unlike the old std/mean-based validity check,
+    this holds even for a single large spike in D).
+
+    A `safety` factor below 1 (default 0.9) keeps the returned omega
+    strictly inside the guaranteed range, since the D_max/D_ref bound
+    above is not tight and is approached only as t -> infinity.
+
+    Args:
+        D_max: Maximum of the variable coefficient
+        D_ref: Reference (circulant) coefficient, normally mean(D)
+        safety: Fraction of the theoretical bound 2*D_ref/D_max to use
+
+    Returns:
+        omega, guaranteed to contract the Richardson iteration
+    """
+    return safety * 2.0 * D_ref / D_max
+
+
 @partial(jax.jit, static_argnums=(4, 5, 6))
 def richardson_iteration_varcoeff_1d(
     rhs: jnp.ndarray,
@@ -356,8 +421,9 @@ def richardson_iteration_varcoeff_1d(
     nx: int,
     n_iters: int,
     dt: float = 1.0,
-    omega: float = 1.0
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    omega: float | None = None,
+    rtol: float = 1e-8
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Richardson iteration with FFT preconditioner for variable-coefficient diffusion.
 
@@ -374,10 +440,19 @@ def richardson_iteration_varcoeff_1d(
         nx: Interior points
         n_iters: Number of iterations
         dt: Time step
-        omega: Relaxation parameter (0 < omega <= 1)
+        omega: Relaxation parameter. If None (default), chosen automatically
+            via richardson_omega_bound(max(D), mean(D)), which guarantees
+            contraction; pass an explicit value to override.
+        rtol: Relative residual tolerance (against the initial FFT-only
+            guess's residual) used to report `converged`.
 
     Returns:
-        (solution, residual_history)
+        (solution, residual_history, converged). residual_history[i] is
+        the true residual norm of the solution AFTER iteration i, so
+        residual_history[-1] is exactly the returned solution's residual
+        (the previous implementation reported the PREVIOUS iterate's
+        residual at index -1, one step stale). converged is True if
+        residual_history[-1] <= rtol * the initial guess's residual norm.
     """
     def residual(u_interior):
         # Pad for FD stencil, periodic wrap to match the FFT preconditioner
@@ -387,19 +462,25 @@ def richardson_iteration_varcoeff_1d(
         Lu_interior = Lu[ng:ng + nx]
         return rhs - (u_interior - dt * Lu_interior)
 
+    omega_value = richardson_omega_bound(jnp.max(D), jnp.mean(D)) if omega is None else omega
+
     def iteration_step(carry, _):
         u, _ = carry
         r = residual(u)
         z = solve_helmholtz_circulant_1d(r, fft_symbol, dt)
-        u_new = u + omega * z
-        return (u_new, jnp.linalg.norm(r)), jnp.linalg.norm(r)
+        u_new = u + omega_value * z
+        r_new_norm = jnp.linalg.norm(residual(u_new))
+        return (u_new, r_new_norm), r_new_norm
 
     # Initial guess: FFT solve
     u0 = solve_helmholtz_circulant_1d(rhs, fft_symbol, dt)
+    res0 = jnp.linalg.norm(residual(u0))
 
-    (u_final, _), residuals = lax.scan(iteration_step, (u0, 0.0), None, length=n_iters)
+    (u_final, final_res), residuals = lax.scan(iteration_step, (u0, res0), None, length=n_iters)
 
-    return u_final, residuals
+    converged = final_res <= rtol * jnp.maximum(res0, 1e-30)
+
+    return u_final, residuals, converged
 
 
 @partial(jax.jit, static_argnums=(5, 6, 7, 8))
@@ -414,10 +495,14 @@ def richardson_iteration_varcoeff_2d(
     nx: int,
     n_iters: int,
     dt: float = 1.0,
-    omega: float = 1.0
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    omega: float | None = None,
+    rtol: float = 1e-8
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     2D Richardson iteration with FFT preconditioner.
+
+    See richardson_iteration_varcoeff_1d for the omega auto-selection and
+    the (solution, residual_history, converged) return contract.
     """
     def residual(u_interior):
         # Periodic wrap to match the FFT preconditioner (see
@@ -427,17 +512,24 @@ def richardson_iteration_varcoeff_2d(
         Lu_interior = Lu[ng:ng + ny, ng:ng + nx]
         return rhs - (u_interior - dt * Lu_interior)
 
+    omega_value = richardson_omega_bound(jnp.max(D), jnp.mean(D)) if omega is None else omega
+
     def iteration_step(carry, _):
         u, _ = carry
         r = residual(u)
         z = solve_helmholtz_circulant_2d(r, fft_symbol, dt)
-        u_new = u + omega * z
-        return (u_new, jnp.linalg.norm(r)), jnp.linalg.norm(r)
+        u_new = u + omega_value * z
+        r_new_norm = jnp.linalg.norm(residual(u_new))
+        return (u_new, r_new_norm), r_new_norm
 
     u0 = solve_helmholtz_circulant_2d(rhs, fft_symbol, dt)
-    (u_final, _), residuals = lax.scan(iteration_step, (u0, 0.0), None, length=n_iters)
+    res0 = jnp.linalg.norm(residual(u0))
 
-    return u_final, residuals
+    (u_final, final_res), residuals = lax.scan(iteration_step, (u0, res0), None, length=n_iters)
+
+    converged = final_res <= rtol * jnp.maximum(res0, 1e-30)
+
+    return u_final, residuals, converged
 
 
 # =============================================================================

@@ -16,6 +16,7 @@ from moljax.core.variable_coeff import (
     create_circulant_approx_2d,
     etd1_varcoeff_approx_1d,
     richardson_iteration_varcoeff_1d,
+    richardson_omega_bound,
     solve_helmholtz_circulant_1d,
     solve_helmholtz_circulant_2d,
 )
@@ -295,7 +296,7 @@ class TestRichardsonIteration:
 
         rhs = jnp.sin(2 * x)
 
-        u, residuals = richardson_iteration_varcoeff_1d(
+        u, residuals, converged = richardson_iteration_varcoeff_1d(
             rhs, D, approx.fft_symbol, dx, ng, n, n_iters=10, dt=0.01
         )
 
@@ -402,7 +403,7 @@ class TestIntegration:
         solve_helmholtz_circulant_1d(rhs, approx.fft_symbol, dt=0.01)
 
         # Refine with iteration
-        u_refined, residuals = richardson_iteration_varcoeff_1d(
+        u_refined, residuals, converged = richardson_iteration_varcoeff_1d(
             rhs, D, approx.fft_symbol, dx, ng, n, n_iters=5, dt=0.01
         )
 
@@ -430,3 +431,89 @@ class TestIntegration:
         # Solution should be reasonable (not NaN/Inf)
         assert jnp.all(jnp.isfinite(u))
         assert u.shape == (ny, nx)
+
+
+class TestRichardsonSpikeCoefficient:
+    """richardson_iteration_varcoeff_1d used omega=1 by default and
+    is_valid_approx = std(D)/mean(D) < 0.3, which bounds nothing about
+    convergence: nx=128, D=1 except D[64]=4 (a single large spike) passed
+    as "valid" (variation_ratio 0.258) while the residual grew from about
+    21 to 5.2e5 over 30 iterations at dt=1.0 (order matches the report's
+    33.8 -> 8.9e5 for its own rhs/dt), and residuals[-1] described the
+    PREVIOUS iterate, not the one actually returned.
+
+    The fix auto-selects omega from richardson_omega_bound (derived in
+    that function's docstring: omega < 2*D_ref/D_max guarantees
+    contraction for any D bounded away from 0), fixes the residual
+    bookkeeping so residuals[-1] is the returned iterate's true residual,
+    and makes is_valid_approx react to D's maximum deviation from the
+    mean rather than its standard deviation, so the spike case is now
+    correctly flagged invalid.
+    """
+
+    def _spike_setup(self, nx=128, dt=1.0):
+        ng = 1
+        dx = 1.0 / nx
+        D = jnp.ones(nx).at[64].set(4.0)
+        approx = create_circulant_approx_1d(D, dx)
+        x = jnp.linspace(0, 2 * jnp.pi, nx, endpoint=False)
+        rhs = jnp.sin(2 * x)
+        return D, dx, ng, nx, approx, rhs, dt
+
+    def test_is_valid_approx_flags_the_spike_as_invalid(self):
+        D, dx, ng, nx, approx, rhs, dt = self._spike_setup()
+        # The old std/mean check passed this case (variation_ratio 0.258
+        # < 0.3); the max-deviation check must not.
+        assert approx.stats.variation_ratio < 0.3
+        assert approx.is_valid_approx is False
+
+    def test_spike_case_converges_with_auto_omega(self):
+        """With the auto-selected omega, the spike case must converge to
+        1e-8 relative in a bounded number of iterations (30 suffices),
+        rather than diverge as it did with omega=1.
+        """
+        D, dx, ng, nx, approx, rhs, dt = self._spike_setup()
+
+        u, residuals, converged = richardson_iteration_varcoeff_1d(
+            rhs, D, approx.fft_symbol, dx, ng, nx, n_iters=30, dt=dt
+        )
+
+        assert bool(converged), f"residuals: {residuals}"
+        assert float(residuals[-1]) < 1e-8 * float(residuals[0])
+
+    def test_residuals_last_equals_the_returned_iterates_true_residual(self):
+        """residuals[-1] must describe the returned solution `u`, not the
+        iterate one step before it.
+        """
+        D, dx, ng, nx, approx, rhs, dt = self._spike_setup()
+
+        u, residuals, converged = richardson_iteration_varcoeff_1d(
+            rhs, D, approx.fft_symbol, dx, ng, nx, n_iters=10, dt=dt
+        )
+
+        u_padded = jnp.pad(u, ng, mode='wrap')
+        Lu = apply_variable_diffusion_1d(u_padded, D, dx, ng, nx)
+        true_residual = jnp.linalg.norm(rhs - (u - dt * Lu[ng:ng + nx]))
+
+        assert abs(float(true_residual) - float(residuals[-1])) < 1e-8
+
+    def test_explicit_omega_override_is_respected(self):
+        """Passing omega explicitly must use exactly that value, not the
+        auto-selected one.
+        """
+        D, dx, ng, nx, approx, rhs, dt = self._spike_setup()
+
+        u_auto, res_auto, _ = richardson_iteration_varcoeff_1d(
+            rhs, D, approx.fft_symbol, dx, ng, nx, n_iters=5, dt=dt
+        )
+        u_override, res_override, _ = richardson_iteration_varcoeff_1d(
+            rhs, D, approx.fft_symbol, dx, ng, nx, n_iters=5, dt=dt, omega=0.05
+        )
+
+        assert not jnp.allclose(u_auto, u_override)
+
+    def test_richardson_omega_bound_matches_derivation(self):
+        """omega = safety * 2 * D_ref / D_max, safety defaulting to 0.9."""
+        D_max, D_ref = 4.0, 1.0234375
+        omega = richardson_omega_bound(jnp.asarray(D_max), jnp.asarray(D_ref))
+        assert float(omega) == pytest.approx(0.9 * 2.0 * D_ref / D_max)

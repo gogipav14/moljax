@@ -37,6 +37,29 @@ All notable changes to moljax are documented here.
   check that the residual decreases monotonically over 20 iterations and the fixed
   point matches a dense solve to 1e-8.
 
+- **`variable_coeff.py`'s Richardson iteration used a fixed `omega = 1` and a validity
+  flag (`is_valid_approx = std(D)/mean(D) < threshold`) that bounds nothing about
+  convergence.** `nx = 128`, `D = 1` except `D[64] = 4` (a single large spike) passed as
+  "valid" (variation_ratio 0.258) while the residual grew from about 21 to 5.2e5 over 30
+  iterations at `dt = 1`; `residuals[-1]` also described the previous iterate rather than
+  the one actually returned. Fixed by deriving a spectral bound for the damped Richardson
+  iteration preconditioned by the circulant (mean-`D`) Helmholtz solve: writing
+  `A = I - dt*L_D` and `M = I - dt*D_ref*Laplacian` (both symmetric positive definite,
+  since the conservative discretization is self-adjoint), the iteration contracts for
+  `0 < omega < 2/lambda_max(M^-1*A)`, and `lambda_max(M^-1*A) < D_max/D_ref` for any `D`
+  bounded away from 0 (derivation in `richardson_omega_bound`'s docstring). `omega` now
+  defaults to `0.9 * 2*D_ref/D_max` (a safety margin below that bound) while still
+  accepting an explicit override; the returned `(solution, residual_history, converged)`
+  reports the *returned* iterate's true residual at `residual_history[-1]` (previously one
+  step stale) and a convergence flag; `is_valid_approx` now reacts to `D`'s maximum
+  deviation from the mean, which correctly flags the spike case invalid. `richardson_iteration_varcoeff_1d/2d`'s
+  return signature grew a third element, so the two existing call sites in
+  `tests/test_variable_coeff.py` were updated to unpack it.
+  `tests/test_variable_coeff.py::TestRichardsonSpikeCoefficient` adds the spike
+  reproduction (now converges below 1e-8 relative within 30 iterations), a check that
+  `residuals[-1]` matches the returned iterate's true residual, and a check that an
+  explicit `omega` override is respected.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real
