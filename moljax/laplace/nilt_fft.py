@@ -1079,50 +1079,35 @@ def integrate_discrete(
     Used for convolution handling when F(s) = F_L(s)/s has a pole at origin.
     If we can invert F_L(s) to get g(t), then f(t) = ∫_0^t g(τ) dτ.
 
+    The cumulative trapezoidal rule is
+
+        f[k] = dt (g[0]/2 + g[1] + ... + g[k-1] + g[k]/2)
+             = dt (cumsum(g)[k] - g[0]/2 - g[k]/2),
+
+    which is exact for constant and linear g. The implementation subtracted
+    only g[k]/2, leaving g[0] its full weight and so a dt g[0]/2 offset in
+    every sample after the first: ones(5) at dt = 0.1 gave
+    [0, 0.15, 0.25, 0.35, 0.45] instead of [0, 0.1, 0.2, 0.3, 0.4].
+    Resetting f[0] to zero hid the offset at one point and nowhere else,
+    and it went straight into the pole-at-origin inversion path.
+
     Args:
         g: Function values on uniform time grid
         dt: Time step
-        rule: Integration rule ("trapezoid" or "simpson")
+        rule: Integration rule ("trapezoid" or "simpson"; "simpson" is the
+            same cumulative trapezoid, kept for the call signature)
 
     Returns:
         Cumulative integral values at same grid points
     """
-
-    if rule == "trapezoid":
-        # Cumulative trapezoidal rule
-        # f[k] = dt * (g[0]/2 + g[1] + ... + g[k-1] + g[k]/2)
-        cumsum = jnp.cumsum(g)
-        f = dt * (cumsum - g / 2)
-        # f[0] should be 0
-        f = f.at[0].set(0.0)
-
-    elif rule == "simpson":
-        # Simpson's rule for cumulative integration
-        # Requires modification for cumulative form
-        # Use composite Simpson's 1/3 rule where possible
-
-        # For odd indices, use Simpson's rule
-        # For even indices, use trapezoid to previous point then Simpson
-
-        f = jnp.zeros_like(g)
-
-        # Simple approach: use trapezoid for cumulative, then apply
-        # Simpson correction at even indices
-        cumsum = jnp.cumsum(g)
-        f_trap = dt * (cumsum - g / 2)
-        f_trap = f_trap.at[0].set(0.0)
-
-        # Simpson correction: for intervals [0,2], [0,4], etc.
-        # Simpson gives: (dt/3) * (g[0] + 4*g[1] + g[2]) for [0,2]
-        # vs trapezoid: dt * (g[0]/2 + g[1] + g[2]/2)
-
-        # For simplicity, use trapezoid (Simpson gain is minimal for smooth functions)
-        f = f_trap
-
-    else:
+    if rule not in ("trapezoid", "simpson"):
         raise ValueError(f"Unknown integration rule: {rule}")
 
-    return f
+    # Both branches were the same formula, and both had the same offset;
+    # the "simpson" branch never applied a Simpson correction. f[0] comes
+    # out exactly zero here (g[0] - g[0]/2 - g[0]/2 is exact in binary),
+    # so no reset is needed.
+    return dt * (jnp.cumsum(g) - g[0] / 2 - g / 2)
 
 
 def nilt_fft_with_pole_at_origin(

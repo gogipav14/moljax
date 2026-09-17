@@ -73,6 +73,28 @@ All notable changes to moljax are documented here.
   the file was run in isolation. Added the same `jax_enable_x64` enable the other test
   modules use.
 
+- **`nilt_fft.integrate_discrete` gave the initial sample its full weight,
+  leaving a `dt g[0]/2` offset in every cumulative value after the first.**
+  The cumulative trapezoid is
+  `f[k] = dt (cumsum(g)[k] - g[0]/2 - g[k]/2)`; the implementation
+  subtracted only `g[k]/2`, and resetting `f[0]` to zero hid the offset at
+  exactly one point. `integrate_discrete(jnp.ones(5), 0.1)` returned
+  `[0, 0.15, 0.25, 0.35, 0.45]` instead of `[0, 0.1, 0.2, 0.3, 0.4]`, and
+  the "simpson" branch repeated the same formula (it never applied a
+  Simpson correction; the two branches are now one). The offset went into
+  `nilt_fft_with_pole_at_origin`. The rule is now exact on constant and
+  linear inputs.
+  `tests/test_nilt_pairs.py::TestIntegrateDiscrete` covers both rules on
+  constants, lines, a nonzero first sample and an unknown rule name.
+  `TestPoleAtOrigin::test_pole_at_origin_requires_positive_shift` had its
+  tolerance raised from 5e-3 to 1.2e-2: the bug was cancelling a real
+  error. For `F(s) = 1/(s(s+1))` at `dt = 0.05`, `N = 1024`, `a = 0.5` the
+  inverted `g` has `g(0) = 0.4924` (the half-jump) and `g(0.05) = 1.0439`
+  against `exp(-t)`, which leaves the cumulative result 1.04e-2 low; the
+  `+0.0123` offset cancelled most of that and the old tolerance was
+  calibrated on the cancellation. The same quadrature on the exact
+  `exp(-t)` is accurate to 2.1e-4.
+
 - **`chebyshev_nilt.talbot_method` returned all NaNs for every odd
   `n_points`, and a NaN error estimate for every even one whose half is
   odd.** The midpoint grid `theta_k = -pi + (2k + 1) pi / N` contains

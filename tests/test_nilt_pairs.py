@@ -8,6 +8,7 @@ import sys
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 jax.config.update("jax_enable_x64", True)
@@ -23,6 +24,7 @@ from moljax.laplace import (
     exponential_decay_F,
     exponential_decay_f,
     get_standard_laplace_pairs,
+    integrate_discrete,
     invert_laplace,
     nilt_fft_halfstep,
     nilt_fft_uniform,
@@ -212,8 +214,54 @@ class TestPoleAtOrigin:
         mask = result.t <= 10.0
         exact = 1.0 - jnp.exp(-result.t[mask])
         assert bool(jnp.all(jnp.isfinite(result.f)))
-        # Measured 3.0e-3 (trapezoidal integration of the inverted e^{-t})
-        assert float(jnp.max(jnp.abs(result.f[mask] - exact))) < 5e-3
+        # Measured 1.04e-2, all of it from the inverted g and none of it
+        # from the quadrature: the FFT-NILT returns g(0) = 0.4924 (the
+        # half-jump) and g(0.05) = 1.0439 against exp(-t), and the same
+        # cumulative trapezoid on the exact e^{-t} is accurate to 2.1e-4.
+        # This used to read 3.0e-3 because integrate_discrete left a
+        # dt g[0]/2 = +0.0123 offset in every sample, which happened to
+        # cancel most of the deficit; the tolerance was calibrated on that
+        # cancellation.
+        assert float(jnp.max(jnp.abs(result.f[mask] - exact))) < 1.2e-2
+
+
+class TestIntegrateDiscrete:
+    """The cumulative trapezoid has to be exact on constants and lines.
+
+    integrate_discrete subtracted only g[k]/2 from the running sum, which
+    leaves g[0] its full weight and so a dt g[0]/2 offset in every sample
+    after the first; resetting f[0] to zero hid it at exactly one point.
+    ones(5) at dt = 0.1 gave [0, 0.15, 0.25, 0.35, 0.45]. The "simpson"
+    branch repeated the same formula.
+    """
+
+    @pytest.mark.parametrize("rule", ["trapezoid", "simpson"])
+    def test_constant_is_exact(self, rule):
+        f = integrate_discrete(jnp.ones(5), 0.1, rule=rule)
+        assert np.allclose(np.asarray(f), [0.0, 0.1, 0.2, 0.3, 0.4], atol=1e-15)
+
+    @pytest.mark.parametrize("rule", ["trapezoid", "simpson"])
+    def test_linear_is_exact(self, rule):
+        """g(t) = 3t on t = 0, 0.1, ..., 0.4 integrates to 1.5 t^2."""
+        dt = 0.1
+        t = dt * jnp.arange(5)
+        f = integrate_discrete(3.0 * t, dt, rule=rule)
+        assert np.allclose(np.asarray(f), 1.5 * np.asarray(t) ** 2, atol=1e-15)
+
+    @pytest.mark.parametrize("rule", ["trapezoid", "simpson"])
+    def test_nonzero_first_sample_is_half_weighted(self, rule):
+        """The offset was invisible whenever g[0] = 0, which is why the
+        linear case above passed before the fix too. With g[0] != 0 the
+        first interval must contribute dt (g[0] + g[1]) / 2."""
+        g = jnp.array([2.0, 4.0, 4.0])
+        f = integrate_discrete(g, 0.5, rule=rule)
+        assert float(f[0]) == 0.0
+        assert float(f[1]) == pytest.approx(0.5 * (2.0 + 4.0) / 2.0)
+        assert float(f[2]) == pytest.approx(0.5 * (2.0 + 4.0) / 2.0 + 0.5 * (4.0 + 4.0) / 2.0)
+
+    def test_unknown_rule_is_rejected(self):
+        with pytest.raises(ValueError, match="Unknown integration rule"):
+            integrate_discrete(jnp.ones(4), 0.1, rule="romberg")
 
 
 class TestHighLevelInterface:
