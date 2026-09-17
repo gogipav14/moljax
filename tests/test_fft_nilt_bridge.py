@@ -411,12 +411,14 @@ class TestSmallEigenvalueReconstruction:
         phi1's own series branch carries the limit, so the closed form
         e^{lambda t} u0 + t phi1(lambda t) f is continuous across
         tau = TRANSIENT_TAU, the threshold that decides whether a mode is
-        inverted at all. At t_end = 2 that threshold sits at
-        |lambda| = 5e-3: -4.999999e-3 stays under it and is returned in
-        closed form, -5.000001e-3 clears it and builds a grid. Both match
-        their own exact solution to rounding (the spectrum is real, so H_k
-        is identically zero either way) and differ from each other only by
-        the 2e-9 between the two spectra.
+        inverted at all -- but a real eigenvalue never clears the mask in
+        the first place, since its two poles coincide regardless of tau
+        (transient_mask requires Im(lambda_k) != 0 too). At t_end = 2 the
+        tau edge sits at |lambda| = 5e-3: -4.999999e-3 stays under it and
+        -5.000001e-3 clears it, but both are real, so both take the closed
+        form directly and neither builds a grid. Both match their own exact
+        solution to rounding and differ from each other only by the 2e-9
+        between the two spectra.
         """
         n = 8
         u0 = jnp.array([1.0, 2.0, -1.0, 0.5, 0.25, -0.75, 1.5, 0.0])
@@ -432,7 +434,7 @@ class TestSmallEigenvalueReconstruction:
         below = nilt_solve_linear_pde(jnp.full(n, lam_below), u0, t_end, source=source)
         above = nilt_solve_linear_pde(jnp.full(n, lam_above), u0, t_end, source=source)
         assert 'note' in below, f"|lambda| t_end just under tau = {TRANSIENT_TAU:g}"
-        assert 'note' not in above, "just over tau, the mode should build a grid"
+        assert 'note' in above, "a real eigenvalue never builds a grid, tau or not"
 
         for lam, result in ((lam_below, below), (lam_above, above)):
             exact = self._exact(jnp.full(n, lam), u0, source, result['t_final'])
@@ -693,7 +695,9 @@ class TestClosedFormKeepsTheSourceUnderALargeInitialCondition:
         """lambda = -1, u0 = 1e16, f = 1, t_end = 50.
 
         The spectrum is real, so H_k is identically zero and the NILT
-        contributes nothing: what is measured is the remainder branch
+        contributes nothing: transient_mask excludes a real eigenvalue
+        whatever its residual, so no grid is built at all and what is
+        measured is the remainder branch
         e^{-c_k t} u0_k + t phi1(-c_k t) Re(lambda_k)/lambda_k f_k on its
         own. e^{-50} 1e16 = 1.93e-6 and 1 - e^{-50} = 1, and the residual
         form loses both (r_k = -1e16 + 1 rounds to -1e16, whose ramp is
@@ -703,7 +707,7 @@ class TestClosedFormKeepsTheSourceUnderALargeInitialCondition:
         result = nilt_solve_linear_pde(
             jnp.full(n, -1.0), jnp.full(n, 1e16), 50.0, source=jnp.ones(n)
         )
-        assert result['nilt_result'] is not None, "|lambda| t_end = 50 clears tau"
+        assert result['nilt_result'] is None, "a real eigenvalue never builds a grid"
         expected = float(1e16 * np.exp(-50.0) - np.expm1(-50.0))
         for key in ('u_final', 'u_analytical'):
             error = float(jnp.max(jnp.abs(result[key] - expected))) / expected
@@ -742,6 +746,126 @@ class TestClosedFormKeepsTheSourceUnderALargeInitialCondition:
         scale = float(jnp.max(jnp.abs(exact)))
         error = float(jnp.max(jnp.abs(result['u_analytical'] - exact))) / scale
         assert error < 1e-9, f"u_analytical off by {error:.3e} relative"
+
+
+# =============================================================================
+# Test: real eigenvalues never enter the transient mask
+# =============================================================================
+
+class TestRealEigenvaluesAreNeverInverted:
+    """transient_mask must exclude a real eigenvalue whatever its weight.
+
+    H_k(s) = w_k [1/(s - lambda_k) - 1/(s + c_k)], c_k = -Re(lambda_k). For a
+    real lambda_k, c_k = -lambda_k, so both poles sit at s = lambda_k and
+    H_k is identically zero: a real mode has nothing to invert regardless of
+    w_k = r_k/lambda_k. Before this fix transient_mask was w != 0 alone, so
+    a real mode entered it whenever its residual was nonzero. Its own
+    contribution to the transient was still zero, but it entered
+    sigma_H = max Re(lambda_k) over the mask and the tuner's
+    re_max_override anyway, inflating the Bromwich shift far past what the
+    genuinely complex modes needed and ruining their inversion.
+    """
+
+    @staticmethod
+    def _exact(eigenvalues, u0_hat, residual_hat, t):
+        """ifft(u0_hat + (e^{lambda t} - 1)/lambda r_hat), via expm1."""
+        lam = jnp.asarray(eigenvalues)
+        z = lam * t
+        nonzero = jnp.abs(lam) > 0
+        growth = jnp.where(
+            nonzero, jnp.expm1(z) / jnp.where(nonzero, lam, 1.0), t
+        )
+        return jnp.real(jnp.fft.ifft(u0_hat + growth * residual_hat))
+
+    def test_forcing_only_real_mode_no_longer_inflates_the_shift(self):
+        """lambda = [20, -1+5j, 0, -1-5j], u0 = [1, 0, -1, 0], f = 1e-12.
+
+        The k=0 mode (lambda=20, u0_hat=0, f_hat=4e-12) has a tiny but
+        nonzero residual, so before this fix it entered the mask and pushed
+        sigma_H to 20 and a to 24.605 instead of 3.605. The max error was
+        349033 against an exact field below 0.36: the inflated shift's
+        e^{a t} amplified the genuinely complex pair's inversion roundoff by
+        orders of magnitude. Now a stays at 3.605 and the error is back to
+        the raw NILT level.
+        """
+        eigenvalues = jnp.array([20.0, -1 + 5j, 0.0, -1 - 5j])
+        u0 = jnp.array([1.0, 0.0, -1.0, 0.0])
+        source = jnp.full(4, 1e-12)
+        u0_hat = jnp.fft.fft(u0)
+        source_hat = jnp.fft.fft(source)
+        residual_hat = eigenvalues * u0_hat + source_hat
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, 1.0, source=source)
+        assert result['params'] is not None
+        a = result['params'].a
+        assert a < 5.0, f"Bromwich shift a={a:.3f} was inflated by the real mode"
+
+        exact = self._exact(eigenvalues, u0_hat, residual_hat, result['t_final'])
+        error = float(jnp.max(jnp.abs(result['u_final'] - exact)))
+        assert error < 1e-4, f"max error {error:.3e} vs the exact field"
+
+    def test_hot_real_mode_with_no_transient_skips_the_nilt_entirely(self):
+        """lambda = full(4, 200), u0 = 0, f = 1: nothing needs inverting.
+
+        HEAD raised "NILT-CFL infeasible" here because the sole (real)
+        mode's nonzero residual put it in the mask and sigma_H = 200
+        exceeded the tuner's a_max. The exact answer is the closed form
+        t phi1(200 t) f -- large but finite, expm1(200)/200 = 3.61e84 in
+        real space -- and is now returned directly with no NILT grid built
+        at all.
+        """
+        eigenvalues = jnp.full(4, 200.0, dtype=jnp.complex128)
+        u0 = jnp.zeros(4)
+        source = jnp.ones(4)
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, 1.0, source=source)
+        assert result['nilt_result'] is None
+        assert result['params'] is None
+        assert 'empty transient' in result['note']
+
+        expected = float(np.expm1(200.0) / 200.0)
+        error = abs(float(result['u_final'][0]) - expected) / expected
+        assert error < 1e-9, f"u_final off by {error:.3e} relative"
+
+    def test_preexisting_exposure_with_nonzero_initial_condition(self):
+        """lambda = [20, -1+5j, 0, -1-5j], u0 = [1, 1, -1, 0], f = 0.
+
+        u0_hat[0] = 1 is nonzero here, so even the w_k = u0_k weight this
+        module used before a518612 would have let the real k=0 mode into
+        the mask (w != 0 there too): this exposure predates the residual
+        weighting, which only widened it to forcing-only real modes.
+        """
+        eigenvalues = jnp.array([20.0, -1 + 5j, 0.0, -1 - 5j])
+        u0 = jnp.array([1.0, 1.0, -1.0, 0.0])
+        u0_hat = jnp.fft.fft(u0)
+        residual_hat = eigenvalues * u0_hat
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, 1.0)
+        assert result['params'] is not None
+        a = result['params'].a
+        assert a < 5.0, f"Bromwich shift a={a:.3f} was inflated by the real mode"
+
+        exact = self._exact(eigenvalues, u0_hat, residual_hat, result['t_final'])
+        error = float(jnp.max(jnp.abs(result['u_final'] - exact)))
+        assert error < 1e-4, f"max error {error:.3e} vs the exact field"
+
+    def test_imaginary_pair_alone_is_still_inverted(self):
+        """A purely imaginary pair with zero u0 still needs the NILT.
+
+        lambda = [0, 5j, 0, -5j], u0 = 0, f nonzero: the mask must still be
+        true for the +-5j modes, whose poles genuinely do not coincide, so
+        the fix does not silently disable the NILT path for every spectrum
+        with a self-paired zero mode.
+        """
+        eigenvalues = jnp.array([0.0, 5j, 0.0, -5j])
+        u0 = jnp.zeros(4)
+        source = jnp.array([1.0, 2.0, 3.0, 4.0])
+
+        result = nilt_solve_linear_pde(eigenvalues, u0, 1.0, source=source)
+        assert result['nilt_result'] is not None, "the +-5j pair must still be inverted"
+
+        error = float(jnp.max(jnp.abs(result['u_final'] - result['u_analytical'])))
+        assert error < 1e-3, f"max error {error:.3e} vs the closed form"
 
 
 # =============================================================================

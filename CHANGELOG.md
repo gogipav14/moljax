@@ -6,6 +6,42 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
+  whenever the mode's residual was nonzero, inflating the Bromwich shift
+  and ruining the inversion of the genuinely complex modes.** For a real
+  `lambda_k`, `c_k = -Re(lambda_k) = -lambda_k`, so `H_k(s)`'s two poles
+  coincide and its inverse is identically zero regardless of the mode's
+  weight `w_k = r_k/lambda_k`; the mask (`transient_mask = w != 0`) did not
+  check for this and let such a mode in whenever `w_k` was nonzero. That
+  mode's own contribution was still zero, but it entered
+  `sigma_H = max Re(lambda_k)` over the mask and the tuner's
+  `re_max_override` anyway. `eigenvalues = [20, -1+5j, 0, -1-5j]`,
+  `u0 = [1, 0, -1, 0]`, `source = full(4, 1e-12)`, `t_end = 1`: the k = 0
+  mode (`lambda = 20`, `u0_hat = 0`, `f_hat = 4e-12`) had a tiny but
+  nonzero residual, pushed `sigma_H` to 20 and the tuned shift `a` to
+  24.605 instead of 3.605, and the max error against the exact field (below
+  0.36) reached 349033. This exposure predates a518612's residual
+  weighting (a real mode with nonzero `u0_hat` could already enter the mask
+  under the old `w_k = u0_k`); a518612 widened it to forcing-only real
+  modes by also making the weight nonzero from the source alone.
+  `eigenvalues = full(4, 200)`, `u0 = 0`, `source = 1`, `t_end = 1` raised
+  `NILT-CFL infeasible` even though nothing needed inverting, since the
+  spectrum's lone real mode still entered the mask; it now returns the
+  closed form `t phi1(200 t) f` (`expm1(200)/200`, about `3.61e84`)
+  directly with no NILT grid built. Fixed by requiring
+  `Im(lambda_k) != 0` in `transient_mask` in addition to `w != 0`, and
+  using the same mask for `sigma_H`, the tuner override, the
+  `a <= sigma_H` check, and the transfer function's denominators.
+  `tests/test_fft_nilt_bridge.py::TestRealEigenvaluesAreNeverInverted`
+  adds the two reproductions above, the pre-existing nonzero-`u0`
+  exposure, and a purely imaginary pair that must still be inverted.
+  `TestSmallEigenvalueReconstruction::test_exactly_zero_matches_the_tiny_eigenvalue_limit`
+  and
+  `TestClosedFormKeepsTheSourceUnderALargeInitialCondition::test_real_decay_keeps_a_source_16_decades_under_u0`
+  are updated: both used a real spectrum and asserted a grid was built once
+  `|lambda_k| t_end` cleared tau, which a real eigenvalue no longer does
+  regardless of tau.
+
 - **`etd_integrate`'s ETD2 path anchored saved snapshots to the wrong
   absolute step.** The 266c898 rewrite (an outer `lax.scan` over
   save-sized blocks) sized every block at `save_every` steps, but ETD2

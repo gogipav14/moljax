@@ -367,22 +367,27 @@ def nilt_solve_linear_pde(
     The 1/(s + c_k) term is the t = 0 jump correction, placed to cancel
     exactly at the abscissa of the pole it is removing instead of at an
     unrelated c = 1/t_end. For a real λ_k, c_k = -λ_k, so both poles of H_k
-    sit at the same point s = λ_k and H_k is identically zero; in the
-    remainder Re(λ_k)/λ_k is then exactly 1 and φ₁(-c_k t) is φ₁(λ_k t), so
-    the remainder is the whole exact solution, and the two branches of the
-    remainder agree bit for bit, so a real spectrum has no discontinuity at
-    τ at all. On a real spectrum the NILT inverts nothing and the bridge
-    reproduces the closed form to rounding.
+    sit at the same point s = λ_k and H_k is identically zero regardless of
+    w_k; in the remainder Re(λ_k)/λ_k is then exactly 1 and φ₁(-c_k t) is
+    φ₁(λ_k t), so the remainder is the whole exact solution, and the two
+    branches of the remainder agree bit for bit, so a real spectrum has no
+    discontinuity at τ at all. On a real spectrum the NILT inverts nothing
+    and the bridge reproduces the closed form to rounding.
 
     The NILT budget is spent entirely on modes with a nonzero imaginary
-    part (or, more precisely, on any mode whose weight w_k is nonzero and
-    whose two poles therefore do not coincide); a purely real, decaying
-    spectrum needs no numerical inversion at all. This also removes the
-    pole G_k(s) = U_k(s) - u0_k/(s + c) used to carry, with c = 1/t_end: it
-    added a pole at -1/t_end that the tuner never accounted for, and left
-    the source pole at s = 0 in place, which together could throw the
-    Bromwich contour off by orders of magnitude (see the module's git log
-    for the a = full(8, -10), u0 = ones(8), t_end = 1 regression this fixed).
+    part and a nonzero weight w_k: transient_mask below is
+    (w_k != 0) & (Im(λ_k) != 0), not w_k != 0 alone, because a real λ_k's
+    two poles coincide whatever w_k is, so such a mode contributes nothing
+    to invert even when its residual is nonzero and must not be allowed to
+    inflate sigma_H (the abscissa the tuner sizes the Bromwich shift
+    against) or appear in the transfer function's denominators; a purely
+    real, decaying spectrum needs no numerical inversion at all. This also
+    removes the pole G_k(s) = U_k(s) - u0_k/(s + c) used to carry, with
+    c = 1/t_end: it added a pole at -1/t_end that the tuner never accounted
+    for, and left the source pole at s = 0 in place, which together could
+    throw the Bromwich contour off by orders of magnitude (see the module's
+    git log for the a = full(8, -10), u0 = ones(8), t_end = 1 regression
+    this fixed).
 
     Two details make the inversion accurate to the grid's own truncation
     error instead of first order in dt:
@@ -405,10 +410,11 @@ def nilt_solve_linear_pde(
     There is no spectral-zero branch in the reconstruction: the same
     continuous formula is evaluated on both sides of τ, and τ decides only
     which part of it the NILT is asked to supply. When no |λ_k| t_end
-    clears τ, every w_k is zero, no grid is built at all, and the closed
-    form is returned directly; that subsumes the old "the spectrum is
-    numerically the origin" early return, which tested max|λ_k| t_end
-    against eps.
+    clears τ, or every mode whose |λ_k| t_end clears τ and whose w_k is
+    nonzero has a real λ_k, transient_mask is empty, no grid is built at
+    all, and the closed form is returned directly; that subsumes the old
+    "the spectrum is numerically the origin" early return, which tested
+    max|λ_k| t_end against eps.
 
     64-bit precision is required, as everywhere else in the NILT stack: the
     Bromwich contour's e^{a t} factor (about 100 at the tuned shift)
@@ -444,12 +450,15 @@ def nilt_solve_linear_pde(
             it ever were.
         nilt_params: Pre-tuned NILT parameters (auto-tuned if None). The
             Bromwich shift must exceed sigma_H = max Re(λ_k) over modes
-            with a nonzero weight w_k = r_k/λ_k, the abscissa of the
-            transform H_k actually being inverted; stationary modes
-            (r_k = 0) and modes below τ carry no transient and do not
-            constrain it, and there is no source-pole positivity
-            requirement (H_k has no pole at the origin regardless of
-            source).
+            actually handed to the NILT: a nonzero weight w_k = r_k/λ_k and
+            Im(λ_k) != 0, the abscissa of the transform H_k actually being
+            inverted. A real λ_k has c_k = -λ_k, so its two poles coincide
+            and H_k is identically zero there regardless of w_k; such a
+            mode never constrains the shift even when its residual is
+            nonzero. Stationary modes (r_k = 0) and modes below τ also
+            carry no transient and do not constrain it, and there is no
+            source-pole positivity requirement (H_k has no pole at the
+            origin regardless of source).
         return_full_history: If True, also return u on every NILT grid
             time. Meaningless (and not populated) when there is no
             transient to invert, since no NILT grid is built in that case.
@@ -612,17 +621,23 @@ def nilt_solve_linear_pde(
         """The exact field at a single time t."""
         return jnp.real(jnp.fft.ifft(closed_form_hat(jnp.asarray(t))[:, 0]))
 
-    # Nothing is inverted for a mode with no residual, and nothing at all is
-    # inverted when no |lambda_k| t_end clears tau: that subsumes the old
-    # "the spectrum is numerically the origin" early return, which compared
-    # max|lambda_k| t_end against eps.
-    transient_mask = w != 0
+    # Nothing is inverted for a mode with no residual, nothing at all is
+    # inverted when no |lambda_k| t_end clears tau, and a real eigenvalue is
+    # never inverted regardless of its weight: c_k = -Re(lambda_k) = -lambda_k
+    # there, so H_k's two poles coincide and H_k is identically zero (see the
+    # docstring). Excluding real modes from the mask keeps a real mode with a
+    # nonzero residual out of sigma_H and the tuner below, instead of
+    # inflating the Bromwich shift for a transient that inverts to nothing;
+    # this subsumes the old "the spectrum is numerically the origin" early
+    # return, which compared max|lambda_k| t_end against eps.
+    transient_mask = (w != 0) & (jnp.imag(eigenvalues) != 0)
     has_transient = bool(jnp.any(transient_mask))
 
     if not has_transient:
         # Nothing to invert: either every residual r_k is zero (the field is
-        # stationary), or no |lambda_k| t_end clears tau. The closed form is
-        # the exact solution in both cases.
+        # stationary), no |lambda_k| t_end clears tau, or every mode with a
+        # nonzero residual has a real eigenvalue. The closed form is the
+        # exact solution in every case.
         u_final = closed_form(t_end)
         result = {
             'u_final': u_final,
@@ -632,8 +647,10 @@ def nilt_solve_linear_pde(
             'nilt_result': None,
             'params': None,
             'note': (
-                "empty transient: every residual lambda_k u0_k + f_k is zero, or "
-                f"no |lambda_k| t_end clears tau = {TRANSIENT_TAU:g}, so "
+                "empty transient: every residual lambda_k u0_k + f_k is zero, "
+                f"no |lambda_k| t_end clears tau = {TRANSIENT_TAU:g}, or every "
+                "mode with a nonzero residual has a real eigenvalue (its two "
+                "poles coincide, so its transient is identically zero), so "
                 "nilt_solve_linear_pde returned the closed form "
                 "e^{lambda t} u0 + t phi1(lambda t) f directly with no NILT "
                 "inversion."
