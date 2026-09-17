@@ -31,10 +31,11 @@ from moljax.core.fft_solvers import (
 from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.model import (
     MOLModel,
+    create_advdiff_periodic_fft,
     create_gray_scott_model,
     create_gray_scott_periodic_fft,
 )
-from moljax.core.operators import NonlinearOp
+from moljax.core.operators import NonlinearOp, laplacian_2d
 from moljax.core.state import tree_add, tree_axpy, tree_zeros_like
 from moljax.core.stepping import (
     adaptive_integrate_imex,
@@ -42,7 +43,9 @@ from moljax.core.stepping import (
     imex_ssprk2_step,
     imex_strang_step,
     integrate_imex_fixed_dt,
+    rk4_step,
 )
+from moljax.core.utils import StatusCode
 
 
 class TestIMEXStability:
@@ -411,8 +414,19 @@ class TestIMEXSSPRK2StageReuse:
         agree to rounding). The full step is compared to the original
         implementation (_imex_ssprk2_step_via_fft, an independent
         computation, not a literal array), and finally diffusion_rhs_fft is
-        monkeypatched with a call counter to confirm the step still never
-        calls it.
+        monkeypatched with a call counter to confirm the step never calls
+        it for the stage Laplacian.
+
+        The expected count is 2, not 0: the explicit part is now the
+        model's right-hand side minus the diffusion the split treats
+        implicitly (see _imex_explicit_rhs), and that subtraction is one
+        diffusion_rhs_fft call per explicit-part evaluation, of which
+        imex_ssprk2_step makes two (one per stage). A regression that went
+        back to recomputing L1 and L2 through diffusion_rhs_fft would make
+        it 4. The reference step still uses model.nonlinear_rhs for its
+        explicit part, which for this reaction-diffusion model (whose only
+        linear operator is D * Laplacian) equals the new explicit part to
+        roundoff, so the 1e-12 comparison below is unaffected.
         """
         grid = Grid2D.uniform(16, 16, 0.0, 2.5, 0.0, 2.5)
         model, fft_cache, diffusivities = create_gray_scott_periodic_fft(grid)
@@ -457,8 +471,10 @@ class TestIMEXSSPRK2StageReuse:
 
         y_new = imex_ssprk2_step(model, y0, t, dt, fft_cache, diffusivities)
 
-        assert call_count["n"] == 0, (
-            f"diffusion_rhs_fft was called {call_count['n']} times inside the step"
+        assert call_count["n"] == 2, (
+            f"diffusion_rhs_fft was called {call_count['n']} times inside the step; "
+            f"2 is one per explicit-part evaluation, 4 would mean the stage "
+            f"Laplacians are being recomputed instead of read off the solve"
         )
         for name in y_ref:
             max_diff = float(jnp.max(jnp.abs(y_new[name] - y_ref[name])))
@@ -547,3 +563,189 @@ class TestIMEXSSPRK2Float32StageLaplacian:
         u_interior = np.asarray(y['u'][model.grid.interior_slice])
         err = float(np.max(np.abs(u_interior - exact(t_end))))
         assert err < max_error, f"dt={dt:.0e}: max error {err:.3e}"
+
+def advection_only_model(nx=16, vx=1.0):
+    """Pure advection dressed as an advection-diffusion model (D = 0).
+
+    create_advection_diffusion_model puts diffusion and advection in one
+    LinearOp, so this model's right-hand side is entirely advection and
+    the FFT diffusion solve, with D = 0, is the identity. The IMEX
+    steppers must still advance it.
+    """
+    grid = Grid2D.uniform(nx, nx, 0.0, 2.0 * np.pi, 0.0, 2.0 * np.pi, n_ghost=1)
+    model, fft_cache, diffusivities = create_advdiff_periodic_fft(
+        grid, field_names=('c',), D=0.0, vx=vx, vy=0.0
+    )
+    X, _ = grid.meshgrid(include_ghost=True)
+    return model, fft_cache, diffusivities, {'c': jnp.sin(X)}
+
+
+class TestIMEXExplicitPart:
+    """The IMEX explicit part is everything the FFT diffusion split does not do.
+
+    The steppers evaluated model.nonlinear_rhs alone, which assumes a
+    model's linear operators are exactly the diffusion the FFT solve
+    inverts. create_advection_diffusion_model folds advection into the
+    same LinearOp, so with D = 0 the solve was the identity, the explicit
+    part was zero (the model has no nonlinear operators) and every IMEX
+    step returned the state untouched: max-abs change 8.60e-16 on a 16x16
+    sine with an advective right-hand side of max-abs 0.9936, and
+    adaptive_integrate_imex reported SUCCESS on a state that never moved.
+    """
+
+    def test_fft_symbol_matches_the_second_difference_stencil(self):
+        """The two Laplacians the split relies on agree to roundoff.
+
+        The explicit part subtracts D * Delta y computed spectrally from a
+        model right-hand side whose diffusion is the 5-point stencil, so
+        the cancellation is only exact if the FFT symbol is that stencil's
+        symbol, (2 cos(k dx) - 2)/dx^2 + (2 cos(k dy) - 2)/dy^2, and not
+        -k^2. Checked here rather than assumed.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 2.0 * np.pi, 0.0, 2.0 * np.pi, n_ghost=1)
+        fft_cache = create_fft_cache(grid)
+        X, Y = grid.meshgrid(include_ghost=True)
+        model = create_gray_scott_model(grid, Du=0.16, Dv=0.08, bc_type=BCType.PERIODIC)
+        state = model.apply_bcs({'u': jnp.sin(X) * jnp.cos(2 * Y),
+                                 'v': jnp.cos(3 * X) + 0.5 * jnp.sin(Y)}, 0.0)
+
+        spectral = diffusion_rhs_fft(state, grid, {'u': 0.16, 'v': 0.08}, fft_cache)
+        for name, D in (('u', 0.16), ('v', 0.08)):
+            stencil = D * laplacian_2d(state[name], grid)
+            diff = float(jnp.max(jnp.abs(
+                extract_interior(spectral[name], grid) - extract_interior(stencil, grid)
+            )))
+            scale = float(jnp.max(jnp.abs(extract_interior(stencil, grid))))
+            assert diff / scale < 1e-12, f"{name}: relative difference {diff / scale:.3e}"
+
+    def test_explicit_part_of_a_reaction_diffusion_model_is_the_reaction(self):
+        """Subtracting the split's diffusion leaves exactly what was there before."""
+        from moljax.core.stepping import _imex_explicit_rhs
+
+        grid = Grid2D.uniform(16, 16, 0.0, 2.5, 0.0, 2.5, n_ghost=1)
+        model, fft_cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        X, Y = grid.meshgrid(include_ghost=True)
+        state = model.apply_bcs({'u': 1.0 - 0.5 * jnp.exp(-((X - 1.25) ** 2 + (Y - 1.25) ** 2)),
+                                 'v': 0.25 * jnp.exp(-((X - 1.25) ** 2 + (Y - 1.25) ** 2))}, 0.0)
+
+        explicit = _imex_explicit_rhs(model, state, 0.0, fft_cache, diffusivities)
+        reaction = model.nonlinear_rhs(state, 0.0)
+        for name in explicit:
+            diff = float(jnp.max(jnp.abs(
+                extract_interior(explicit[name], grid) - extract_interior(reaction[name], grid)
+            )))
+            assert diff < 1e-12, f"{name}: explicit part differs from the reaction by {diff:.3e}"
+
+    def test_advection_advances_at_the_right_speed(self):
+        """The D = 0 reproduction, against an explicit RK4 reference.
+
+        The semi-discrete problem is the same in both cases (the model's
+        own right-hand side), so a second-order IMEX step and a
+        fourth-order explicit one differ only by their truncation error
+        over the short horizon used here. Compared on the interior:
+        rk4_step leaves the ghost cells of its input untouched (model.rhs
+        fills them on its own copy) while the IMEX steps return a state
+        with boundary conditions applied, so the padding does not compare.
+        """
+        model, fft_cache, diffusivities, y0 = advection_only_model()
+        interior = model.grid.interior_slice
+        rhs0 = float(jnp.max(jnp.abs(model.rhs(y0, 0.0)['c'][interior])))
+        assert rhs0 > 0.9, f"the test problem is trivial: max-abs rhs {rhs0:.3e}"
+
+        dt, n_steps = 0.005, 10
+        y_ref = y0
+        for i in range(n_steps):
+            y_ref = rk4_step(model, y_ref, i * dt, dt)
+        moved = float(jnp.max(jnp.abs(y_ref['c'][interior] - y0['c'][interior])))
+        assert moved > 0.04, f"the reference barely moved: {moved:.3e}"
+
+        for step, tol in ((imex_euler_step, 0.05),
+                          (imex_strang_step, 1e-4),
+                          (imex_ssprk2_step, 1e-4)):
+            y = y0
+            for i in range(n_steps):
+                y = step(model, y, i * dt, dt, fft_cache, diffusivities)
+            err = float(jnp.max(jnp.abs(y['c'][interior] - y_ref['c'][interior])))
+            assert err / moved < tol, f"{step.__name__}: relative error {err / moved:.3e}"
+
+    def test_adaptive_imex_advances_the_advection_case(self):
+        """adaptive_integrate_imex reported SUCCESS on a state that never moved."""
+        model, fft_cache, diffusivities, y0 = advection_only_model()
+        result = adaptive_integrate_imex(
+            model, y0, 0.0, 0.1, 0.01, fft_cache, diffusivities,
+            use_strang=True, max_steps=200
+        )
+        assert int(result.status) == StatusCode.SUCCESS
+        interior = model.grid.interior_slice
+        moved = float(jnp.max(jnp.abs(result.y_final['c'][interior] - y0['c'][interior])))
+        assert moved > 0.05, f"the run advanced by only {moved:.3e}"
+
+    def test_pure_diffusion_is_unchanged(self):
+        """With no advection and no reaction, the step is the exact discrete decay."""
+        grid = Grid2D.uniform(32, 32, 0.0, 2.0 * np.pi, 0.0, 2.0 * np.pi, n_ghost=1)
+        base = create_gray_scott_model(grid, Du=0.1, Dv=0.05, bc_type=BCType.PERIODIC)
+        model = MOLModel(
+            grid=base.grid, bc_spec=base.bc_spec, params=base.params,
+            linear_ops=base.linear_ops, nonlinear_ops=()
+        )
+        fft_cache = create_fft_cache(grid)
+        diffusivities = {'u': 0.1, 'v': 0.05}
+        X, Y = grid.meshgrid(include_ghost=True)
+        state = {'u': jnp.sin(X) * jnp.sin(Y), 'v': jnp.cos(X) * jnp.cos(Y)}
+
+        dt = 0.05
+        y_strang = imex_strang_step(model, state, 0.0, dt, fft_cache, diffusivities)
+        lam = ((2.0 * np.cos(grid.dx) - 2.0) / grid.dx ** 2
+               + (2.0 * np.cos(grid.dy) - 2.0) / grid.dy ** 2)
+        sl_y, sl_x = grid.interior_slice
+        for name, D in diffusivities.items():
+            expected = np.exp(D * lam * dt) * np.asarray(state[name][sl_y, sl_x])
+            err = np.max(np.abs(np.asarray(y_strang[name][sl_y, sl_x]) - expected))
+            assert err < 1e-12, f"{name}: error {err:.3e}"
+
+    def test_reaction_diffusion_step_is_unchanged(self):
+        """A model whose linear part is only diffusion steps exactly as before.
+
+        The reference is the step the old explicit part produced
+        (model.nonlinear_rhs), written out here rather than stored as
+        literal arrays.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 2.5, 0.0, 2.5, n_ghost=1)
+        model, fft_cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        X, Y = grid.meshgrid(include_ghost=True)
+        bump = jnp.exp(-((X - 1.25) ** 2 + (Y - 1.25) ** 2))
+        y0 = {'u': 1.0 - 0.5 * bump, 'v': 0.25 * bump}
+        dt, t = 0.05, 0.3
+
+        def old_imex_euler(y):
+            y = model.apply_bcs(y, t)
+            N = model.nonlinear_rhs(y, t)
+            rhs = tree_axpy(y, dt, N)
+            y_new = apply_diffusion_inverse_fft(rhs, model.grid, dt, diffusivities, fft_cache)
+            return model.apply_bcs(y_new, t + dt)
+
+        y_ref = old_imex_euler(y0)
+        y_new = imex_euler_step(model, y0, t, dt, fft_cache, diffusivities)
+        for name in y_ref:
+            diff = float(jnp.max(jnp.abs(y_new[name] - y_ref[name])))
+            assert diff < 1e-12, f"{name}: max difference {diff:.3e}"
+
+
+class TestIMEXSplitValidation:
+    """A split the FFT solve cannot represent is refused, not approximated."""
+
+    @pytest.mark.parametrize("step", [imex_euler_step, imex_strang_step, imex_ssprk2_step])
+    def test_non_periodic_bc_raises(self, step):
+        grid = Grid2D.uniform(8, 8, 0.0, 1.0, 0.0, 1.0, n_ghost=1)
+        base = create_gray_scott_model(grid, bc_type=BCType.DIRICHLET)
+        fft_cache = create_fft_cache(grid)
+        state = base.create_initial_state(fill_values={'u': 1.0, 'v': 0.0})
+        with pytest.raises(ValueError, match="periodic"):
+            step(base, state, 0.0, 0.01, fft_cache, {'u': 0.16, 'v': 0.08})
+
+    def test_unknown_field_raises(self):
+        grid = Grid2D.uniform(8, 8, 0.0, 2.5, 0.0, 2.5, n_ghost=1)
+        model, fft_cache, _ = create_gray_scott_periodic_fft(grid)
+        state = model.create_initial_state(fill_values={'u': 1.0, 'v': 0.0})
+        with pytest.raises(ValueError, match="which the model does not have"):
+            imex_euler_step(model, state, 0.0, 0.01, fft_cache, {'w': 0.16})

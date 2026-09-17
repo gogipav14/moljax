@@ -656,6 +656,40 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **The IMEX steppers' explicit part is now everything the FFT diffusion
+  split does not handle, not just `model.nonlinear_rhs`.**
+  `imex_euler_step`, `imex_strang_step` and `imex_ssprk2_step` evaluated
+  `model.nonlinear_rhs` for their explicit stages, which assumes a model's
+  linear operators are exactly the diffusion the FFT solve inverts.
+  `create_advection_diffusion_model` folds advection into the same
+  `LinearOp` as the diffusion, so with `D = 0` the FFT solve was the
+  identity, the explicit part was zero (the model has no nonlinear
+  operators), and every IMEX step returned the state untouched: max-abs
+  change 8.60e-16 on a 16x16 sine whose advective right-hand side has
+  max-abs 0.9936, with `adaptive_integrate_imex` reporting `SUCCESS` on a
+  state that never moved. The explicit part is now `model.rhs` minus the
+  diffusion the split treats implicitly, `D * Laplacian(y)`, taken with
+  the same `D` and through the same spectral operator the Helmholtz solve
+  inverts (`diffusion_rhs_fft`), so the two cancel to roundoff: the FFT
+  symbol is `(2 cos(k dx) - 2)/dx^2 + (2 cos(k dy) - 2)/dy^2`, the symbol
+  of the same second-difference stencil the models' Laplacian operators
+  use, checked numerically to a relative 1e-12. The same 16x16 advection
+  case now moves by 9.93e-3 in one step of `dt = 0.01` and tracks an
+  explicit RK4 reference to a relative 2e-7 (Strang and SSPRK2) over ten
+  steps. A model with no linear operators states a right-hand side that
+  contains no diffusion, so nothing is subtracted there and its steps are
+  bit-identical. **Public surface:** the three steppers now raise
+  `ValueError` when a diffusive field's boundary condition is not
+  periodic, which the split's Laplacian cannot represent, or when
+  `diffusivities` names a field the model does not have, instead of
+  quietly stepping the wrong operator. Cost: one Laplacian evaluation per
+  stage on top of the model's own right-hand side. Reaction-diffusion and
+  pure-diffusion models are unchanged to 1e-12 (the explicit part of
+  Gray-Scott is its reaction, and a diffusion-only Strang step is still
+  the exact discrete decay).
+  `tests/test_imex.py::TestIMEXExplicitPart` and
+  `::TestIMEXSplitValidation` cover all of this.
+
 - **A step whose Newton solve failed no longer takes the PID controller's
   accepted branch, and one step's rejections are now bounded.**
   `propose_dt` and `propose_dt_imex` decided acceptance from

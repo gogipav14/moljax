@@ -24,6 +24,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
+from moljax.core.bc import BCType
 from moljax.core.dt_policy import (
     CFLParams,
     ControllerState,
@@ -427,6 +428,94 @@ def bdf2_step(
 # IMEX Integrators
 # =============================================================================
 
+def _imex_split_is_valid(model: MOLModel, diffusivities: dict[str, float]) -> None:
+    """
+    Reject a model the FFT diffusion split cannot represent.
+
+    The split inverts (I - dt D Delta) with Delta the periodic discrete
+    Laplacian, built from the FFT symbol
+    (2 cos(k dx) - 2)/dx^2 + (2 cos(k dy) - 2)/dy^2, which is the symbol of
+    the same second-difference stencil the models' own Laplacian operators
+    use. That identification only holds on a periodic field: on a Dirichlet
+    or Neumann field the FFT solve inverts an operator the model does not
+    have, and the explicit part below would subtract a diffusion term that
+    is not the one being treated implicitly. A per-field diffusivity is not
+    ambiguous (Gray-Scott's Du and Dv are handled independently, field by
+    field), so only the boundary conditions and unknown field names are
+    checked here.
+
+    Raised at the stepper's Python level, so it fires once per trace rather
+    than silently producing a wrong step.
+    """
+    for name, D in diffusivities.items():
+        if D <= 1e-14:
+            continue
+        if name not in model.bc_spec:
+            raise ValueError(
+                f"diffusivities names field {name!r}, which the model does not have "
+                f"(its fields are {sorted(model.bc_spec)}); the IMEX split cannot tell "
+                f"which field's diffusion it is meant to treat implicitly"
+            )
+        kind = model.bc_spec[name].kind
+        if kind != BCType.PERIODIC:
+            raise ValueError(
+                f"the IMEX FFT diffusion split needs periodic boundary conditions, but "
+                f"field {name!r} has {BCType(kind).name} and diffusivity {D}. The split "
+                f"inverts the periodic discrete Laplacian, which is not the operator the "
+                f"model applies at a {BCType(kind).name} boundary; use a non-periodic "
+                f"solver, or pass diffusivities without {name!r} and let the field's "
+                f"diffusion be integrated explicitly"
+            )
+
+
+def _imex_explicit_rhs(
+    model: MOLModel,
+    y: StateDict,
+    t: float,
+    fft_cache,
+    diffusivities: dict[str, float]
+) -> StateDict:
+    """
+    Everything in the model's right-hand side the FFT split does not handle.
+
+    The IMEX steppers used to take model.nonlinear_rhs as the explicit
+    part, which silently assumed that a model's linear operators are
+    exactly the diffusion the FFT solve inverts. That is false for
+    create_advection_diffusion_model, which folds advection into the same
+    LinearOp as the diffusion: with D = 0 the FFT solve was the identity,
+    the explicit part was zero because the model has no nonlinear
+    operators, and every IMEX step left the state exactly where it was
+    while the true right-hand side had max-abs about 1 (the adaptive IMEX
+    driver reported SUCCESS on a state that never moved).
+
+    The explicit part is now model.rhs minus the diffusion the split
+    treats implicitly, D * Delta y, taken with the same D and through the
+    same spectral operator the Helmholtz solve inverts
+    (diffusion_rhs_fft), so the two cancel to roundoff rather than to
+    truncation error. For a reaction-diffusion model, whose linear
+    operator is exactly D * Laplacian, the subtraction leaves the reaction
+    and nothing else; for advection-diffusion it leaves the advection.
+
+    A model with no linear operators states a right-hand side that
+    contains no diffusion at all (the split's D is then the model's entire
+    linear part, supplied through diffusivities rather than through an
+    operator), so there is nothing to subtract and the explicit part is
+    model.rhs unchanged. A model with linear operators is taken to carry
+    the split's diffusion among them, which every factory in model.py
+    does. Cost: one Laplacian evaluation per stage on top of the model's
+    own right-hand side.
+    """
+    from moljax.core.fft_solvers import diffusion_rhs_fft
+
+    if len(model.linear_ops) == 0 and len(model.nonlinear_ops) == 0:
+        return tree_zeros_like(y)
+
+    explicit = model.rhs(y, t)
+    if len(model.linear_ops) == 0:
+        return explicit
+    return tree_sub(explicit, diffusion_rhs_fft(y, model.grid, diffusivities, fft_cache))
+
+
 def imex_euler_step(
     model: MOLModel,
     y: StateDict,
@@ -436,11 +525,13 @@ def imex_euler_step(
     diffusivities: dict[str, float]
 ) -> StateDict:
     """
-    IMEX Euler step: diffusion implicit (FFT), reaction explicit.
+    IMEX Euler step: diffusion implicit (FFT), everything else explicit.
 
     The split is:
-    1. Compute explicit reaction: R(y, t)
-    2. Form RHS: y + dt * R(y, t)
+    1. Compute the explicit part E(y, t): the model's right-hand side
+       minus the diffusion the FFT solve treats implicitly
+       (see _imex_explicit_rhs)
+    2. Form RHS: y + dt * E(y, t)
     3. Solve (I - dt * D * Δ) y_new = RHS for each diffusive field
 
     First-order accurate overall.
@@ -455,18 +546,20 @@ def imex_euler_step(
 
     Returns:
         New state at t + dt
+
+    Raises:
+        ValueError: if the model's boundary conditions or field names make
+            the split ill-defined (see _imex_split_is_valid)
     """
     from moljax.core.fft_solvers import apply_diffusion_inverse_fft
+
+    _imex_split_is_valid(model, diffusivities)
 
     # Apply boundary conditions
     y = model.apply_bcs(y, t)
 
-    # Compute explicit RHS (reactions only, diffusion handled implicitly)
-    # We need the nonlinear part only
-    if len(model.nonlinear_ops) > 0:
-        N = model.nonlinear_rhs(y, t)
-    else:
-        N = tree_zeros_like(y)
+    # Explicit part: everything the implicit diffusion solve does not do
+    N = _imex_explicit_rhs(model, y, t, fft_cache, diffusivities)
 
     # Form RHS for diffusion solve: y + dt * N
     rhs = tree_axpy(y, dt, N)
@@ -493,8 +586,10 @@ def imex_strang_step(
 
     The split is:
     1. Half diffusion step, exact (FFT): y* = exp(dt/2 * D * Δ) y
-    2. Full reaction step with Heun's method over [t, t + dt]:
-       y** = y* + dt/2 * (R(y*, t) + R(y* + dt * R(y*, t), t + dt))
+    2. Full explicit step with Heun's method over [t, t + dt]:
+       y** = y* + dt/2 * (E(y*, t) + E(y* + dt * E(y*, t), t + dt)),
+       E being the model's right-hand side minus the diffusion the FFT
+       half-steps already apply (see _imex_explicit_rhs)
     3. Half diffusion step, exact (FFT): y_new = exp(dt/2 * D * Δ) y**
 
     Strang splitting is second order only when every sub-step is at least
@@ -516,8 +611,14 @@ def imex_strang_step(
 
     Returns:
         New state at t + dt
+
+    Raises:
+        ValueError: if the model's boundary conditions or field names make
+            the split ill-defined (see _imex_split_is_valid)
     """
     from moljax.core.fft_solvers import apply_diffusion_exp_fft
+
+    _imex_split_is_valid(model, diffusivities)
 
     dt_half = dt / 2.0
 
@@ -528,23 +629,20 @@ def imex_strang_step(
     y_star = apply_diffusion_exp_fft(y, model.grid, dt_half, diffusivities, fft_cache)
     y_star = model.apply_bcs(y_star, t + dt_half)
 
-    # Step 2: Full reaction step using Heun's method (explicit 2nd order)
-    if len(model.nonlinear_ops) > 0:
-        # k1 = R(y*, t)
-        R1 = model.nonlinear_rhs(y_star, t)
+    # Step 2: Full explicit step using Heun's method (explicit 2nd order)
+    # k1 = E(y*, t)
+    R1 = _imex_explicit_rhs(model, y_star, t, fft_cache, diffusivities)
 
-        # y_tilde = y* + dt * k1
-        y_tilde = tree_axpy(y_star, dt, R1)
-        y_tilde = model.apply_bcs(y_tilde, t + dt)
+    # y_tilde = y* + dt * k1
+    y_tilde = tree_axpy(y_star, dt, R1)
+    y_tilde = model.apply_bcs(y_tilde, t + dt)
 
-        # k2 = R(y_tilde, t + dt)
-        R2 = model.nonlinear_rhs(y_tilde, t + dt)
+    # k2 = E(y_tilde, t + dt)
+    R2 = _imex_explicit_rhs(model, y_tilde, t + dt, fft_cache, diffusivities)
 
-        # y** = y* + dt/2 * (k1 + k2)
-        R_avg = tree_add(R1, R2)
-        y_double = tree_axpy(y_star, 0.5 * dt, R_avg)
-    else:
-        y_double = y_star
+    # y** = y* + dt/2 * (k1 + k2)
+    R_avg = tree_add(R1, R2)
+    y_double = tree_axpy(y_star, 0.5 * dt, R_avg)
 
     y_double = model.apply_bcs(y_double, t + dt)
 
@@ -566,8 +664,9 @@ def imex_ssprk2_step(
     """
     IMEX-SSP2(2,2,2) step of Pareschi and Russo (2nd order).
 
-    With L the diffusion operator (implicit, solved by FFT), R the reaction
-    (explicit) and gamma = 1 - 1/sqrt(2):
+    With L the diffusion operator (implicit, solved by FFT), R the
+    explicit part (the model's right-hand side minus L y, see
+    _imex_explicit_rhs) and gamma = 1 - 1/sqrt(2):
 
         U1 = (I - gamma dt L)^-1 y
         U2 = (I - gamma dt L)^-1 [y + dt R(U1, t) + (1 - 2 gamma) dt L U1]
@@ -595,15 +694,19 @@ def imex_ssprk2_step(
 
     Returns:
         New state at t + dt
+
+    Raises:
+        ValueError: if the model's boundary conditions or field names make
+            the split ill-defined (see _imex_split_is_valid)
     """
     from moljax.core.fft_solvers import apply_diffusion_inverse_fft_with_laplacian
+
+    _imex_split_is_valid(model, diffusivities)
 
     gamma = 1.0 - 1.0 / 2.0 ** 0.5
 
     def reaction(state, time):
-        if len(model.nonlinear_ops) > 0:
-            return model.nonlinear_rhs(state, time)
-        return tree_zeros_like(state)
+        return _imex_explicit_rhs(model, state, time, fft_cache, diffusivities)
 
     # Apply boundary conditions
     y = model.apply_bcs(y, t)
