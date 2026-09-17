@@ -933,6 +933,92 @@ class TestSpectralPlacementGuard:
         )
 
 
+class TestAmplificationBudget:
+    """tune_nilt_adaptive weighs the shift against an accuracy budget, not
+    only against overflow.
+
+    The pilot's sensors are all normalized, so exp(a t) scales the signal
+    and its error alike and none of them moves when the shift turns the
+    answer into noise. tune_nilt_params' feasibility limit only keeps
+    exp(a t) representable, which leaves the whole band between the
+    overflow budget and the accuracy budget open.
+    """
+
+    def test_amplification_beyond_the_accuracy_budget_is_infeasible(self):
+        """J = [[-1, 100], [0, -1]] has numerical abscissa 49 and
+        off-diagonal resolvent F(s) = 100/(s + 1)^2. On t_end = 1 the tuner
+        used to pick a = 53.6, N = 256, report 'good' and return -5.4e19
+        where 100 t exp(-t) is 36.79; A_exp is 1.9e23, so the float64
+        rounding floor alone is 4.2e7."""
+        def F(s):
+            return 100.0 / (s + 1.0) ** 2
+
+        with pytest.warns(UserWarning, match="infeasible"):
+            result = tune_nilt_adaptive(
+                F, t_end=1.0, bounds={'rho': 1.0, 're_max': 49.0, 'im_max': 0.0},
+                dtype=jnp.float64,
+            )
+
+        assert result.quality.tier == 'poor', result.quality.reason
+        assert result.quality.reason.startswith('infeasible:')
+        assert 'A_exp=1.91e+23' in result.quality.reason
+        assert 'Split t_end=1 into 3 windows' in result.quality.reason
+
+    def test_the_recommended_split_brings_the_amplification_inside_the_budget(self):
+        """The window the refusal recommends is the one the two conditions
+        admit jointly, not just a shorter one: the shift the tuner picks for
+        it amplifies by less than A_max. (Shortening the window raises a,
+        since the wraparound margin ln(1/eps_tail)/(2T) grows, so this is
+        not automatic.)"""
+        def F(s):
+            return 100.0 / (s + 1.0) ** 2
+
+        bounds = {'rho': 1.0, 're_max': 49.0, 'im_max': 0.0}
+        window = 1.0 / 3.0
+        result = tune_nilt_adaptive(F, t_end=window, bounds=bounds, dtype=jnp.float64)
+
+        assert not result.quality.reason.startswith('infeasible:'), result.quality.reason
+        assert result.params.a > 49.0  # shorter window, larger shift
+        A_max = 1e-6 / float(np.finfo(np.float64).eps)
+        assert float(np.exp(result.params.a * window)) < A_max
+
+    def test_a_shift_within_the_budget_is_still_accepted(self):
+        """The budget is an accuracy budget, not a blanket ban on shifts:
+        a = 2.921 over t_end = 5 amplifies by 2.2e6, well inside the float64
+        budget of 4.5e9, and must keep its 'good' verdict."""
+        def F(s):
+            return 1.0 / (s - 2.0)
+
+        bounds = SpectralBounds(rho=10.0, re_max=2.0, im_max=5.0, methods_used={'analytic': 'test'}, warnings=[])
+        result = tune_nilt_adaptive(
+            F, t_end=5.0, bounds=bounds, dtype=jnp.float64, max_iterations=2
+        )
+        assert result.params.a == pytest.approx(2.921, abs=1e-3)
+        assert float(np.exp(result.params.a * 5.0)) == pytest.approx(2.2e6, rel=0.05)
+        assert not result.quality.reason.startswith('infeasible:')
+
+    def test_retuning_ladder_stops_at_the_abscissa_floor(self):
+        """Step 3 of retune_based_on_diagnostics halves a for 'general
+        degradation'. With an abscissa in bounds it falls through to
+        doubling N instead of halving the shift past the floor."""
+        params = TunedNILTParams(
+            dt=0.05, N=256, T=6.4, a=14.605, omega_max=62.8, omega_req=1.0,
+            bound_sources={}, warnings=[], diagnostics={},
+        )
+        quality = QualityTier('poor', 'general', 0.01, 0.01, 0.01, 0.0)
+
+        # No bounds: no floor, the old behavior.
+        _, action = retune_based_on_diagnostics(params, quality, bounds=None)
+        assert 'reduced a' in action, action
+
+        # With the abscissa, halving a to 7.30 would cross the pole at 10.
+        bounds = SpectralBounds(rho=10.0, re_max=10.0, im_max=0.0, methods_used={'analytic': 'test'}, warnings=[])
+        new_params, action = retune_based_on_diagnostics(params, quality, bounds=bounds)
+        assert 'reduced a' not in action, action
+        assert 'increased N' in action, action
+        assert new_params.a == pytest.approx(14.605)
+
+
 class TestNonFiniteAndMissingSensors:
     """A non-finite or missing sensor must never classify as good.
 

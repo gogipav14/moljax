@@ -45,6 +45,17 @@ def next_power_of_two(n: int) -> int:
     return p
 
 
+def _numpy_dtype(dtype) -> np.dtype:
+    """Normalize a JAX dtype, numpy dtype or dtype string to a numpy dtype."""
+    dtype_str = str(dtype)
+    if 'float32' in dtype_str:
+        return np.dtype('float32')
+    if 'float64' in dtype_str or 'float_' in dtype_str:
+        return np.dtype('float64')
+    # Default to float64 for unknown types
+    return np.dtype('float64')
+
+
 def _log_max_float(dtype, safety_log_margin: float = 10.0) -> float:
     """
     Return L = log(maxfloat(dtype)) - safety_log_margin.
@@ -58,17 +69,23 @@ def _log_max_float(dtype, safety_log_margin: float = 10.0) -> float:
     Returns:
         Maximum safe log value for exponential operations
     """
-    # Convert dtype to string and normalize
-    dtype_str = str(dtype)
-    if 'float32' in dtype_str:
-        dt = np.dtype('float32')
-    elif 'float64' in dtype_str or 'float_' in dtype_str:
-        dt = np.dtype('float64')
-    else:
-        # Default to float64 for unknown types
-        dt = np.dtype('float64')
+    return float(np.log(np.finfo(_numpy_dtype(dtype)).max) - safety_log_margin)
 
-    return float(np.log(np.finfo(dt).max) - safety_log_margin)
+
+def _eps_machine(dtype) -> float:
+    """
+    Return the unit roundoff of the working precision.
+
+    The overflow budget L bounds how large exp(a t) may get before it stops
+    being representable; the unit roundoff bounds how large it may get
+    before the answer stops being meaningful. Rounding noise of relative
+    size eps_machine on the damped samples is amplified by exp(a t_end), so
+    the inversion carries an absolute error floor of
+    eps_machine * exp(a t_end) whatever the grid does. Between the two
+    budgets lies a wide band of parameters that overflow nothing and mean
+    nothing.
+    """
+    return float(np.finfo(_numpy_dtype(dtype)).eps)
 
 
 def tune_nilt_params(

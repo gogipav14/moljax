@@ -32,7 +32,7 @@ import jax.numpy as jnp
 
 from .nilt_fft import NILTResult, nilt_fft_uniform
 from .spectral_bounds import BoundContext, SpectralBounds
-from .tuning import TunedNILTParams, next_power_of_two, tune_nilt_params
+from .tuning import TunedNILTParams, _eps_machine, next_power_of_two, tune_nilt_params
 
 # =============================================================================
 # Quality classification
@@ -201,7 +201,14 @@ def retune_based_on_diagnostics(
     Deterministic escalation ladder:
     1. Bandwidth sensors above their warning level -> halve dt, keep T
     2. Wraparound sensor above its warning level -> double T, keep dt
-    3. Otherwise -> halve a if it is not already small, else double N
+    3. Otherwise -> halve a if it is not already small and the halved shift
+       stays at or above required_abscissa(bounds.re_max, T), else double N
+
+    Halving a buys dynamic range at the cost of wraparound suppression, and
+    past the required abscissa it buys a contour that runs through a
+    singularity of F. When ``bounds`` carries an abscissa the ladder
+    therefore skips step 3 rather than crossing that floor, and falls
+    through to doubling N.
 
     dt = 2T/N is re-normalized after the adjustment and N is capped at
     max_N. When the cap leaves every parameter as it was, the current
@@ -212,19 +219,30 @@ def retune_based_on_diagnostics(
     Args:
         current_params: Current NILT parameters
         quality: Quality classification from classify_quality()
-        bounds: Spectral bounds (unused, kept for the call signature)
+        bounds: Spectral bounds (or dict with re_max); supplies the abscissa
+            floor for step 3. Without it there is no floor and a is halved
+            as before.
         max_N: Maximum allowed N
 
     Returns:
         new_params: Adjusted parameters with the triad re-normalized
         action: Description of the action taken
     """
+    from .endpoint_diagnostics import required_abscissa
+
     dt = current_params.dt
     N = current_params.N
     T = current_params.T
     a = current_params.a
     a_new = a
     th = _TIER_THRESHOLDS['balanced']
+
+    re_max = getattr(bounds, 're_max', None)
+    if re_max is None and isinstance(bounds, dict):
+        re_max = bounds.get('re_max')
+    a_floor = required_abscissa(re_max, T)
+    if math.isnan(a_floor):
+        a_floor = -math.inf
 
     if quality.band_edge_ratio > th['band_edge'][0] or quality.tail_energy_fraction > th['tail_energy'][0]:
         # Too much of F at the band edge: halve dt (double the Nyquist frequency)
@@ -240,8 +258,9 @@ def retune_based_on_diagnostics(
         dt_new = 2 * T_new / N_new
         action = f"increased T: {T:.2f} → {T_new:.2f} (wraparound)"
 
-    elif a > 0.01:
-        # General degradation: reduce the exponential amplification
+    elif a > 0.01 and a / 2.0 >= a_floor:
+        # General degradation: reduce the exponential amplification, but
+        # never past the abscissa the inversion needs
         a_new = a / 2.0
         dt_new, T_new, N_new = dt, T, N
         action = f"reduced a: {a:.3f} → {a_new:.3f} (general quality)"
@@ -283,6 +302,74 @@ class AdaptiveTuningResult(NamedTuple):
     actions: list[str]  # List of retuning actions taken
 
 
+def _infeasible_amplification(
+    cfl, params, result, t_end, A_max, eps_machine,
+    sigma, delta_min, eps_tail, iteration, actions, required_abscissa,
+) -> AdaptiveTuningResult:
+    """Report a window on which wraparound, bandwidth and amplification
+    cannot hold jointly.
+
+    The only lever shared by the wraparound condition and the amplification
+    budget is a, and they pull it in opposite directions: wraparound wants
+    a at least sigma + ln(1/eps_tail)/(2T), accuracy wants a t_end at most
+    ln(A_max). When the first exceeds the second no shift satisfies both,
+    and the remedy is a shorter interval, not a different grid.
+
+    Solving the two together for the window length, with T = p t / 2 as
+    tune_nilt_params sets it,
+
+        a(t) t = sigma t + ln(1/eps_tail) / p <= ln(A_max)
+        t <= (ln(A_max) - ln(1/eps_tail) / p) / sigma,
+
+    which is the window this reports. Splitting t_end into
+    ceil(t_end / t_window) equal pieces gives windows no longer than that,
+    so the recommendation brings the amplification inside the budget rather
+    than merely shortening the interval. It is not by itself a guarantee of
+    accuracy: the bandwidth truncation error is amplified by exp(a t_end)
+    too, and the normalized sensors do not see that, so a window near the
+    budget still wants its grid checked against a finer one.
+    """
+    a_required = required_abscissa(sigma, params.T, delta_min=delta_min, eps_tail=eps_tail)
+    error_floor = eps_machine * cfl.exp_amplification
+
+    if not cfl.spectral_placement_ok:
+        reason = (
+            f"infeasible: a={params.a:.3f} is below the required abscissa "
+            f"{a_required:.3f} (sigma={sigma}); the contour runs through a "
+            "singularity of F"
+        )
+    else:
+        a_budget = math.log(A_max) / t_end if t_end > 0 else math.inf
+        period_factor = 2.0 * params.T / t_end if t_end > 0 else 4.0
+        headroom = math.log(A_max) - math.log(1.0 / eps_tail) / period_factor
+        if sigma is not None and sigma > 0 and headroom > 0:
+            T_window = headroom / sigma
+        elif params.a > 0:
+            T_window = math.log(A_max) / params.a
+        else:
+            T_window = math.inf
+        n_windows = max(1, int(math.ceil(t_end / T_window))) if T_window > 0 and math.isfinite(T_window) else 1
+        reason = (
+            f"infeasible: amplification A_exp={cfl.exp_amplification:.2e} leaves an "
+            f"error floor of eps*A_exp={error_floor:.2e}, above the accuracy budget "
+            f"A_max={A_max:.2e}; a={params.a:.3f} cannot be reduced below the required "
+            f"abscissa {a_required:.3f} and the budget allows only a={a_budget:.3f}. "
+            f"Split t_end={t_end:.3g} into {n_windows} windows of "
+            f"{t_end / n_windows:.3g} to bring A_exp inside the budget "
+            f"(which admits windows up to {T_window:.3g}), or invert in "
+            "higher precision"
+        )
+
+    _warnings.warn(f"NILT tuning refused: {reason}", UserWarning, stacklevel=3)
+    return AdaptiveTuningResult(
+        params=params,
+        result=result,
+        quality=_quality_from_diagnostics('poor', reason, result.diagnostics, result),
+        iterations=iteration,
+        actions=actions + [f"refused: {reason}"],
+    )
+
+
 def tune_nilt_adaptive(
     F_eval,
     *,
@@ -293,6 +380,7 @@ def tune_nilt_adaptive(
     max_iterations: int = 2,
     quality_tier: Literal['conservative', 'balanced', 'aggressive'] = 'balanced',
     enable_projection_fallback: bool = True,
+    amplification_tolerance: float = 1e-6,
     **tune_kwargs
 ) -> AdaptiveTuningResult:
     """
@@ -301,15 +389,48 @@ def tune_nilt_adaptive(
     Process:
     1. Feedforward: tune_nilt_params() (feasibility guardrails)
     2. Pilot run: nilt_fft_uniform() with diagnostics
-    3. Quality check: classify_quality()
-    4. If poor: one corrective action from retune_based_on_diagnostics(),
+    3. Conditions check: check_spectral_cfl_conditions(), the same checker
+       tune_nilt_adaptive_cfl uses, for the two conditions the pilot's
+       sensors cannot see (see below)
+    4. Quality check: classify_quality()
+    5. If poor: one corrective action from retune_based_on_diagnostics(),
        at most max_iterations times; the loop also stops when the N cap
        leaves nothing to change
-    5. If still poor: the Hermitian projection is tried as a last resort.
+    6. If still poor: the Hermitian projection is tried as a last resort.
        The projection cannot move the bandwidth or wraparound sensors (the
        spectrum is Hermitian by construction), so this rarely changes the
        verdict; it is kept so ``actions`` records that everything was tried,
        and a UserWarning names the remaining problem.
+
+    **Why step 3 exists.** band_edge_ratio, tail_energy_fraction and
+    tail_ratio are all normalized quantities: they say how the inversion
+    compares with itself, not how it compares with f. Amplification is
+    invisible to them, because exp(a t) scales the signal and its error
+    alike. The feasibility limit in tune_nilt_params only keeps exp(a t)
+    from overflowing, which leaves the whole band between the overflow
+    budget and the accuracy budget open. The accuracy budget is
+
+        eps_machine * exp(a * t_end) <= amplification_tolerance,
+
+    i.e. A_exp <= amplification_tolerance / eps_machine (4.5e9 at the
+    default tolerance in float64): rounding noise of relative size
+    eps_machine on the damped samples comes back amplified by exp(a t_end),
+    so anything above this is error, not answer. Spectral placement is
+    checked with it, since the two trade against each other and only one of
+    them can be bought by moving a.
+
+    When the amplification budget is violated and a is already at the
+    required abscissa, wraparound and amplification cannot hold jointly on
+    this interval: the result comes back 'poor' with a reason beginning
+    "infeasible:" and a UserWarning recommending a split, rather than a
+    confident wrong number.
+
+    The budget bounds the amplified rounding noise. It does not bound the
+    amplified *truncation* error: the tail of F beyond pi/dt is amplified by
+    exp(a t_end) as well, and band_edge_ratio, being a ratio, cannot see
+    that either. A shift well inside the budget can still need a finer grid
+    than the operator's own bandwidth asks for, and the only reliable check
+    there is a second inversion at dt/2.
 
     Args:
         F_eval: Laplace-domain function F(s)
@@ -320,11 +441,15 @@ def tune_nilt_adaptive(
         max_iterations: Maximum retuning iterations (default: 2)
         quality_tier: Threshold policy for quality classification
         enable_projection_fallback: If True, try the projection when retuning fails
+        amplification_tolerance: Relative accuracy budget for the
+            exponential amplification (default 1e-6)
         **tune_kwargs: Additional kwargs for tune_nilt_params()
 
     Returns:
         AdaptiveTuningResult with final parameters, result, and quality info
     """
+    from .endpoint_diagnostics import check_spectral_cfl_conditions, required_abscissa
+
     actions = []
 
     # Step 1: Feedforward autotuning (feasibility)
@@ -337,7 +462,16 @@ def tune_nilt_adaptive(
     )
     actions.append("initial autotuning (feedforward)")
 
-    # Steps 2-4: bounded refinement loop
+    # Accuracy-based amplification budget and the abscissa the shift is
+    # measured against. tune_nilt_params records the abscissa it used in
+    # diagnostics['alpha'], so no caller has to supply it separately.
+    eps_machine = _eps_machine(dtype)
+    A_max = amplification_tolerance / eps_machine
+    sigma = params.diagnostics.get('alpha')
+    delta_min = tune_kwargs.get('delta_min', 1e-3)
+    eps_tail = tune_kwargs.get('eps_tail', 1e-8)
+
+    # Steps 2-5: bounded refinement loop
     for iteration in range(max_iterations + 1):
         result = nilt_fft_uniform(
             F_eval,
@@ -348,6 +482,30 @@ def tune_nilt_adaptive(
             t_end=t_end,
             return_diagnostics=True
         )
+
+        # Step 3: the two conditions the pilot's sensors cannot see. The
+        # endpoint jump and the bandwidth tail are left to classify_quality
+        # and the retuning ladder, which have remedies for them; these two
+        # have only one lever between them and it points both ways.
+        cfl = check_spectral_cfl_conditions(
+            result=result,
+            F_eval=F_eval,
+            t_end=t_end,
+            a=params.a,
+            T=params.T,
+            dt=params.dt,
+            A_max=A_max,
+            sigma=sigma,
+            delta_min=delta_min,
+            eps_tail=eps_tail,
+        )
+        if not (cfl.conditioning_safe and cfl.spectral_placement_ok):
+            return _infeasible_amplification(
+                cfl, params, result, t_end, A_max, eps_machine,
+                sigma, delta_min, eps_tail, iteration, actions,
+                required_abscissa,
+            )
+
         quality = classify_quality(result.diagnostics, tier=quality_tier)
 
         if quality.tier in ['good', 'acceptable']:

@@ -73,6 +73,42 @@ All notable changes to moljax are documented here.
   the file was run in isolation. Added the same `jax_enable_x64` enable the other test
   modules use.
 
+- **`tune_nilt_adaptive` never called `check_spectral_cfl_conditions`, and
+  its only limit on the Bromwich shift was the overflow budget, so it
+  reported "good" on an inversion whose every digit was amplified rounding
+  noise.** `band_edge_ratio`, `tail_energy_fraction` and `tail_ratio` are
+  all ratios, and `exp(a t)` scales the signal and its error alike, so none
+  of them moves when the shift turns the answer into noise; the feasibility
+  limit in `tune_nilt_params` only keeps `exp(a t)` representable, which
+  leaves the whole band between the overflow budget and the accuracy budget
+  open. For `J = [[-1, 100], [0, -1]]` (numerical abscissa 49, off-diagonal
+  resolvent `F(s) = 100/(s + 1)^2`), `t_end = 1`,
+  `bounds = {rho: 1, re_max: 49, im_max: 0}` selected `a = 53.605`,
+  `N = 256` and reported "good, all sensors within normal range" while
+  returning -5.44e19 where `100 t exp(-t)` is 36.79; `A_exp = 1.9e23`
+  leaves a float64 rounding floor of 4.2e7. The call now returns a `poor`
+  verdict reading "infeasible: amplification A_exp=1.91e+23 leaves an error
+  floor of eps*A_exp=4.24e+07, above the accuracy budget A_max=4.50e+09;
+  ... Split t_end=1 into 3 windows of 0.333 ..." and raises a
+  `UserWarning`. Fixed by running the same `check_spectral_cfl_conditions`
+  the CFL tuner uses on every pilot inversion and gating on its
+  conditioning and spectral placement conditions, with the amplification
+  threshold derived from the working precision as
+  `A_max = amplification_tolerance / eps_machine` (new keyword
+  `amplification_tolerance`, default 1e-6, so `eps_machine exp(a t_end) <=
+  1e-6`) instead of a fixed constant; and by clamping step 3 of
+  `retune_based_on_diagnostics`, which halved `a` for "general
+  degradation", at `required_abscissa(bounds.re_max, T)`, so the ladder
+  falls through to doubling `N` rather than crossing a pole. The window
+  length in the refusal solves the wraparound and amplification conditions
+  together, so splitting at it brings `A_exp` inside the budget. The budget
+  bounds amplified rounding noise only: the bandwidth truncation error is
+  amplified by `exp(a t_end)` as well and the normalized sensors still
+  cannot see that, which is now stated in the docstring.
+  `tests/test_adaptive_tuning_quality.py::TestAmplificationBudget` adds the
+  reproduction, the clamped ladder, the recommended window, and a shift
+  well inside the budget that must keep passing.
+
 - **`tune_nilt_adaptive_cfl` accepted a retuned Bromwich shift without
   rechecking where the contour had landed, so the conditioning guard could
   halve `a` across a pole and still report "good, all CFL conditions
