@@ -73,6 +73,26 @@ All notable changes to moljax are documented here.
   the file was run in isolation. Added the same `jax_enable_x64` enable the other test
   modules use.
 
+- **`chebyshev_nilt.weeks_method` reported its error estimate before the
+  `e^{sigma t}` prefactor, so a result that was wrong by 9.0e4 came back
+  with an estimate of 9.7e-15.** The estimate was `max |coeffs[-3:]|`, the
+  truncated tail of the Laguerre series, and the series is multiplied by
+  `e^{sigma t}`: at `sigma = 1` and `t = 50` that factor is 5.2e21.
+  `weeks_method(lambda s: 1/(s + 1), 32, jnp.array([50.0]))` returns
+  90057.28 against the exact 1.93e-22; the estimate is now 5.16e7, above
+  both the true error and the returned value. Fixed by multiplying the tail
+  by `max_t e^{sigma t}` and adding a roundoff term
+  `eps * sum|a_n| * e^{sigma t}`, which is admissible because the Laguerre
+  functions satisfy `|e^{-x/2} L_n(x)| <= 1` for `x >= 0`. The estimate is
+  absolute, not relative, and the docstring now says so and states that a
+  large estimate means the caller must retune `sigma` and `b` (per
+  Weideman 1999), since only the caller knows where the singularities of
+  `F` are. On well-chosen parameters the estimate stays tight: 1.7e-15
+  against a true error of 1.1e-16 for `1/(s + 1)` with `sigma = 0.5`,
+  `b = 1` at `t <= 4`.
+  `tests/test_chebyshev_nilt.py::TestWeeksErrorEstimate` covers both, the
+  scaling with the prefactor, and the roundoff floor.
+
 - **`quality_metrics.compute_eps_im` computed the wraparound tail ratio
   from the imaginary part of the inverted signal, which is zero by
   construction for a Hermitian spectrum, so `assess_nilt_quality` graded a

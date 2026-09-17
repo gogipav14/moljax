@@ -208,6 +208,20 @@ def weeks_method(
     laguerre_coefficients (Weideman 1999). For 1/(s+1) with σ = 0.5, b = 1
     and 32 terms the error is at rounding level.
 
+    **The error estimate is absolute and time-dependent.** The Laguerre
+    functions are bounded, |e^{-x/2} L_n(x)| <= 1 for x >= 0, so the
+    truncated tail of the series contributes at most max|a_n| over the tail
+    and the rounding noise of the sum at most eps Σ|a_n|; both are then
+    multiplied by e^{σ t}, which is the whole difficulty of the method and
+    what the estimate used to leave out. At σ = 1 and t = 50 that factor is
+    5.2e21, so a tail of 9.7e-15 is an error of 5.0e7, not of 9.7e-15.
+
+    A large estimate means the parameters cannot deliver an answer at the
+    requested times, not that the implementation failed: retuning σ and b
+    (or splitting the time range) is the caller's, since only the caller
+    knows where the singularities of F are. Weideman (1999) gives the
+    parameter-selection rules.
+
     Args:
         F_eval: Laplace transform F(s), evaluated on an array of s
         n_terms: Number of Laguerre terms
@@ -217,17 +231,23 @@ def weeks_method(
         b: Scaling parameter
 
     Returns:
-        ChebyshevNILTResult with inverse transform values
+        ChebyshevNILTResult with inverse transform values; error_estimate
+        bounds the absolute error over the requested times
     """
     t = jnp.asarray(t)
     coeffs = laguerre_coefficients(F_eval, n_terms, sigma, b)
     f = jnp.exp(sigma * t) * laguerre_eval(coeffs, t, b)
 
-    # Error estimate from last coefficients
-    if n_terms > 2:
-        error_est = float(jnp.max(jnp.abs(coeffs[-3:])))
+    # Truncation from the last coefficients, roundoff from the whole sum,
+    # both amplified by the largest prefactor over the requested times.
+    tail = coeffs[-3:] if n_terms > 2 else coeffs
+    truncation = float(jnp.max(jnp.abs(tail)))
+    roundoff = float(jnp.finfo(coeffs.dtype).eps) * float(jnp.sum(jnp.abs(coeffs)))
+    if t.size > 0:
+        prefactor = float(jnp.max(jnp.exp(sigma * jnp.maximum(t, 0.0))))
     else:
-        error_est = float(jnp.max(jnp.abs(coeffs)))
+        prefactor = 1.0
+    error_est = prefactor * (truncation + roundoff)
 
     return ChebyshevNILTResult(
         t=t,

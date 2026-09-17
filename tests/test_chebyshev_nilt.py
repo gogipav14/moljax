@@ -90,6 +90,47 @@ class TestWeeks:
         assert float(jnp.max(jnp.abs(a - expected))) < 1e-14
 
 
+class TestWeeksErrorEstimate:
+    """The estimate has to carry the e^{sigma t} prefactor.
+
+    weeks_method returned max |coeffs[-3:]|, the truncated tail of the
+    Laguerre series before it is multiplied by e^{sigma t}. At sigma = 1 and
+    t = 50 that factor is 5.2e21, so an estimate of 9.7e-15 was reported for
+    a result that was wrong by 9.0e4.
+    """
+
+    def test_estimate_exposes_an_unusable_parameter_choice(self):
+        res = weeks_method(F_exp, 32, jnp.array([50.0]))
+        true_error = abs(float(res.f[0]) - np.exp(-50.0))
+        assert true_error == pytest.approx(9.0057e4, rel=1e-3)
+        # The estimate must at least admit that the answer is worthless.
+        assert res.error_estimate >= true_error
+        assert res.error_estimate >= abs(float(res.f[0]))
+
+    def test_estimate_stays_tight_on_well_chosen_parameters(self):
+        """sigma = 0.5, b = 1 on 1/(s+1): the estimate must still bound the
+        true error without becoming useless."""
+        t = jnp.array([0.5, 1.0, 2.0, 4.0])
+        res = weeks_method(F_exp, 32, t, sigma=0.5, b=1.0)
+        true_error = float(jnp.max(jnp.abs(res.f - jnp.exp(-t))))
+        assert res.error_estimate >= true_error
+        assert res.error_estimate < 1e-12
+
+    def test_estimate_scales_with_the_prefactor(self):
+        """Same coefficients, later time: the estimate grows by e^{sigma dt}."""
+        early = weeks_method(F_exp, 32, jnp.array([1.0]), sigma=0.5, b=1.0)
+        late = weeks_method(F_exp, 32, jnp.array([9.0]), sigma=0.5, b=1.0)
+        assert late.error_estimate / early.error_estimate == pytest.approx(
+            float(np.exp(0.5 * 8.0)), rel=1e-10
+        )
+
+    def test_roundoff_term_floors_the_estimate(self):
+        """Even with a tail at exactly zero the estimate keeps the eps
+        sum|a_n| roundoff term, so it is never reported as exact."""
+        res = weeks_method(F_exp, 32, jnp.array([1.0]), sigma=0.5, b=1.0)
+        assert res.error_estimate > 0.0
+
+
 class TestGaverStehfest:
     """Gaver-Stehfest with exact rational weights and the x64 guard."""
 
