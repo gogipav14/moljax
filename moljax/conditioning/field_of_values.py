@@ -17,6 +17,7 @@ SIAM J. Matrix Anal. Appl. 38(2), 2017, doi:10.1137/17M1116672.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Callable
 from typing import NamedTuple
@@ -182,6 +183,48 @@ def _operator_scale(action: Callable[[jax.Array], jax.Array], start: jax.Array) 
     return rho
 
 
+def _default_operator_key(matvec: Matvec, n: int) -> jax.Array:
+    """Return a PRNG key derived from the operator's own forward action.
+
+    ``_largest_hermitian_eigenvector``'s random starting columns used to be
+    seeded from the sweep angle and the restart index alone, both fixed
+    regardless of which operator was being diagnosed.  An operator whose
+    dominant eigenspace happens to be orthogonal to every one of those fixed
+    columns, at every angle and restart a given call uses, is then an exact
+    blind spot: LOBPCG converges to a subdominant eigenpair with a residual
+    comfortably inside the gate, and the reported support understates the
+    numerical range.  A 64x64 construction with such a planted blind spot
+    (Codex conditioning.md finding 1, 2026-09-14) drove ``disk_rate`` to
+    about ``1e-7`` and ``origin_enclosed`` to ``False`` on an operator whose
+    true numerical range is the disk of radius 2 centered at 1, which
+    contains the origin.
+
+    Hashing a fixed probe vector's image under the operator ties the seed to
+    the operator itself, so a fixed construction can no longer be orthogonal
+    to it without already depending on the very hash it would have to
+    predict.  The hash is taken over the *sign pattern* of the probe's
+    image, not its raw floating-point values: this diagnostic elsewhere
+    treats ``A`` and ``s * A`` (``s`` a positive real scale) as equivalent up
+    to rescaling, and a positive rescale never flips a sign, whereas it does
+    change the low bits of the raw values (a decimal, non-power-of-two
+    factor such as ``1.0e-8`` rounds differently than ``1.0``), which
+    ``test_numerical_range_scale_invariance`` caught as a scale-dependent
+    key from an earlier, byte-hashing version of this function.  A sign
+    pattern is a pure function of ``matvec``'s output, so the key -- and
+    therefore the whole diagnostic -- stays deterministic for a given
+    operator (up to a positive real rescale).  ``numerical_range``'s
+    ``operator_key`` argument overrides this default for a caller that wants
+    to supply its own key (for example, to decorrelate two operators that
+    happen to hash to the same sign pattern).
+    """
+    probe = jnp.ones(n, dtype=jnp.complex128)
+    fingerprint = np.asarray(_complex_action(matvec, probe), dtype=np.complex128)
+    signs = np.concatenate([fingerprint.real, fingerprint.imag]) >= 0.0
+    digest = hashlib.sha256(np.packbits(signs).tobytes()).digest()
+    seed = int.from_bytes(digest[:4], byteorder="little", signed=False)
+    return jax.random.PRNGKey(seed)
+
+
 def _largest_hermitian_eigenvector(
     action: Matvec,
     n: int,
@@ -189,6 +232,7 @@ def _largest_hermitian_eigenvector(
     max_iters: int,
     tolerance: float,
     restart: int,
+    operator_key: jax.Array,
 ) -> tuple[jax.Array, float, float]:
     """Find a dominant eigenvector, its eigenpair residual norm, and the scale.
 
@@ -200,6 +244,12 @@ def _largest_hermitian_eigenvector(
     part at ``theta = pi / 2`` is ``0.5 (i A - i A*)``, a cancellation that
     leaves rounding noise of size ``eps ||A||``, and a residual judged against
     that noise fails every gate for a support that is exact to rounding.
+
+    ``operator_key`` (see :func:`_default_operator_key`) seeds the random
+    starting columns together with ``theta`` and ``restart``, so the blind
+    subspace a fixed seed would have is tied to the operator being diagnosed
+    rather than shared by every operator ``numerical_range`` is ever asked
+    to trace.
     """
     real_dimension = 2 * n
     # Realification represents every complex eigenvector by two real vectors,
@@ -243,8 +293,15 @@ def _largest_hermitian_eigenvector(
     # The reported support would then be too small and the half-plane would no
     # longer contain the numerical range, breaking the outer-bound guarantee.
     # A third pseudo-random direction, seeded from the sweep angle so runs stay
-    # reproducible, makes such an alignment a probability-zero event.
-    probe_key = jax.random.PRNGKey((int(theta * 1_000_003) + 7_919 * restart) & 0x7FFFFFFF)
+    # reproducible, makes such an alignment a probability-zero event -- unless
+    # the seed is fixed regardless of the operator, in which case a
+    # constructed operator can be orthogonal to it (and to padded_initial and
+    # its roll) at every angle and restart a call uses.  Folding operator_key
+    # into the seed keeps runs reproducible for a given operator while tying
+    # the blind subspace, if any, to that operator instead of to every one.
+    probe_key = jax.random.fold_in(
+        operator_key, (int(theta * 1_000_003) + 7_919 * restart) & 0x7FFFFFFF
+    )
     random_column = jax.random.normal(probe_key, (padded_dimension,), dtype=jnp.float64)
     if restart == 0:
         initial_block = jnp.column_stack(
@@ -308,6 +365,7 @@ def numerical_range(
     tolerance: float = 1.0e-13,
     residual_tolerance: float = 1.0e-3,
     n_restarts: int = 1,
+    operator_key: jax.Array | None = None,
 ) -> FieldOfValuesResult:
     """Trace a matrix-free numerical-range boundary using Johnson supports.
 
@@ -340,6 +398,15 @@ def numerical_range(
             diagnostic cheap, in which case no corroboration is attempted and
             the flag is vacuously true.  Raise it when a verdict is load
             bearing.
+        operator_key: PRNG key seeding the LOBPCG starting columns together
+            with the sweep angle and restart index.  Defaults to
+            :func:`_default_operator_key`, a hash of ``matvec`` applied to a
+            fixed probe vector, so the seed -- and the subspace a
+            still-possible blind spot would sit in -- depends on the operator
+            being diagnosed rather than being shared by every operator this
+            function is ever asked to trace.  The default keeps results
+            deterministic for a given operator; pass an explicit key only to
+            decorrelate two operators whose default keys happen to collide.
 
     Returns:
         A numerical-range boundary and enclosing-disk diagnostics.
@@ -363,6 +430,8 @@ def numerical_range(
         raise ValueError("n_restarts must be positive")
     corroboration_attempted = n_restarts >= 2
     require_x64("conditioning diagnostics")
+    if operator_key is None:
+        operator_key = _default_operator_key(matvec, n)
 
     boundary: list[jax.Array] = []
     thetas: list[float] = []
@@ -392,6 +461,7 @@ def numerical_range(
                 max_iters,
                 tolerance,
                 restart,
+                operator_key,
             )
             worst_residual = max(worst_residual, support_residual)
             operator_scale = max(operator_scale, spectral_scale)

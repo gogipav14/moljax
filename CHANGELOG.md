@@ -6,6 +6,49 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **`numerical_range`'s LOBPCG restart seeding now depends on the operator
+  being diagnosed, and the `adequate` docstring is honest about what
+  restart agreement establishes.** `_largest_hermitian_eigenvector`'s
+  random starting columns were seeded only from the sweep angle and the
+  restart index, both fixed regardless of which operator was being traced,
+  so an operator whose dominant eigenspace happened to be orthogonal to
+  those fixed columns at every angle and restart a call used was an exact
+  blind spot for every caller, not an unlucky one. A 64x64 construction
+  with such a planted blind spot (Codex conditioning.md finding 1,
+  2026-09-14: `A = I + 4 u v^T + 1e-7 P D P`, `D = diag(linspace(-1, 1,
+  64))`, `P = I - u u^T - v v^T`, `u`, `v` orthogonal to every starting
+  column the old seed formula would use) drove `disk_rate` toward zero and
+  `origin_enclosed` toward `False` on an operator whose true numerical
+  range is the disk of radius 2 centered at 1, which contains the origin;
+  the audit's own verification could not turn this into a stable false
+  `adequate` (the residual gate tripped first in every trial it ran), so
+  the concrete risk was the docstring's promise that agreement across
+  restarts is more than corroboration. Fixed by hashing the sign pattern of
+  a fixed probe vector's image under the operator (`matvec(ones(n))`) into
+  a `numerical_range(..., operator_key=...)` argument that seeds every
+  restart, so a fixed construction can no longer be blind to the seed
+  without already depending on the very hash it would have to predict; the
+  sign pattern (rather than the raw floating-point values) keeps the
+  default deterministic under a positive real rescale of the operator; an
+  earlier version of this fix hashed the raw values instead, and
+  `test_numerical_range_scale_invariance`'s `disk_rate` disagreed across
+  its sixteen decades of scale, because a decimal rescale changes a
+  float's low bits even though the operator is "the same" up to that
+  factor, and hashing is exquisitely sensitive to exactly those bits. The
+  `PreconditionerAssessment.adequate` docstring now cross-references
+  `FieldOfValuesResult.supports_corroborated`'s existing hedge: agreement
+  across restarts is corroboration, not proof.
+  `tests/test_field_of_values.py::test_default_operator_key_ties_the_seed_to_the_operator`
+  and `::test_numerical_range_accepts_an_explicit_operator_key` exercise the
+  new seeding mechanism directly and fail against the pre-fix code (no such
+  function/argument existed);
+  `::test_orthogonal_blind_spot_construction_no_longer_hides_the_enclosed_origin`
+  reproduces the conditioning.md construction as a regression guard, though
+  -- consistent with the audit's own experience -- it does not reliably
+  distinguish the pre-fix seed formula from the post-fix one on its own,
+  since a second restart's fixed seed can happen not to be blind for a
+  given construction either way.
+
 - **`pseudospectra.arnoldi` returns a structured `ArnoldiResult`, and
   `non_normality.assess_preconditioner` can be told whether `epsilon_zero`
   covers the full operator.** `arnoldi` used to return a bare `(Q, H)`

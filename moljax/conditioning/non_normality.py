@@ -83,8 +83,14 @@ class PreconditionerAssessment(NamedTuple):
 
     ``adequate``
         Every threshold gate passed, the supports were corroborated by
-        independent eigensolver restarts, and ``epsilon_zero`` rests on
-        full-operator evidence: either it came from an Arnoldi projection
+        independent eigensolver restarts (see
+        ``FieldOfValuesResult.supports_corroborated``: agreement across
+        restarts is corroboration, not proof -- a fixed set of starting
+        directions can in principle miss the same dominant eigenspace at
+        every restart, which is why ``numerical_range`` also ties its
+        default restart seeding to the operator being diagnosed), and
+        ``epsilon_zero`` rests on full-operator evidence: either it came
+        from an Arnoldi projection
         that reached the full dimension (``coverage.k_achieved ==
         coverage.basis.shape[0]``) or the caller has independently validated
         it as a lower bound on the full operator and passed

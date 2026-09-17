@@ -183,3 +183,177 @@ def test_numerical_range_scale_invariance():
                 rtol=1.0e-9,
                 atol=0.0,
             )
+
+
+def test_default_operator_key_ties_the_seed_to_the_operator():
+    """Two different operators must not share the same LOBPCG starting seed.
+
+    The seed used to depend only on the sweep angle and restart index, both
+    fixed regardless of which operator was being diagnosed, so an operator
+    whose dominant eigenspace happened to be orthogonal to those fixed
+    columns at every angle and restart a call used was an exact blind spot
+    for every user of ``numerical_range``, not just an unlucky one.  Hashing
+    the sign pattern of a probe vector's image under the operator ties the
+    seed to the operator, so two operators whose probe images disagree in
+    sign somewhere get different seeds, while the same operator always gets
+    the same one (the sign pattern, unlike the raw floating-point values, is
+    also invariant to rescaling the operator by a positive real factor).
+    """
+    from moljax.conditioning.field_of_values import _default_operator_key
+
+    # Same magnitudes, opposite sign pattern entrywise, so their probe
+    # images (equal to the diagonal itself, since the probe is all ones)
+    # cannot share a sign pattern.
+    diagonal_a = jnp.asarray([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], dtype=jnp.complex128)
+    diagonal_b = jnp.asarray([1.0, 1.0, 1.0, -1.0, -1.0, -1.0], dtype=jnp.complex128)
+    key_a = _default_operator_key(lambda v: diagonal_a * v, 6)
+    key_b = _default_operator_key(lambda v: diagonal_b * v, 6)
+    key_a_again = _default_operator_key(lambda v: diagonal_a * v, 6)
+
+    assert np.asarray(key_a).tolist() == np.asarray(key_a_again).tolist()
+    assert np.asarray(key_a).tolist() != np.asarray(key_b).tolist()
+
+
+def test_numerical_range_accepts_an_explicit_operator_key():
+    """A caller-supplied ``operator_key`` overrides the default and stays reproducible."""
+    matrix = _grcar(6)
+    matvec, matvec_adjoint = _matrix_actions(matrix)
+
+    default_a = numerical_range(matvec, matvec_adjoint, 6, n_angles=8, max_iters=60)
+    default_b = numerical_range(matvec, matvec_adjoint, 6, n_angles=8, max_iters=60)
+    np.testing.assert_allclose(
+        np.asarray(default_a.boundary), np.asarray(default_b.boundary), rtol=0.0, atol=0.0
+    )
+
+    explicit = numerical_range(
+        matvec,
+        matvec_adjoint,
+        6,
+        n_angles=8,
+        max_iters=60,
+        operator_key=jax.random.PRNGKey(0),
+    )
+    explicit_again = numerical_range(
+        matvec,
+        matvec_adjoint,
+        6,
+        n_angles=8,
+        max_iters=60,
+        operator_key=jax.random.PRNGKey(0),
+    )
+    np.testing.assert_allclose(
+        np.asarray(explicit.boundary), np.asarray(explicit_again.boundary), rtol=0.0, atol=0.0
+    )
+    # A converged, well-resolved boundary does not depend on which valid
+    # starting block found it: the default and the explicit key should agree
+    # on the (well-resolved) supports even though their seeds differ.
+    np.testing.assert_allclose(
+        np.asarray(default_a.boundary), np.asarray(explicit.boundary), atol=1.0e-8, rtol=0.0
+    )
+
+
+def _construct_orthogonal_blind_spot_operator(
+    n: int, n_angles: int, n_restarts: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build the operator family from Codex conditioning.md finding 1.
+
+    Returns ``(A, u, v)`` where ``A = I + 4 u v^T + 1e-7 P D P``,
+    ``D = diag(linspace(-1, 1, n))``, ``P = I - u u^T - v v^T``, and ``u``,
+    ``v`` are real orthonormal vectors constructed to be orthogonal, in the
+    realified representation, to every LOBPCG starting column the *old*
+    (pre-fix) seed formula -- deterministic in ``theta`` and ``restart``
+    only -- would ever have produced for the given ``n_angles``/``n_restarts``
+    sweep.  ``span(u, v)`` is an exact invariant subspace of both ``A`` and
+    its adjoint (``A u = u``, ``A v = 4 u + v``), on which ``A`` restricts to
+    ``[[1, 4], [0, 1]]``: a numerical range of the disk centered at 1 with
+    radius 2, which contains the origin, while the complementary block is a
+    tiny (``1e-7``-scale) perturbation of the identity.  A starting block
+    confined to the orthogonal complement of ``span(u, v)`` never leaves it
+    under the rotated-Hermitian action (the complement is invariant too), so
+    a fixed seed exactly orthogonal to ``u`` and ``v`` is a genuine blind
+    spot for the mechanism this operator targets, independent of how well
+    the resulting (wrong) answer happens to converge in any one trial.
+    """
+    block_width = 3
+    real_dimension = 2 * n
+    padded_dimension = max(real_dimension, 5 * block_width + 1)
+    assert padded_dimension == real_dimension, "test only covers the unpadded regime"
+
+    def old_columns(theta: float, restart: int) -> list[np.ndarray]:
+        initial_complex = jnp.sin(jnp.arange(n, dtype=jnp.float64) + theta + 1.0) + 1j * jnp.cos(
+            jnp.arange(n, dtype=jnp.float64) + 0.5 * theta + 0.5
+        )
+        initial_real = jnp.concatenate((jnp.real(initial_complex), jnp.imag(initial_complex)))
+        probe_key = jax.random.PRNGKey((int(theta * 1_000_003) + 7_919 * restart) & 0x7FFFFFFF)
+        random_column = jax.random.normal(probe_key, (padded_dimension,), dtype=jnp.float64)
+        if restart == 0:
+            columns = [initial_real, jnp.roll(initial_real, 1), random_column]
+        else:
+            extra = jax.random.normal(
+                jax.random.fold_in(probe_key, 1), (padded_dimension, 2), dtype=jnp.float64
+            )
+            columns = [random_column, extra[:, 0], extra[:, 1]]
+        return [np.asarray(column) for column in columns]
+
+    vectors = []
+    for index in range(n_angles):
+        theta = 2.0 * math.pi * index / n_angles
+        for restart in range(n_restarts):
+            vectors.extend(old_columns(theta, restart))
+
+    # Embedding u, v with zero imaginary part reduces "orthogonal to every
+    # 2n-dim starting column" to "orthogonal to every column's first n
+    # (real-part) entries", so the null space is computed on that smaller
+    # n x n_columns matrix.
+    real_parts = np.stack([vector[:n] for vector in vectors])
+    _, _, vt = np.linalg.svd(real_parts, full_matrices=True)
+    u = vt[len(vectors)] / np.linalg.norm(vt[len(vectors)])
+    v = vt[len(vectors) + 1] / np.linalg.norm(vt[len(vectors) + 1])
+    for vector in vectors:
+        assert abs(np.dot(vector[:n], u)) < 1.0e-8
+        assert abs(np.dot(vector[:n], v)) < 1.0e-8
+    assert abs(np.dot(u, v)) < 1.0e-8
+
+    diagonal = np.diag(np.linspace(-1.0, 1.0, n))
+    projector = np.eye(n) - np.outer(u, u) - np.outer(v, v)
+    matrix = np.eye(n) + 4.0 * np.outer(u, v) + 1.0e-7 * (projector @ diagonal @ projector)
+    return matrix, u, v
+
+
+@pytest.mark.slow
+def test_orthogonal_blind_spot_construction_no_longer_hides_the_enclosed_origin():
+    """The construction that motivated the operator-dependent seed is resolved.
+
+    This is the 64x64 construction described in Codex conditioning.md
+    finding 1: an operator whose true numerical range is the disk centered
+    at 1 with radius 2 (which contains the origin), built so that ``u`` and
+    ``v`` -- spanning the only part of the operator that reaches beyond a
+    tiny neighborhood of 1 -- are orthogonal to every column the old,
+    operator-independent seed formula would have used for this exact
+    ``n_angles=3``, ``n_restarts=2``, ``max_iters=1`` sweep (matching the
+    reproduction parameters in the audit note).
+
+    Note for future maintenance: the audit's own verification could not
+    turn this mechanism into a stable false "adequate" through
+    ``numerical_range``'s full sweep either (it reported the residual gate
+    tripping in 35+ trials, falling to "indeterminate" rather than a false
+    "adequate"), and this test does not reliably distinguish the pre-fix
+    from the post-fix seed formula on its own -- both can stumble onto the
+    correct answer once a second restart's fixed seed happens not to be
+    blind for this particular construction.  It is kept as a direct
+    regression guard on the exact construction the audit describes, and as
+    the scenario the softened ``adequate`` docstring exists for; the seed
+    tests above are what actually exercise the operator-dependent fix.
+    """
+    n = 64
+    matrix, u, v = _construct_orthogonal_blind_spot_operator(n, n_angles=3, n_restarts=2)
+    operator = jnp.asarray(matrix, dtype=jnp.complex128)
+    matvec = lambda value: operator @ value  # noqa: E731
+    matvec_adjoint = lambda value: operator.conj().T @ value  # noqa: E731
+
+    result = numerical_range(matvec, matvec_adjoint, n, n_angles=3, max_iters=1, n_restarts=2)
+
+    # The true range contains the origin (it is the disk of radius 2 about
+    # 1); the softened contract this test protects is that the diagnostic
+    # must never report the origin as excluded when it in fact is not.
+    assert result.origin_enclosed or not result.supports_consistent
