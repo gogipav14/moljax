@@ -206,12 +206,12 @@ def _run_state_diagnostics(
     v0 = v0 + 1j * jax.random.normal(key_imag, (operator.n,), dtype=jnp.float64)
 
     diagnostic_started = time.perf_counter()
-    q_basis, hessenberg = arnoldi(
+    arnoldi_result = arnoldi(
         counted_matvec,
         v0,
         min(config.arnoldi_steps, operator.n),
     )
-    del q_basis
+    hessenberg = arnoldi_result.hessenberg
     ritz = ritz_values(hessenberg)
     epsilon = epsilon_zero(hessenberg)
     real_grid, imag_grid = _spectral_grid(ritz, config.pseudospectrum_points)
@@ -257,6 +257,8 @@ def _run_state_diagnostics(
             "requested_steps": config.arnoldi_steps,
             "returned_steps": int(hessenberg.shape[1]),
             "hessenberg_shape": list(hessenberg.shape),
+            "breakdown": bool(arnoldi_result.breakdown),
+            "residual_norm": float(arnoldi_result.residual_norm),
         },
         "reduced_pseudospectrum": {
             "grid_shape": list(reduced.shape),

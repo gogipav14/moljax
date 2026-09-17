@@ -276,9 +276,125 @@ def test_assess_preconditioner_verdicts_cover_all_branches():
     enclosing = _assessment_fov([1.0 + 0.0j, -1.0 + 0.0j], 0.0 + 0.0j, 1.0, True)
     ritz = jnp.asarray([1.9 + 0.0j, 1.95 + 0.0j, 2.05 + 0.0j, 2.1 + 0.0j])
 
-    assert assess_preconditioner(adequate, ritz, epsilon_zero=0.2).verdict == "adequate"
+    # epsilon_zero here is a bare value with no Arnoldi projection behind it
+    # at all, so it is treated as a caller-validated full-operator reading
+    # (`full_operator_lower_bound=True`) rather than as unknown coverage.
+    assert (
+        assess_preconditioner(
+            adequate, ritz, epsilon_zero=0.2, full_operator_lower_bound=True
+        ).verdict
+        == "adequate"
+    )
     assert assess_preconditioner(broad, ritz, epsilon_zero=0.2).verdict == "investigate"
     assert assess_preconditioner(enclosing, ritz, epsilon_zero=0.2).verdict == "indeterminate"
+    # Without that assurance, the same inputs can reach only "provisional":
+    # a bare epsilon_zero's coverage is unknown, and unknown coverage must
+    # never read as "adequate".
+    bare = assess_preconditioner(adequate, ritz, epsilon_zero=0.2)
+    assert bare.verdict == "provisional"
+    assert bare.epsilon_zero_full_operator_evidence is False
+    assert bare.verdict_reason is not None
+
+
+def test_arnoldi_breakdown_does_not_promote_a_reduced_epsilon_zero_to_adequate():
+    """A decoupled degree of freedom must not let a reduced bound pass full-operator gates.
+
+    ``A`` has a diagonal first entry with no coupling out of it (the (0, 1)
+    superdiagonal entry is zero, unlike every other superdiagonal entry), so
+    ``v0 = [0, 1, ..., 1]`` -- any start with no component on that decoupled
+    mode -- never reaches it and Arnoldi breaks down at dimension 7 of 8.
+    The reduced projection's ``epsilon_zero`` (about 0.598) has nothing to do
+    with the excluded mode's eigenvalue, the true ``sigma_min(A) = 0.05``;
+    reading it as a full-operator lower bound is the mechanism that used to
+    pass the adequacy gate on this operator (Codex conditioning.md finding 2,
+    2026-09-14).  This is not an adversarial construction: any starting
+    vector with zero overlap on a decoupled degree of freedom triggers it.
+    """
+    diagonal = np.array([0.05, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9])
+    matrix = np.diag(diagonal)
+    for row in range(1, 7):
+        matrix[row, row + 1] = 0.02
+    operator = jnp.asarray(matrix, dtype=jnp.complex128)
+
+    def matvec(value: jax.Array) -> jax.Array:
+        return operator @ value
+
+    def matvec_adjoint(value: jax.Array) -> jax.Array:
+        return operator.conj().T @ value
+
+    v0 = jnp.asarray([0.0, 1, 1, 1, 1, 1, 1, 1], dtype=jnp.complex128)
+    arnoldi_result = arnoldi(matvec, v0, 8)
+    assert arnoldi_result.k_achieved == 7
+    assert arnoldi_result.breakdown is True
+
+    reduced_epsilon_zero = float(
+        jnp.linalg.svd(arnoldi_result.hessenberg[:7, :7], compute_uv=False)[-1]
+    )
+    assert reduced_epsilon_zero == pytest.approx(0.5981182702788956, rel=1.0e-6)
+    true_sigma_min = float(np.linalg.svd(matrix, compute_uv=False)[-1])
+    assert true_sigma_min == pytest.approx(0.05, abs=1.0e-12)
+
+    ritz = ritz_values(arnoldi_result.hessenberg)
+    fov = numerical_range(matvec, matvec_adjoint, 8, n_angles=8, n_restarts=2)
+    assert fov.disk_rate == pytest.approx(0.8949542272342178, rel=1.0e-6)
+
+    # Without coverage, the bare-value call path is capped at provisional --
+    # it can never quietly read as adequate again.
+    bare = assess_preconditioner(fov, ritz, reduced_epsilon_zero)
+    assert bare.verdict in ("provisional", "investigate")
+    assert bare.verdict != "adequate"
+
+    # With coverage attached, the reduced projection is recognized as such
+    # and the same cap applies, with the mechanism recorded in the reason.
+    with_coverage = assess_preconditioner(
+        fov, ritz, reduced_epsilon_zero, coverage=arnoldi_result
+    )
+    assert with_coverage.verdict in ("provisional", "investigate")
+    assert with_coverage.verdict != "adequate"
+    assert with_coverage.epsilon_zero_full_operator_evidence is False
+    assert "reduced Arnoldi projection" in with_coverage.verdict_reason
+
+    # The true singular value tells a different story: this operator does
+    # not actually meet the eps-zero threshold, so it should read
+    # "investigate", not merely "not adequate".
+    honest = assess_preconditioner(fov, ritz, true_sigma_min, full_operator_lower_bound=True)
+    assert honest.verdict == "investigate"
+
+
+def test_full_dimensional_arnoldi_projection_can_still_reach_adequate():
+    """The new coverage gate must not block a genuinely full-rank projection.
+
+    Unlike the decoupled-mode operator above, this diagonal operator's
+    eigenvalues are all excited by ``v0 = ones(n)``, so Arnoldi runs the full
+    ``n`` steps with no missed degree of freedom, and ``epsilon_zero`` from
+    that projection is exactly the operator's smallest singular value.
+    """
+    diagonal = np.array([0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25])
+    operator = jnp.asarray(np.diag(diagonal), dtype=jnp.complex128)
+
+    def matvec(value: jax.Array) -> jax.Array:
+        return operator @ value
+
+    def matvec_adjoint(value: jax.Array) -> jax.Array:
+        return operator.conj().T @ value
+
+    v0 = jnp.ones(8, dtype=jnp.complex128)
+    arnoldi_result = arnoldi(matvec, v0, 8)
+    assert arnoldi_result.k_achieved == 8
+
+    ritz = ritz_values(arnoldi_result.hessenberg)
+    reduced_epsilon_zero = float(
+        jnp.linalg.svd(arnoldi_result.hessenberg[:8, :8], compute_uv=False)[-1]
+    )
+    assert reduced_epsilon_zero == pytest.approx(float(diagonal.min()), rel=1.0e-9)
+
+    fov = numerical_range(matvec, matvec_adjoint, 8, n_angles=16, n_restarts=2)
+    assessment = assess_preconditioner(
+        fov, ritz, reduced_epsilon_zero, coverage=arnoldi_result
+    )
+    assert assessment.verdict == "adequate"
+    assert assessment.epsilon_zero_full_operator_evidence is True
+    assert assessment.verdict_reason is None
 
 
 @pytest.mark.slow
@@ -312,7 +428,7 @@ def test_predicted_gmres_factor_withheld_when_origin_is_enclosed():
 
     start = np.ones(m, dtype=complex)
     start[-1] = 1.0e-17
-    _, hessenberg = arnoldi(matvec, jnp.asarray(start), 12)
+    hessenberg = arnoldi(matvec, jnp.asarray(start), 12).hessenberg
     ritz = ritz_values(hessenberg)
 
     rates = estimate_rates(fov, ritz)

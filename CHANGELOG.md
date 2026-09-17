@@ -4,6 +4,52 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`pseudospectra.arnoldi` returns a structured `ArnoldiResult`, and
+  `non_normality.assess_preconditioner` can be told whether `epsilon_zero`
+  covers the full operator.** `arnoldi` used to return a bare `(Q, H)`
+  tuple with no record of how many Krylov steps actually completed, so a
+  reduced `epsilon_zero` from an Arnoldi breakdown was indistinguishable
+  from the full operator's smallest singular value: `assess_preconditioner`
+  took bare `ritz` and `epsilon_zero` values and had no way to tell.
+  `A = diag([.05, .6, .65, .7, .75, .8, .85, .9])` plus `0.02` on the first
+  superdiagonal except the `(0, 1)` entry, `v0 = [0, 1, 1, 1, 1, 1, 1, 1]`,
+  `k = 8`: the start vector has no component on the decoupled first degree
+  of freedom, so Arnoldi breaks down at dimension 7 with
+  `epsilon_zero(H) = 0.598`, while `sigma_min(A) = 0.05`; `numerical_range`
+  gives `disk_rate = 0.895`, and the assessment read `adequate` from the
+  reduced value where the true value reads `investigate`. This is not
+  adversarial: any start vector with no component on a decoupled degree of
+  freedom triggers it. `arnoldi` now returns an `ArnoldiResult` recording
+  `basis`, `hessenberg`, `k_requested`, `k_achieved`, `breakdown`, and the
+  forward-factorization residual `||A Q[:, :k_achieved] - Q H||` as a
+  coverage indicator (indexing and the first two fields' order are
+  unchanged, so `result[0]`/`result[1]` still give `basis`/`hessenberg`,
+  but a plain `Q, H = arnoldi(...)` unpacking no longer works).
+  `assess_preconditioner` gained `coverage: ArnoldiResult | None = None`
+  and `full_operator_lower_bound: bool = False`: a reduced `epsilon_zero`
+  may now support `adequate` only when `coverage.k_achieved` equals the
+  operator's dimension or the caller asserts a validated full-operator
+  lower bound; otherwise the strongest verdict is `provisional`, with the
+  mechanism recorded in the new `verdict_reason` field. The bare-value call
+  path (`coverage` omitted) keeps working and is capped at `provisional`
+  for the same reason: unknown coverage must never read as `adequate`.
+  `epsilon_zero_full_operator_evidence` reports which case applied. Several
+  existing tests asserted `adequate` from a bare `epsilon_zero` used only
+  to exercise a different gate (corroboration, the outlier count, or a
+  corrupted-reading abstention); those now pass
+  `full_operator_lower_bound=True` to keep testing that gate in isolation.
+  `tests/test_non_normality.py::test_arnoldi_breakdown_does_not_promote_a_reduced_epsilon_zero_to_adequate`
+  reproduces the exposure above and checks both the bare-value and
+  coverage-aware call paths land on `provisional`/`investigate`, never
+  `adequate`;
+  `test_full_dimensional_arnoldi_projection_can_still_reach_adequate`
+  checks a genuinely full-rank projection can still reach `adequate`.
+  `tests/test_pseudospectra.py` gained coverage assertions
+  (`k_requested`/`k_achieved`/`breakdown`/`residual_norm`) on the existing
+  Arnoldi tests plus a legacy-indexing regression test.
+
 ### Fixed
 
 - **The periodic Laplacian symbol built as `(2*cos(k*dx) - 2)/dx^2` catastrophically

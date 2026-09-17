@@ -69,7 +69,8 @@ def test_arnoldi_basis_is_orthonormal_and_satisfies_relation():
     """Twice-MGS Arnoldi returns the expected basis and Hessenberg relation."""
     matrix = _grcar(6)
     action = _matvec(matrix)
-    basis, hessenberg = arnoldi(action, _starting_vector(6), 5)
+    result = arnoldi(action, _starting_vector(6), 5)
+    basis, hessenberg = result.basis, result.hessenberg
     leading_basis = basis[:, :5]
     expected = jnp.asarray(matrix) @ leading_basis
     reconstructed = basis @ hessenberg
@@ -86,16 +87,33 @@ def test_arnoldi_basis_is_orthonormal_and_satisfies_relation():
         atol=1.0e-10,
         rtol=0.0,
     )
+    assert result.k_requested == 5
+    assert result.k_achieved == 5
+    assert result.breakdown is False
+    assert result.residual_norm < 1.0e-9
+
+
+def test_arnoldi_result_supports_legacy_two_field_indexing():
+    """``result[0]``/``result[1]`` still give ``basis``/``hessenberg``.
+
+    ``ArnoldiResult`` replaced the bare ``(Q, H)`` tuple so coverage metadata
+    travels with the factorization, but code that indexes rather than
+    unpacks (``arnoldi(...)[1]``) must keep working.
+    """
+    matrix = _grcar(6)
+    result = arnoldi(_matvec(matrix), _starting_vector(6), 5)
+    assert result[0] is result.basis
+    assert result[1] is result.hessenberg
 
 
 @pytest.mark.parametrize("matrix", [_grcar(6), _normal_matrix()], ids=["grcar", "normal"])
 def test_full_order_ritz_values_match_dense_eigenvalues(matrix: np.ndarray):
     """A full-order Arnoldi projection is similar to the dense operator."""
-    basis, hessenberg = arnoldi(_matvec(matrix), _starting_vector(matrix.shape[0]), matrix.shape[0])
-    del basis
-    actual = ritz_values(hessenberg)
+    result = arnoldi(_matvec(matrix), _starting_vector(matrix.shape[0]), matrix.shape[0])
+    actual = ritz_values(result.hessenberg)
 
     assert _maximum_matching_error(actual, np.linalg.eigvals(matrix)) <= 1.0e-9
+    assert result.k_achieved == matrix.shape[0]
 
 
 @pytest.mark.slow
@@ -105,7 +123,7 @@ def test_full_order_reduced_grid_matches_dense_grid():
     real_grid = np.linspace(-1.0, 3.0, 7)
     imag_grid = np.linspace(-2.5, 2.5, 6)
     action = _matvec(matrix)
-    _, hessenberg = arnoldi(action, _starting_vector(6), 6)
+    hessenberg = arnoldi(action, _starting_vector(6), 6).hessenberg
     reduced = reduced_pseudospectrum(hessenberg, real_grid, imag_grid)
     dense = pseudospectrum_dense(action, 6, real_grid, imag_grid)
 
@@ -117,7 +135,7 @@ def test_full_order_reduced_grid_matches_dense_grid():
 def test_epsilon_zero_matches_dense_smallest_singular_value():
     """The zero-entry threshold is the smallest singular value of the operator."""
     matrix = _grcar(6)
-    _, hessenberg = arnoldi(_matvec(matrix), _starting_vector(6), 6)
+    hessenberg = arnoldi(_matvec(matrix), _starting_vector(6), 6).hessenberg
     actual = epsilon_zero(hessenberg)
 
     expected = np.linalg.svd(matrix, compute_uv=False)[-1]
@@ -133,7 +151,8 @@ def test_arnoldi_breakdown_trims_to_the_completed_invariant_block():
     matrix[3:, 3:] = second_block
     start = jnp.asarray([1.0, 2.0, 3.0, 0.0, 0.0, 0.0], dtype=jnp.complex128)
 
-    basis, hessenberg = arnoldi(_matvec(matrix), start, 5)
+    result = arnoldi(_matvec(matrix), start, 5)
+    basis, hessenberg = result.basis, result.hessenberg
     actual_ritz = ritz_values(hessenberg)
     actual_epsilon = epsilon_zero(hessenberg)
 
@@ -142,6 +161,13 @@ def test_arnoldi_breakdown_trims_to_the_completed_invariant_block():
     assert _maximum_matching_error(actual_ritz, np.linalg.eigvals(first_block)) <= 1.0e-9
     expected_epsilon = np.linalg.svd(first_block, compute_uv=False)[-1]
     assert actual_epsilon == pytest.approx(expected_epsilon, abs=1.0e-10)
+    # Coverage metadata must reflect the trimmed reduction: only 3 of the 6
+    # requested (and possible) dimensions were reached, because the start
+    # vector never excites the second, decoupled block.
+    assert result.k_requested == 5
+    assert result.k_achieved == 3
+    assert result.breakdown is True
+    assert result.residual_norm < 1.0e-9
 
 
 @pytest.mark.parametrize("scale", [1.0, 1.0e-15])
@@ -164,9 +190,13 @@ def test_arnoldi_breakdown_tolerance_is_scale_relative(scale: float):
     blocks[3:, 3:] = np.diag([7.0, 9.0, 12.0])
     start = jnp.asarray(np.array([1.0, 0.5, 0.25, 0.0, 0.0, 0.0]), dtype=jnp.complex128)
 
-    _, hessenberg = arnoldi(_matvec(scale * blocks), start, 6)
-    assert hessenberg.shape == (4, 3)
+    blocked_result = arnoldi(_matvec(scale * blocks), start, 6)
+    assert blocked_result.hessenberg.shape == (4, 3)
+    assert blocked_result.k_achieved == 3
+    assert blocked_result.breakdown is True
 
     coupled = blocks + 0.1 * np.ones((6, 6), dtype=np.complex128)
-    _, hessenberg = arnoldi(_matvec(scale * coupled), start, 6)
-    assert hessenberg.shape == (7, 6)
+    coupled_result = arnoldi(_matvec(scale * coupled), start, 6)
+    assert coupled_result.hessenberg.shape == (7, 6)
+    assert coupled_result.k_achieved == 6
+    assert coupled_result.k_requested == 6

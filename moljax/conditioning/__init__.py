@@ -21,6 +21,7 @@ from .non_normality import (
     traced_boundary_rate,
 )
 from .pseudospectra import (
+    ArnoldiResult,
     PseudospectraResult,
     arnoldi,
     epsilon_zero,
@@ -30,6 +31,7 @@ from .pseudospectra import (
 )
 
 __all__ = [
+    "ArnoldiResult",
     "FieldOfValuesResult",
     "LinearizedOperator",
     "PseudospectraResult",

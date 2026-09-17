@@ -19,6 +19,52 @@ from moljax._precision import require_x64
 Matvec = Callable[[jax.Array], jax.Array]
 
 
+class ArnoldiResult(NamedTuple):
+    """Forward-only Arnoldi factorization together with its coverage evidence.
+
+    ``arnoldi`` used to return a plain ``(Q, H)`` tuple, which threw away
+    exactly the information a caller needs to judge whether ``H`` is a
+    trustworthy stand-in for the full operator: how many steps were actually
+    completed, and whether they ended in a clean breakdown or something is
+    wrong upstream.  A reduced ``H`` from an invariant-subspace breakdown can
+    have a much larger smallest singular value than the full operator (an
+    exact decoupled degree of freedom the start vector never excites is the
+    generic example, not an adversarial one), so ``epsilon_zero(H)`` silently
+    stops being a lower bound on ``sigma_min`` of the full operator once
+    ``k_achieved < n``.  Carrying ``k_achieved`` and ``n`` (via ``basis``'s
+    row count) lets :func:`moljax.conditioning.non_normality.assess_preconditioner`
+    tell a full-dimensional projection from a reduced one instead of trusting
+    every ``epsilon_zero`` equally.
+
+    Attributes:
+        basis: Orthonormal Krylov basis ``Q``, shape ``(n, k_achieved + 1)``.
+        hessenberg: Rectangular upper-Hessenberg array ``H``, shape
+            ``(k_achieved + 1, k_achieved)``.
+        k_requested: The ``k`` passed to :func:`arnoldi`.
+        k_achieved: The number of completed Arnoldi columns.  Equals
+            ``k_requested`` unless a Krylov breakdown occurred, in which case
+            it is the dimension at which the factorization was trimmed.
+        breakdown: Whether the factorization stopped early because the next
+            Krylov vector's norm fell below the scale-relative breakdown
+            tolerance, rather than because ``k_requested`` columns were
+            completed.
+        residual_norm: ``||A Q[:, :k_achieved] - Q H||``, the explicit
+            forward-factorization residual.  It is a coverage indicator, not
+            a correctness proof: orthogonalization keeps it near machine
+            epsilon whenever the arithmetic behaved, so a value that is not
+            small flags a problem with ``matvec`` (e.g. non-finite output or
+            an operator that is not actually linear) rather than with the
+            reduction itself.
+    """
+
+    basis: jax.Array
+    hessenberg: jax.Array
+    k_requested: int
+    k_achieved: int
+    breakdown: bool
+    residual_norm: float
+
+
 class PseudospectraResult(NamedTuple):
     """Pseudospectral data evaluated on a rectangular complex grid.
 
@@ -61,7 +107,7 @@ def arnoldi(
     k: int,
     *,
     reorthogonalize: bool = True,
-) -> tuple[jax.Array, jax.Array]:
+) -> ArnoldiResult:
     """Return a forward-only modified-Gram--Schmidt Arnoldi factorization.
 
     Args:
@@ -71,11 +117,19 @@ def arnoldi(
         reorthogonalize: Apply a second modified-Gram--Schmidt pass.
 
     Returns:
-        ``(Q, H)`` where ``Q`` has shape ``(n, k_eff + 1)`` and ``H`` has
-        shape ``(k_eff + 1, k_eff)``.  ``k_eff`` equals ``k`` unless a Krylov
-        breakdown occurs, in which case the factorization is trimmed after
-        the completed column.  The rectangular convention is retained, so
-        ``A @ Q[:, :k_eff] == Q @ H`` also holds at breakdown.
+        An :class:`ArnoldiResult`.  Its ``basis`` (``Q``) has shape
+        ``(n, k_eff + 1)`` and its ``hessenberg`` (``H``) has shape
+        ``(k_eff + 1, k_eff)``, where ``k_eff`` is ``k_achieved``: equal to
+        ``k`` unless a Krylov breakdown occurs, in which case the
+        factorization is trimmed after the completed column.  The
+        rectangular convention is retained, so ``A @ Q[:, :k_eff] == Q @ H``
+        also holds at breakdown; ``residual_norm`` reports how well that
+        relation actually closed.  Callers that used to write
+        ``Q, H = arnoldi(...)`` must switch to ``result.basis`` /
+        ``result.hessenberg`` (``result[0]`` / ``result[1]`` also work,
+        since ``ArnoldiResult`` is a ``NamedTuple`` with ``basis`` and
+        ``hessenberg`` first); the six-field result no longer unpacks as a
+        bare pair.
 
     Raises:
         RuntimeError: If 64-bit precision is not enabled.
@@ -99,6 +153,7 @@ def arnoldi(
     basis = basis.at[:, 0].set(initial / initial_norm)
     breakdown_factor = 64.0 * jnp.finfo(jnp.float64).eps
     k_eff = k
+    breakdown_occurred = False
 
     for column in range(k):
         candidate = _complex_action(matvec, basis[:, column])
@@ -120,10 +175,38 @@ def arnoldi(
         hessenberg = hessenberg.at[column + 1, column].set(norm)
         if float(norm) <= breakdown_factor * float(action_norm):
             k_eff = column + 1
+            breakdown_occurred = True
             break
         basis = basis.at[:, column + 1].set(candidate / norm)
 
-    return basis[:, : k_eff + 1], hessenberg[: k_eff + 1, :k_eff]
+    trimmed_basis = basis[:, : k_eff + 1]
+    trimmed_hessenberg = hessenberg[: k_eff + 1, :k_eff]
+    return ArnoldiResult(
+        basis=trimmed_basis,
+        hessenberg=trimmed_hessenberg,
+        k_requested=k,
+        k_achieved=k_eff,
+        breakdown=breakdown_occurred,
+        residual_norm=_forward_residual_norm(matvec, trimmed_basis, trimmed_hessenberg, k_eff),
+    )
+
+
+def _forward_residual_norm(
+    matvec: Matvec, basis: jax.Array, hessenberg: jax.Array, k_eff: int
+) -> float:
+    """Return ``||A Q[:, :k_eff] - Q H||`` for a trimmed Arnoldi factorization.
+
+    Recomputed explicitly rather than reused from the reduction loop (whose
+    intermediate products are already the orthogonalized remainders, not the
+    raw ``A q`` values) so the check exercises the same ``matvec`` the caller
+    supplied and catches a non-finite or inconsistent operator as a large
+    residual rather than as a silently corrupted basis.
+    """
+    columns = basis[:, :k_eff]
+    action = jax.vmap(lambda column: _complex_action(matvec, column), in_axes=1, out_axes=1)(
+        columns
+    )
+    return float(jnp.linalg.norm(action - basis @ hessenberg))
 
 
 def _sigma_min_grid(

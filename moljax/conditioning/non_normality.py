@@ -18,6 +18,7 @@ import numpy as np
 from moljax._precision import require_x64
 from moljax.conditioning._geometry import _origin_enclosed, _smallest_enclosing_disk
 from moljax.conditioning.field_of_values import _CP_PREFACTOR, FieldOfValuesResult
+from moljax.conditioning.pseudospectra import ArnoldiResult
 
 _RATE_AGREEMENT_TOLERANCE = 0.05
 _MAX_OUTLIER_FRACTION = 0.2
@@ -81,17 +82,35 @@ class PreconditionerAssessment(NamedTuple):
     Verdict values:
 
     ``adequate``
-        Every threshold gate passed, and the supports were corroborated by
-        independent eigensolver restarts.  This is the strongest verdict the
-        procedure emits; use as a positive signal that further preconditioner
-        work is unlikely to change the picture on the assessed state.
+        Every threshold gate passed, the supports were corroborated by
+        independent eigensolver restarts, and ``epsilon_zero`` rests on
+        full-operator evidence: either it came from an Arnoldi projection
+        that reached the full dimension (``coverage.k_achieved ==
+        coverage.basis.shape[0]``) or the caller has independently validated
+        it as a lower bound on the full operator and passed
+        ``full_operator_lower_bound=True``.  A reduced projection's smallest
+        singular value bounds only the projection, not the full operator (an
+        exact decoupled degree of freedom the start vector never excites is
+        the generic counterexample), so without one of these two forms of
+        evidence ``epsilon_zero`` cannot support this verdict no matter how
+        large it reads.  This is the strongest verdict the procedure emits;
+        use as a positive signal that further preconditioner work is
+        unlikely to change the picture on the assessed state.
 
     ``provisional``
-        Every threshold gate passed, but corroboration was not attempted
-        (``n_restarts`` was one).  The picture is consistent as far as the
-        checks that were run go; a missed dominant support could still change
-        it.  Raise ``n_restarts`` on ``numerical_range`` to promote a
-        provisional verdict to ``adequate``.
+        Every threshold gate passed, but at least one of the two conditions
+        above for ``adequate`` was not met: corroboration was not attempted
+        (``n_restarts`` was one), or ``epsilon_zero``'s coverage evidence was
+        insufficient (no ``coverage`` was supplied -- including every call
+        through the bare-value signature, where coverage is unknowable -- the
+        Arnoldi projection behind it was reduced, and
+        ``full_operator_lower_bound`` was not set).  The picture is
+        consistent as far as the checks that were run go; a missed dominant
+        support, or a smaller true ``epsilon_zero`` on the full operator,
+        could still change it.  Raise ``n_restarts`` on ``numerical_range``,
+        or supply Arnoldi coverage showing a full-dimensional projection, to
+        promote a provisional verdict to ``adequate``.  The reason for the
+        cap, when one applies, is in ``verdict_reason``.
 
     ``investigate``
         A threshold gate failed.  Further preconditioner work is likely
@@ -110,6 +129,14 @@ class PreconditionerAssessment(NamedTuple):
         ``predicted_gmres_factor`` are ``None``.  Unusable inputs abstain
         rather than raise because they are the signature of a degraded
         upstream computation, which must never read as a passed gate.
+
+    ``epsilon_zero_full_operator_evidence`` records whether ``epsilon_zero``
+    met the full-operator-evidence bar described under ``adequate`` above
+    (full-dimensional ``coverage``, or ``full_operator_lower_bound=True``);
+    it is computed from the arguments alone and reported regardless of which
+    verdict was reached.  ``verdict_reason`` carries a short human-readable
+    explanation whenever the verdict was capped below what the threshold
+    gates alone would have given, and is ``None`` otherwise.
     """
 
     verdict: str
@@ -122,6 +149,8 @@ class PreconditionerAssessment(NamedTuple):
     max_right_real_outliers: int
     supports_consistent: bool = True
     corroboration_attempted: bool = False
+    epsilon_zero_full_operator_evidence: bool = False
+    verdict_reason: str | None = None
 
 
 def enclosing_disk_rate(fov: FieldOfValuesResult) -> float:
@@ -483,6 +512,8 @@ def assess_preconditioner(
     ritz: jax.Array,
     epsilon_zero: float,
     *,
+    coverage: ArnoldiResult | None = None,
+    full_operator_lower_bound: bool = False,
     rate_threshold: float = 0.9,
     eps_zero_threshold: float = 0.1,
     max_right_real_outliers: int = 0,
@@ -493,10 +524,43 @@ def assess_preconditioner(
     assessed on states a solver actually visits; synthetic stress states are
     diagnostic complements rather than a standalone performance verdict.
 
+    Args:
+        fov: Numerical-range diagnostics from :func:`numerical_range`.
+        ritz: Ritz values from :func:`moljax.conditioning.pseudospectra.ritz_values`.
+        epsilon_zero: Smallest singular value at ``z = 0``, typically from
+            :func:`moljax.conditioning.pseudospectra.epsilon_zero`.  On its
+            own -- the bare-value call this signature has always accepted --
+            its coverage is unknown: it may be the full operator's smallest
+            singular value, or it may be a reduced Arnoldi projection's,
+            which is not a lower bound on the full operator's.  This function
+            cannot tell the two apart from the number alone, so a bare
+            ``epsilon_zero`` can support at most ``provisional``, never
+            ``adequate``. Pass ``coverage`` (or
+            ``full_operator_lower_bound=True``) to unlock ``adequate``.
+        coverage: The :class:`~moljax.conditioning.pseudospectra.ArnoldiResult`
+            that produced the Hessenberg block behind ``epsilon_zero``, if
+            any.  When ``coverage.k_achieved`` equals the operator's
+            dimension (``coverage.basis.shape[0]``), the projection is the
+            full operator and ``epsilon_zero`` is trusted as such.  A reduced
+            projection (``k_achieved`` less than the dimension, typically
+            from a Krylov breakdown) does not by itself justify treating
+            ``epsilon_zero`` as a full-operator lower bound.
+        full_operator_lower_bound: Set ``True`` when the caller has
+            independently validated ``epsilon_zero`` as a lower bound on the
+            full operator's smallest singular value by some means other than
+            ``coverage`` (for example, a closed-form bound or a converged
+            full-dimensional computation performed elsewhere). Taken at face
+            value; this function does not re-derive it.
+
     Raises:
         RuntimeError: If 64-bit precision is not enabled.
     """
     require_x64("conditioning diagnostics")
+    operator_dimension = None if coverage is None else int(coverage.basis.shape[0])
+    epsilon_zero_full_operator_evidence = bool(
+        full_operator_lower_bound
+        or (coverage is not None and coverage.k_achieved == operator_dimension)
+    )
     # A degraded upstream computation shows up here as a short or non-finite
     # Ritz spectrum or a reading outside its domain.  None of these is a
     # measurement, yet each would be scored as one: a NaN reading fails its
@@ -515,6 +579,7 @@ def assess_preconditioner(
     # measured there, the count is identically zero and max_right_real_outliers
     # can never reject anything.  The Ritz bulk is the model that can.
     n_outliers = real_bulk_outliers(ritz) if inputs_usable else None
+    verdict_reason = None
     if not inputs_usable:
         verdict = "indeterminate"
     elif not fov.supports_consistent:
@@ -533,12 +598,43 @@ def assess_preconditioner(
         and epsilon_zero >= eps_zero_threshold
         and n_outliers <= max_right_real_outliers
     ):
-        # Passing every threshold gate is only a strong claim when the
-        # corroboration check that could have caught a missed dominant support
-        # was actually run.  Without it the verdict is honest but weak: the
-        # caller must see the qualification in the action they take, not only
-        # in a side field they might skip.  Raise n_restarts to promote it.
-        verdict = "adequate" if fov.corroboration_attempted else "provisional"
+        # Passing every threshold gate is only a strong claim when both (a)
+        # the corroboration check that could have caught a missed dominant
+        # support was actually run, and (b) epsilon_zero is backed by
+        # full-operator evidence rather than an uncharacterized or reduced
+        # Arnoldi projection.  Without either, the verdict is honest but
+        # weak: the caller must see the qualification in the action they
+        # take, not only in a side field they might skip.
+        if not epsilon_zero_full_operator_evidence:
+            verdict = "provisional"
+            if coverage is None:
+                verdict_reason = (
+                    "epsilon_zero was passed as a bare value with no Arnoldi "
+                    "coverage, so it cannot be told apart from a reduced "
+                    "projection's smallest singular value, which is not a "
+                    "lower bound on the full operator's; pass `coverage` "
+                    "(an ArnoldiResult) or `full_operator_lower_bound=True` "
+                    "once validated to unlock adequate."
+                )
+            else:
+                verdict_reason = (
+                    "epsilon_zero rests on a reduced Arnoldi projection "
+                    f"(k_achieved={coverage.k_achieved} of "
+                    f"n={operator_dimension}); an invariant-subspace "
+                    "breakdown does not establish coverage of the full "
+                    "operator, so its smallest singular value cannot "
+                    "support adequate."
+                )
+        elif fov.corroboration_attempted:
+            verdict = "adequate"
+        else:
+            verdict = "provisional"
+            verdict_reason = (
+                "every threshold gate passed and epsilon_zero has "
+                "full-operator evidence, but corroboration was not "
+                "attempted (n_restarts=1); raise n_restarts on "
+                "numerical_range to promote to adequate."
+            )
     else:
         verdict = "investigate"
     return PreconditionerAssessment(
@@ -552,4 +648,6 @@ def assess_preconditioner(
         max_right_real_outliers=max_right_real_outliers,
         supports_consistent=bool(fov.supports_consistent),
         corroboration_attempted=bool(fov.corroboration_attempted),
+        epsilon_zero_full_operator_evidence=epsilon_zero_full_operator_evidence,
+        verdict_reason=verdict_reason,
     )

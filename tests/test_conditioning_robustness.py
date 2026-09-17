@@ -490,7 +490,15 @@ class TestSupportsAreCorroboratedNotCertified:
             n_angles=8, max_iters=150, n_restarts=2,
         )
         ritz = jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j)
-        assert assess_preconditioner(good, ritz, epsilon_zero=0.8).verdict == "adequate"
+        # epsilon_zero=0.8 is asserted as a validated full-operator bound so
+        # this test isolates the corroboration flag under test, independent
+        # of the separate epsilon_zero-coverage gate.
+        assert (
+            assess_preconditioner(
+                good, ritz, epsilon_zero=0.8, full_operator_lower_bound=True
+            ).verdict
+            == "adequate"
+        )
         doubtful = good._replace(supports_corroborated=False)
         assert (
             assess_preconditioner(doubtful, ritz, epsilon_zero=0.8).verdict
@@ -645,8 +653,14 @@ class TestProvisionalVerdictReflectsCorroboration:
             n_angles=8, max_iters=150, n_restarts=2,
         )
         assert fov.corroboration_attempted
+        # As in test_uncorroborated_supports_cannot_be_adequate above,
+        # epsilon_zero=0.8 stands in for a validated full-operator reading so
+        # this test isolates corroboration, the thing its name is about.
         assessment = assess_preconditioner(
-            fov, jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j), epsilon_zero=0.8,
+            fov,
+            jnp.asarray(np.linspace(0.8, 1.2, 8) + 0j),
+            epsilon_zero=0.8,
+            full_operator_lower_bound=True,
         )
         assert assessment.verdict == "adequate"
 
@@ -704,9 +718,14 @@ class TestOutlierGateFailsClosed:
         fov = self._fov_on(1.0, 6.0)
         values = jnp.asarray(ritz) + 0j
         # Every other gate passes; the outlier gate is the only one that can
-        # reject this spectrum.
+        # reject this spectrum.  epsilon_zero is asserted as a validated
+        # full-operator bound so the outlier gate stays the only variable.
         assert assess_preconditioner(
-            fov, values, epsilon_zero=0.9, max_right_real_outliers=1
+            fov,
+            values,
+            epsilon_zero=0.9,
+            max_right_real_outliers=1,
+            full_operator_lower_bound=True,
         ).verdict == "adequate"
         assessment = assess_preconditioner(fov, values, epsilon_zero=0.9)
         assert assessment.n_right_real_outliers == 1
@@ -760,13 +779,20 @@ class TestOutlierGateFailsClosed:
 
         fov = self._fov_on(1.0, 1.5)
         ritz = jnp.asarray([1.0, 1.1, 1.2, 1.4]) + 0j
-        assert assess_preconditioner(fov, ritz, epsilon_zero=0.9).verdict == "adequate"
+        # epsilon_zero=0.9 stands in for a validated full-operator bound so
+        # the baseline is "adequate" and the corrupted reading is the only
+        # thing that can drag it down to "indeterminate".
+        assert assess_preconditioner(
+            fov, ritz, epsilon_zero=0.9, full_operator_lower_bound=True
+        ).verdict == "adequate"
         epsilon = 0.9
         if reading == "disk_rate":
             fov = fov._replace(disk_rate=value)
         else:
             epsilon = value
-        assessment = assess_preconditioner(fov, ritz, epsilon_zero=epsilon)
+        assessment = assess_preconditioner(
+            fov, ritz, epsilon_zero=epsilon, full_operator_lower_bound=True
+        )
         assert assessment.verdict == "indeterminate"
         assert assessment.n_right_real_outliers is None
         assert assessment.predicted_gmres_factor is None
