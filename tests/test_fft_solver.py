@@ -8,12 +8,18 @@ Validates:
 - Spectral filters
 """
 
+import os
+import subprocess
+import sys
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 # The preconditioner comparisons are made to 1e-12, which needs float64.
 jax.config.update("jax_enable_x64", True)
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 from moljax.core.bc import BCType, FieldBCSpec, apply_bc
 from moljax.core.fft_solvers import (
@@ -414,3 +420,126 @@ class TestSpectralFilter:
         assert sigma.shape == (ny, nx)
         # Corner (low mode) should be ~1
         assert sigma[0, 0] > 0.99
+
+
+class TestLaplacianSymbolFloat32Precision:
+    """laplacian_symbol_1d/2d/2d_rfft used to compute (2*cos(k*dx) - 2)/dx^2,
+    which subtracts two O(1) values to recover an O(dx^2) result. In
+    float32 that cancellation swamps the answer once dx is small: on a
+    unit domain the first nonzero eigenvalue came out as -39.5, -40.0,
+    -32.0, and 0.0 (the mode lost entirely) at N = 1024, 4096, 16384,
+    32768 against the exact -4*pi^2 = -39.478, and a Helmholtz solve at
+    N = 32768 retained the fundamental at amplitude 1.000 instead of the
+    correct 0.2021. The fix uses the algebraically identical
+    -4*sin(k*dx/2)^2/dx^2, which never cancels.
+
+    These run in a fresh subprocess with x64 left disabled, since the
+    main suite runs with x64 on and float64's own cancellation error
+    (about 1e-16 relative) never triggers the bug.
+    """
+
+    def _run(self, code: str) -> dict:
+        env = dict(os.environ, JAX_PLATFORMS='cpu', PYTHONPATH=ROOT)
+        out = subprocess.run(
+            [sys.executable, '-c', code],
+            capture_output=True, text=True, env=env, cwd=ROOT, check=True,
+        )
+        lines = [line for line in out.stdout.strip().splitlines() if line.strip()]
+        result = {}
+        for line in lines:
+            key, _, value = line.partition(' ')
+            result[key] = value
+        assert result, f"no output from subprocess: {out.stdout!r} {out.stderr!r}"
+        return result
+
+    def test_float32_first_eigenvalue_matches_exact_at_fine_grids(self):
+        """N = 16384 and 32768 on a unit domain: exact first nonzero
+        eigenvalue is -4*pi^2 = -39.478. Before the fix these came out as
+        -32.0 and 0.0 (lost entirely).
+        """
+        code = (
+            "import jax\n"
+            "jax.config.update('jax_enable_x64', False)\n"
+            "import jax.numpy as jnp\n"
+            "from moljax.core.fft_solvers import laplacian_symbol_1d\n"
+            "exact = -4.0 * jnp.pi**2\n"
+            "for n in (16384, 32768):\n"
+            "    dx = 1.0 / n\n"
+            "    lam = laplacian_symbol_1d(n, dx, dtype=jnp.float32)\n"
+            "    print(f'EIG_{n}', float(lam[1]))\n"
+            "print('EXACT', float(exact))\n"
+        )
+        result = self._run(code)
+        exact = float(result['EXACT'])
+        for n in (16384, 32768):
+            eig = float(result[f'EIG_{n}'])
+            rel_err = abs(eig - exact) / abs(exact)
+            assert rel_err < 1e-4, f"N={n}: eig={eig}, exact={exact}, rel_err={rel_err}"
+
+    def test_float32_helmholtz_amplitude_ratio_at_n_32768(self):
+        """D=1, dt=0.1, N=32768: the fundamental mode should be damped to
+        1/(1 - dt*lambda_1) = 0.2021, not stay at amplitude 1.000.
+        """
+        code = (
+            "import jax\n"
+            "jax.config.update('jax_enable_x64', False)\n"
+            "import jax.numpy as jnp\n"
+            "from moljax.core.fft_solvers import laplacian_symbol_1d, solve_helmholtz_1d\n"
+            "n = 32768\n"
+            "dx = 1.0 / n\n"
+            "dt, D = 0.1, 1.0\n"
+            "lam = laplacian_symbol_1d(n, dx, dtype=jnp.float32)\n"
+            "x = jnp.arange(n, dtype=jnp.float32) * dx\n"
+            "rhs = jnp.sin(2.0 * jnp.pi * x).astype(jnp.float32)\n"
+            "u = solve_helmholtz_1d(rhs, lam, dt, D)\n"
+            "u_hat = jnp.fft.fft(u)\n"
+            "amp = float(jnp.abs(u_hat[1])) / (n / 2.0)\n"
+            "print('AMP_RATIO', amp)\n"
+        )
+        result = self._run(code)
+        amp = float(result['AMP_RATIO'])
+        assert abs(amp - 0.2021) < 1e-3, f"amplitude ratio {amp}, expected 0.2021"
+
+    def test_symbol_still_matches_second_difference_stencil_on_fourier_mode(self):
+        """The sin^2 rewrite must still equal the second-difference stencil
+        applied to a Fourier mode, same check as
+        TestLaplacianSymbol1D.test_symbol_matches_fd_laplacian, but here in
+        float32 to confirm the rewrite (not just float64 rounding) is what
+        keeps this true.
+        """
+        code = (
+            "import jax\n"
+            "jax.config.update('jax_enable_x64', False)\n"
+            "import jax.numpy as jnp\n"
+            "from moljax.core.fft_solvers import laplacian_symbol_1d\n"
+            "nx = 64\n"
+            "dx = 2.0 * jnp.pi / nx\n"
+            "k_mode = 3\n"
+            "x = jnp.linspace(0, 2 * jnp.pi, nx, endpoint=False)\n"
+            "u = jnp.sin(k_mode * x).astype(jnp.float32)\n"
+            "lap_exact = -float(k_mode)**2 * u\n"
+            "lam = laplacian_symbol_1d(nx, dx, dtype=jnp.float32)\n"
+            "u_hat = jnp.fft.fft(u)\n"
+            "lap_fft = jnp.fft.ifft(lam * u_hat).real\n"
+            "print('MAX_DIFF', float(jnp.max(jnp.abs(lap_fft - lap_exact))))\n"
+        )
+        result = self._run(code)
+        assert float(result['MAX_DIFF']) < 0.1
+
+    def test_float64_symbol_changes_only_at_rounding_level(self):
+        """The x64 suite's existing 1e-12-tolerance checks (float64) must
+        pass unchanged: the sin^2 and cos forms agree to float64 rounding
+        (about 1e-14 relative) at every N, unlike float32 where they
+        diverge outright.
+        """
+        n, dx = 16384, 1.0 / 16384
+        k = 2.0 * jnp.pi * jnp.fft.fftfreq(n, d=dx)
+        lam_sin2 = -4.0 * jnp.sin(k * dx / 2.0) ** 2 / (dx * dx)
+        lam_cos = (2.0 * jnp.cos(k * dx) - 2.0) / (dx * dx)
+        # Skip the k=0 mode (both are exactly 0 there; relative error is
+        # undefined) and compare the rest.
+        nonzero = jnp.abs(k) > 0
+        rel_err = jnp.max(
+            jnp.abs(lam_sin2[nonzero] - lam_cos[nonzero]) / jnp.abs(lam_cos[nonzero])
+        )
+        assert float(rel_err) < 1e-8

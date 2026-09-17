@@ -13,10 +13,15 @@ Design decisions:
 - Uses jax.numpy.fft (fft, ifft, fft2, ifft2)
 
 The discrete Laplacian symbol for second-order central differences:
-  1D: lam(k) = (2*cos(k*dx) - 2) / dx^2
-  2D: lam(kx, ky) = (2*cos(kx*dx) - 2)/dx^2 + (2*cos(ky*dy) - 2)/dy^2
+  1D: lam(k) = -4*sin(k*dx/2)^2 / dx^2
+  2D: lam(kx, ky) = -4*sin(kx*dx/2)^2/dx^2 - 4*sin(ky*dy/2)^2/dy^2
 
-This matches the finite difference stencil: (u[i+1] - 2*u[i] + u[i-1]) / dx^2
+This matches the finite difference stencil: (u[i+1] - 2*u[i] + u[i-1]) / dx^2.
+It is algebraically identical to (2*cos(k*dx) - 2)/dx^2 (the half-angle
+identity cos(theta) = 1 - 2*sin^2(theta/2) gives 2*cos(theta) - 2 =
+-4*sin^2(theta/2)), but the sin^2 form does not subtract two O(1)
+quantities to get an O(dx^2) result, so it stays accurate in float32
+where the cos form catastrophically cancels (see laplacian_symbol_1d).
 """
 
 from typing import NamedTuple
@@ -156,8 +161,12 @@ def laplacian_symbol_2d_rfft(
     """
     kx, ky = build_wavenumbers_2d_rfft(ny, nx, dy, dx, dtype)
 
-    lam_x = (2.0 * jnp.cos(kx * dx) - 2.0) / (dx * dx)
-    lam_y = (2.0 * jnp.cos(ky * dy) - 2.0) / (dy * dy)
+    # -4*sin(k*dx/2)^2/dx^2, not (2*cos(k*dx)-2)/dx^2: the cos form
+    # subtracts two O(1) values to get an O(dx^2) result, which
+    # catastrophically cancels in float32 at fine grids (see
+    # laplacian_symbol_1d). The two forms are algebraically identical.
+    lam_x = -4.0 * jnp.sin(kx * dx / 2.0) ** 2 / (dx * dx)
+    lam_y = -4.0 * jnp.sin(ky * dy / 2.0) ** 2 / (dy * dy)
 
     return lam_x + lam_y
 
@@ -170,10 +179,22 @@ def laplacian_symbol_1d(
     """
     Build discrete Laplacian symbol for 1D periodic domain.
 
-    The symbol is: lam(k) = (2*cos(k*dx) - 2) / dx^2
+    The symbol is: lam(k) = -4*sin(k*dx/2)^2 / dx^2
 
     This corresponds to the finite difference operator:
     (u[i+1] - 2*u[i] + u[i-1]) / dx^2
+
+    The mathematically equivalent form (2*cos(k*dx) - 2)/dx^2 (via
+    cos(theta) = 1 - 2*sin^2(theta/2)) is not used here: it subtracts two
+    values near 2.0 to recover an O(dx^2) result, and in float32 that
+    cancellation swamps the result once dx is small enough that
+    cos(k*dx)'s own rounding error (about 1e-7 relative) is comparable to
+    2 - 2*cos(k*dx) itself. At N = 1024/4096/16384/32768 on a unit domain
+    the cos form gave the first nonzero eigenvalue as -39.5/-40.0/-32.0/
+    0.0 against the exact -39.478 (0.0 at N = 32768 means the mode was
+    lost entirely), and a Helmholtz solve retained the fundamental at
+    amplitude 1.000 instead of 0.2021. The sin^2 form never forms that
+    cancellation and matches float64 to rounding error at every N tested.
 
     Args:
         nx: Number of interior points
@@ -184,8 +205,7 @@ def laplacian_symbol_1d(
         Laplacian symbol array of shape (nx,)
     """
     k = build_wavenumbers_1d(nx, dx, dtype)
-    # lam = (2*cos(k*dx) - 2) / dx^2
-    lam = (2.0 * jnp.cos(k * dx) - 2.0) / (dx * dx)
+    lam = -4.0 * jnp.sin(k * dx / 2.0) ** 2 / (dx * dx)
     return lam
 
 
@@ -200,7 +220,7 @@ def laplacian_symbol_2d(
     Build discrete Laplacian symbol for 2D periodic domain.
 
     The symbol is:
-    lam(kx, ky) = (2*cos(kx*dx) - 2)/dx^2 + (2*cos(ky*dy) - 2)/dy^2
+    lam(kx, ky) = -4*sin(kx*dx/2)^2/dx^2 - 4*sin(ky*dy/2)^2/dy^2
 
     Args:
         ny: Number of interior points in y
@@ -214,10 +234,10 @@ def laplacian_symbol_2d(
     """
     kx, ky = build_wavenumbers_2d(ny, nx, dy, dx, dtype)
 
-    # lam_x = (2*cos(kx*dx) - 2) / dx^2
-    # lam_y = (2*cos(ky*dy) - 2) / dy^2
-    lam_x = (2.0 * jnp.cos(kx * dx) - 2.0) / (dx * dx)
-    lam_y = (2.0 * jnp.cos(ky * dy) - 2.0) / (dy * dy)
+    # -4*sin(k*d/2)^2/d^2, not (2*cos(k*d)-2)/d^2: see laplacian_symbol_1d
+    # for why the cos form cancels catastrophically in float32.
+    lam_x = -4.0 * jnp.sin(kx * dx / 2.0) ** 2 / (dx * dx)
+    lam_y = -4.0 * jnp.sin(ky * dy / 2.0) ** 2 / (dy * dy)
 
     return lam_x + lam_y
 

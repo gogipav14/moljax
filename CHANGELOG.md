@@ -6,6 +6,23 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **The periodic Laplacian symbol built as `(2*cos(k*dx) - 2)/dx^2` catastrophically
+  cancelled in float32.** `laplacian_symbol_1d` and both 2D builders
+  (`laplacian_symbol_2d`, `laplacian_symbol_2d_rfft`) in `fft_solvers.py` subtracted
+  two O(1) values to recover an O(dx^2) result; once `dx` was small enough that
+  `cos(k*dx)`'s own float32 rounding error (about 1e-7 relative) was comparable to
+  `2 - 2*cos(k*dx)` itself, the symbol lost accuracy or vanished outright. On a unit
+  domain the first nonzero eigenvalue came out as -39.5, -40.0, -32.0, and 0.0 (the
+  mode lost entirely) at N = 1024, 4096, 16384, 32768 against the exact -39.478, and
+  a Helmholtz solve with D = 1, dt = 0.1 at N = 32768 retained the fundamental at
+  amplitude 1.000 instead of the correct 0.2021. Fixed by using the algebraically
+  identical `-4*sin(k*dx/2)^2/dx^2` (via `cos(theta) = 1 - 2*sin^2(theta/2)`), which
+  never forms the cancelling subtraction; float64 results are unchanged to rounding
+  (about 1e-9 relative at the worst mode). `tests/test_fft_solver.py::TestLaplacianSymbolFloat32Precision`
+  adds the float32 eigenvalue and Helmholtz reproductions (subprocess, x64 off), plus
+  confirmations that the symbol still matches the second-difference stencil on a
+  Fourier mode and that float64 changes only at rounding level.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real
