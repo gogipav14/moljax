@@ -17,10 +17,13 @@ import sys
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 jax.config.update("jax_enable_x64", True)
 
-from moljax.core.preconditioners import _odd_symbol_wavenumber
+from moljax.core.grid import Grid1D
+from moljax.core.operators import laplacian_1d
+from moljax.core.preconditioners import DiffusionPreconditioner, _odd_symbol_wavenumber
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -183,3 +186,73 @@ class TestNyquistFloat32Subprocess:
         assert float(result['KX_NYQUIST_COL_ABS']) == 0.0, result
         assert float(result['KY_NYQUIST_ROW_ABS']) == 0.0, result
         assert float(result['FULL_VS_RFFT_MAX_DIFF']) < 1e-4, result
+
+
+class TestDiffusionPreconditionerJacobi:
+    """DiffusionPreconditioner._jacobi_solve's damped Jacobi update for
+    A x = rhs, A = I - dt*D*Laplacian, double-counted the diagonal: it
+    computed x_new = (1-omega)*x + omega*(rhs + dt*D*Laplacian(x))/diag,
+    which divides by diag (already including the Laplacian's own diagonal
+    entry) without ever subtracting x's own contribution to Laplacian(x)
+    from the numerator. For nx=8, dx=1/8, dt=D=1, an all-ones padded rhs
+    (the exact solution is the constant field x=1, since Laplacian(1)=0),
+    the old update drove x=1 to 0.01183 after 5 iterations and toward
+    1/129 in the limit; more iterations made it worse. The fix is the
+    textbook Jacobi splitting A = M - N, M = diag(A):
+        x_new = x + omega * (rhs - x + dt*D*Laplacian(x)) / diag
+    """
+
+    def _solve(self, rhs, grid, dt, D, n_iterations, omega=0.6667):
+        precond = DiffusionPreconditioner(
+            field_diffusivities={'u': 'D'}, n_iterations=n_iterations, omega=omega
+        )
+        return precond._jacobi_solve(rhs, grid, dt, D)
+
+    def test_constant_solution_is_an_exact_fixed_point(self):
+        """rhs = 1 everywhere (including ghosts) has exact solution x = 1,
+        since Laplacian(1) = 0. x must stay 1 to 1e-14, not drift to
+        0.01183 (5 iterations) or 1/129 (many iterations).
+        """
+        nx = 8
+        grid = Grid1D.uniform(nx, 0.0, 1.0, n_ghost=1)
+        dt, D = 1.0, 1.0
+        rhs = jnp.ones(nx + 2)
+
+        x5 = self._solve(rhs, grid, dt, D, n_iterations=5)
+        assert jnp.max(jnp.abs(x5 - 1.0)) < 1e-14, x5
+
+        x_many = self._solve(rhs, grid, dt, D, n_iterations=200)
+        assert jnp.max(jnp.abs(x_many - 1.0)) < 1e-14, x_many
+
+    def test_random_rhs_residual_decreases_monotonically_and_matches_dense_solve(self):
+        """For a random rhs, the residual of A @ x_k against the full
+        (interior + ghost) system must shrink every iteration for 20
+        iterations, and the iteration's fixed point must match a dense
+        solve of the same system to 1e-8.
+        """
+        nx = 8
+        grid = Grid1D.uniform(nx, 0.0, 1.0, n_ghost=1)
+        dt, D = 1.0, 1.0
+        n_full = nx + 2 * grid.n_ghost
+
+        def A_apply(x_full):
+            return x_full - dt * D * laplacian_1d(x_full, grid)
+
+        identity = np.eye(n_full)
+        A = np.stack([np.array(A_apply(jnp.asarray(identity[:, j]))) for j in range(n_full)], axis=1)
+
+        rhs = jax.random.normal(jax.random.PRNGKey(0), (n_full,))
+        x_dense = np.linalg.solve(A, np.array(rhs))
+
+        residuals = []
+        for k in range(1, 21):
+            xk = self._solve(rhs, grid, dt, D, n_iterations=k)
+            r = np.array(rhs) - np.array(A_apply(xk))
+            residuals.append(float(np.linalg.norm(r)))
+
+        assert all(
+            residuals[i + 1] <= residuals[i] + 1e-10 for i in range(len(residuals) - 1)
+        ), residuals
+
+        x_final = self._solve(rhs, grid, dt, D, n_iterations=500)
+        assert np.max(np.abs(np.array(x_final) - x_dense)) < 1e-8

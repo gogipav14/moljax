@@ -23,6 +23,20 @@ All notable changes to moljax are documented here.
   confirmations that the symbol still matches the second-difference stencil on a
   Fourier mode and that float64 changes only at rounding level.
 
+- **The Jacobi preconditioner (`preconditioners.py`'s `DiffusionPreconditioner._jacobi_solve`)
+  double-counted the diagonal.** For `A x = rhs`, `A = I - dt*D*Laplacian`, the update
+  was `x_new = (1-omega)*x + omega*(rhs + dt*D*Laplacian(x))/diag`, which divides by
+  `diag` (already the diagonal of `A`) without ever subtracting `x`'s own contribution
+  to `Laplacian(x)` from the numerator. For `nx = 8`, `dx = 1/8`, `dt = D = 1`, and an
+  all-ones padded right-hand side (exact solution `x = 1`, since `Laplacian(1) = 0`),
+  this drove `x = 1` to 0.01183 after 5 iterations and toward 1/129 in the limit; more
+  iterations made it worse. Fixed by using the textbook damped Jacobi splitting
+  `A = M - N`, `M = diag(A)`: `x_new = x + omega*(rhs - x + dt*D*Laplacian(x))/diag`.
+  `tests/test_preconditioners.py::TestDiffusionPreconditionerJacobi` adds the constant-field
+  reproduction above (now an exact fixed point to 1e-14) and a random-right-hand-side
+  check that the residual decreases monotonically over 20 iterations and the fixed
+  point matches a dense solve to 1e-8.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real

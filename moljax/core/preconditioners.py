@@ -171,12 +171,26 @@ class DiffusionPreconditioner:
         D: float
     ) -> jnp.ndarray:
         """
-        Weighted Jacobi iterations for (I - dt*D*Laplacian) * x = rhs.
+        Weighted Jacobi iterations for A x = rhs, A = I - dt*D*Laplacian.
 
-        The iteration is:
-            x_new = (1-omega)*x + omega * (rhs + dt*D*Laplacian(x)) / diag
+        Splitting A = M - N with M = diag(A) (the Jacobi splitting), the
+        damped update is:
+            x_new = x + omega * M^-1 * (rhs - A @ x)
+                  = x + omega * (rhs - x + dt*D*Laplacian(x)) / diag
 
-        where diag = 1 + dt*D*(4/dx^2) for 2D (stencil diagonal).
+        where diag = 1 + dt*D*(4/dx^2) for 2D (stencil diagonal), i.e. the
+        1 from A's identity term plus dt*D times the Laplacian stencil's
+        own (negative) diagonal entry -4/dx^2 (2D) or -2/dx^2 (1D),
+        negated. Using the full Laplacian(x) (rather than just its
+        off-diagonal neighbors) in the numerator is correct here because
+        the "- x" term already cancels the diagonal contribution
+        Laplacian(x) contributes through x's own entry; the previous
+        formula (1-omega)*x + omega*(rhs + dt*D*Laplacian(x))/diag dropped
+        that "-x" term and instead scaled x by (1-omega) outright, which
+        double-counts the diagonal: it divides by diag (which already
+        includes the Laplacian's diagonal) while never subtracting x's own
+        contribution to Laplacian(x) from the numerator, so a converged
+        constant field is not a fixed point.
         """
         if isinstance(grid, Grid1D):
             diag = 1.0 + dt * D * 2.0 / grid.dx ** 2
@@ -188,9 +202,10 @@ class DiffusionPreconditioner:
                 return laplacian_2d(x, grid)
 
         def iteration(x, _):
-            # x_new = omega * (rhs + dt*D*Laplacian(x)) / diag + (1-omega)*x
+            # x_new = x + omega * (rhs - x + dt*D*Laplacian(x)) / diag
             lap_x = lap_fn(x)
-            x_new = self.omega * (rhs + dt * D * lap_x) / diag + (1.0 - self.omega) * x
+            residual = rhs - x + dt * D * lap_x
+            x_new = x + self.omega * residual / diag
             return x_new, None
 
         # Initial guess is rhs (corresponds to M=I)
