@@ -80,6 +80,8 @@ from .fft_nilt_bridge import (
 )
 from .nilt_fft import (
     NILTResult,
+    WraparoundTail,
+    compute_wraparound_tail_ratio,
     estimate_aliasing_error,
     estimate_nilt_truncation_error,
     integrate_discrete,
@@ -186,6 +188,8 @@ __all__ = [
     'nilt_fft_batch',
     'integrate_discrete',
     'invert_laplace',
+    'WraparoundTail',
+    'compute_wraparound_tail_ratio',
     'estimate_nilt_truncation_error',
     'estimate_aliasing_error',
 

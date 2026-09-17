@@ -16,7 +16,9 @@ eps_Im (imaginary leakage) and eps_sym (Hermitian symmetry) are still
 computed as numerical-health indicators, but they are reported rather than
 decided on: the spectrum is mirrored into exact Hermitian symmetry before
 the ifft, so both are zero by construction and cannot signal a badly
-resolved transform.
+resolved transform. Sensor 2 therefore shares nilt_fft's implementation,
+compute_wraparound_tail_ratio, rather than deriving a tail ratio from the
+imaginary part the way compute_eps_im used to.
 
 Levels (band_edge_ratio on 1/(s+1) at N = 256 in parentheses):
 - excellent: band edge below 1% (sin t at dt = 0.05: 9e-6)
@@ -40,7 +42,7 @@ from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 
-from .nilt_fft import compute_bandwidth_sensors
+from .nilt_fft import compute_bandwidth_sensors, compute_wraparound_tail_ratio
 
 
 class QualityLevel(Enum):
@@ -117,11 +119,28 @@ def compute_eps_im(
 
     The imaginary part of IFFT should be zero for real-valued f(t).
     Non-zero imaginary indicates numerical error or parameter mismatch.
+    For the spectra this package builds it is zero by construction, since
+    they are mirrored into exact Hermitian symmetry before the IFFT, so
+    everything here is a numerical-health indicator and nothing decides
+    quality except ``tail_ratio``.
+
+    ``localization['tail_ratio']`` is the wraparound sensor and comes from
+    ``nilt_fft.compute_wraparound_tail_ratio``: the energy of the damped
+    signal beyond t_end, real and imaginary together, relative to the valid
+    interval. It used to be ``late_leakage / norm_real``, built from the
+    imaginary part alone, which is exactly the quantity that vanishes for a
+    Hermitian spectrum: on F(s) = 1/(s + 0.01)^2 with N = 256, dt = 0.01,
+    a = 0 and t_end = 0.64 it read 2.8e-21 and assess_nilt_quality called
+    the result 'excellent' while f(0.64) came out 3906 instead of 0.636.
 
     Args:
-        ifft_result: Complex IFFT output
-        t: Time grid (optional, for localization)
-        t_end: End time of interest
+        ifft_result: Complex IFFT output (the damped signal, before the
+            exp(a t) rescaling)
+        t: Time grid (optional, for localization). Without it there is no
+            valid interval to compare against and tail_ratio stays 0.
+        t_end: End time of interest. When t is given and this is not, the
+            half-period t[N // 2] is used, the same default
+            nilt_fft_uniform applies to its own diagnostics.
 
     Returns:
         (eps_im, localization_dict)
@@ -169,7 +188,14 @@ def compute_eps_im(
 
         localization['r_early'] = float(early_leakage / total_leakage)
         localization['r_late'] = float(late_leakage / total_leakage)
-        localization['tail_ratio'] = float(late_leakage / (norm_real + 1e-14))
+
+        # Wraparound, from the shared damped-tail sensor. r_early/r_late
+        # above stay as they are: they localize the leakage, they do not
+        # decide anything.
+        t_end_used = t_end if t_end is not None else float(t[N // 2])
+        localization['tail_ratio'] = compute_wraparound_tail_ratio(
+            ifft_result, t, t_end_used
+        ).tail_ratio
 
         # Determine dominant region
         if localization['r_early'] > 0.5:

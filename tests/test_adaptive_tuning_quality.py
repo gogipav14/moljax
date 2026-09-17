@@ -30,9 +30,12 @@ from moljax.laplace import (
     QualityLevel,
     QualityTier,
     TunedNILTParams,
+    assess_nilt_quality,
     check_spectral_cfl_conditions,
     classify_quality,
     classify_quality_tier,
+    compute_eps_im,
+    compute_wraparound_tail_ratio,
     create_transfer_function_from_fft_operator,
     exponential_decay_F,
     exponential_decay_f,
@@ -1017,6 +1020,89 @@ class TestAmplificationBudget:
         assert 'reduced a' not in action, action
         assert 'increased N' in action, action
         assert new_params.a == pytest.approx(14.605)
+
+
+class TestStandaloneWraparoundSensor:
+    """assess_nilt_quality's wraparound sensor measures the damped tail, not
+    the imaginary part.
+
+    compute_eps_im derived tail_ratio from the imaginary part of the
+    inverted signal, which the mirrored Hermitian spectrum makes zero by
+    construction. The sensor therefore read ~1e-21 on a transform whose
+    periodic extension folded a full signal back onto the valid interval,
+    and assess_nilt_quality graded it 'excellent'. nilt_fft's own classifier,
+    on the same parameters, said 'poor'; the two now share one
+    implementation.
+    """
+
+    @staticmethod
+    def _invert(F, N, dt, a):
+        """The spectrum, the raw IFFT and the rescaled inverse, exactly as
+        nilt_fft_uniform builds them."""
+        from moljax.laplace.nilt_fft import _hermitian_full_spectrum
+
+        T = N * dt / 2.0
+        omega_pos = jnp.arange(N // 2 + 1) * jnp.pi / T
+        F_vals = _hermitian_full_spectrum(F(a + 1j * omega_pos), N)
+        ifft_result = jnp.fft.ifft(F_vals)
+        t = jnp.arange(N) * dt
+        f = jnp.real(ifft_result) * jnp.exp(a * t) * N / (2.0 * T)
+        return F_vals, ifft_result, t, f
+
+    def test_hermitian_wraparound_is_not_excellent(self):
+        """F(s) = 1/(s + 0.01)^2, N = 256, dt = 0.01, a = 0, t_end = 0.64:
+        the damped signal is still at full amplitude at 2T, so the periodic
+        extension folds it back and f(0.64) comes out 3906 instead of
+        0.636."""
+        def F(s):
+            return 1.0 / (s + 0.01) ** 2
+
+        F_vals, ifft_result, t, f = self._invert(F, 256, 0.01, 0.0)
+
+        # The inversion really is wrong by four orders of magnitude.
+        exact = 0.64 * np.exp(-0.0064)
+        assert float(f[64]) == pytest.approx(3906.28, rel=1e-3)
+        assert abs(float(f[64]) - exact) > 1e3
+
+        metrics = assess_nilt_quality(ifft_result, F_vals=F_vals, t=t, t_end=0.64)
+        assert metrics.quality_level in ('poor', 'acceptable'), metrics
+        assert metrics.tail_ratio > 0.5, metrics.tail_ratio
+
+        # The bandwidth sensor is fine here: the grid resolves F, it is the
+        # period that is too short, so only the wraparound sensor can fire.
+        assert metrics.band_edge_ratio < 1e-6
+
+        # And the two implementations now agree.
+        assert metrics.tail_ratio == pytest.approx(
+            compute_wraparound_tail_ratio(ifft_result, t, 0.64).tail_ratio
+        )
+
+    def test_well_resolved_case_stays_excellent(self):
+        """exp(-t) on the calibration grid (N = 256, dt = 0.05, a = 0) has
+        decayed to nothing by t_end = 6.4 and must keep its grade."""
+        def F(s):
+            return 1.0 / (s + 1.0)
+
+        F_vals, ifft_result, t, _f = self._invert(F, 256, 0.05, 0.0)
+        metrics = assess_nilt_quality(ifft_result, F_vals=F_vals, t=t, t_end=6.4)
+        assert metrics.quality_level == 'excellent', metrics
+        assert metrics.tail_ratio < 0.01
+
+    def test_shared_sensor_matches_the_uniform_inversion_classifier(self):
+        """The standalone assessment and nilt_fft_uniform's own diagnostics
+        report the same wraparound number on the same parameters."""
+        def F(s):
+            return 1.0 / (s + 0.01) ** 2
+
+        _F_vals, ifft_result, t, _f = self._invert(F, 256, 0.01, 0.0)
+        res = nilt_fft_uniform(
+            F, dt=0.01, N=256, a=0.0, dtype=jnp.float64, t_end=0.64,
+            return_diagnostics=True,
+        )
+        from_uniform = res.diagnostics['leakage_localization']['tail_ratio']
+        from_standalone = compute_eps_im(ifft_result, t, 0.64)[1]['tail_ratio']
+        assert from_standalone == pytest.approx(from_uniform)
+        assert classify_quality_tier(res.diagnostics).tier == 'poor'
 
 
 class TestNonFiniteAndMissingSensors:

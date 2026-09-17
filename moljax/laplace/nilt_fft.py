@@ -76,6 +76,72 @@ def compute_symmetry_residual(F_vals: jnp.ndarray) -> float:
     return float(eps_sym)
 
 
+class WraparoundTail(NamedTuple):
+    """Damped-signal energy beyond t_end, the wraparound sensor."""
+    n_valid: int          # Samples in [0, t_end]
+    tail_energy: float    # Mean |y|^2 over (t_end, 2T], real plus imaginary
+    valid_energy: float   # Mean |y|^2 over [0, t_end], real plus imaginary
+    tail_ratio: float     # tail_energy / valid_energy
+    tail_ratio_real: float  # Real-part-only variant, for reference
+
+
+def compute_wraparound_tail_ratio(
+    ifft_result: jnp.ndarray,
+    t: jnp.ndarray,
+    t_end: float,
+) -> WraparoundTail:
+    """
+    Energy of the damped signal beyond t_end relative to [0, t_end].
+
+    The FFT inversion is periodic with period 2T, so whatever the damped
+    inverse f(t) e^{-at} still carries past t_end is folded back onto the
+    valid interval. Measuring that directly on the IFFT output is the only
+    wraparound sensor that works: the imaginary part is zero by
+    construction, because the spectrum is mirrored into exact Hermitian
+    symmetry before the IFFT, so any sensor built from Im(y) alone reads
+    ~1e-21 on a badly periodized transform and its verdict is meaningless.
+    Both the real and the imaginary energy are summed here so that the
+    ratio is insensitive to how the two happen to be split.
+
+    Args:
+        ifft_result: Complex IFFT output (the damped signal, before the
+            exp(a t) rescaling)
+        t: Time grid, monotone increasing
+        t_end: End of the valid region
+
+    Returns:
+        WraparoundTail; an empty valid or tail region gives zero ratios.
+    """
+    y = jnp.asarray(ifft_result)
+    N = y.shape[0]
+    eps = float(jnp.finfo(jnp.real(y).dtype).eps)
+
+    # t is monotone, so the valid region is a contiguous prefix
+    n_valid = min(int(jnp.searchsorted(t, t_end, side='right')), N)
+
+    if n_valid <= 0 or n_valid >= N:
+        return WraparoundTail(n_valid=n_valid, tail_energy=0.0, valid_energy=0.0,
+                              tail_ratio=0.0, tail_ratio_real=0.0)
+
+    real_valid = jnp.real(y[:n_valid])
+    imag_valid = jnp.imag(y[:n_valid])
+    signal_energy_valid = float(jnp.mean(jnp.abs(real_valid) ** 2))
+    leakage_energy_valid = float(jnp.mean(jnp.abs(imag_valid) ** 2))
+    valid_energy = signal_energy_valid + leakage_energy_valid
+
+    tail_energy_real = float(jnp.mean(jnp.abs(jnp.real(y[n_valid:])) ** 2))
+    tail_energy_imag = float(jnp.mean(jnp.abs(jnp.imag(y[n_valid:])) ** 2))
+    tail_energy = tail_energy_real + tail_energy_imag
+
+    return WraparoundTail(
+        n_valid=n_valid,
+        tail_energy=tail_energy,
+        valid_energy=valid_energy,
+        tail_ratio=tail_energy / (valid_energy + eps),
+        tail_ratio_real=tail_energy_real / (signal_energy_valid + eps),
+    )
+
+
 def compute_imaginary_leakage(
     ifft_result: jnp.ndarray,
     t: jnp.ndarray | None = None,
@@ -163,24 +229,11 @@ def compute_imaginary_leakage(
             signal_energy_valid = jnp.mean(jnp.abs(f_real[:n_valid])**2)
             eps_im_valid = float(jnp.sqrt(leakage_energy_valid / (signal_energy_valid + eps)))
 
-            # Tail region: (t_end, 2T] = [n_valid:N]
-            n_tail = N - n_valid
-
-            if n_tail > 0:
-                tail_energy_real = float(jnp.mean(jnp.abs(f_real[n_valid:])**2))
-                tail_energy_imag = float(jnp.mean(jnp.abs(f_imag[n_valid:])**2))
-                tail_energy_total = tail_energy_real + tail_energy_imag
-
-                # Normalize by valid region energy
-                valid_energy = signal_energy_valid + leakage_energy_valid
-                tail_ratio = tail_energy_total / (valid_energy + eps)
-
-                # Additional metric: real-only tail ratio (wraparound sensor)
-                tail_ratio_real = tail_energy_real / (signal_energy_valid + eps)
-            else:
-                tail_energy_total = 0.0
-                tail_ratio = 0.0
-                tail_ratio_real = 0.0
+            # Tail region: (t_end, 2T] = [n_valid:N], from the shared sensor
+            wrap = compute_wraparound_tail_ratio(ifft_result, t, t_end)
+            tail_energy_total = wrap.tail_energy
+            tail_ratio = wrap.tail_ratio
+            tail_ratio_real = wrap.tail_ratio_real
 
             # Localization within valid region (relative to t_end, not grid)
             # Partition [0:n_valid] into thirds using direct slicing

@@ -73,6 +73,31 @@ All notable changes to moljax are documented here.
   the file was run in isolation. Added the same `jax_enable_x64` enable the other test
   modules use.
 
+- **`quality_metrics.compute_eps_im` computed the wraparound tail ratio
+  from the imaginary part of the inverted signal, which is zero by
+  construction for a Hermitian spectrum, so `assess_nilt_quality` graded a
+  badly periodized inversion "excellent".** The spectrum is mirrored into
+  exact Hermitian symmetry before the IFFT, so `late_leakage / norm_real`
+  measures rounding noise and nothing else. For `F(s) = 1/(s + 0.01)^2`
+  with `N = 256`, `dt = 0.01`, `a = 0` and `t_end = 0.64` it read
+  `tail_ratio = 2.77e-21` and returned `excellent` while `f(0.64)` came out
+  3906.3 instead of 0.6359; `nilt_fft.py`'s own classifier
+  (`compute_imaginary_leakage` feeding `classify_quality_tier`) correctly
+  said `poor` on the same parameters. The sensor now reads
+  `tail_ratio = 1.0000545` and the verdict is `poor`. Fixed by extracting
+  the damped-tail sensor `nilt_fft.compute_wraparound_tail_ratio` (real
+  plus imaginary energy beyond `t_end` relative to `[0, t_end]`, returning
+  the new `WraparoundTail`), having `compute_imaginary_leakage` call it,
+  and replacing `compute_eps_im`'s imaginary-part formula with the same
+  call, so the standalone assessment and the uniform inversion now report
+  the same number. `r_early` and `r_late` keep their old definitions: they
+  localize the leakage and decide nothing. When `t` is supplied without a
+  `t_end`, the half-period `t[N // 2]` is used, matching
+  `nilt_fft_uniform`'s own default.
+  `tests/test_adaptive_tuning_quality.py::TestStandaloneWraparoundSensor`
+  adds the reproduction, the agreement between the two implementations, and
+  a well-resolved case that must stay `excellent`.
+
 - **`tune_nilt_adaptive` never called `check_spectral_cfl_conditions`, and
   its only limit on the Bromwich shift was the overflow budget, so it
   reported "good" on an inversion whose every digit was amplified rounding
