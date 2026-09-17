@@ -144,7 +144,14 @@ periodic, Dirichlet and Neumann boundaries.
 | FFT Laplacian | Periodic | O(N log N) | Spectral |
 | DST Laplacian | Dirichlet | O(N log N) | O(Δx²) |
 | DCT Laplacian | Neumann | O(N log N) | O(Δx²) |
-| FD Stencils | Any | O(N) | O(Δx²) to O(Δx⁶) |
+| FD Stencils | Any | O(N) | O(Δx²) to O(Δx⁶)* |
+
+\* Higher-order (4th/6th) stencils reach their nominal order only with
+periodic boundaries. With the current Dirichlet and Neumann ghost
+closures (2nd-order extrapolation), the boundary error dominates and the
+scheme falls back to 2nd order overall, regardless of the interior
+stencil's order (measured 4.13e-4, 1.03e-4, 2.58e-5, 6.45e-6 on
+`u = x(1 - x)` under grid refinement for the 4th-order stencil).
 
 ### Time Integrators
 

@@ -7,6 +7,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+# Several tests compare against float64-precision references (1e-10
+# rtol); this module used to rely on another test module flipping the
+# global flag first, so it passed only as part of the full suite and
+# failed (float32 rounding) when run in isolation.
+jax.config.update("jax_enable_x64", True)
+
 from moljax.core.variable_coeff import (
     apply_variable_diffusion_1d,
     apply_variable_diffusion_2d,

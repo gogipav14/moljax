@@ -60,6 +60,19 @@ All notable changes to moljax are documented here.
   `residuals[-1]` matches the returned iterate's true residual, and a check that an
   explicit `omega` override is respected.
 
+- **The README's spatial operators table overstated the FD stencils' accuracy with
+  non-periodic boundaries, and `tests/test_variable_coeff.py` failed when run in
+  isolation.** The table listed "O(Δx²) to O(Δx⁶)" under "Any" boundary condition
+  support, but the 4th-order stencil with the current 2nd-order Dirichlet ghost closure
+  converges at 2nd order overall (measured 4.13e-4, 1.03e-4, 2.58e-5, 6.45e-6 on
+  `u = x(1 - x)` under grid refinement); higher-order stencils reach their nominal order
+  only with periodic boundaries. Added the same one-sentence caveat to
+  `operators_ho.py`'s module docstring. Separately, `tests/test_variable_coeff.py` never
+  called `jax.config.update("jax_enable_x64", True)` itself, relying on another test
+  module to flip the global flag first; five of its tests failed on float32 rounding when
+  the file was run in isolation. Added the same `jax_enable_x64` enable the other test
+  modules use.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real

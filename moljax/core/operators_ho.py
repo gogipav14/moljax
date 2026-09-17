@@ -13,6 +13,11 @@ This module provides 4th-order accurate finite difference operators:
 
 These require 2 ghost cells on each side (n_ghost >= 2).
 
+These stencils reach their nominal 4th order only with periodic
+boundaries; with the current Dirichlet and Neumann ghost closures
+(2nd-order extrapolation), the boundary error dominates and convergence
+falls back to 2nd order overall.
+
 Reference: Fornberg, "Generation of Finite Difference Formulas" (1988)
 """
 
