@@ -14,6 +14,7 @@ import pytest
 # The dtype tests need float64 to exist so that float32 can differ from it.
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core.bc import FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
     PIDParams,
@@ -21,8 +22,14 @@ from moljax.core.dt_policy import (
     heisenberg_cfl_dt,
     imex_cfl_dt,
     pid_controller_dt,
+    propose_dt,
 )
 from moljax.core.grid import Grid1D, Grid2D
+from moljax.core.model import MOLModel
+from moljax.core.newton_krylov import NKStats
+from moljax.core.operators import LinearOp
+from moljax.core.stepping import IntegratorType, adaptive_integrate
+from moljax.core.utils import StatusCode
 
 
 class TestCFLDtype:
@@ -236,6 +243,148 @@ class Test2DCFL:
         # In principle they should be similar since we use same CFL number
         # The key point is both should give stable dt
         assert float(dt2d) > 0
+
+
+def float32_decay_model():
+    """u' = -u at u0 = 1000 in float32, the reviewer's non-terminating reproduction.
+
+    The default Newton tolerance is 1e-8 on the unweighted residual norm,
+    which a float32 residual of a state of size 1000 cannot reach (the
+    spacing of 1000 in float32 is about 6e-5), so every implicit solve on
+    this model reports converged = False no matter how small dt gets.
+    """
+    grid = Grid1D.uniform(1, 0.0, 1.0)
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'dtype': jnp.float32},
+        linear_ops=(LinearOp(name="decay", apply=lambda s, g, t, p: {'u': -s['u']}),),
+        nonlinear_ops=()
+    )
+    return model, {'u': jnp.full(grid.nx_total, 1000.0, dtype=jnp.float32)}
+
+
+class TestRejectionsTerminate:
+    """A step that keeps failing must not be retried forever.
+
+    propose_dt read acceptance off err_ratio <= 1.0 alone, so a step whose
+    Newton solve failed (and whose error estimate was therefore meaningless
+    and usually tiny) took the PID's accepted branch and could have its dt
+    grown by up to max_factor = 5, which outruns the integrator's halving
+    on rejection. On the float32 decay model above with dt0 = 0.1 the dt
+    plateaued between 1.6e-3 and 1.8e-3 and adaptive_integrate never
+    returned at all, even with max_steps = 1: max_steps bounds accepted
+    steps, and no step was ever accepted. propose_dt now takes the
+    integrator's own decision, and the integrators carry the controller's
+    consecutive_rejects counter (it was built by propose_dt and then thrown
+    away by reject_step) so a per-step rejection budget can stop the loop.
+    """
+
+    def test_failed_solve_never_grows_dt(self):
+        """The accepted branch, with its growth factor, is not taken on a failure."""
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+        params = {'dtype': jnp.float64}
+        state = {'u': jnp.ones(grid.nx_total)}
+        controller = create_initial_controller_state(jnp.float64)
+        dt_old = jnp.array(0.1)
+        # The error estimate a pair of failed solves produces: tiny, and
+        # meaningless. err_ratio <= 1 alone reads it as a fine step.
+        err_ratio = jnp.array(1e-10)
+        failed = NKStats(
+            converged=jnp.array(False),
+            newton_iters=jnp.array(1, dtype=jnp.int32),
+            lin_iters=jnp.array(50, dtype=jnp.int32),
+            final_res_norm=jnp.array(0.6495)
+        )
+
+        dt_told, _ = propose_dt(
+            method=int(IntegratorType.BE), grid=grid, params=params, state=state,
+            t=jnp.array(0.0), dt_old=dt_old, err_ratio=err_ratio,
+            controller_state=controller, nk_stats=failed, order=1,
+            accepted=jnp.array(False)
+        )
+        assert float(dt_told) < float(dt_old), (
+            f"a failed solve grew dt from {float(dt_old)} to {float(dt_told)}"
+        )
+
+        # Left to the error test alone, the same call grows it.
+        dt_err_only, _ = propose_dt(
+            method=int(IntegratorType.BE), grid=grid, params=params, state=state,
+            t=jnp.array(0.0), dt_old=dt_old, err_ratio=err_ratio,
+            controller_state=controller, nk_stats=failed, order=1
+        )
+        assert float(dt_err_only) > float(dt_old)
+
+    def test_rejection_budget_stops_the_run(self):
+        """The reproduction terminates, with a status that says why.
+
+        On the parent commit this call never returns; here it stops after
+        max_rejections_per_step consecutive rejections with
+        MAX_ATTEMPTS_REACHED, a status distinct from MAX_STEPS_REACHED
+        (which counts accepted steps) and from DT_TOO_SMALL (dt is still
+        far above dt_min when the budget runs out).
+        """
+        model, y0 = float32_decay_model()
+
+        result = adaptive_integrate(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BE, max_steps=1,
+            max_rejections_per_step=5
+        )
+        assert int(result.status) == StatusCode.MAX_ATTEMPTS_REACHED
+        assert int(result.n_accepted) == 0
+        assert int(result.n_rejected) == 5
+        assert float(result.t_final) == 0.0
+
+        # Same outcome at the documented default budget.
+        result_default = adaptive_integrate(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BE, max_steps=1
+        )
+        assert int(result_default.status) == StatusCode.MAX_ATTEMPTS_REACHED
+        assert int(result_default.n_rejected) == 10
+
+    def test_dt_falls_monotonically_while_the_step_keeps_failing(self):
+        """Ten rejections in a row must cut dt, not push it back up.
+
+        This is the plateau itself, run as the integrator runs it: propose
+        a dt for a failed step, halve it the way reject_step does, repeat.
+        Told only the error ratio the failed solves produce, the loop is
+        net-growing (the PID's growth outruns the halving) and dt settles
+        at the controller's clamp instead of shrinking.
+        """
+        grid = Grid1D.uniform(4, 0.0, 1.0)
+        params = {'dtype': jnp.float64}
+        state = {'u': jnp.ones(grid.nx_total)}
+        pid_params = PIDParams()
+        err_ratio = jnp.array(1e-10)
+        failed = NKStats(
+            converged=jnp.array(False),
+            newton_iters=jnp.array(1, dtype=jnp.int32),
+            lin_iters=jnp.array(50, dtype=jnp.int32),
+            final_res_norm=jnp.array(0.6495)
+        )
+
+        def reject_sequence(pass_decision):
+            controller = create_initial_controller_state(jnp.float64)
+            dt = jnp.array(0.1)
+            seq = []
+            for _ in range(10):
+                kwargs = {'accepted': jnp.array(False)} if pass_decision else {}
+                dt_new, controller = propose_dt(
+                    method=int(IntegratorType.BE), grid=grid, params=params,
+                    state=state, t=jnp.array(0.0), dt_old=dt, err_ratio=err_ratio,
+                    controller_state=controller, nk_stats=failed,
+                    pid_params=pid_params, order=1, **kwargs
+                )
+                dt = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
+                seq.append(float(dt))
+            return seq
+
+        told = reject_sequence(True)
+        assert all(b < a for a, b in zip([0.1] + told[:-1], told, strict=True)), told
+        assert told[-1] < 1e-4, told[-1]
+
+        err_only = reject_sequence(False)
+        assert err_only[-1] >= 0.1, err_only
 
 
 if __name__ == "__main__":

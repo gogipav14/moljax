@@ -827,6 +827,17 @@ def step_explicit_with_error(
 # Adaptive Integration with lax.while_loop
 # =============================================================================
 
+# Consecutive rejections allowed for one step before the adaptive
+# integrators give up on it. The budget is per step, not per run: a run
+# that keeps accepting steps never sees it, while a step that keeps
+# failing is stopped even when dt has not yet reached dt_min. Ten is
+# CVODE's default for consecutive nonlinear solver failures (MXNCF), and
+# every rejection here cuts dt by at least a factor 2, so ten of them
+# shrink dt by 1e-3 or more: a well-posed step that still fails after
+# that had a proposal wrong by three orders of magnitude.
+_DEFAULT_MAX_REJECTIONS_PER_STEP = 10
+
+
 def _converged_stats(dtype: jnp.dtype) -> NKStats:
     """
     NKStats standing in for a step that involved no Newton solve.
@@ -897,7 +908,8 @@ def adaptive_integrate(
     pid_params: PIDParams | None = None,
     preconditioner: Preconditioner | None = None,
     nk_params: NKParams | None = None,
-    save_every: int = 1
+    save_every: int = 1,
+    max_rejections_per_step: int = _DEFAULT_MAX_REJECTIONS_PER_STEP
 ) -> AdaptiveResult:
     """
     Adaptive time integration using lax.while_loop.
@@ -923,9 +935,15 @@ def adaptive_integrate(
         preconditioner: Preconditioner for implicit methods
         nk_params: NK parameters for implicit methods
         save_every: Save every N accepted steps to history
+        max_rejections_per_step: Consecutive rejections allowed for one
+            step before the run stops with StatusCode.MAX_ATTEMPTS_REACHED.
+            This budget is independent of max_steps, which counts accepted
+            steps only and so never bounds a step that is rejected forever.
 
     Returns:
-        AdaptiveResult with final state and histories
+        AdaptiveResult with final state and histories. status is
+        StatusCode.MAX_ATTEMPTS_REACHED if one step used up its rejection
+        budget.
     """
     dtype = model.dtype
 
@@ -1076,7 +1094,11 @@ def adaptive_integrate(
             lambda: accept
         )
 
-        # Compute new dt
+        # Compute new dt. The controller is told the real accept/reject
+        # decision, not just err_ratio <= 1: a step whose solve failed
+        # must never see the PID's growth term, or dt is pushed back up
+        # faster than the rejection halves it and the step is retried
+        # forever.
         dt_new, new_controller = propose_dt(
             method=method,
             grid=model.grid,
@@ -1089,7 +1111,8 @@ def adaptive_integrate(
             nk_stats=nk_stats,
             cfl_params=cfl_params,
             pid_params=pid_params,
-            order=order
+            order=order,
+            accepted=accept
         )
 
         # Update state based on accept/reject
@@ -1147,11 +1170,20 @@ def adaptive_integrate(
             # More aggressive shrink on reject
             dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
 
-            # Check for dt too small
-            new_status = lax.cond(
+            # Carry the controller the proposal built, not the one that
+            # went in: its consecutive_rejects counter is what bounds the
+            # attempts spent on a single step. Nothing else in it differs
+            # on a rejection (handle_rejected_step keeps prev_err_ratio
+            # and prevprev_err_ratio unchanged).
+            n_rejects = new_controller.consecutive_rejects
+            new_status = jnp.where(
                 dt_reject <= pid_params.dt_min * 1.1,
-                lambda: jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
-                lambda: state.status
+                jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
+                jnp.where(
+                    n_rejects >= max_rejections_per_step,
+                    jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
+                    state.status
+                )
             )
 
             return AdaptiveState(
@@ -1161,7 +1193,7 @@ def adaptive_integrate(
                 y_prev=state.y_prev,
                 dt_prev=state.dt_prev,
                 step_count=state.step_count,
-                controller=state.controller,
+                controller=new_controller,
                 t_history=state.t_history,
                 y_history=state.y_history,
                 dt_history=state.dt_history,
@@ -1487,7 +1519,8 @@ def adaptive_integrate_imex(
     max_steps: int = 10000,
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
-    save_every: int = 1
+    save_every: int = 1,
+    max_rejections_per_step: int = _DEFAULT_MAX_REJECTIONS_PER_STEP
 ) -> AdaptiveResult:
     """
     Adaptive IMEX time integration using lax.while_loop.
@@ -1508,6 +1541,9 @@ def adaptive_integrate_imex(
         cfl_params: CFL parameters (for advection/reaction limiting)
         pid_params: PID parameters
         save_every: Save every N accepted steps
+        max_rejections_per_step: Consecutive rejections allowed for one
+            step before the run stops with StatusCode.MAX_ATTEMPTS_REACHED
+            (see adaptive_integrate)
 
     Returns:
         AdaptiveResult with final state and histories
@@ -1599,7 +1635,8 @@ def adaptive_integrate_imex(
             controller_state=state.controller,
             cfl_params=cfl_params,
             pid_params=pid_params,
-            order=order
+            order=order,
+            accepted=accept
         )
 
         # Update state based on accept/reject
@@ -1650,10 +1687,18 @@ def adaptive_integrate_imex(
 
         def reject_step():
             dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
-            new_status = lax.cond(
+            # See adaptive_integrate.reject_step: the proposal's
+            # controller carries the consecutive_rejects counter that
+            # bounds the attempts spent on a single step.
+            n_rejects = new_controller.consecutive_rejects
+            new_status = jnp.where(
                 dt_reject <= pid_params.dt_min * 1.1,
-                lambda: jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
-                lambda: state.status
+                jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
+                jnp.where(
+                    n_rejects >= max_rejections_per_step,
+                    jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
+                    state.status
+                )
             )
 
             return AdaptiveState(
@@ -1663,7 +1708,7 @@ def adaptive_integrate_imex(
                 y_prev=state.y_prev,
                 dt_prev=state.dt_prev,
                 step_count=state.step_count,
-                controller=state.controller,
+                controller=new_controller,
                 t_history=state.t_history,
                 y_history=state.y_history,
                 dt_history=state.dt_history,

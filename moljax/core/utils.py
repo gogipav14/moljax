@@ -268,3 +268,8 @@ class StatusCode:
     DT_TOO_SMALL = 3
     NON_FINITE_VALUES = 4
     NK_FAILED = 5
+    # A single step exhausted its rejection budget: the controller kept
+    # proposing a dt the step kept failing at, without the run advancing.
+    # Distinct from MAX_STEPS_REACHED, which counts accepted steps, and
+    # from DT_TOO_SMALL, which means dt actually reached dt_min.
+    MAX_ATTEMPTS_REACHED = 6

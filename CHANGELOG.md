@@ -656,6 +656,39 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **A step whose Newton solve failed no longer takes the PID controller's
+  accepted branch, and one step's rejections are now bounded.**
+  `propose_dt` and `propose_dt_imex` decided acceptance from
+  `err_ratio <= 1.0` alone, but an error estimate built from a failed
+  solve can be arbitrarily small, so a failed step was handed to the PID
+  controller, whose growth term (up to `max_factor = 5`) outran the
+  integrator's halving on rejection. On `u' = -u` at `u0 = 1000` in
+  float32, where the default `newton_tol = 1e-8` is below the float32
+  spacing of 1000 and no solve can ever converge, `dt` plateaued between
+  1.6e-3 and 1.8e-3 and `adaptive_integrate(..., max_steps=1)` never
+  returned at all (killed at 90 s): `max_steps` bounds accepted steps and
+  no step was ever accepted. Both proposal functions now take the
+  integrator's own `accepted` decision (error test **and** finiteness
+  **and** solve convergence), so a failed step always takes the rejected
+  branch, whose factor is at most 1 and which the implicit robustness
+  limiter can only shrink further. **Public surface:** `propose_dt` and
+  `propose_dt_imex` gained an optional `accepted` argument, defaulting to
+  the old `err_ratio <= 1.0` so existing callers are unchanged;
+  `adaptive_integrate` and `adaptive_integrate_imex` gained
+  `max_rejections_per_step` (default 10, CVODE's `MXNCF`), the consecutive
+  rejections one step may spend before the run stops with the new
+  `StatusCode.MAX_ATTEMPTS_REACHED` (6). That budget is independent of
+  `max_steps`, which counts accepted steps only. Both integrators also
+  keep the controller state the proposal returns on a rejection; they used
+  to discard it, which is why `consecutive_rejects` was written but never
+  seen by anyone. The reproduction now stops in about 2 s with
+  `MAX_ATTEMPTS_REACHED`, 0 accepted steps and 10 rejections. Well-posed
+  runs are untouched: the six methods on a logistic model, RK4 and BDF2 on
+  a stiff decay that does reject steps, and both IMEX variants on
+  Gray-Scott give identical statuses, accept/reject counts, `dt` histories
+  and `t` histories before and after.
+  `tests/test_dt_policy.py::TestRejectionsTerminate` covers all three.
+
 - **`integrate_fixed_dt` no longer returns a failed Newton solve as an
   ordinary result; it raises.** `do_be`, `do_cn` and `do_bdf2` each dropped
   the `NKStats` their step function returns (`y_new, _ = be_step(...)`) and

@@ -341,7 +341,8 @@ def propose_dt(
     nk_stats: NKStats | None = None,
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
-    order: int = 4
+    order: int = 4,
+    accepted: jnp.ndarray | None = None
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Unified dt proposal function for all methods.
@@ -359,17 +360,35 @@ def propose_dt(
         cfl_params: CFL parameters (default created if None)
         pid_params: PID parameters (default created if None)
         order: Method order
+        accepted: The integrator's own accept/reject decision. Pass it: a
+            small error ratio is not by itself an acceptance, since the
+            step must also be finite and its Newton-Krylov solve must have
+            converged, and an error estimate built from a failed solve can
+            be arbitrarily small (two failed solves that stall at the same
+            iterate give exactly zero). Defaults to err_ratio <= 1.0, the
+            error test alone.
 
     Returns:
         Tuple of (proposed_dt, new_controller_state)
+
+    Notes:
+        A rejected step never grows dt: handle_rejected_step's factor is
+        clipped to at most 1 (safety = 0.9 makes it strictly smaller) and
+        the implicit robustness limiter can only shrink it further when
+        the solve did not converge. A repeatedly failing step therefore
+        sees a monotonically decreasing dt rather than one the PID's
+        growth term pushes back up. See adaptive_integrate's
+        max_rejections_per_step for the budget that stops such a step.
     """
     if cfl_params is None:
         cfl_params = CFLParams()
     if pid_params is None:
         pid_params = PIDParams()
 
-    # Check if step was accepted
-    accepted = err_ratio <= 1.0
+    # Whether the step was accepted (the error test alone, unless the
+    # caller passed its own decision)
+    if accepted is None:
+        accepted = err_ratio <= 1.0
 
     # Compute base dt from controller
     def accepted_dt():
@@ -566,7 +585,8 @@ def propose_dt_imex(
     controller_state: ControllerState,
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
-    order: int = 2
+    order: int = 2,
+    accepted: jnp.ndarray | None = None
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Propose dt for IMEX methods.
@@ -584,6 +604,8 @@ def propose_dt_imex(
         cfl_params: CFL parameters
         pid_params: PID parameters
         order: Method order
+        accepted: The integrator's own accept/reject decision; see
+            propose_dt. Defaults to err_ratio <= 1.0.
 
     Returns:
         Tuple of (proposed_dt, new_controller_state)
@@ -593,8 +615,10 @@ def propose_dt_imex(
     if pid_params is None:
         pid_params = PIDParams()
 
-    # Check if step was accepted
-    accepted = err_ratio <= 1.0
+    # Whether the step was accepted (the error test alone, unless the
+    # caller passed its own decision)
+    if accepted is None:
+        accepted = err_ratio <= 1.0
 
     # Compute base dt from controller
     def accepted_dt():
