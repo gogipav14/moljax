@@ -226,6 +226,29 @@ All notable changes to moljax are documented here.
   adds the reproduction plus unit coverage of the new condition and of the
   clamped remedy.
 
+- **An embedded error estimate built from a failed Newton solve was
+  treated as a real one.** `cn_with_err` and `bdf2_with_err` threw away
+  the auxiliary backward Euler solve's `NKStats`
+  (`y_be, _ = be_step(...)`) and reported only the primary solve's, so the
+  accept test saw a difference between one converged state and one that
+  had merely stopped iterating. When both stall at the same value that
+  difference is exactly zero, which the controller reads as a perfect
+  step: on `u' = -2u^2(u - 1/2)`, `u0 = 1`, `dt = 1` with
+  `max_newton_iters = 1`, Crank-Nicolson converges to 0.5, backward Euler
+  fails at the same 0.5, `err` is 0.0 and `adaptive_integrate` finished
+  with `SUCCESS` at `y = 0.5` against the reference 0.6510085678. The
+  estimate is now valid only if every solve contributing to it converged
+  to a finite state; otherwise the step is rejected and its `dt` cut,
+  exactly as for a failed primary solve. The same reproduction now rejects
+  the `dt = 1` attempt and subdivides to 0.650999 (CN) and 0.650972 (BDF2)
+  after 48 rejections. The plain backward Euler branch is covered too: its
+  estimate is the same `y_cn - y_be` difference, so an unconverged
+  Crank-Nicolson auxiliary rejects the step even when backward Euler
+  itself converged. Commit 58c0d1f closed this hole on the BDF2 startup
+  branch only; `test_bdf2_startup_rejects_unconverged_cn` still passes.
+  `tests/test_integrators.py::TestErrorEstimateRequiresEverySolve` covers
+  all three branches.
+
 - **`nilt_solve_linear_pde` let a real eigenvalue into its transient mask
   whenever the mode's residual was nonzero, inflating the Bromwich shift
   and ruining the inversion of the genuinely complex modes.** For a real

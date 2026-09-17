@@ -980,6 +980,31 @@ def _validate_time_resolution(t0: float, t_end: float, dt: float, caller: str) -
         )
 
 
+def _error_estimate_converged(*solves) -> jnp.ndarray:
+    """
+    Whether every solve feeding an error estimate reached a finite answer.
+
+    An embedded error estimate is a difference of two solves, and it is
+    only a measure of truncation error if both of them actually solved
+    their equations. When they do not, the difference measures nothing:
+    two solves that stall at the same iterate give exactly zero, which
+    the controller reads as a perfect step. On
+    u' = -2u^2(u - 1/2), u0 = 1, dt = 1 with max_newton_iters = 1,
+    Crank-Nicolson converges to 0.5 and backward Euler fails at 0.5,
+    err = y_cn - y_be = 0, and the step was accepted with y = 0.5 against
+    the reference 0.6510085678.
+
+    Takes (stats, state) pairs and folds their convergence and
+    finiteness into one flag, which the integrator's accept test reads
+    through NKStats.converged: a step whose estimate is not trustworthy
+    is rejected and its dt cut, exactly like a failed primary solve.
+    """
+    ok = jnp.array(True)
+    for stats, state in solves:
+        ok = jnp.logical_and(ok, jnp.logical_and(stats.converged, is_finite(state)))
+    return ok
+
+
 def _converged_stats_dtype(stats: NKStats, dtype: jnp.dtype) -> NKStats:
     """
     Put a solve's residual norm back in the state's dtype.
@@ -1227,12 +1252,25 @@ def adaptive_integrate(
                 # just because BE happened to converge.
                 y_result = lax.cond(bdf2_startup, lambda: y_cn, lambda: y_be)
                 stats_result = lax.cond(bdf2_startup, lambda: stats_cn, lambda: stats_be)
+                # err is y_cn - y_be on both branches, so the estimate is
+                # only meaningful if both solves converged; whichever one
+                # is not the step's own solution is an auxiliary whose
+                # failure must reject the step just the same.
+                stats_result = stats_result._replace(
+                    converged=_error_estimate_converged((stats_be, y_be), (stats_cn, y_cn))
+                )
                 return y_result, err, stats_result
 
             def cn_with_err():
                 y_cn, stats = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                y_be, _ = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                # The backward Euler solve is an auxiliary, but the error
+                # estimate is its difference from y_cn: its stats decide
+                # the step just as much as Crank-Nicolson's own.
+                y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
                 err = tree_sub(y_cn, y_be)
+                stats = stats._replace(
+                    converged=_error_estimate_converged((stats, y_cn), (stats_be, y_be))
+                )
                 return y_cn, err, stats
 
             def bdf2_with_err():
@@ -1240,9 +1278,14 @@ def adaptive_integrate(
                     model, state.y, state.y_prev, state.t, dt_clamped, state.dt_prev,
                     preconditioner, nk_params
                 )
-                # Compare with BE for error
-                y_be, _ = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                # Compare with BE for error. As in cn_with_err, the
+                # auxiliary solve's convergence is part of the estimate's
+                # validity, not a detail of how it was computed.
+                y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
                 err = tree_sub(y_bdf2, y_be)
+                stats = stats._replace(
+                    converged=_error_estimate_converged((stats, y_bdf2), (stats_be, y_be))
+                )
                 return y_bdf2, err, stats
 
             # Select based on method and step count

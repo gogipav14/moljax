@@ -1045,5 +1045,114 @@ class TestTimeIsNotCarriedInTheStateDtype:
                 )
 
 
+def two_root_model():
+    """u' = -2u^2(u - 1/2) from u0 = 1, the reviewer's error-estimate reproduction.
+
+    At dt = 1 with max_newton_iters = 1, Crank-Nicolson converges to 0.5
+    (the equation's other steady state) and backward Euler fails at the
+    same 0.5, so the embedded estimate y_cn - y_be is exactly zero.
+    """
+    grid = Grid1D.uniform(1, 0.0, 1.0)
+    op = NonlinearOp(
+        name="two_root",
+        apply=lambda s, g, t, p: {'u': -2.0 * s['u'] ** 2 * (s['u'] - 0.5)}
+    )
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'dtype': jnp.float64},
+        linear_ops=(),
+        nonlinear_ops=(op,)
+    )
+    return model, {'u': jnp.ones(grid.nx_total)}
+
+
+# u(1) for two_root_model, from scipy.integrate.solve_ivp at rtol 1e-12,
+# atol 1e-14 (the reviewer's independent reproduction reports the same
+# 0.6510085678). Hard-coded so the test does not depend on scipy.
+TWO_ROOT_EXACT = 0.651008567786174
+
+
+class TestErrorEstimateRequiresEverySolve:
+    """An embedded error estimate is only valid if every solve in it converged.
+
+    cn_with_err and bdf2_with_err threw away the auxiliary backward Euler
+    solve's NKStats (`y_be, _ = be_step(...)`) and reported only the
+    primary solve's, so a step was accepted on the strength of a
+    difference between one converged state and one that had merely
+    stopped iterating. When both stall at the same value the difference is
+    exactly zero, which the controller reads as a perfect step: on
+    u' = -2u^2(u - 1/2), u0 = 1, dt = 1 with max_newton_iters = 1, err was
+    0.0 and the run finished with SUCCESS at y = 0.5 against the reference
+    0.6510085678. Commit 58c0d1f closed the same hole on the BDF2 startup
+    branch; this is the rest of it.
+    """
+
+    def test_both_solves_stalling_at_one_value_is_not_a_perfect_step(self):
+        """The reproduction, first as the two solves, then through the integrator."""
+        model, y0 = two_root_model()
+        nk = NKParams(max_newton_iters=1)
+
+        y_cn, stats_cn = cn_step(model, y0, 0.0, 1.0, nk_params=nk)
+        y_be, stats_be = be_step(model, y0, 0.0, 1.0, nk_params=nk)
+        assert bool(stats_cn.converged)
+        assert not bool(stats_be.converged)
+        assert float(y_cn['u'][1] - y_be['u'][1]) == 0.0, "the zero estimate is the premise"
+
+        result = adaptive_integrate(
+            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.CN, max_steps=500,
+            nk_params=nk, pid_params=PIDParams(dt_max=1.0)
+        )
+        assert int(result.n_rejected) >= 1, "the dt = 1 attempt was accepted again"
+        assert int(result.status) == StatusCode.SUCCESS
+        assert abs(float(result.y_final['u'][1]) - TWO_ROOT_EXACT) < 1e-3, (
+            f"subdivided to {float(result.y_final['u'][1])}, "
+            f"reference {TWO_ROOT_EXACT}"
+        )
+
+    def test_bdf2_estimate_requires_its_auxiliary_solve(self):
+        """bdf2_with_err has the same auxiliary backward Euler solve."""
+        model, y0 = two_root_model()
+        result = adaptive_integrate(
+            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BDF2, max_steps=500,
+            nk_params=NKParams(max_newton_iters=1), pid_params=PIDParams(dt_max=1.0)
+        )
+        assert int(result.n_rejected) >= 1
+        assert int(result.status) == StatusCode.SUCCESS
+        assert abs(float(result.y_final['u'][1]) - TWO_ROOT_EXACT) < 1e-3
+
+    def test_be_method_rejects_when_its_auxiliary_cn_fails(self):
+        """The plain BE branch reads the same y_cn - y_be difference.
+
+        On u' = 2u from u0 = 1e-7 at dt = 1 with the default tolerances,
+        backward Euler converges and Crank-Nicolson does not (residual
+        3.46e-7 against the 1e-8 tolerance); the estimate is the
+        difference between them, so backward Euler's own success is not
+        enough to accept the step. This is the case 58c0d1f used for the
+        BDF2 startup branch, here on the BE method itself.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+        model = MOLModel(
+            grid=grid,
+            bc_spec={'u': FieldBCSpec.periodic()},
+            params={'dtype': jnp.float64},
+            linear_ops=(LinearOp(name="grow", apply=lambda s, g, t, p: {'u': 2.0 * s['u']}),),
+            nonlinear_ops=()
+        )
+        y0 = {'u': jnp.full(grid.nx_total, 1e-7)}
+
+        _, stats_be = be_step(model, y0, 0.0, 1.0)
+        _, stats_cn = cn_step(model, y0, 0.0, 1.0)
+        assert bool(stats_be.converged)
+        assert not bool(stats_cn.converged)
+
+        result = adaptive_integrate(
+            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, max_steps=500,
+            pid_params=PIDParams(dt_max=1.0)
+        )
+        assert int(result.n_rejected) >= 1, "the dt = 1 attempt was accepted again"
+        assert int(result.status) == StatusCode.SUCCESS
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
