@@ -370,6 +370,12 @@ class TestAdaptive:
 
         The CFL limit used to come back as float64, so the lax.cond that
         picks the initial dt saw branches of different dtypes.
+
+        t_final is float64 here, not float32: the clock is deliberately
+        carried wider than the field (see stepping._time_dtype), because
+        a float32 clock stops advancing at large t while a float32 field
+        is a considered choice about the field alone. The state's own
+        dtype is what this test pins, and it is still float32.
         """
         model = create_gray_scott_model(Grid2D.uniform(8, 8, 0, 1, 0, 1), dtype=jnp.float32)
         y0 = model.create_initial_state(fill_values={'u': 1.0, 'v': 0.1})
@@ -378,7 +384,8 @@ class TestAdaptive:
 
         assert int(result.status) == 0
         assert result.y_final['u'].dtype == jnp.float32
-        assert result.t_final.dtype == jnp.float32
+        assert result.dt_history.dtype == jnp.float32
+        assert result.t_final.dtype == jnp.float64
 
     def test_adaptive_save_every_includes_t_end(self):
         """save_every must land on multiples of save_every and always keep t_end.
@@ -946,6 +953,96 @@ class TestFixedStepReportsFailedSolves:
             model, y0, 0.0, 1.0, 0.1, method=IntegratorType.EULER, return_status=True
         )
         assert int(status) == StatusCode.NON_FINITE_VALUES
+
+
+def source_term_model(t0, dtype=jnp.float32):
+    """u' = t - t0 from u(t0) = 0, whose exact solution at t0 + 1 is 0.5.
+
+    The right-hand side is the time itself, so a clock that does not
+    advance is the whole answer: u stays at 0.
+    """
+    grid = Grid1D.uniform(1, 0.0, 1.0)
+    op = NonlinearOp(
+        name="source",
+        apply=lambda s, g, t, p: {'u': jnp.full_like(s['u'], t - t0)}
+    )
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'dtype': dtype},
+        linear_ops=(),
+        nonlinear_ops=(op,)
+    )
+    return model, {'u': jnp.zeros(grid.nx_total, dtype=dtype)}
+
+
+class TestTimeIsNotCarriedInTheStateDtype:
+    """The clock must not inherit a float32 field's precision.
+
+    integrate_fixed_dt and adaptive_integrate both built their time from
+    model.dtype (jnp.array(t0, dtype=model.dtype)) and accumulated it step
+    by step. At t0 = 1e6 in float32 the spacing is 0.0625, so t + 0.01
+    rounds straight back to t: the fixed-step run took all 100 steps at
+    the same instant and RK4 returned u = 0 instead of 0.5, and the
+    adaptive run hit MAX_STEPS_REACHED with t_final still exactly 1e6.
+    Time now follows JAX's default float type (float64 under x64), and
+    the fixed path takes each timestamp as t0 + i*dt rather than as a
+    running sum.
+    """
+
+    T0 = 1e6
+
+    def test_fixed_step_advances_at_a_large_t0(self):
+        model, y0 = source_term_model(self.T0)
+        t_hist, y_hist, y_final = integrate_fixed_dt(
+            model, y0, self.T0, self.T0 + 1.0, 0.01, method=IntegratorType.RK4
+        )
+        assert abs(float(y_final['u'][1]) - 0.5) < 1e-6, float(y_final['u'][1])
+        assert abs(float(t_hist[-1]) - (self.T0 + 1.0)) < 1e-9
+        assert float(t_hist[0]) > self.T0
+        # The field itself is still float32; only the clock is wider.
+        assert y_final['u'].dtype == jnp.float32
+        assert t_hist.dtype == jnp.float64
+
+    def test_adaptive_advances_at_a_large_t0(self):
+        model, y0 = source_term_model(self.T0)
+        result = adaptive_integrate(
+            model, y0, self.T0, self.T0 + 1.0, 0.01, method=IntegratorType.RK4,
+            max_steps=500, pid_params=PIDParams(dt_max=0.01)
+        )
+        assert int(result.status) == StatusCode.SUCCESS
+        assert abs(float(result.t_final) - (self.T0 + 1.0)) < 1e-9
+        assert abs(float(result.y_final['u'][1]) - 0.5) < 1e-6
+        assert result.y_final['u'].dtype == jnp.float32
+
+    def test_timestamps_do_not_drift_with_the_step_count(self):
+        """t0 + i*dt, not a running sum: 1000 steps of 0.001 land exactly on 1.0."""
+        model, y0 = source_term_model(0.0, dtype=jnp.float64)
+        t_hist, _, _ = integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 0.001, method=IntegratorType.RK4, save_every=100
+        )
+        expected = [0.1 * (i + 1) for i in range(10)]
+        for got, want in zip([float(v) for v in t_hist], expected, strict=True):
+            assert abs(got - want) < 1e-13, f"{got} vs {want}"
+        assert float(t_hist[-1]) == 1.0
+
+    def test_unrepresentable_step_is_rejected_without_x64(self):
+        """With no wider type to fall back on, the run is refused at validation."""
+        t0 = jnp.array(1e6, dtype=jnp.float32)
+        dt = jnp.array(0.01, dtype=jnp.float32)
+        assert float(t0 + dt) == float(t0), "the premise of this test no longer holds"
+
+        with jax.enable_x64(False):
+            model, y0 = source_term_model(1e6)
+            with pytest.raises(ValueError, match="not representable"):
+                integrate_fixed_dt(
+                    model, y0, 1e6, 1e6 + 1.0, 0.01, method=IntegratorType.RK4
+                )
+            with pytest.raises(ValueError, match="not representable"):
+                adaptive_integrate(
+                    model, y0, 1e6, 1e6 + 1.0, 0.01, method=IntegratorType.RK4,
+                    max_steps=50
+                )
 
 
 if __name__ == "__main__":

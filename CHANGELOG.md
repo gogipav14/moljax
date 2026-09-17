@@ -656,6 +656,34 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **Time is no longer carried in the state's dtype.** `integrate_fixed_dt`,
+  `integrate_imex_fixed_dt`, `adaptive_integrate` and
+  `adaptive_integrate_imex` all built their clock from `model.dtype`
+  (`jnp.array(t0, dtype=model.dtype)`) and accumulated it one step at a
+  time. At `t0 = 1e6` in float32 the spacing is 0.0625, so `t + 0.01`
+  rounds straight back to `t`: the fixed-step run took all 100 steps at
+  the same instant and RK4 returned `u = 0` instead of 0.5 on
+  `u' = t - t0`, and the adaptive run stopped with `MAX_STEPS_REACHED` and
+  `t_final` still exactly `1e6`. A float32 state is a choice about the
+  field, not a statement that the clock fits in 24 bits of mantissa, so
+  time now follows JAX's default float type (float64 when x64 is enabled)
+  regardless of the state's dtype, and the fixed-step path takes each
+  timestamp as `t0 + i*dt` rather than as a running sum (one rounding in
+  total instead of one per step: 1000 steps of 0.001 now land on exactly
+  1.0 instead of 1.0000000000000007). The state itself stays in its own
+  dtype: a step's result is cast back, so a right-hand side that uses `t`
+  cannot silently widen the field or break a loop carry's dtype. Both
+  reproductions now give 0.5. **Public surface:** `AdaptiveResult.t_final`
+  and `t_history`, and `integrate_fixed_dt`'s `t_history`, are float64 for
+  a float32 model under x64 (`y_final` and `dt_history` are unchanged);
+  and when x64 is off, so there is no wider type to fall back on, a `dt`
+  that is unrepresentable at `t0` now raises `ValueError` at validation
+  instead of running and advancing nothing.
+  `tests/test_integrators.py::TestTimeIsNotCarriedInTheStateDtype` covers
+  the two reproductions, the drift, and the refusal.
+  `TestAdaptive::test_adaptive_float32_model_under_x64` now pins
+  `y_final` and `dt_history` as float32 and `t_final` as float64.
+
 - **The IMEX steppers' explicit part is now everything the FFT diffusion
   split does not handle, not just `model.nonlinear_rhs`.**
   `imex_euler_step`, `imex_strang_step` and `imex_ssprk2_step` evaluated

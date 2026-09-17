@@ -930,6 +930,82 @@ def step_explicit_with_error(
 # Adaptive Integration with lax.while_loop
 # =============================================================================
 
+def _time_dtype() -> jnp.dtype:
+    """
+    The dtype time is carried in, independent of the state's dtype.
+
+    Time and state are different quantities with different dynamic
+    ranges. A float32 state is a deliberate choice about the field; it is
+    not a statement that the clock fits in 24 bits of mantissa. Carrying
+    t in the state's dtype made a float32 run at t0 = 1e6 with dt = 0.01
+    stop advancing altogether: 1e6 + 0.01 rounds back to 1e6 in float32
+    (the spacing there is 0.0625), so every step returned to the same
+    instant. Time therefore follows JAX's default float type, which is
+    float64 when x64 is enabled and float32 when it is not.
+
+    When x64 is off there is no wider type to fall back on, so the
+    integrators validate that dt is representable at t0 instead (see
+    _validate_time_resolution).
+    """
+    return jnp.dtype(jnp.result_type(float))
+
+
+def _validate_time_resolution(t0: float, t_end: float, dt: float, caller: str) -> None:
+    """
+    Reject a run whose time step is invisible at its own start time.
+
+    t0 + dt == t0 in the time dtype means the clock cannot move: the run
+    would take its steps, advance nothing, and report either a frozen
+    t_final or MAX_STEPS_REACHED. That is a caller error, caught here
+    with a message that says what to do about it, rather than a silently
+    wrong answer.
+
+    Skipped when t0, t_end or dt is a tracer: there is nothing to compare
+    then, and raising inside jit is not possible anyway.
+    """
+    dtype = _time_dtype()
+    try:
+        t0_c = jnp.array(t0, dtype=dtype)
+        dt_c = jnp.array(dt, dtype=dtype)
+        span = jnp.array(t_end, dtype=dtype) - t0_c
+        stuck = bool((t0_c + dt_c == t0_c) & (dt_c > 0.0) & (span > 0.0))
+    except (jax.errors.ConcretizationTypeError, TypeError):
+        return
+    if stuck:
+        raise ValueError(
+            f"{caller}: dt={dt} is not representable at t0={t0} in {dtype.name} "
+            f"(t0 + dt == t0), so time cannot advance. Enable x64 "
+            f"(jax.config.update('jax_enable_x64', True)), or shift the time "
+            f"origin so that t0 is comparable in size to dt."
+        )
+
+
+def _converged_stats_dtype(stats: NKStats, dtype: jnp.dtype) -> NKStats:
+    """
+    Put a solve's residual norm back in the state's dtype.
+
+    Same reason as _to_state_dtype: a float64 t can widen the residual of
+    a float32 state, and the two branches of a lax.cond (one of which is
+    the zero-residual record _converged_stats builds in the state's
+    dtype) have to agree.
+    """
+    return stats._replace(final_res_norm=stats.final_res_norm.astype(dtype))
+
+
+def _to_state_dtype(state: StateDict, dtype: jnp.dtype) -> StateDict:
+    """
+    Put a step's result back in the state's own dtype.
+
+    Time is carried in float64 (see _time_dtype) while the state may be
+    float32, and a right-hand side that uses t (a forcing or source term)
+    returns float64 under JAX's promotion rules, which would silently
+    widen the state and, inside lax.scan or lax.while_loop, break the
+    carry's dtype outright. The state's declared dtype wins; only the
+    clock is kept wide.
+    """
+    return {name: field.astype(dtype) for name, field in state.items()}
+
+
 # Consecutive rejections allowed for one step before the adaptive
 # integrators give up on it. The budget is per step, not per run: a run
 # that keeps accepting steps never sees it, while a step that keeps
@@ -1049,6 +1125,10 @@ def adaptive_integrate(
         budget.
     """
     dtype = model.dtype
+    # Time is carried wider than the state when x64 is on: see
+    # _time_dtype for why the clock does not follow the field's dtype.
+    time_dtype = _time_dtype()
+    _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate")
 
     if cfl_params is None:
         cfl_params = CFLParams()
@@ -1076,7 +1156,7 @@ def adaptive_integrate(
     # a forced save of the final accepted state when it does not land on a
     # save_every boundary (see should_save in accept_step).
     max_saves = max_steps // save_every + 2
-    t_history = allocate_scalar_history(max_saves, dtype)
+    t_history = allocate_scalar_history(max_saves, time_dtype)
     y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
     dt_history = allocate_scalar_history(max_saves, dtype)
 
@@ -1084,7 +1164,7 @@ def adaptive_integrate(
     controller = create_initial_controller_state(dtype)
 
     init_state = AdaptiveState(
-        t=jnp.array(t0, dtype=dtype),
+        t=jnp.array(t0, dtype=time_dtype),
         y=y0,
         dt=dt_init,
         y_prev=y0,  # Will be updated after first step
@@ -1110,13 +1190,16 @@ def adaptive_integrate(
     def body_fn(state: AdaptiveState) -> AdaptiveState:
         """Single step of adaptive integration."""
 
-        # Clamp dt to not overshoot
-        dt_clamped = jnp.minimum(state.dt, t_end - state.t)
+        # Clamp dt to not overshoot. The remaining span is computed in
+        # the time dtype and then taken back to the state's dtype, so dt
+        # stays in the state's dtype and the state is not widened by it.
+        dt_clamped = jnp.minimum(state.dt, (t_end - state.t).astype(dtype))
 
         # Take step based on method type
         def explicit_step():
             y_new, err = step_explicit_with_error(model, state.y, state.t, dt_clamped, method)
-            return y_new, err, _converged_stats(dtype)
+            return (_to_state_dtype(y_new, dtype), _to_state_dtype(err, dtype),
+                    _converged_stats(dtype))
 
         def implicit_step():
             # For implicit: use BE + CN comparison for error
@@ -1171,11 +1254,13 @@ def adaptive_integrate(
             # Use BE for: BE method OR BDF2 startup
             use_be = jnp.logical_or(is_be, bdf2_startup)
 
-            return lax.cond(
+            y_new, err, stats = lax.cond(
                 use_be,
                 be_only,
                 lambda: lax.cond(is_cn, cn_with_err, bdf2_with_err)
             )
+            return (_to_state_dtype(y_new, dtype), _to_state_dtype(err, dtype),
+                    _converged_stats_dtype(stats, dtype))
 
         y_new, err, nk_stats = lax.cond(method < 3, explicit_step, implicit_step)
 
@@ -1502,6 +1587,15 @@ def integrate_fixed_dt(
         nk_params = NKParams()
 
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
+    _validate_time_resolution(t0, t_end, dt, "integrate_fixed_dt")
+
+    # Time is carried wider than the state when x64 is on (see
+    # _time_dtype), and each timestamp is t0 + i*dt rather than a running
+    # sum: the sum drifts by one rounding per step, the product by one in
+    # total, and the step index is exact.
+    time_dtype = _time_dtype()
+    t0_time = jnp.array(t0, dtype=time_dtype)
+    dt_time = jnp.array(dt, dtype=time_dtype)
 
     class ScanState(NamedTuple):
         t: jnp.ndarray
@@ -1516,7 +1610,7 @@ def integrate_fixed_dt(
 
         def explicit():
             y_new = step_explicit(model, carry.y, carry.t, dt, method)
-            return y_new, _converged_stats(model.dtype)
+            return _to_state_dtype(y_new, model.dtype), _converged_stats(model.dtype)
 
         def implicit():
             is_be = method == 3
@@ -1537,11 +1631,12 @@ def integrate_fixed_dt(
                     lambda: bdf2_step(model, carry.y, carry.y_prev, carry.t, dt, carry.dt_prev, preconditioner, nk_params)
                 )
 
-            return lax.cond(
+            y_new, stats = lax.cond(
                 is_be,
                 do_be,
                 lambda: lax.cond(is_cn, do_cn, do_bdf2)
             )
+            return _to_state_dtype(y_new, model.dtype), _converged_stats_dtype(stats, model.dtype)
 
         def take_step():
             return lax.cond(method < 3, explicit, implicit)
@@ -1571,17 +1666,19 @@ def integrate_fixed_dt(
             lambda: (carry.y, carry.y_prev)
         )
 
+        next_step = carry.step + 1
+
         return ScanState(
-            t=carry.t + dt,
+            t=t0_time + next_step.astype(time_dtype) * dt_time,
             y=y_new,
             y_prev=y_prev_new,
             dt_prev=jnp.array(dt, dtype=model.dtype),
-            step=carry.step + 1,
+            step=next_step,
             status=new_status
         )
 
     init_carry = ScanState(
-        t=jnp.array(t0, dtype=model.dtype),
+        t=t0_time,
         y=y0,
         y_prev=y0,
         dt_prev=jnp.array(dt, dtype=model.dtype),
@@ -1654,6 +1751,9 @@ def adaptive_integrate_imex(
     from moljax.core.dt_policy import imex_cfl_dt, propose_dt_imex
 
     dtype = model.dtype
+    # See adaptive_integrate: the clock does not follow the field's dtype.
+    time_dtype = _time_dtype()
+    _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate_imex")
 
     if cfl_params is None:
         cfl_params = CFLParams()
@@ -1672,7 +1772,7 @@ def adaptive_integrate_imex(
     # a forced save of the final accepted state when it does not land on a
     # save_every boundary (see should_save in accept_step).
     max_saves = max_steps // save_every + 2
-    t_history = allocate_scalar_history(max_saves, dtype)
+    t_history = allocate_scalar_history(max_saves, time_dtype)
     y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
     dt_history = allocate_scalar_history(max_saves, dtype)
 
@@ -1680,7 +1780,7 @@ def adaptive_integrate_imex(
     controller = create_initial_controller_state(dtype)
 
     init_state = AdaptiveState(
-        t=jnp.array(t0, dtype=dtype),
+        t=jnp.array(t0, dtype=time_dtype),
         y=y0,
         dt=dt_init,
         y_prev=y0,
@@ -1703,8 +1803,8 @@ def adaptive_integrate_imex(
         return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
 
     def body_fn(state: AdaptiveState) -> AdaptiveState:
-        # Clamp dt to not overshoot
-        dt_clamped = jnp.minimum(state.dt, t_end - state.t)
+        # Clamp dt to not overshoot (see adaptive_integrate for the cast)
+        dt_clamped = jnp.minimum(state.dt, (t_end - state.t).astype(dtype))
 
         # Take IMEX step with error estimation
         if use_strang:
@@ -1715,6 +1815,8 @@ def adaptive_integrate_imex(
             y_new, err = estimate_error_imex_doubling(
                 model, state.y, state.t, dt_clamped, fft_cache, diffusivities, use_strang=False
             )
+        y_new = _to_state_dtype(y_new, dtype)
+        err = _to_state_dtype(err, dtype)
 
         # Compute error ratio
         err_ratio = scaled_error_norm(err, y_new, model.grid, pid_params.atol, pid_params.rtol)
@@ -1893,19 +1995,32 @@ def integrate_imex_fixed_dt(
         points only, and the full padded state at t_end.
     """
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
+    _validate_time_resolution(t0, t_end, dt, "integrate_imex_fixed_dt")
+
+    # See integrate_fixed_dt: time is carried wider than the state and
+    # each timestamp is t0 + i*dt rather than a running sum.
+    time_dtype = _time_dtype()
+    t0_time = jnp.array(t0, dtype=time_dtype)
+    dt_time = jnp.array(dt, dtype=time_dtype)
 
     class ScanState(NamedTuple):
         t: jnp.ndarray
         y: StateDict
+        step: jnp.ndarray
 
     def advance(carry: ScanState) -> ScanState:
         if use_strang:
             y_new = imex_strang_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
         else:
             y_new = imex_euler_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
-        return ScanState(t=carry.t + dt, y=y_new)
+        next_step = carry.step + 1
+        return ScanState(
+            t=t0_time + next_step.astype(time_dtype) * dt_time,
+            y=_to_state_dtype(y_new, model.dtype),
+            step=next_step
+        )
 
-    init_carry = ScanState(t=jnp.array(t0, dtype=model.dtype), y=y0)
+    init_carry = ScanState(t=t0_time, y=y0, step=jnp.array(0, dtype=jnp.int32))
 
     t_history, y_history, final_carry = _run_fixed_steps(
         advance, init_carry, n_steps, save_every, model.grid
