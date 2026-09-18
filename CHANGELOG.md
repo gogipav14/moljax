@@ -867,6 +867,40 @@ All notable changes to moljax are documented here.
   cache at `n_ghost = 0` and `n_ghost = 1`, asserting no `FutureWarning`/
   `UserWarning`, a converged solve, and a float32 output.
 
+- **`dt_policy.heisenberg_cfl_dt` bounded advection and diffusion
+  independently and took their minimum, which does not bound the combined
+  operator.** On a periodic 16x16 unit square with `D = 1`, `vx = 32`,
+  `vy = 0` (`dx = dy = 1/16`), the old `min(cfl_advection*dx/v,
+  cfl_diffusion*dx^2/D) * safety` returned `dt = 8.789e-4`, but upwind
+  advection and central diffusion both peak on the same checkerboard
+  Fourier mode (`k*dx = k*dy = pi`): the combined real eigenvalue there is
+  `-(4D/dx^2 + 4D/dy^2 + 2|vx|/dx + 2|vy|/dy) = -3072` (diffusion -2048
+  plus upwind's own numerical diffusion -1024), giving `z = dt*lambda =
+  -2.7` and unstable amplification for both Euler (`R(z) = -1.7`) and
+  SSPRK3 (`R(z) = -1.3355`). Fixed by bounding the combined checkerboard
+  eigenvalue directly and dividing by the selected explicit integrator's
+  real-axis stability boundary `R_stab` (Euler 2, SSPRK3 about 2.51, RK4
+  about 2.79, from a small table keyed by `IntegratorType`'s plain int
+  values; default Euler, the most restrictive), rather than combining two
+  independently chosen CFL numbers; `cfl_advection`/`cfl_diffusion` are no
+  longer used by this function (only by `imex_cfl_dt`, whose diffusion is
+  implicit). With `D = 0` or `v = 0` this reduces to the classical
+  single-term limit, e.g. `dx^2/(4D) * safety` for pure 2D diffusion under
+  Euler. This bound assumes upwind advection (central advection's symbol
+  is purely imaginary and is not covered; the docstring says so). A new
+  `method` parameter selects `R_stab`; `propose_dt` now passes its own
+  `method` through. `tests/test_dt_policy.py::TestCombinedAdvectionDiffusionCFL`
+  builds the actual dense periodic upwind-advection-plus-central-diffusion
+  operator for the reproduction and checks the Euler and SSPRK3 stability
+  polynomials have spectral radius below 1 at the returned dt (including
+  with no explicit `method` argument, matching every pre-fix call site),
+  confirms the dense operator's checkerboard eigenvalue matches the
+  closed form, confirms the pre-fix dt was in fact unstable, checks the
+  pure-diffusion classical limit, and checks a more permissive integrator
+  gets a larger dt. All 15 pre-existing `test_dt_policy.py` tests pass
+  unchanged (they check scaling ratios or single-term limits that the new
+  formula still satisfies).
+
 ### Added
 
 - **`nilt_solve_linear_pde` and `compare_nilt_vs_timestepping` require

@@ -9,6 +9,7 @@ Verifies:
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 # The dtype tests need float64 to exist so that float32 can differ from it.
@@ -243,6 +244,145 @@ class Test2DCFL:
         # In principle they should be similar since we use same CFL number
         # The key point is both should give stable dt
         assert float(dt2d) > 0
+
+
+class TestCombinedAdvectionDiffusionCFL:
+    """heisenberg_cfl_dt must bound the COMBINED advection+diffusion
+    operator, not min(separate advection limit, separate diffusion limit).
+
+    Reproduction: periodic 16x16 unit square, D=1, vx=32, vy=0 (dx=dy=
+    1/16). The old independent-limits formula returned dt=8.789e-4, but
+    the checkerboard mode's real eigenvalue is -3072 (diffusion -2048 from
+    2nd-order central differencing, plus upwind advection's own numerical
+    diffusion -1024), giving z=dt*lambda=-2.7 and unstable amplification
+    for both Euler (R(z)=-1.7) and SSPRK3 (R(z)=-1.3355).
+    """
+
+    @staticmethod
+    def _build_dense_operator(grid, vx, vy, D):
+        """Dense interior-to-interior matrix for
+        du/dt = -vx*du/dx - vy*du/dy (upwind) + D*Laplacian(u) (central),
+        applying moljax's own stencils with periodic ghost cells, so its
+        eigenvalues reflect the real discrete operator.
+        """
+        from moljax.core.bc import apply_bc
+        from moljax.core.operators import d1_upwind_2d, laplacian_2d
+
+        bc_spec = {'u': FieldBCSpec.periodic()}
+        ny, nx = grid.ny, grid.nx
+        n = ny * nx
+
+        def rhs(u_interior_flat):
+            u_interior = u_interior_flat.reshape(ny, nx)
+            full = jnp.zeros((grid.ny_total, grid.nx_total))
+            full = full.at[grid.interior_slice].set(u_interior)
+            full = apply_bc({'u': full}, grid, bc_spec)['u']
+            dudx = d1_upwind_2d(full, vx, grid, axis=1)
+            dudy = d1_upwind_2d(full, vy, grid, axis=0)
+            lap = laplacian_2d(full, grid)
+            dudt = -vx * dudx - vy * dudy + D * lap
+            return dudt[grid.interior_slice].reshape(-1)
+
+        identity = np.eye(n)
+        columns = [np.array(rhs(jnp.asarray(identity[:, j]))) for j in range(n)]
+        return np.stack(columns, axis=1)
+
+    def test_checkerboard_reproduction_is_stable_for_euler_and_ssprk3(self):
+        grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
+        params = {'D': 1.0, 'vx': 32.0, 'vy': 0.0}
+        A = self._build_dense_operator(grid, vx=32.0, vy=0.0, D=1.0)
+        eigenvalues = np.linalg.eigvals(A)
+
+        def R_euler(z):
+            return 1.0 + z
+
+        def R_ssprk3(z):
+            return 1.0 + z + z ** 2 / 2.0 + z ** 3 / 6.0
+
+        for method, R in ((IntegratorType.EULER, R_euler), (IntegratorType.SSPRK3, R_ssprk3)):
+            cfl_params = CFLParams()
+            dt = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(method)))
+            z = dt * eigenvalues
+            spectral_radius = float(np.max(np.abs(R(z))))
+            assert spectral_radius < 1.0 + 1e-9, (
+                f"method={method}: dt={dt:.6e} gives spectral radius "
+                f"{spectral_radius:.6f} (unstable)"
+            )
+
+    def test_checkerboard_eigenvalue_matches_closed_form(self):
+        """Sanity check on the dense operator itself: its most negative
+        real eigenvalue must match the closed-form checkerboard value
+        -(4D/dx^2 + 4D/dy^2 + 2|vx|/dx + 2|vy|/dy) = -3072 for this grid.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
+        A = self._build_dense_operator(grid, vx=32.0, vy=0.0, D=1.0)
+        eigenvalues = np.linalg.eigvals(A)
+        most_negative_real = float(np.min(eigenvalues.real))
+        assert abs(most_negative_real - (-3072.0)) < 1e-6, most_negative_real
+
+    def test_pre_fix_dt_would_have_been_unstable(self):
+        """Direct check of the reported numbers: the old independent-limits
+        dt (8.789e-4) gives |R(z)| > 1 for both Euler and SSPRK3 on the
+        checkerboard mode, confirming the old formula under-restricted dt.
+        """
+        dx = 1.0 / 16.0
+        # Both x and y diffuse (D applies on both axes even though vy=0);
+        # only x advects.
+        lam_checkerboard = -(4.0 * 1.0 / dx ** 2 + 4.0 * 1.0 / dx ** 2 + 2.0 * 32.0 / dx)
+        old_dt = 0.9 * min(0.5 * dx / 32.0, 0.25 * dx ** 2 / 1.0)  # old CFLParams defaults
+        z = old_dt * lam_checkerboard
+        assert abs(old_dt - 8.789e-4) < 1e-7, old_dt
+        assert abs(z - (-2.7)) < 1e-2, z
+        assert abs((1.0 + z) - (-1.7)) < 1e-2
+        r3 = 1.0 + z + z ** 2 / 2.0 + z ** 3 / 6.0
+        assert abs(r3 - (-1.3355)) < 1e-3
+        assert abs(1.0 + z) > 1.0
+        assert abs(r3) > 1.0
+
+    def test_default_call_is_stable_without_specifying_method(self):
+        """Same reproduction, calling heisenberg_cfl_dt with its default
+        arguments only (method defaults to Euler): the returned dt alone,
+        with no explicit method kwarg, must already be stable. This is the
+        call shape every pre-fix caller used, so it fails against the old
+        min(advection, diffusion) formula on its own terms, not merely
+        because of the new keyword argument.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
+        params = {'D': 1.0, 'vx': 32.0, 'vy': 0.0}
+        A = self._build_dense_operator(grid, vx=32.0, vy=0.0, D=1.0)
+        eigenvalues = np.linalg.eigvals(A)
+
+        dt = float(heisenberg_cfl_dt(grid, params, CFLParams()))
+        z = dt * eigenvalues
+        spectral_radius = float(np.max(np.abs(1.0 + z)))  # Euler, the default
+        assert spectral_radius < 1.0 + 1e-9, (
+            f"default heisenberg_cfl_dt call gives dt={dt:.6e}, "
+            f"Euler spectral radius {spectral_radius:.6f} (unstable)"
+        )
+
+    def test_pure_diffusion_matches_classical_2d_limit(self):
+        """No advection: dt must equal the classical dx^2/(4D) * safety
+        limit for 2D Euler (R_stab=2), the special case the combined
+        formula reduces to.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
+        params = {'D': 1.0}
+        cfl_params = CFLParams()
+        dt = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.EULER)))
+        expected = cfl_params.safety * grid.dx ** 2 / (4.0 * 1.0)
+        assert abs(dt - expected) < 1e-12, (dt, expected)
+
+    def test_more_permissive_integrator_gets_a_larger_dt(self):
+        """RK4's larger real stability boundary must yield a larger dt than
+        Euler's on the same combined advection-diffusion operator.
+        """
+        grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
+        params = {'D': 1.0, 'vx': 32.0, 'vy': 0.0}
+        cfl_params = CFLParams()
+        dt_euler = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.EULER)))
+        dt_ssprk3 = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.SSPRK3)))
+        dt_rk4 = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.RK4)))
+        assert dt_euler < dt_ssprk3 < dt_rk4
 
 
 def float32_decay_model():

@@ -21,8 +21,35 @@ from typing import Any, NamedTuple
 import jax.numpy as jnp
 from jax import lax
 
-from moljax.core.grid import GridType
+from moljax.core.grid import Grid2D, GridType
 from moljax.core.state import StateDict
+
+# Real-axis linear stability boundaries R_stab for the explicit
+# IntegratorType values (moljax.core.stepping.IntegratorType: EULER=0,
+# SSPRK3=1, RK4=2). Duplicated here as plain ints instead of importing the
+# enum, since stepping.py imports from this module. z = dt * lambda is
+# stable (|R(z)| <= 1) for a real lambda < 0 when -R_stab <= z <= 0:
+#   Euler:  R(z) = 1 + z, root at z = -2.
+#   SSPRK3: a 3-stage, 3rd-order explicit RK method has stability function
+#       equal to the truncated exponential series 1 + z + z^2/2 + z^3/6
+#       (any s-stage, order-s explicit RK method with s <= 4 does, since
+#       matching the Taylor series to that order fixes the stability
+#       polynomial); its real root is at z ~= -2.5127.
+#   RK4: the classical 4-stage, 4th-order method's stability function is
+#       1 + z + z^2/2 + z^3/6 + z^4/24; its real root is at z ~= -2.7853.
+_EXPLICIT_STABILITY_BOUNDARY: dict[int, float] = {
+    0: 2.0,      # Euler
+    1: 2.5127,   # SSPRK3
+    2: 2.7853,   # RK4
+}
+_DEFAULT_STABILITY_BOUNDARY = _EXPLICIT_STABILITY_BOUNDARY[0]  # Euler
+
+
+def _stability_boundary(method: int) -> float:
+    """R_stab for an explicit IntegratorType value; Euler's (the most
+    restrictive of the three) for anything not in the table.
+    """
+    return _EXPLICIT_STABILITY_BOUNDARY.get(int(method), _DEFAULT_STABILITY_BOUNDARY)
 
 
 @dataclass(frozen=True)
@@ -34,8 +61,16 @@ class CFLParams:
         safety: Safety factor (default 0.9)
         dt_min: Minimum allowed dt (default 1e-12)
         dt_max: Maximum allowed dt (default 1.0)
-        cfl_advection: CFL number for advection (default 0.5)
-        cfl_diffusion: CFL number for diffusion (default 0.25 for 2D)
+        cfl_advection: CFL number for advection (default 0.5). Used only by
+            imex_cfl_dt (IMEX's explicit advection is not coupled to an
+            implicit diffusion term the way heisenberg_cfl_dt's combined
+            bound is); heisenberg_cfl_dt derives its own advection
+            contribution from the selected integrator's stability
+            boundary instead (see _EXPLICIT_STABILITY_BOUNDARY).
+        cfl_diffusion: CFL number for diffusion (default 0.25 for 2D). Not
+            used by heisenberg_cfl_dt for the same reason as
+            cfl_advection above; kept for callers that still construct
+            CFLParams with it and for any external diffusion-only use.
         cfl_wave: CFL number for wave/acoustic (default 0.5)
     """
     safety: float = 0.9
@@ -105,15 +140,49 @@ def heisenberg_cfl_dt(
     grid: GridType,
     params: dict[str, Any],
     cfl_params: CFLParams,
-    dtype: jnp.dtype | None = None
+    dtype: jnp.dtype | None = None,
+    method: int = 0
 ) -> jnp.ndarray:
     """
     Compute CFL-limited time step (Heisenberg limiter).
 
     Considers:
-    - Advection: dt <= CFL * dx / v_max
-    - Diffusion: dt <= CFL * dx^2 / D_max
-    - Wave: dt <= CFL * dx / c
+    - Advection + diffusion: bounded jointly (see below), not by separately
+      taking min(advection limit, diffusion limit).
+    - Wave: dt <= cfl_wave * dx / c
+
+    Advection and diffusion are combined into a single linear-stability
+    bound on the discrete spatial operator, rather than limited
+    independently and combined with min(): on the checkerboard Fourier
+    mode (k*dx = k*dy = pi), first-order upwind advection contributes a
+    real eigenvalue -2*|v|/dx per axis (its numerical diffusion) and
+    2nd-order central diffusion contributes -4*D/dx^2 per axis, and these
+    add on the SAME mode. The most negative real eigenvalue of the
+    combined 2D operator is therefore
+
+        lambda_max = -(4*D/dx^2 + 4*D/dy^2 + 2*|vx|/dx + 2*|vy|/dy)
+
+    (dropping the y terms for a 1D grid), and the stable dt is
+    dt <= R_stab / |lambda_max|, where R_stab is the real-axis stability
+    boundary of the selected explicit integrator (Euler: 2, SSPRK3: about
+    2.51, RK4: about 2.79; see _EXPLICIT_STABILITY_BOUNDARY). Taking
+    min(cfl_advection * dx / v, cfl_diffusion * dx^2 / D) instead (the
+    previous behavior) under-counts the combined operator whenever both
+    terms are present: on a periodic 16x16 grid with D=1, vx=32 (dx = dy =
+    1/16), that gave dt = 8.789e-4, but the checkerboard eigenvalue is
+    -3072 (diffusion -2048 plus upwind -1024) so z = dt*lambda = -2.7,
+    which is unstable for both Euler (R(z) = -1.7) and SSPRK3
+    (R(z) = -1.3355). With D = 0 or v = 0 this reduces to the classical
+    single-term limit (e.g. dx^2/(4*D) at safety=1 for pure 2D diffusion
+    with Euler, R_stab = 2).
+
+    This bound assumes upwind advection, whose numerical diffusion is what
+    makes its contribution to lambda_max real; central advection (see
+    moljax.core.operators, use_upwind=False) has a purely imaginary
+    symbol instead, is not covered by this real-axis analysis, and this
+    function does not know which scheme the caller's model actually uses.
+    cfl_advection and cfl_diffusion are no longer used by this function
+    (only by imex_cfl_dt, whose diffusion is implicit).
 
     Args:
         grid: Grid defining spacing
@@ -124,42 +193,43 @@ def heisenberg_cfl_dt(
             lax.cond, whose branches must agree; a float32 model under
             x64 would otherwise meet a float64 limit. Defaults to JAX's
             default float type.
+        method: IntegratorType value (plain int) of the explicit
+            integrator being limited; selects R_stab. Defaults to Euler
+            (0), the most restrictive of the three explicit methods, so an
+            unspecified method never under-restricts dt.
 
     Returns:
         Maximum stable dt, as a scalar of the requested dtype
     """
     if dtype is None:
         dtype = jnp.result_type(float)
-    dx = grid.min_dx
-    dx2 = grid.min_dx2
+    dx = grid.dx
+    dy = grid.dy if isinstance(grid, Grid2D) else None
 
-    # Start with dt_max
-    dt = jnp.array(cfl_params.dt_max)
-
-    # Advection CFL
+    # Advection + diffusion, combined (see docstring above).
     vx = jnp.abs(params.get('vx', 0.0))
-    vy = jnp.abs(params.get('vy', 0.0))
-    v_max = vx + vy
-    dt_adv = lax.cond(
-        v_max > 1e-14,
-        lambda: cfl_params.cfl_advection * dx / v_max,
-        lambda: cfl_params.dt_max
-    )
-    dt = jnp.minimum(dt, dt_adv)
+    vy = jnp.abs(params.get('vy', 0.0)) if dy is not None else jnp.array(0.0)
 
-    # Diffusion CFL
     D = params.get('D', 0.0)
     Du = params.get('Du', 0.0)
     Dv = params.get('Dv', 0.0)
     D_max = jnp.maximum(D, jnp.maximum(Du, Dv))
-    dt_diff = lax.cond(
-        D_max > 1e-14,
-        lambda: cfl_params.cfl_diffusion * dx2 / D_max,
+
+    lam_x = 4.0 * D_max / dx ** 2 + 2.0 * vx / dx
+    lam_y = (4.0 * D_max / dy ** 2 + 2.0 * vy / dy) if dy is not None else 0.0
+    lam_max = lam_x + lam_y
+
+    r_stab = _stability_boundary(method)
+    dt_combined = lax.cond(
+        lam_max > 1e-14,
+        lambda: r_stab / lam_max,
         lambda: cfl_params.dt_max
     )
-    dt = jnp.minimum(dt, dt_diff)
+    dt = jnp.minimum(jnp.array(cfl_params.dt_max), dt_combined)
 
-    # Wave/acoustic CFL
+    # Wave/acoustic CFL: an independent hyperbolic constraint, unrelated to
+    # the advection-diffusion operator above.
+    dx_wave = grid.min_dx
     K = params.get('K', 0.0)
     rho = params.get('rho', 1.0)
     c_wave = params.get('wave_speed', 0.0)
@@ -171,7 +241,7 @@ def heisenberg_cfl_dt(
     c = jnp.maximum(c_wave, c_acoustic)
     dt_wave = lax.cond(
         c > 1e-14,
-        lambda: cfl_params.cfl_wave * dx / c,
+        lambda: cfl_params.cfl_wave * dx_wave / c,
         lambda: cfl_params.dt_max
     )
     dt = jnp.minimum(dt, dt_wave)
@@ -410,9 +480,12 @@ def propose_dt(
     )
 
     # For explicit methods (0-2), also enforce CFL. The limit is taken in
-    # dt_old's dtype so the two lax.cond branches below agree.
+    # dt_old's dtype so the two lax.cond branches below agree, and in the
+    # selected method's own stability boundary (method is an implicit type
+    # here when is_explicit is False, in which case dt_cfl is computed but
+    # unused below).
     is_explicit = method < 3
-    dt_cfl = heisenberg_cfl_dt(grid, params, cfl_params, dtype=dt_old.dtype)
+    dt_cfl = heisenberg_cfl_dt(grid, params, cfl_params, dtype=dt_old.dtype, method=method)
 
     dt_final = lax.cond(
         is_explicit,
