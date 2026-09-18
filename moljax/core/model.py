@@ -15,10 +15,12 @@ Design decisions:
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from moljax.core.bc import BCSpec, BCType, FieldBCSpec, apply_bc
 from moljax.core.grid import Grid1D, Grid2D, GridType
@@ -33,6 +35,152 @@ from moljax.core.operators import (
     schnakenberg_reaction_op,
 )
 from moljax.core.state import StateDict, tree_add, tree_zeros_like
+
+# =============================================================================
+# Identity for the integrators' compiled-driver caches
+# =============================================================================
+
+# How deep static_cache_key walks a container before it gives up and keys
+# the rest by identity. Nothing moljax puts in a model, a parameter set or
+# an FFT cache nests further than a handful of levels; the limit only
+# exists so that a caller's own metadata cannot send the walk into a cycle.
+_CACHE_KEY_MAX_DEPTH = 8
+
+
+def static_cache_key(obj: Any, _depth: int = 0) -> Any:
+    """
+    A hashable stand-in for an object a compiled integrator closes over.
+
+    The integrators cache their compiled time-stepping loops (see
+    CompiledDriverCache and moljax.core.stepping) keyed on everything that
+    determines the trace, and most of what they close over compares by
+    value already: NKParams is a NamedTuple, CFLParams, PIDParams and the
+    preconditioners are frozen dataclasses of scalars. Two separately
+    built defaults must share one cache entry, or the default call path
+    would miss the cache on every call, so those are walked field by field
+    and keyed by their contents.
+
+    What cannot be keyed by value is keyed by identity: arrays (walking
+    every element of an FFT cache would cost more than the compilation it
+    saves), callables, and anything else that is neither a container nor
+    hashable. Scalars carry their Python type alongside their value
+    because the type is part of the trace: a np.float32 dt is strongly
+    typed and promotes differently from a Python float of the same value.
+
+    Keying by identity is sound here only because every cache entry holds
+    a reference to the objects its key was built from, so an id in a live
+    key always belongs to a live object and cannot have been recycled for
+    something else.
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, (str, bytes)):
+        return (type(obj).__name__, obj)
+    if isinstance(obj, (bool, int, float, complex)):
+        return (type(obj).__name__, obj)
+    if isinstance(obj, np.generic):
+        return (type(obj).__name__, obj.item())
+    if isinstance(obj, (jax.Array, np.ndarray)):
+        return ('array', type(obj).__name__, id(obj), obj.shape, str(obj.dtype))
+    if _depth < _CACHE_KEY_MAX_DEPTH:
+        if isinstance(obj, dict):
+            items = sorted(obj.items(), key=lambda kv: repr(kv[0]))
+            return ('dict', tuple(
+                (repr(k), static_cache_key(v, _depth + 1)) for k, v in items
+            ))
+        if isinstance(obj, (tuple, list)):
+            return (type(obj).__name__, tuple(
+                static_cache_key(v, _depth + 1) for v in obj
+            ))
+        if is_dataclass(obj) and not isinstance(obj, type):
+            return (type(obj).__name__, tuple(
+                (f.name, static_cache_key(getattr(obj, f.name), _depth + 1))
+                for f in fields(obj)
+            ))
+    try:
+        hash(obj)
+    except TypeError:
+        return ('id', type(obj).__name__, id(obj))
+    return (type(obj).__name__, obj)
+
+
+def state_cache_key(state: StateDict) -> tuple:
+    """
+    The part of a state that determines the trace: structure and avals.
+
+    A compiled loop is reusable for any state with the same pytree
+    structure and the same leaf shapes and dtypes; the values themselves
+    are arguments. Works on tracers as well as on concrete arrays, so a
+    driver traced inside a caller's own jit is keyed the same way.
+    """
+    leaves, treedef = jax.tree_util.tree_flatten(state)
+    return (treedef, tuple(
+        (jnp.shape(leaf), str(jnp.result_type(leaf))) for leaf in leaves
+    ))
+
+
+_COMPILED_DRIVER_CACHES: list["CompiledDriverCache"] = []
+
+
+class CompiledDriverCache:
+    """
+    A bounded store of compiled integrator drivers, least-recently-used.
+
+    Each integrator builds its time-stepping loop as a closure over its
+    static parameters and hands that closure to jax.jit. Before this cache
+    the closure was rebuilt on every call, so it was a different Python
+    object each time and JAX's own compilation cache could never hit: three
+    identical integrate_fixed_dt calls compiled three identical scans, and
+    three adaptive_integrate calls three identical while loops, 0.7 to 3.2
+    seconds each. Keeping the closure alive across calls is what lets
+    JAX's cache do its job.
+
+    The store is bounded because each entry pins a compiled executable and
+    everything the driver closes over, the model included. Sweeps that
+    build a fresh model per run would otherwise grow it without limit.
+    Thirty-two entries is enough for the parameter sweeps in this tree
+    (a handful of methods times a handful of grids) and small enough that
+    the pinned models are not a memory problem; call
+    clear_compiled_drivers to drop them all.
+    """
+
+    def __init__(self, name: str, max_entries: int = 32):
+        self.name = name
+        self.max_entries = max_entries
+        self._entries: dict[Any, Any] = {}
+        _COMPILED_DRIVER_CACHES.append(self)
+
+    def get_or_build(self, key: Any, build: Callable[[], Any]) -> Any:
+        """Return the driver stored under key, building it if it is absent."""
+        if key in self._entries:
+            # Re-insert so that insertion order is use order and the entry
+            # dropped below is the least recently used one.
+            self._entries[key] = self._entries.pop(key)
+            return self._entries[key]
+        driver = build()
+        if len(self._entries) >= self.max_entries:
+            self._entries.pop(next(iter(self._entries)))
+        self._entries[key] = driver
+        return driver
+
+    def clear(self) -> None:
+        """Forget every driver in this cache."""
+        self._entries.clear()
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+def clear_compiled_drivers() -> None:
+    """
+    Drop every compiled integrator loop moljax is holding on to.
+
+    For tests that count compilations, and for callers that have run
+    through many models or grids and want the executables and the pinned
+    models released.
+    """
+    for cache in _COMPILED_DRIVER_CACHES:
+        cache.clear()
 
 
 @dataclass(frozen=True)
@@ -76,6 +224,37 @@ class MOLModel:
     def field_names(self) -> list[str]:
         """List of field names in the model."""
         return list(self.bc_spec.keys())
+
+    @property
+    def compile_key(self) -> tuple:
+        """
+        A hashable identity for this model, for the driver caches.
+
+        A model holds callables (its operators, its boundary data), so
+        there is no way to tell two models apart by value alone; identity
+        is the only sound answer and this key leads with it. It then adds
+        the contents of the model's mutable parts, the params and metadata
+        dicts and everything reachable from them, because a frozen
+        dataclass does not stop a caller from writing
+        ``model.params['D_u'] = 0.5``: the params are traced into the
+        compiled loop as constants, so a changed value has to miss the
+        cache and retrace. The grid, the BC spec and the operator tuples
+        cannot be reassigned on a frozen model, but they are cheap to walk
+        and keying them keeps the key self-describing.
+
+        See moljax.core.model.static_cache_key for what walking means
+        here, and why keying by id is safe for a live cache entry.
+        """
+        return (
+            'MOLModel',
+            id(self),
+            static_cache_key(self.grid),
+            static_cache_key(self.bc_spec),
+            static_cache_key(self.params),
+            static_cache_key(self.linear_ops),
+            static_cache_key(self.nonlinear_ops),
+            static_cache_key(self.metadata),
+        )
 
     def apply_bcs(self, state: StateDict, t: float = 0.0) -> StateDict:
         """Apply boundary conditions to state."""

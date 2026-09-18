@@ -65,6 +65,44 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **The fixed-step and adaptive integrators build their compiled loop once
+  per set of static parameters instead of once per call.**
+  `integrate_fixed_dt`, `integrate_imex_fixed_dt`, `adaptive_integrate` and
+  `adaptive_integrate_imex` each assembled their `lax.scan` or
+  `lax.while_loop` out of Python closures created inside the public
+  function, so every call handed JAX a function object it had never seen
+  and JAX's compilation cache could not hit; `integrate_fixed_dt` also
+  declared its scan carry as a `NamedTuple` class inside the function,
+  which is a fresh pytree node type on every call and would have defeated
+  any cache on its own. Three identical calls therefore compiled the same
+  program three times (Codex stepping_dt_policy.md finding 7, 2026-09-14):
+  on an 8x8 Gray-Scott model, 2.3 to 2.8 s per `integrate_fixed_dt` call
+  (one XLA compilation each), 4.1 s per `adaptive_integrate` call (seven
+  each) and 0.8 s per `adaptive_integrate_imex` call (six each). Each
+  driver now looks its compiled loop up in a bounded, least-recently-used
+  cache (`moljax.core.model.CompiledDriverCache`, 32 entries, emptied by
+  the new `clear_compiled_drivers`) keyed on everything that determines the
+  trace: the model's identity together with the contents of its mutable
+  `params` and `metadata` dicts, the method, the state's pytree structure
+  and avals, `save_every`, the step count or `max_steps`, the parameter
+  records (`NKParams`, `PIDParams`, `CFLParams`, the preconditioner,
+  `max_rejections_per_step`), the FFT cache and diffusivities where they
+  apply, and the `jax_enable_x64` flag, which decides the dtype time is
+  carried in. `dt` stays a constant of the fixed-step loops, since it fixes
+  their step count; `y0`, `t0`, `t_end` and the adaptive `dt0` became
+  arguments, so a sweep over an initial condition, a start time, an end
+  time or an initial step size compiles once. The second and third calls
+  now take 0.001 s and compile nothing. Signatures, return types and
+  results are unchanged: every trajectory measured across the four drivers
+  on a Gray-Scott and a 1D case is bit-for-bit identical to the parent
+  commit's. `tests/test_integrators.py::TestDriversAreCompiledOnce`,
+  `::TestDriverCacheDiscriminates` and
+  `::TestReusedDriversAreFasterAndUnchanged` count traces through a
+  right-hand side that increments a Python counter (a measure that does not
+  depend on the wording of jax's compilation log, which differs between the
+  two jax versions CI runs), and check that a changed `dt`, `save_every`,
+  method, grid size or `params` entry retraces.
+
 - **`numerical_range`'s LOBPCG restart seeding now depends on the operator
   being diagnosed, and the `adequate` docstring is honest about what
   restart agreement establishes.** `_largest_hermitian_eigenvector`'s

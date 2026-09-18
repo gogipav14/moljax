@@ -7,6 +7,9 @@ Verifies:
 - Explicit methods blow up at large dt for diffusion
 """
 
+import dataclasses
+import time
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -28,6 +31,7 @@ from moljax.core.model import (
 from moljax.core.newton_krylov import NKParams
 from moljax.core.operators import LinearOp, NonlinearOp
 from moljax.core.stepping import (
+    _FIXED_DRIVERS,
     IntegratorType,
     _bdf2_predictor,
     _newton_start,
@@ -35,6 +39,7 @@ from moljax.core.stepping import (
     adaptive_integrate_imex,
     bdf2_step,
     be_step,
+    clear_compiled_drivers,
     cn_step,
     euler_step,
     imex_strang_step,
@@ -1169,6 +1174,362 @@ class TestErrorEstimateRequiresEverySolve:
         )
         assert int(result.n_rejected) >= 1, "the dt = 1 attempt was accepted again"
         assert int(result.status) == StatusCode.SUCCESS
+
+
+def counting_cubic_model(nx=16):
+    """u' = -u^3 on a periodic 1D grid, with a right-hand side that counts traces.
+
+    The counter is a plain Python list appended to inside the operator, so
+    it advances once per trace of the operator and not at all when a
+    compiled loop is reused. Counting traces rather than XLA compilations
+    keeps the tests independent of the wording of jax's compilation log
+    (which differs between the jax versions CI runs), and nothing can be
+    compiled without first being traced.
+    """
+    grid = Grid1D.uniform(nx, 0.0, 1.0)
+    traces = []
+
+    def cubic(state, g, t, params):
+        traces.append(1)
+        return {'u': -state['u'] ** 3}
+
+    model = MOLModel(
+        grid=grid,
+        bc_spec={'u': FieldBCSpec.periodic()},
+        params={'dtype': jnp.float64},
+        linear_ops=(),
+        nonlinear_ops=(NonlinearOp(name="counting_cubic", apply=cubic),)
+    )
+    x = jnp.linspace(0.0, 1.0, grid.nx_total)
+    return model, {'u': 1.0 + 0.25 * jnp.sin(2 * jnp.pi * x)}, traces
+
+
+def counting_gray_scott():
+    """gray_scott_off_equilibrium with its reaction term wrapped in a trace counter."""
+    model, fft_cache, diffusivities, y0 = gray_scott_off_equilibrium()
+    traces = []
+
+    def wrap(apply):
+        def counted(state, g, t, params):
+            traces.append(1)
+            return apply(state, g, t, params)
+        return counted
+
+    counted_ops = tuple(
+        NonlinearOp(name=op.name, apply=wrap(op.apply), dt_bound=op.dt_bound)
+        for op in model.nonlinear_ops
+    )
+    model = dataclasses.replace(model, nonlinear_ops=counted_ops)
+    return model, fft_cache, diffusivities, y0, traces
+
+
+def traces_per_call(traces, call, n=3):
+    """Run `call` n times and return (per-call trace counts, results)."""
+    counts, results = [], []
+    for _ in range(n):
+        before = len(traces)
+        results.append(call())
+        counts.append(len(traces) - before)
+    return counts, results
+
+
+def assert_leaves_identical(a, b):
+    """Every leaf of two results agrees bit for bit."""
+    leaves_a = jax.tree_util.tree_leaves(a)
+    leaves_b = jax.tree_util.tree_leaves(b)
+    assert len(leaves_a) == len(leaves_b)
+    for x, y in zip(leaves_a, leaves_b, strict=True):
+        np.testing.assert_array_equal(np.asarray(x), np.asarray(y))
+
+
+class TestDriversAreCompiledOnce:
+    """Identical calls reuse one compiled loop instead of building a new one.
+
+    Every driver built its lax.scan or lax.while_loop out of Python
+    closures created inside the public function, so each call handed
+    jax.jit a function object it had never seen and JAX's compilation
+    cache could not hit. Three identical integrate_fixed_dt calls on the
+    8x8 Gray-Scott model compiled the same scan three times (2.3 to 2.8 s
+    each), three adaptive_integrate calls three identical while loops
+    (about 4.1 s each) and three adaptive_integrate_imex calls three more
+    (about 0.8 s each). The loops are now built once per set of static
+    parameters and kept in a bounded cache, so the second and third calls
+    only dispatch: 0.001 s, with no trace at all.
+
+    integrate_fixed_dt's scan carry was also a NamedTuple class defined
+    inside the function, a new pytree node type on every call, which would
+    have defeated the cache on its own.
+    """
+
+    def test_fixed_step_traces_once_and_repeats_bit_identically(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        counts, results = traces_per_call(traces, lambda: integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.RK4, save_every=2
+        ))
+        assert counts[0] > 0, "the first call must trace the loop"
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        assert_leaves_identical(results[1], results[0])
+        assert_leaves_identical(results[2], results[0])
+
+    def test_fixed_step_implicit_traces_once(self):
+        """The implicit branches close over the preconditioner and NKParams too."""
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        nk = NKParams(newton_tol=1e-12)
+        counts, results = traces_per_call(traces, lambda: integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BDF2, save_every=2,
+            nk_params=nk
+        ))
+        assert counts[0] > 0
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        assert_leaves_identical(results[2], results[0])
+
+    def test_default_nk_params_and_preconditioner_still_hit(self):
+        """Defaults are built fresh per call, so the key must compare them by value.
+
+        integrate_fixed_dt builds an IdentityPreconditioner and an
+        NKParams when the caller passes none. Keying those by identity
+        would miss the cache on every call of the default path, which is
+        the path nearly every caller takes.
+        """
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        counts, _ = traces_per_call(traces, lambda: integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BE, save_every=2
+        ))
+        assert counts[1:] == [0, 0], f"the default path retraced: {counts}"
+
+    def test_adaptive_traces_once_and_repeats_bit_identically(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        counts, results = traces_per_call(traces, lambda: adaptive_integrate(
+            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4, max_steps=50
+        ))
+        assert counts[0] > 0
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        assert_leaves_identical(results[1], results[0])
+        assert_leaves_identical(results[2], results[0])
+
+    def test_adaptive_implicit_traces_once(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        counts, results = traces_per_call(traces, lambda: adaptive_integrate(
+            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE, max_steps=50,
+            nk_params=NKParams(newton_tol=1e-12)
+        ))
+        assert counts[0] > 0
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        assert_leaves_identical(results[2], results[0])
+
+    def test_adaptive_imex_traces_once_and_repeats_bit_identically(self):
+        model, fft_cache, diffusivities, y0, traces = counting_gray_scott()
+        clear_compiled_drivers()
+        counts, results = traces_per_call(traces, lambda: adaptive_integrate_imex(
+            model, y0, 0.0, 0.2, 0.01, fft_cache, diffusivities, use_strang=True,
+            max_steps=100
+        ))
+        assert counts[0] > 0
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        assert_leaves_identical(results[1], results[0])
+        assert_leaves_identical(results[2], results[0])
+
+    def test_imex_fixed_step_traces_once(self):
+        model, fft_cache, diffusivities, y0, traces = counting_gray_scott()
+        clear_compiled_drivers()
+        counts, results = traces_per_call(traces, lambda: integrate_imex_fixed_dt(
+            model, y0, 0.0, 0.5, 0.05, fft_cache, diffusivities, use_strang=True,
+            save_every=5
+        ))
+        assert counts[0] > 0
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        assert_leaves_identical(results[2], results[0])
+
+    def test_only_the_times_and_the_state_are_free(self):
+        """A different t_end, dt0 or initial state reuses the adaptive loop.
+
+        They are arguments of the compiled driver, not constants in it:
+        t_end is only ever compared with the clock and dt0 only seeds a
+        step size the controller then chooses for itself, so neither
+        changes the trace.
+        """
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        adaptive_integrate(model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4,
+                           max_steps=50)
+        before = len(traces)
+        adaptive_integrate(model, y0, 0.0, 0.3, 0.05, method=IntegratorType.RK4,
+                           max_steps=50)
+        adaptive_integrate(model, y0, 0.0, 0.5, 0.02, method=IntegratorType.RK4,
+                           max_steps=50)
+        adaptive_integrate(model, {'u': y0['u'] * 0.5}, 0.1, 0.6, 0.05,
+                           method=IntegratorType.RK4, max_steps=50)
+        assert len(traces) == before, "a change of t_end, dt0 or y0 retraced"
+
+
+class TestDriverCacheDiscriminates:
+    """What changes the compiled loop must miss the cache.
+
+    dt fixes the fixed-step loop's step count, save_every its block size
+    and the grid the shapes of everything in it, so each of them has to be
+    part of the key. So does the contents of the model's params dict: a
+    frozen dataclass does not stop a caller writing model.params['x'] = 1,
+    and the params are traced into the loop as constants.
+    """
+
+    def _run(self, model, y0, **kwargs):
+        opts = dict(method=IntegratorType.RK4, save_every=2)
+        opts.update(kwargs)
+        return integrate_fixed_dt(model, y0, 0.0, 1.0, 0.1, **opts)
+
+    def test_changing_dt_retraces(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        self._run(model, y0)
+        before = len(traces)
+        integrate_fixed_dt(model, y0, 0.0, 1.0, 0.05, method=IntegratorType.RK4,
+                           save_every=2)
+        assert len(traces) > before, "a different dt reused a loop built for another"
+
+    def test_changing_save_every_retraces(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        self._run(model, y0)
+        before = len(traces)
+        self._run(model, y0, save_every=5)
+        assert len(traces) > before, "a different save_every reused the same loop"
+
+    def test_changing_the_method_retraces(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        self._run(model, y0)
+        before = len(traces)
+        self._run(model, y0, method=IntegratorType.SSPRK3)
+        assert len(traces) > before, "a different method reused the same loop"
+
+    def test_changing_the_grid_size_retraces(self):
+        """A model of its own, so this is the state's shape as well as the grid."""
+        model, y0, traces = counting_cubic_model(nx=16)
+        other, y0_other, other_traces = counting_cubic_model(nx=32)
+        clear_compiled_drivers()
+        self._run(model, y0)
+        before = len(other_traces)
+        self._run(other, y0_other)
+        assert len(other_traces) > before
+
+    def test_mutating_the_models_params_retraces(self):
+        """The params are constants in the compiled loop, so a change must retrace."""
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        self._run(model, y0)
+        before = len(traces)
+        model.params['forcing'] = 0.5
+        self._run(model, y0)
+        assert len(traces) > before, "a mutated params dict reused a stale loop"
+
+    def test_clear_compiled_drivers_forces_a_rebuild(self):
+        model, y0, traces = counting_cubic_model()
+        clear_compiled_drivers()
+        first = self._run(model, y0)
+        before = len(traces)
+        self._run(model, y0)
+        assert len(traces) == before
+        clear_compiled_drivers()
+        rebuilt = self._run(model, y0)
+        assert len(traces) > before
+        # The rebuilt loop is the same program, so it gives the same answer
+        # to the last bit.
+        assert_leaves_identical(rebuilt, first)
+
+    def test_the_cache_is_bounded(self):
+        """One model per entry would pin every model a sweep ever built."""
+        clear_compiled_drivers()
+        assert len(_FIXED_DRIVERS) == 0
+        for _ in range(_FIXED_DRIVERS.max_entries + 3):
+            model, y0, _ = counting_cubic_model()
+            integrate_fixed_dt(model, y0, 0.0, 0.2, 0.1, method=IntegratorType.EULER,
+                               save_every=1)
+            assert len(_FIXED_DRIVERS) <= _FIXED_DRIVERS.max_entries
+        assert len(_FIXED_DRIVERS) == _FIXED_DRIVERS.max_entries
+        clear_compiled_drivers()
+
+
+class TestReusedDriversAreFasterAndUnchanged:
+    """The point of the cache, and the values it must not change.
+
+    The reference numbers were recorded on the parent commit (main at
+    ef8be4b), before the caching, with the same model and the same
+    schedule. They are compared to 1e-13 relative rather than bit for bit
+    because CI runs two jax versions whose CPU lowerings differ in the
+    last bit or two: on the 8x8 Gray-Scott run below jax 0.6.2 gives
+    0.14878882945420652 where jax 0.9.1 gives 0.1487888294542065. Bit
+    identity within one process is asserted by
+    TestDriversAreCompiledOnce, which compares repeated calls, and by
+    test_clear_compiled_drivers_forces_a_rebuild, which compares a reused
+    loop with a freshly built one.
+    """
+
+    def test_gray_scott_trajectory_is_unchanged(self):
+        model, _, _, y0 = gray_scott_off_equilibrium()
+        clear_compiled_drivers()
+        _, _, y_final = integrate_fixed_dt(
+            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4, save_every=5
+        )
+        assert float(y_final['u'][5, 4]) == pytest.approx(0.6260809327941341, rel=1e-13)
+        assert float(y_final['v'][3, 6]) == pytest.approx(0.1487888294542065, rel=1e-13)
+
+        _, _, y_final = integrate_fixed_dt(
+            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE, save_every=5,
+            nk_params=NKParams(newton_tol=1e-12)
+        )
+        assert float(y_final['u'][5, 4]) == pytest.approx(0.6240511704012716, rel=1e-13)
+
+        result = adaptive_integrate(model, y0, 0.0, 0.2, 0.01,
+                                    method=IntegratorType.RK4, max_steps=100)
+        assert float(result.y_final['u'][5, 4]) == pytest.approx(0.5715040636320732,
+                                                                 rel=1e-13)
+        assert int(result.n_accepted) == 4
+        assert int(result.status) == StatusCode.SUCCESS
+
+    def test_one_dimensional_trajectory_is_unchanged(self):
+        model, y0, _ = counting_cubic_model()
+        clear_compiled_drivers()
+        _, _, y_final = integrate_fixed_dt(model, y0, 0.0, 1.0, 0.1,
+                                           method=IntegratorType.RK4, save_every=2)
+        assert float(y_final['u'][7]) == pytest.approx(0.5996605020001645, rel=1e-13)
+
+        _, _, y_final = integrate_fixed_dt(model, y0, 0.0, 1.0, 0.1,
+                                           method=IntegratorType.BDF2, save_every=2,
+                                           nk_params=NKParams(newton_tol=1e-12))
+        assert float(y_final['u'][7]) == pytest.approx(0.6007181904376475, rel=1e-13)
+
+        result = adaptive_integrate(model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE,
+                                    max_steps=50, nk_params=NKParams(newton_tol=1e-12))
+        assert float(result.y_final['u'][7]) == pytest.approx(0.9076426244308792,
+                                                              rel=1e-13)
+
+    def test_a_reused_loop_only_dispatches(self):
+        """The wall clock, generously: the reused calls cost a fraction of the first.
+
+        On the 8x8 Gray-Scott model the first call spends 2.3 to 2.8 s
+        tracing and compiling and the reused ones 0.001 to 0.003 s, a
+        factor of about a thousand. The assertion below asks for five, so
+        that a loaded or slow runner cannot fail it; it exists to catch
+        the cache being bypassed altogether, not to measure anything.
+        """
+        model, _, _, y0 = gray_scott_off_equilibrium()
+        clear_compiled_drivers()
+        elapsed = []
+        for _ in range(3):
+            start = time.perf_counter()
+            out = integrate_fixed_dt(model, y0, 0.0, 0.5, 0.05,
+                                     method=IntegratorType.BE, save_every=5,
+                                     nk_params=NKParams(newton_tol=1e-12))
+            jax.block_until_ready(jax.tree_util.tree_leaves(out))
+            elapsed.append(time.perf_counter() - start)
+        assert elapsed[2] * 5 < elapsed[0], (
+            f"the third call was not meaningfully cheaper than the first: {elapsed}"
+        )
 
 
 if __name__ == "__main__":

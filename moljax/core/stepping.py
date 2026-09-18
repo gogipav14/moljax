@@ -34,7 +34,17 @@ from moljax.core.dt_policy import (
     heisenberg_cfl_dt,
     propose_dt,
 )
-from moljax.core.model import MOLModel
+from moljax.core.model import (
+    CompiledDriverCache,
+    MOLModel,
+    state_cache_key,
+    static_cache_key,
+)
+
+# Re-exported: the drivers this clears are the integrators' own, so this
+# module is where a caller (or a test counting compilations) will look for
+# it. The registry itself lives with the identity helpers in model.
+from moljax.core.model import clear_compiled_drivers as clear_compiled_drivers
 from moljax.core.newton_krylov import (
     NKParams,
     NKStats,
@@ -1100,6 +1110,363 @@ class AdaptiveResult(NamedTuple):
     status: jnp.ndarray
 
 
+# The compiled adaptive while loops, one per set of static parameters, and
+# the IMEX ones kept apart from them. Same reason as _FIXED_DRIVERS: the
+# loop's Python closure used to be rebuilt per call, so three identical
+# adaptive_integrate calls compiled the same while loop three times, about
+# 4 s each on an 8x8 Gray-Scott model.
+_ADAPTIVE_DRIVERS = CompiledDriverCache("stepping.adaptive_integrate")
+_ADAPTIVE_IMEX_DRIVERS = CompiledDriverCache("stepping.adaptive_integrate_imex")
+
+
+def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid_params,
+                           preconditioner, nk_params, max_rejections_per_step):
+    """
+    Compile adaptive_integrate's while loop for one set of static parameters.
+
+    Everything that shapes the loop stays a closure constant: the method,
+    which selects the step branches; max_steps and save_every, which size
+    the output buffers; and the parameter records. The state and the three
+    times are arguments, because none of them changes the trace. t_end is
+    only ever compared with the clock, and dt0 only seeds a step size the
+    controller immediately takes over, so a sweep over either compiles once.
+    """
+
+    def run(y0, t0, t_end, dt0):
+        dtype = model.dtype
+        # Time is carried wider than the state when x64 is on: see
+        # _time_dtype for why the clock does not follow the field's dtype.
+        time_dtype = _time_dtype()
+
+        # Get method order for error scaling
+        order = compute_error_order(method)
+
+        # Compute initial CFL-limited dt for explicit methods, in the model's
+        # dtype so both lax.cond branches below agree
+        is_explicit = method < 3
+        dt_cfl = heisenberg_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
+        dt_init = lax.cond(
+            is_explicit,
+            lambda: jnp.minimum(dt0, dt_cfl),
+            lambda: jnp.array(dt0, dtype=dtype)
+        )
+
+        # Allocate output buffers. +1 for the initial state at t0, +1 more for
+        # a forced save of the final accepted state when it does not land on a
+        # save_every boundary (see should_save in accept_step).
+        max_saves = max_steps // save_every + 2
+        t_history = allocate_scalar_history(max_saves, time_dtype)
+        y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
+        dt_history = allocate_scalar_history(max_saves, dtype)
+
+        # Initialize state
+        controller = create_initial_controller_state(dtype)
+
+        init_state = AdaptiveState(
+            t=jnp.array(t0, dtype=time_dtype),
+            y=y0,
+            dt=dt_init,
+            y_prev=y0,  # Will be updated after first step
+            dt_prev=dt_init,
+            step_count=jnp.array(0, dtype=jnp.int32),
+            controller=controller,
+            t_history=t_history.at[0].set(t0),
+            y_history=save_to_history(y_history, y0, model.grid, 0, interior_only=True),
+            dt_history=dt_history,
+            write_idx=jnp.array(1, dtype=jnp.int32),
+            n_accepted=jnp.array(0, dtype=jnp.int32),
+            n_rejected=jnp.array(0, dtype=jnp.int32),
+            status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
+        )
+
+        def cond_fn(state: AdaptiveState) -> jnp.ndarray:
+            """Continue while t < t_end and not at max steps or error."""
+            running = state.status == StatusCode.RUNNING
+            not_done = state.t < t_end
+            space_left = state.write_idx < max_saves
+            return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
+
+        def body_fn(state: AdaptiveState) -> AdaptiveState:
+            """Single step of adaptive integration."""
+
+            # Clamp dt to not overshoot. The remaining span is computed in
+            # the time dtype and then taken back to the state's dtype, so dt
+            # stays in the state's dtype and the state is not widened by it.
+            dt_clamped = jnp.minimum(state.dt, (t_end - state.t).astype(dtype))
+
+            # Take step based on method type
+            def explicit_step():
+                y_new, err = step_explicit_with_error(model, state.y, state.t, dt_clamped, method)
+                return (_to_state_dtype(y_new, dtype), _to_state_dtype(err, dtype),
+                        _converged_stats(dtype))
+
+            def implicit_step():
+                # For implicit: use BE + CN comparison for error
+                # Or for BDF2 after startup, use BE as error estimator
+                def be_only():
+                    y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                    # BE's local error is dt^2/2 y'' + O(dt^3), which the
+                    # difference to a Crank-Nicolson step measures. The earlier
+                    # estimate dt F(y_be) is the size of the update, not of its
+                    # error: it never fell below the tolerance and every step
+                    # was rejected.
+                    y_cn, stats_cn = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                    err = tree_sub(y_cn, y_be)
+                    # This branch also runs for the BDF2 startup step (use_be is
+                    # is_be OR bdf2_startup), where y_cn is already computed for
+                    # err and is itself second-order accurate. Returning y_be
+                    # there made the startup step first order while the
+                    # controller's error scaling (order 2 for BDF2 everywhere)
+                    # still treated err as a second-order estimate. The BE
+                    # method itself must keep y_be: y_cn is not its solution.
+                    # The convergence stats must follow the same choice: the
+                    # BDF2 startup step is accepted or rejected on whether CN
+                    # converged, not on BE's status, otherwise an unconverged
+                    # CN state could be accepted as the startup history entry
+                    # just because BE happened to converge.
+                    y_result = lax.cond(bdf2_startup, lambda: y_cn, lambda: y_be)
+                    stats_result = lax.cond(bdf2_startup, lambda: stats_cn, lambda: stats_be)
+                    # err is y_cn - y_be on both branches, so the estimate is
+                    # only meaningful if both solves converged; whichever one
+                    # is not the step's own solution is an auxiliary whose
+                    # failure must reject the step just the same.
+                    stats_result = stats_result._replace(
+                        converged=_error_estimate_converged((stats_be, y_be), (stats_cn, y_cn))
+                    )
+                    return y_result, err, stats_result
+
+                def cn_with_err():
+                    y_cn, stats = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                    # The backward Euler solve is an auxiliary, but the error
+                    # estimate is its difference from y_cn: its stats decide
+                    # the step just as much as Crank-Nicolson's own.
+                    y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                    err = tree_sub(y_cn, y_be)
+                    stats = stats._replace(
+                        converged=_error_estimate_converged((stats, y_cn), (stats_be, y_be))
+                    )
+                    return y_cn, err, stats
+
+                def bdf2_with_err():
+                    y_bdf2, stats = bdf2_step(
+                        model, state.y, state.y_prev, state.t, dt_clamped, state.dt_prev,
+                        preconditioner, nk_params
+                    )
+                    # Compare with BE for error. As in cn_with_err, the
+                    # auxiliary solve's convergence is part of the estimate's
+                    # validity, not a detail of how it was computed.
+                    y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
+                    err = tree_sub(y_bdf2, y_be)
+                    stats = stats._replace(
+                        converged=_error_estimate_converged((stats, y_bdf2), (stats_be, y_be))
+                    )
+                    return y_bdf2, err, stats
+
+                # Select based on method and step count
+                is_be = method == 3
+                is_cn = method == 4
+                is_bdf2 = method == 5
+                bdf2_startup = jnp.logical_and(is_bdf2, state.step_count < 1)
+
+                # Use BE for: BE method OR BDF2 startup
+                use_be = jnp.logical_or(is_be, bdf2_startup)
+
+                y_new, err, stats = lax.cond(
+                    use_be,
+                    be_only,
+                    lambda: lax.cond(is_cn, cn_with_err, bdf2_with_err)
+                )
+                return (_to_state_dtype(y_new, dtype), _to_state_dtype(err, dtype),
+                        _converged_stats_dtype(stats, dtype))
+
+            y_new, err, nk_stats = lax.cond(method < 3, explicit_step, implicit_step)
+
+            # Compute error ratio
+            err_ratio = scaled_error_norm(err, y_new, model.grid, pid_params.atol, pid_params.rtol)
+            err_ratio = jnp.maximum(err_ratio, 1e-10)  # Avoid division issues
+
+            # Accept/reject decision
+            accept = err_ratio <= 1.0
+
+            # Check for finite values
+            finite = is_finite(y_new)
+            accept = jnp.logical_and(accept, finite)
+
+            # For implicit: also check NK convergence
+            accept = lax.cond(
+                method >= 3,
+                lambda: jnp.logical_and(accept, nk_stats.converged),
+                lambda: accept
+            )
+
+            # Compute new dt. The controller is told the real accept/reject
+            # decision, not just err_ratio <= 1: a step whose solve failed
+            # must never see the PID's growth term, or dt is pushed back up
+            # faster than the rejection halves it and the step is retried
+            # forever.
+            dt_new, new_controller = propose_dt(
+                method=method,
+                grid=model.grid,
+                params=model.params,
+                state=state.y,
+                t=state.t,
+                dt_old=dt_clamped,
+                err_ratio=err_ratio,
+                controller_state=state.controller,
+                nk_stats=nk_stats,
+                cfl_params=cfl_params,
+                pid_params=pid_params,
+                order=order,
+                accepted=accept
+            )
+
+            # Update state based on accept/reject
+            def accept_step():
+                # should_save is evaluated on the accepted-step count *after*
+                # this step, so saves land on steps save_every, 2*save_every,
+                # ... instead of one step early (the pre-increment count starts
+                # at 0, so `% save_every == 0` was true on the very first
+                # accepted step). The final accepted step is always saved too,
+                # so t_end is in the history even when it falls short of the
+                # next save_every boundary.
+                next_n_accepted = state.n_accepted + 1
+                is_final_step = dt_clamped >= (t_end - state.t)
+                should_save = jnp.logical_or((next_n_accepted % save_every) == 0, is_final_step)
+                new_t_hist = lax.cond(
+                    should_save,
+                    lambda: state.t_history.at[state.write_idx].set(state.t + dt_clamped),
+                    lambda: state.t_history
+                )
+                new_y_hist = lax.cond(
+                    should_save,
+                    lambda: save_to_history(state.y_history, y_new, model.grid, state.write_idx, True),
+                    lambda: state.y_history
+                )
+                new_dt_hist = lax.cond(
+                    should_save,
+                    lambda: state.dt_history.at[state.write_idx - 1].set(dt_clamped),
+                    lambda: state.dt_history
+                )
+                new_write_idx = lax.cond(
+                    should_save,
+                    lambda: state.write_idx + 1,
+                    lambda: state.write_idx
+                )
+
+                return AdaptiveState(
+                    t=state.t + dt_clamped,
+                    y=y_new,
+                    dt=dt_new,
+                    y_prev=state.y,
+                    dt_prev=dt_clamped,
+                    step_count=state.step_count + 1,
+                    controller=new_controller,
+                    t_history=new_t_hist,
+                    y_history=new_y_hist,
+                    dt_history=new_dt_hist,
+                    write_idx=new_write_idx,
+                    n_accepted=state.n_accepted + 1,
+                    n_rejected=state.n_rejected,
+                    status=state.status
+                )
+
+            def reject_step():
+                # Keep state, update dt and reject count
+                # More aggressive shrink on reject
+                dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
+
+                # Carry the controller the proposal built, not the one that
+                # went in: its consecutive_rejects counter is what bounds the
+                # attempts spent on a single step. Nothing else in it differs
+                # on a rejection (handle_rejected_step keeps prev_err_ratio
+                # and prevprev_err_ratio unchanged).
+                n_rejects = new_controller.consecutive_rejects
+                new_status = jnp.where(
+                    dt_reject <= pid_params.dt_min * 1.1,
+                    jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
+                    jnp.where(
+                        n_rejects >= max_rejections_per_step,
+                        jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
+                        state.status
+                    )
+                )
+
+                return AdaptiveState(
+                    t=state.t,
+                    y=state.y,
+                    dt=dt_reject,
+                    y_prev=state.y_prev,
+                    dt_prev=state.dt_prev,
+                    step_count=state.step_count,
+                    controller=new_controller,
+                    t_history=state.t_history,
+                    y_history=state.y_history,
+                    dt_history=state.dt_history,
+                    write_idx=state.write_idx,
+                    n_accepted=state.n_accepted,
+                    n_rejected=state.n_rejected + 1,
+                    status=new_status
+                )
+
+            new_state = lax.cond(accept, accept_step, reject_step)
+
+            # Check for non-finite
+            new_state = lax.cond(
+                jnp.logical_not(finite),
+                lambda: new_state._replace(status=jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)),
+                lambda: new_state
+            )
+
+            return new_state
+
+        # Run integration
+        final_state = lax.while_loop(cond_fn, body_fn, init_state)
+
+        # Set final status
+        final_status = lax.cond(
+            final_state.t >= t_end,
+            lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
+            lambda: lax.cond(
+                final_state.write_idx >= max_saves,
+                lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
+                lambda: final_state.status
+            )
+        )
+
+        return AdaptiveResult(
+            t_final=final_state.t,
+            y_final=final_state.y,
+            t_history=final_state.t_history,
+            y_history=final_state.y_history,
+            dt_history=final_state.dt_history,
+            n_steps=final_state.write_idx,
+            n_accepted=final_state.n_accepted,
+            n_rejected=final_state.n_rejected,
+            status=final_status
+        )
+
+    return jax.jit(run)
+
+
+def _adaptive_driver(model, y0, method, max_steps, save_every, cfl_params, pid_params,
+                     preconditioner, nk_params, max_rejections_per_step):
+    """Look up, or build, the compiled adaptive loop for these parameters."""
+    key = _driver_key("adaptive_integrate", model, y0, (
+        static_cache_key(method),
+        max_steps,
+        save_every,
+        static_cache_key(cfl_params),
+        static_cache_key(pid_params),
+        static_cache_key(preconditioner),
+        static_cache_key(nk_params),
+        static_cache_key(max_rejections_per_step),
+    ))
+    return _ADAPTIVE_DRIVERS.get_or_build(key, lambda: _build_adaptive_driver(
+        model, method, max_steps, save_every, cfl_params, pid_params, preconditioner,
+        nk_params, max_rejections_per_step
+    ))
+
+
 def adaptive_integrate(
     model: MOLModel,
     y0: StateDict,
@@ -1148,13 +1515,14 @@ def adaptive_integrate(
         AdaptiveResult with final state and histories. status is
         StatusCode.MAX_ATTEMPTS_REACHED if one step used up its rejection
         budget.
-    """
-    dtype = model.dtype
-    # Time is carried wider than the state when x64 is on: see
-    # _time_dtype for why the clock does not follow the field's dtype.
-    time_dtype = _time_dtype()
-    _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate")
 
+    Notes:
+        The compiled while loop is cached and reused; see
+        integrate_fixed_dt. Here t0, t_end and dt0 are arguments of the
+        compiled loop rather than constants in it, so a sweep over any of
+        them reuses one executable; the method, max_steps, save_every and
+        the parameter records are what a new one is built for.
+    """
     if cfl_params is None:
         cfl_params = CFLParams()
     if pid_params is None:
@@ -1164,312 +1532,11 @@ def adaptive_integrate(
     if nk_params is None:
         nk_params = NKParams()
 
-    # Get method order for error scaling
-    order = compute_error_order(method)
+    _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate")
 
-    # Compute initial CFL-limited dt for explicit methods, in the model's
-    # dtype so both lax.cond branches below agree
-    is_explicit = method < 3
-    dt_cfl = heisenberg_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
-    dt_init = lax.cond(
-        is_explicit,
-        lambda: jnp.minimum(dt0, dt_cfl),
-        lambda: jnp.array(dt0, dtype=dtype)
-    )
-
-    # Allocate output buffers. +1 for the initial state at t0, +1 more for
-    # a forced save of the final accepted state when it does not land on a
-    # save_every boundary (see should_save in accept_step).
-    max_saves = max_steps // save_every + 2
-    t_history = allocate_scalar_history(max_saves, time_dtype)
-    y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
-    dt_history = allocate_scalar_history(max_saves, dtype)
-
-    # Initialize state
-    controller = create_initial_controller_state(dtype)
-
-    init_state = AdaptiveState(
-        t=jnp.array(t0, dtype=time_dtype),
-        y=y0,
-        dt=dt_init,
-        y_prev=y0,  # Will be updated after first step
-        dt_prev=dt_init,
-        step_count=jnp.array(0, dtype=jnp.int32),
-        controller=controller,
-        t_history=t_history.at[0].set(t0),
-        y_history=save_to_history(y_history, y0, model.grid, 0, interior_only=True),
-        dt_history=dt_history,
-        write_idx=jnp.array(1, dtype=jnp.int32),
-        n_accepted=jnp.array(0, dtype=jnp.int32),
-        n_rejected=jnp.array(0, dtype=jnp.int32),
-        status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
-    )
-
-    def cond_fn(state: AdaptiveState) -> jnp.ndarray:
-        """Continue while t < t_end and not at max steps or error."""
-        running = state.status == StatusCode.RUNNING
-        not_done = state.t < t_end
-        space_left = state.write_idx < max_saves
-        return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
-
-    def body_fn(state: AdaptiveState) -> AdaptiveState:
-        """Single step of adaptive integration."""
-
-        # Clamp dt to not overshoot. The remaining span is computed in
-        # the time dtype and then taken back to the state's dtype, so dt
-        # stays in the state's dtype and the state is not widened by it.
-        dt_clamped = jnp.minimum(state.dt, (t_end - state.t).astype(dtype))
-
-        # Take step based on method type
-        def explicit_step():
-            y_new, err = step_explicit_with_error(model, state.y, state.t, dt_clamped, method)
-            return (_to_state_dtype(y_new, dtype), _to_state_dtype(err, dtype),
-                    _converged_stats(dtype))
-
-        def implicit_step():
-            # For implicit: use BE + CN comparison for error
-            # Or for BDF2 after startup, use BE as error estimator
-            def be_only():
-                y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                # BE's local error is dt^2/2 y'' + O(dt^3), which the
-                # difference to a Crank-Nicolson step measures. The earlier
-                # estimate dt F(y_be) is the size of the update, not of its
-                # error: it never fell below the tolerance and every step
-                # was rejected.
-                y_cn, stats_cn = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                err = tree_sub(y_cn, y_be)
-                # This branch also runs for the BDF2 startup step (use_be is
-                # is_be OR bdf2_startup), where y_cn is already computed for
-                # err and is itself second-order accurate. Returning y_be
-                # there made the startup step first order while the
-                # controller's error scaling (order 2 for BDF2 everywhere)
-                # still treated err as a second-order estimate. The BE
-                # method itself must keep y_be: y_cn is not its solution.
-                # The convergence stats must follow the same choice: the
-                # BDF2 startup step is accepted or rejected on whether CN
-                # converged, not on BE's status, otherwise an unconverged
-                # CN state could be accepted as the startup history entry
-                # just because BE happened to converge.
-                y_result = lax.cond(bdf2_startup, lambda: y_cn, lambda: y_be)
-                stats_result = lax.cond(bdf2_startup, lambda: stats_cn, lambda: stats_be)
-                # err is y_cn - y_be on both branches, so the estimate is
-                # only meaningful if both solves converged; whichever one
-                # is not the step's own solution is an auxiliary whose
-                # failure must reject the step just the same.
-                stats_result = stats_result._replace(
-                    converged=_error_estimate_converged((stats_be, y_be), (stats_cn, y_cn))
-                )
-                return y_result, err, stats_result
-
-            def cn_with_err():
-                y_cn, stats = cn_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                # The backward Euler solve is an auxiliary, but the error
-                # estimate is its difference from y_cn: its stats decide
-                # the step just as much as Crank-Nicolson's own.
-                y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                err = tree_sub(y_cn, y_be)
-                stats = stats._replace(
-                    converged=_error_estimate_converged((stats, y_cn), (stats_be, y_be))
-                )
-                return y_cn, err, stats
-
-            def bdf2_with_err():
-                y_bdf2, stats = bdf2_step(
-                    model, state.y, state.y_prev, state.t, dt_clamped, state.dt_prev,
-                    preconditioner, nk_params
-                )
-                # Compare with BE for error. As in cn_with_err, the
-                # auxiliary solve's convergence is part of the estimate's
-                # validity, not a detail of how it was computed.
-                y_be, stats_be = be_step(model, state.y, state.t, dt_clamped, preconditioner, nk_params)
-                err = tree_sub(y_bdf2, y_be)
-                stats = stats._replace(
-                    converged=_error_estimate_converged((stats, y_bdf2), (stats_be, y_be))
-                )
-                return y_bdf2, err, stats
-
-            # Select based on method and step count
-            is_be = method == 3
-            is_cn = method == 4
-            is_bdf2 = method == 5
-            bdf2_startup = jnp.logical_and(is_bdf2, state.step_count < 1)
-
-            # Use BE for: BE method OR BDF2 startup
-            use_be = jnp.logical_or(is_be, bdf2_startup)
-
-            y_new, err, stats = lax.cond(
-                use_be,
-                be_only,
-                lambda: lax.cond(is_cn, cn_with_err, bdf2_with_err)
-            )
-            return (_to_state_dtype(y_new, dtype), _to_state_dtype(err, dtype),
-                    _converged_stats_dtype(stats, dtype))
-
-        y_new, err, nk_stats = lax.cond(method < 3, explicit_step, implicit_step)
-
-        # Compute error ratio
-        err_ratio = scaled_error_norm(err, y_new, model.grid, pid_params.atol, pid_params.rtol)
-        err_ratio = jnp.maximum(err_ratio, 1e-10)  # Avoid division issues
-
-        # Accept/reject decision
-        accept = err_ratio <= 1.0
-
-        # Check for finite values
-        finite = is_finite(y_new)
-        accept = jnp.logical_and(accept, finite)
-
-        # For implicit: also check NK convergence
-        accept = lax.cond(
-            method >= 3,
-            lambda: jnp.logical_and(accept, nk_stats.converged),
-            lambda: accept
-        )
-
-        # Compute new dt. The controller is told the real accept/reject
-        # decision, not just err_ratio <= 1: a step whose solve failed
-        # must never see the PID's growth term, or dt is pushed back up
-        # faster than the rejection halves it and the step is retried
-        # forever.
-        dt_new, new_controller = propose_dt(
-            method=method,
-            grid=model.grid,
-            params=model.params,
-            state=state.y,
-            t=state.t,
-            dt_old=dt_clamped,
-            err_ratio=err_ratio,
-            controller_state=state.controller,
-            nk_stats=nk_stats,
-            cfl_params=cfl_params,
-            pid_params=pid_params,
-            order=order,
-            accepted=accept
-        )
-
-        # Update state based on accept/reject
-        def accept_step():
-            # should_save is evaluated on the accepted-step count *after*
-            # this step, so saves land on steps save_every, 2*save_every,
-            # ... instead of one step early (the pre-increment count starts
-            # at 0, so `% save_every == 0` was true on the very first
-            # accepted step). The final accepted step is always saved too,
-            # so t_end is in the history even when it falls short of the
-            # next save_every boundary.
-            next_n_accepted = state.n_accepted + 1
-            is_final_step = dt_clamped >= (t_end - state.t)
-            should_save = jnp.logical_or((next_n_accepted % save_every) == 0, is_final_step)
-            new_t_hist = lax.cond(
-                should_save,
-                lambda: state.t_history.at[state.write_idx].set(state.t + dt_clamped),
-                lambda: state.t_history
-            )
-            new_y_hist = lax.cond(
-                should_save,
-                lambda: save_to_history(state.y_history, y_new, model.grid, state.write_idx, True),
-                lambda: state.y_history
-            )
-            new_dt_hist = lax.cond(
-                should_save,
-                lambda: state.dt_history.at[state.write_idx - 1].set(dt_clamped),
-                lambda: state.dt_history
-            )
-            new_write_idx = lax.cond(
-                should_save,
-                lambda: state.write_idx + 1,
-                lambda: state.write_idx
-            )
-
-            return AdaptiveState(
-                t=state.t + dt_clamped,
-                y=y_new,
-                dt=dt_new,
-                y_prev=state.y,
-                dt_prev=dt_clamped,
-                step_count=state.step_count + 1,
-                controller=new_controller,
-                t_history=new_t_hist,
-                y_history=new_y_hist,
-                dt_history=new_dt_hist,
-                write_idx=new_write_idx,
-                n_accepted=state.n_accepted + 1,
-                n_rejected=state.n_rejected,
-                status=state.status
-            )
-
-        def reject_step():
-            # Keep state, update dt and reject count
-            # More aggressive shrink on reject
-            dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
-
-            # Carry the controller the proposal built, not the one that
-            # went in: its consecutive_rejects counter is what bounds the
-            # attempts spent on a single step. Nothing else in it differs
-            # on a rejection (handle_rejected_step keeps prev_err_ratio
-            # and prevprev_err_ratio unchanged).
-            n_rejects = new_controller.consecutive_rejects
-            new_status = jnp.where(
-                dt_reject <= pid_params.dt_min * 1.1,
-                jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
-                jnp.where(
-                    n_rejects >= max_rejections_per_step,
-                    jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
-                    state.status
-                )
-            )
-
-            return AdaptiveState(
-                t=state.t,
-                y=state.y,
-                dt=dt_reject,
-                y_prev=state.y_prev,
-                dt_prev=state.dt_prev,
-                step_count=state.step_count,
-                controller=new_controller,
-                t_history=state.t_history,
-                y_history=state.y_history,
-                dt_history=state.dt_history,
-                write_idx=state.write_idx,
-                n_accepted=state.n_accepted,
-                n_rejected=state.n_rejected + 1,
-                status=new_status
-            )
-
-        new_state = lax.cond(accept, accept_step, reject_step)
-
-        # Check for non-finite
-        new_state = lax.cond(
-            jnp.logical_not(finite),
-            lambda: new_state._replace(status=jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)),
-            lambda: new_state
-        )
-
-        return new_state
-
-    # Run integration
-    final_state = lax.while_loop(cond_fn, body_fn, init_state)
-
-    # Set final status
-    final_status = lax.cond(
-        final_state.t >= t_end,
-        lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
-        lambda: lax.cond(
-            final_state.write_idx >= max_saves,
-            lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
-            lambda: final_state.status
-        )
-    )
-
-    return AdaptiveResult(
-        t_final=final_state.t,
-        y_final=final_state.y,
-        t_history=final_state.t_history,
-        y_history=final_state.y_history,
-        dt_history=final_state.dt_history,
-        n_steps=final_state.write_idx,
-        n_accepted=final_state.n_accepted,
-        n_rejected=final_state.n_rejected,
-        status=final_status
-    )
+    driver = _adaptive_driver(model, y0, method, max_steps, save_every, cfl_params,
+                             pid_params, preconditioner, nk_params, max_rejections_per_step)
+    return driver(y0, t0, t_end, dt0)
 
 
 # =============================================================================
@@ -1558,6 +1625,195 @@ def _raise_on_failed_fixed_run(status: jnp.ndarray, caller: str) -> None:
         )
 
 
+# The compiled fixed-step loops, one per set of static parameters. A loop
+# is built as a closure over those parameters and handed to jax.jit; before
+# this cache the closure was rebuilt on every call, so it was a new Python
+# object each time and JAX's compilation cache could not recognize it.
+# Three identical integrate_fixed_dt calls on an 8x8 Gray-Scott model
+# compiled the same scan three times, 2.3 to 2.8 s each.
+_FIXED_DRIVERS = CompiledDriverCache("stepping.integrate_fixed_dt")
+
+# The IMEX fixed-step loops, kept apart from _FIXED_DRIVERS so that one
+# family's sweep cannot evict the other's drivers.
+_IMEX_FIXED_DRIVERS = CompiledDriverCache("stepping.integrate_imex_fixed_dt")
+
+
+class _FixedScanState(NamedTuple):
+    """
+    Carry of integrate_fixed_dt's compiled loop.
+
+    Declared at module level rather than inside the driver: a NamedTuple
+    built per call is a distinct pytree node type every time, which is by
+    itself enough to make an otherwise identical trace unreusable, whatever
+    else is cached.
+    """
+    t: jnp.ndarray
+    y: StateDict
+    y_prev: StateDict
+    dt_prev: jnp.ndarray
+    step: jnp.ndarray
+    status: jnp.ndarray
+
+
+class _ImexFixedScanState(NamedTuple):
+    """Carry of integrate_imex_fixed_dt's compiled loop (see _FixedScanState)."""
+    t: jnp.ndarray
+    y: StateDict
+    step: jnp.ndarray
+
+
+def _driver_key(name, model, y0, statics: tuple) -> tuple:
+    """
+    The cache key shared by every compiled driver in this module.
+
+    Everything that determines the trace goes in: the model (identity plus
+    the contents of its mutable parts, see MOLModel.compile_key), the
+    structure and avals of the state, the x64 flag (it decides the dtype
+    time is carried in, and tests toggle it), and whatever static
+    parameters the caller's driver adds. What is left out is what the
+    driver takes as an argument and JAX therefore keys itself: the state's
+    values and the times.
+
+    Keying a model or a preconditioner partly by id is safe because the
+    cache entry holds the driver, the driver's closure holds those objects,
+    and a live object's id cannot have been recycled.
+    """
+    return (name, model.compile_key, state_cache_key(y0),
+            bool(jax.config.jax_enable_x64)) + statics
+
+
+def _build_fixed_driver(model, method, dt, n_steps, save_every, preconditioner, nk_params):
+    """
+    Compile integrate_fixed_dt's loop for one set of static parameters.
+
+    dt, the step count and save_every are closure constants because they
+    are what the loop is built out of: dt is baked into every step's
+    arithmetic exactly as the caller passed it (a Python float stays weakly
+    typed and promotes as it always did), the step count sets the scan's
+    length and save_every its block size. The state and the start time are
+    arguments, so a run that only differs in its initial condition or in
+    where its clock starts reuses the same executable.
+    """
+
+    def run(y0, t0):
+        # Time is carried wider than the state when x64 is on (see
+        # _time_dtype), and each timestamp is t0 + i*dt rather than a running
+        # sum: the sum drifts by one rounding per step, the product by one in
+        # total, and the step index is exact.
+        time_dtype = _time_dtype()
+        t0_time = jnp.array(t0, dtype=time_dtype)
+        dt_time = jnp.array(dt, dtype=time_dtype)
+
+        def advance(carry: _FixedScanState) -> _FixedScanState:
+            """Single fixed step, a no-op once an earlier step has failed."""
+
+            def explicit():
+                y_new = step_explicit(model, carry.y, carry.t, dt, method)
+                return _to_state_dtype(y_new, model.dtype), _converged_stats(model.dtype)
+
+            def implicit():
+                is_be = method == 3
+                is_cn = method == 4
+
+                def do_be():
+                    return be_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
+
+                def do_cn():
+                    return cn_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
+
+                def do_bdf2():
+                    # BDF2 with BE startup for first step
+                    use_be = carry.step < 1
+                    return lax.cond(
+                        use_be,
+                        lambda: be_step(model, carry.y, carry.t, dt, preconditioner, nk_params),
+                        lambda: bdf2_step(model, carry.y, carry.y_prev, carry.t, dt, carry.dt_prev, preconditioner, nk_params)
+                    )
+
+                y_new, stats = lax.cond(
+                    is_be,
+                    do_be,
+                    lambda: lax.cond(is_cn, do_cn, do_bdf2)
+                )
+                return _to_state_dtype(y_new, model.dtype), _converged_stats_dtype(stats, model.dtype)
+
+            def take_step():
+                return lax.cond(method < 3, explicit, implicit)
+
+            def frozen():
+                # A failed run stops advancing: the state is already the last
+                # good one, so repeating it costs nothing and keeps the scan's
+                # shapes and the history layout exactly as they were.
+                return carry.y, _converged_stats(model.dtype)
+
+            running = carry.status == StatusCode.RUNNING
+            y_step, nk_stats = lax.cond(running, take_step, frozen)
+
+            finite = is_finite(y_step)
+            ok = jnp.logical_and(finite, nk_stats.converged)
+            failure = jnp.where(
+                finite,
+                jnp.array(StatusCode.NK_FAILED, dtype=jnp.int32),
+                jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)
+            )
+            new_status = jnp.where(ok, carry.status, failure)
+
+            # On failure keep the last good state and its BDF2 history.
+            y_new, y_prev_new = lax.cond(
+                ok,
+                lambda: (y_step, carry.y),
+                lambda: (carry.y, carry.y_prev)
+            )
+
+            next_step = carry.step + 1
+
+            return _FixedScanState(
+                t=t0_time + next_step.astype(time_dtype) * dt_time,
+                y=y_new,
+                y_prev=y_prev_new,
+                dt_prev=jnp.array(dt, dtype=model.dtype),
+                step=next_step,
+                status=new_status
+            )
+
+        init_carry = _FixedScanState(
+            t=t0_time,
+            y=y0,
+            y_prev=y0,
+            dt_prev=jnp.array(dt, dtype=model.dtype),
+            step=jnp.array(0, dtype=jnp.int32),
+            status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
+        )
+
+        t_history, y_history, final_carry = _run_fixed_steps(
+            advance, init_carry, n_steps, save_every, model.grid
+        )
+
+        status = jnp.where(
+            final_carry.status == StatusCode.RUNNING,
+            jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
+            final_carry.status
+        )
+        return t_history, y_history, final_carry.y, status
+
+    return jax.jit(run)
+
+
+def _fixed_driver(model, y0, method, dt, n_steps, save_every, preconditioner, nk_params):
+    """Look up, or build, the compiled fixed-step loop for these parameters."""
+    key = _driver_key("integrate_fixed_dt", model, y0, (
+        static_cache_key(method),
+        static_cache_key(dt),
+        n_steps,
+        save_every,
+        static_cache_key(preconditioner),
+        static_cache_key(nk_params),
+    ))
+    return _FIXED_DRIVERS.get_or_build(key, lambda: _build_fixed_driver(
+        model, method, dt, n_steps, save_every, preconditioner, nk_params
+    ))
+
+
 def integrate_fixed_dt(
     model: MOLModel,
     y0: StateDict,
@@ -1614,6 +1870,15 @@ def integrate_fixed_dt(
             converged and finite and return_status is False.
 
     Notes:
+        The compiled loop is cached and reused. A call whose static
+        parameters match an earlier one's runs the executable that call
+        built instead of tracing a new one: this model object with these
+        params, this method, dt, step count and save_every, this
+        preconditioner and these NKParams, and a state of the same
+        structure, shapes and dtypes. The cache holds 32 entries, each
+        pinning what its loop closes over (the model included);
+        clear_compiled_drivers empties it.
+
         The public surface was chosen to keep the default return a
         three-element tuple: every caller in the tree (and every
         documented example) unpacks exactly three values, and the
@@ -1632,123 +1897,252 @@ def integrate_fixed_dt(
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
     _validate_time_resolution(t0, t_end, dt, "integrate_fixed_dt")
 
-    # Time is carried wider than the state when x64 is on (see
-    # _time_dtype), and each timestamp is t0 + i*dt rather than a running
-    # sum: the sum drifts by one rounding per step, the product by one in
-    # total, and the step index is exact.
-    time_dtype = _time_dtype()
-    t0_time = jnp.array(t0, dtype=time_dtype)
-    dt_time = jnp.array(dt, dtype=time_dtype)
-
-    class ScanState(NamedTuple):
-        t: jnp.ndarray
-        y: StateDict
-        y_prev: StateDict
-        dt_prev: jnp.ndarray
-        step: jnp.ndarray
-        status: jnp.ndarray
-
-    def advance(carry: ScanState) -> ScanState:
-        """Single fixed step, a no-op once an earlier step has failed."""
-
-        def explicit():
-            y_new = step_explicit(model, carry.y, carry.t, dt, method)
-            return _to_state_dtype(y_new, model.dtype), _converged_stats(model.dtype)
-
-        def implicit():
-            is_be = method == 3
-            is_cn = method == 4
-
-            def do_be():
-                return be_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
-
-            def do_cn():
-                return cn_step(model, carry.y, carry.t, dt, preconditioner, nk_params)
-
-            def do_bdf2():
-                # BDF2 with BE startup for first step
-                use_be = carry.step < 1
-                return lax.cond(
-                    use_be,
-                    lambda: be_step(model, carry.y, carry.t, dt, preconditioner, nk_params),
-                    lambda: bdf2_step(model, carry.y, carry.y_prev, carry.t, dt, carry.dt_prev, preconditioner, nk_params)
-                )
-
-            y_new, stats = lax.cond(
-                is_be,
-                do_be,
-                lambda: lax.cond(is_cn, do_cn, do_bdf2)
-            )
-            return _to_state_dtype(y_new, model.dtype), _converged_stats_dtype(stats, model.dtype)
-
-        def take_step():
-            return lax.cond(method < 3, explicit, implicit)
-
-        def frozen():
-            # A failed run stops advancing: the state is already the last
-            # good one, so repeating it costs nothing and keeps the scan's
-            # shapes and the history layout exactly as they were.
-            return carry.y, _converged_stats(model.dtype)
-
-        running = carry.status == StatusCode.RUNNING
-        y_step, nk_stats = lax.cond(running, take_step, frozen)
-
-        finite = is_finite(y_step)
-        ok = jnp.logical_and(finite, nk_stats.converged)
-        failure = jnp.where(
-            finite,
-            jnp.array(StatusCode.NK_FAILED, dtype=jnp.int32),
-            jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)
-        )
-        new_status = jnp.where(ok, carry.status, failure)
-
-        # On failure keep the last good state and its BDF2 history.
-        y_new, y_prev_new = lax.cond(
-            ok,
-            lambda: (y_step, carry.y),
-            lambda: (carry.y, carry.y_prev)
-        )
-
-        next_step = carry.step + 1
-
-        return ScanState(
-            t=t0_time + next_step.astype(time_dtype) * dt_time,
-            y=y_new,
-            y_prev=y_prev_new,
-            dt_prev=jnp.array(dt, dtype=model.dtype),
-            step=next_step,
-            status=new_status
-        )
-
-    init_carry = ScanState(
-        t=t0_time,
-        y=y0,
-        y_prev=y0,
-        dt_prev=jnp.array(dt, dtype=model.dtype),
-        step=jnp.array(0, dtype=jnp.int32),
-        status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
-    )
-
-    t_history, y_history, final_carry = _run_fixed_steps(
-        advance, init_carry, n_steps, save_every, model.grid
-    )
-
-    status = jnp.where(
-        final_carry.status == StatusCode.RUNNING,
-        jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
-        final_carry.status
-    )
+    driver = _fixed_driver(model, y0, method, dt, n_steps, save_every,
+                           preconditioner, nk_params)
+    t_history, y_history, y_final, status = driver(y0, t0)
 
     if return_status:
-        return t_history, y_history, final_carry.y, status
+        return t_history, y_history, y_final, status
 
     _raise_on_failed_fixed_run(status, "integrate_fixed_dt")
-    return t_history, y_history, final_carry.y
+    return t_history, y_history, y_final
 
 
 # =============================================================================
 # IMEX Adaptive Integration
 # =============================================================================
+
+def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max_steps,
+                                save_every, cfl_params, pid_params, max_rejections_per_step):
+    """Compile adaptive_integrate_imex's while loop (see _build_adaptive_driver)."""
+    from moljax.core.dt_policy import imex_cfl_dt, propose_dt_imex
+
+    def run(y0, t0, t_end, dt0):
+        dtype = model.dtype
+        # See adaptive_integrate: the clock does not follow the field's dtype.
+        time_dtype = _time_dtype()
+
+        # Order for error estimation
+        order = 2 if use_strang else 1
+
+        # Compute initial IMEX CFL-limited dt (no diffusion limit), in the
+        # model's dtype so the loop carry keeps one dtype
+        dt_cfl = imex_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
+        dt_init = jnp.minimum(jnp.array(dt0, dtype=dtype), dt_cfl)
+
+        # Allocate output buffers. +1 for the initial state at t0, +1 more for
+        # a forced save of the final accepted state when it does not land on a
+        # save_every boundary (see should_save in accept_step).
+        max_saves = max_steps // save_every + 2
+        t_history = allocate_scalar_history(max_saves, time_dtype)
+        y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
+        dt_history = allocate_scalar_history(max_saves, dtype)
+
+        # Initialize state
+        controller = create_initial_controller_state(dtype)
+
+        init_state = AdaptiveState(
+            t=jnp.array(t0, dtype=time_dtype),
+            y=y0,
+            dt=dt_init,
+            y_prev=y0,
+            dt_prev=dt_init,
+            step_count=jnp.array(0, dtype=jnp.int32),
+            controller=controller,
+            t_history=t_history.at[0].set(t0),
+            y_history=save_to_history(y_history, y0, model.grid, 0, interior_only=True),
+            dt_history=dt_history,
+            write_idx=jnp.array(1, dtype=jnp.int32),
+            n_accepted=jnp.array(0, dtype=jnp.int32),
+            n_rejected=jnp.array(0, dtype=jnp.int32),
+            status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
+        )
+
+        def cond_fn(state: AdaptiveState) -> jnp.ndarray:
+            running = state.status == StatusCode.RUNNING
+            not_done = state.t < t_end
+            space_left = state.write_idx < max_saves
+            return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
+
+        def body_fn(state: AdaptiveState) -> AdaptiveState:
+            # Clamp dt to not overshoot (see adaptive_integrate for the cast)
+            dt_clamped = jnp.minimum(state.dt, (t_end - state.t).astype(dtype))
+
+            # Take IMEX step with error estimation
+            if use_strang:
+                y_new, err = estimate_error_imex_doubling(
+                    model, state.y, state.t, dt_clamped, fft_cache, diffusivities, use_strang=True
+                )
+            else:
+                y_new, err = estimate_error_imex_doubling(
+                    model, state.y, state.t, dt_clamped, fft_cache, diffusivities, use_strang=False
+                )
+            y_new = _to_state_dtype(y_new, dtype)
+            err = _to_state_dtype(err, dtype)
+
+            # Compute error ratio
+            err_ratio = scaled_error_norm(err, y_new, model.grid, pid_params.atol, pid_params.rtol)
+            err_ratio = jnp.maximum(err_ratio, 1e-10)
+
+            # Accept/reject decision
+            accept = err_ratio <= 1.0
+
+            # Check for finite values
+            finite = is_finite(y_new)
+            accept = jnp.logical_and(accept, finite)
+
+            # Compute new dt using IMEX policy (no diffusion limit)
+            dt_new, new_controller = propose_dt_imex(
+                grid=model.grid,
+                params=model.params,
+                state=state.y,
+                t=state.t,
+                dt_old=dt_clamped,
+                err_ratio=err_ratio,
+                controller_state=state.controller,
+                cfl_params=cfl_params,
+                pid_params=pid_params,
+                order=order,
+                accepted=accept
+            )
+
+            # Update state based on accept/reject
+            def accept_step():
+                # See adaptive_integrate.accept_step: evaluate should_save on
+                # the post-increment accepted count, and always save the final
+                # accepted step so t_end is in the history.
+                next_n_accepted = state.n_accepted + 1
+                is_final_step = dt_clamped >= (t_end - state.t)
+                should_save = jnp.logical_or((next_n_accepted % save_every) == 0, is_final_step)
+                new_t_hist = lax.cond(
+                    should_save,
+                    lambda: state.t_history.at[state.write_idx].set(state.t + dt_clamped),
+                    lambda: state.t_history
+                )
+                new_y_hist = lax.cond(
+                    should_save,
+                    lambda: save_to_history(state.y_history, y_new, model.grid, state.write_idx, True),
+                    lambda: state.y_history
+                )
+                new_dt_hist = lax.cond(
+                    should_save,
+                    lambda: state.dt_history.at[state.write_idx - 1].set(dt_clamped),
+                    lambda: state.dt_history
+                )
+                new_write_idx = lax.cond(
+                    should_save,
+                    lambda: state.write_idx + 1,
+                    lambda: state.write_idx
+                )
+
+                return AdaptiveState(
+                    t=state.t + dt_clamped,
+                    y=y_new,
+                    dt=dt_new,
+                    y_prev=state.y,
+                    dt_prev=dt_clamped,
+                    step_count=state.step_count + 1,
+                    controller=new_controller,
+                    t_history=new_t_hist,
+                    y_history=new_y_hist,
+                    dt_history=new_dt_hist,
+                    write_idx=new_write_idx,
+                    n_accepted=state.n_accepted + 1,
+                    n_rejected=state.n_rejected,
+                    status=state.status
+                )
+
+            def reject_step():
+                dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
+                # See adaptive_integrate.reject_step: the proposal's
+                # controller carries the consecutive_rejects counter that
+                # bounds the attempts spent on a single step.
+                n_rejects = new_controller.consecutive_rejects
+                new_status = jnp.where(
+                    dt_reject <= pid_params.dt_min * 1.1,
+                    jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
+                    jnp.where(
+                        n_rejects >= max_rejections_per_step,
+                        jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
+                        state.status
+                    )
+                )
+
+                return AdaptiveState(
+                    t=state.t,
+                    y=state.y,
+                    dt=dt_reject,
+                    y_prev=state.y_prev,
+                    dt_prev=state.dt_prev,
+                    step_count=state.step_count,
+                    controller=new_controller,
+                    t_history=state.t_history,
+                    y_history=state.y_history,
+                    dt_history=state.dt_history,
+                    write_idx=state.write_idx,
+                    n_accepted=state.n_accepted,
+                    n_rejected=state.n_rejected + 1,
+                    status=new_status
+                )
+
+            new_state = lax.cond(accept, accept_step, reject_step)
+
+            # Check for non-finite
+            new_state = lax.cond(
+                jnp.logical_not(finite),
+                lambda: new_state._replace(status=jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)),
+                lambda: new_state
+            )
+
+            return new_state
+
+        # Run integration
+        final_state = lax.while_loop(cond_fn, body_fn, init_state)
+
+        # Set final status
+        final_status = lax.cond(
+            final_state.t >= t_end,
+            lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
+            lambda: lax.cond(
+                final_state.write_idx >= max_saves,
+                lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
+                lambda: final_state.status
+            )
+        )
+
+        return AdaptiveResult(
+            t_final=final_state.t,
+            y_final=final_state.y,
+            t_history=final_state.t_history,
+            y_history=final_state.y_history,
+            dt_history=final_state.dt_history,
+            n_steps=final_state.write_idx,
+            n_accepted=final_state.n_accepted,
+            n_rejected=final_state.n_rejected,
+            status=final_status
+        )
+
+    return jax.jit(run)
+
+
+def _adaptive_imex_driver(model, y0, fft_cache, diffusivities, use_strang, max_steps,
+                          save_every, cfl_params, pid_params, max_rejections_per_step):
+    """Look up, or build, the compiled adaptive IMEX loop for these parameters."""
+    key = _driver_key("adaptive_integrate_imex", model, y0, (
+        static_cache_key(fft_cache),
+        static_cache_key(diffusivities),
+        bool(use_strang),
+        max_steps,
+        save_every,
+        static_cache_key(cfl_params),
+        static_cache_key(pid_params),
+        static_cache_key(max_rejections_per_step),
+    ))
+    return _ADAPTIVE_IMEX_DRIVERS.get_or_build(key, lambda: _build_adaptive_imex_driver(
+        model, fft_cache, diffusivities, use_strang, max_steps, save_every, cfl_params,
+        pid_params, max_rejections_per_step
+    ))
+
 
 def adaptive_integrate_imex(
     model: MOLModel,
@@ -1790,218 +2184,73 @@ def adaptive_integrate_imex(
 
     Returns:
         AdaptiveResult with final state and histories
+
+    Notes:
+        The compiled while loop is cached and reused; see
+        integrate_fixed_dt and adaptive_integrate. The FFT cache and the
+        diffusivities are part of what a loop is built for.
     """
-    from moljax.core.dt_policy import imex_cfl_dt, propose_dt_imex
-
-    dtype = model.dtype
-    # See adaptive_integrate: the clock does not follow the field's dtype.
-    time_dtype = _time_dtype()
-    _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate_imex")
-
     if cfl_params is None:
         cfl_params = CFLParams()
     if pid_params is None:
         pid_params = PIDParams()
 
-    # Order for error estimation
-    order = 2 if use_strang else 1
+    _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate_imex")
 
-    # Compute initial IMEX CFL-limited dt (no diffusion limit), in the
-    # model's dtype so the loop carry keeps one dtype
-    dt_cfl = imex_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
-    dt_init = jnp.minimum(jnp.array(dt0, dtype=dtype), dt_cfl)
+    driver = _adaptive_imex_driver(model, y0, fft_cache, diffusivities, use_strang,
+                                  max_steps, save_every, cfl_params, pid_params,
+                                  max_rejections_per_step)
+    return driver(y0, t0, t_end, dt0)
 
-    # Allocate output buffers. +1 for the initial state at t0, +1 more for
-    # a forced save of the final accepted state when it does not land on a
-    # save_every boundary (see should_save in accept_step).
-    max_saves = max_steps // save_every + 2
-    t_history = allocate_scalar_history(max_saves, time_dtype)
-    y_history = allocate_state_history(y0, model.grid, max_saves, interior_only=True, dtype=dtype)
-    dt_history = allocate_scalar_history(max_saves, dtype)
 
-    # Initialize state
-    controller = create_initial_controller_state(dtype)
+def _build_imex_fixed_driver(model, dt, n_steps, save_every, fft_cache, diffusivities,
+                             use_strang):
+    """Compile integrate_imex_fixed_dt's loop (see _build_fixed_driver)."""
 
-    init_state = AdaptiveState(
-        t=jnp.array(t0, dtype=time_dtype),
-        y=y0,
-        dt=dt_init,
-        y_prev=y0,
-        dt_prev=dt_init,
-        step_count=jnp.array(0, dtype=jnp.int32),
-        controller=controller,
-        t_history=t_history.at[0].set(t0),
-        y_history=save_to_history(y_history, y0, model.grid, 0, interior_only=True),
-        dt_history=dt_history,
-        write_idx=jnp.array(1, dtype=jnp.int32),
-        n_accepted=jnp.array(0, dtype=jnp.int32),
-        n_rejected=jnp.array(0, dtype=jnp.int32),
-        status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
-    )
+    def run(y0, t0):
+        # See integrate_fixed_dt: time is carried wider than the state and
+        # each timestamp is t0 + i*dt rather than a running sum.
+        time_dtype = _time_dtype()
+        t0_time = jnp.array(t0, dtype=time_dtype)
+        dt_time = jnp.array(dt, dtype=time_dtype)
 
-    def cond_fn(state: AdaptiveState) -> jnp.ndarray:
-        running = state.status == StatusCode.RUNNING
-        not_done = state.t < t_end
-        space_left = state.write_idx < max_saves
-        return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
-
-    def body_fn(state: AdaptiveState) -> AdaptiveState:
-        # Clamp dt to not overshoot (see adaptive_integrate for the cast)
-        dt_clamped = jnp.minimum(state.dt, (t_end - state.t).astype(dtype))
-
-        # Take IMEX step with error estimation
-        if use_strang:
-            y_new, err = estimate_error_imex_doubling(
-                model, state.y, state.t, dt_clamped, fft_cache, diffusivities, use_strang=True
+        def advance(carry: _ImexFixedScanState) -> _ImexFixedScanState:
+            if use_strang:
+                y_new = imex_strang_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
+            else:
+                y_new = imex_euler_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
+            next_step = carry.step + 1
+            return _ImexFixedScanState(
+                t=t0_time + next_step.astype(time_dtype) * dt_time,
+                y=_to_state_dtype(y_new, model.dtype),
+                step=next_step
             )
-        else:
-            y_new, err = estimate_error_imex_doubling(
-                model, state.y, state.t, dt_clamped, fft_cache, diffusivities, use_strang=False
-            )
-        y_new = _to_state_dtype(y_new, dtype)
-        err = _to_state_dtype(err, dtype)
 
-        # Compute error ratio
-        err_ratio = scaled_error_norm(err, y_new, model.grid, pid_params.atol, pid_params.rtol)
-        err_ratio = jnp.maximum(err_ratio, 1e-10)
+        init_carry = _ImexFixedScanState(t=t0_time, y=y0, step=jnp.array(0, dtype=jnp.int32))
 
-        # Accept/reject decision
-        accept = err_ratio <= 1.0
-
-        # Check for finite values
-        finite = is_finite(y_new)
-        accept = jnp.logical_and(accept, finite)
-
-        # Compute new dt using IMEX policy (no diffusion limit)
-        dt_new, new_controller = propose_dt_imex(
-            grid=model.grid,
-            params=model.params,
-            state=state.y,
-            t=state.t,
-            dt_old=dt_clamped,
-            err_ratio=err_ratio,
-            controller_state=state.controller,
-            cfl_params=cfl_params,
-            pid_params=pid_params,
-            order=order,
-            accepted=accept
+        t_history, y_history, final_carry = _run_fixed_steps(
+            advance, init_carry, n_steps, save_every, model.grid
         )
 
-        # Update state based on accept/reject
-        def accept_step():
-            # See adaptive_integrate.accept_step: evaluate should_save on
-            # the post-increment accepted count, and always save the final
-            # accepted step so t_end is in the history.
-            next_n_accepted = state.n_accepted + 1
-            is_final_step = dt_clamped >= (t_end - state.t)
-            should_save = jnp.logical_or((next_n_accepted % save_every) == 0, is_final_step)
-            new_t_hist = lax.cond(
-                should_save,
-                lambda: state.t_history.at[state.write_idx].set(state.t + dt_clamped),
-                lambda: state.t_history
-            )
-            new_y_hist = lax.cond(
-                should_save,
-                lambda: save_to_history(state.y_history, y_new, model.grid, state.write_idx, True),
-                lambda: state.y_history
-            )
-            new_dt_hist = lax.cond(
-                should_save,
-                lambda: state.dt_history.at[state.write_idx - 1].set(dt_clamped),
-                lambda: state.dt_history
-            )
-            new_write_idx = lax.cond(
-                should_save,
-                lambda: state.write_idx + 1,
-                lambda: state.write_idx
-            )
+        return t_history, y_history, final_carry.y
 
-            return AdaptiveState(
-                t=state.t + dt_clamped,
-                y=y_new,
-                dt=dt_new,
-                y_prev=state.y,
-                dt_prev=dt_clamped,
-                step_count=state.step_count + 1,
-                controller=new_controller,
-                t_history=new_t_hist,
-                y_history=new_y_hist,
-                dt_history=new_dt_hist,
-                write_idx=new_write_idx,
-                n_accepted=state.n_accepted + 1,
-                n_rejected=state.n_rejected,
-                status=state.status
-            )
+    return jax.jit(run)
 
-        def reject_step():
-            dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
-            # See adaptive_integrate.reject_step: the proposal's
-            # controller carries the consecutive_rejects counter that
-            # bounds the attempts spent on a single step.
-            n_rejects = new_controller.consecutive_rejects
-            new_status = jnp.where(
-                dt_reject <= pid_params.dt_min * 1.1,
-                jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
-                jnp.where(
-                    n_rejects >= max_rejections_per_step,
-                    jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
-                    state.status
-                )
-            )
 
-            return AdaptiveState(
-                t=state.t,
-                y=state.y,
-                dt=dt_reject,
-                y_prev=state.y_prev,
-                dt_prev=state.dt_prev,
-                step_count=state.step_count,
-                controller=new_controller,
-                t_history=state.t_history,
-                y_history=state.y_history,
-                dt_history=state.dt_history,
-                write_idx=state.write_idx,
-                n_accepted=state.n_accepted,
-                n_rejected=state.n_rejected + 1,
-                status=new_status
-            )
-
-        new_state = lax.cond(accept, accept_step, reject_step)
-
-        # Check for non-finite
-        new_state = lax.cond(
-            jnp.logical_not(finite),
-            lambda: new_state._replace(status=jnp.array(StatusCode.NON_FINITE_VALUES, dtype=jnp.int32)),
-            lambda: new_state
-        )
-
-        return new_state
-
-    # Run integration
-    final_state = lax.while_loop(cond_fn, body_fn, init_state)
-
-    # Set final status
-    final_status = lax.cond(
-        final_state.t >= t_end,
-        lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
-        lambda: lax.cond(
-            final_state.write_idx >= max_saves,
-            lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
-            lambda: final_state.status
-        )
-    )
-
-    return AdaptiveResult(
-        t_final=final_state.t,
-        y_final=final_state.y,
-        t_history=final_state.t_history,
-        y_history=final_state.y_history,
-        dt_history=final_state.dt_history,
-        n_steps=final_state.write_idx,
-        n_accepted=final_state.n_accepted,
-        n_rejected=final_state.n_rejected,
-        status=final_status
-    )
+def _imex_fixed_driver(model, y0, dt, n_steps, save_every, fft_cache, diffusivities,
+                       use_strang):
+    """Look up, or build, the compiled IMEX fixed-step loop for these parameters."""
+    key = _driver_key("integrate_imex_fixed_dt", model, y0, (
+        static_cache_key(dt),
+        n_steps,
+        save_every,
+        static_cache_key(fft_cache),
+        static_cache_key(diffusivities),
+        bool(use_strang),
+    ))
+    return _IMEX_FIXED_DRIVERS.get_or_build(key, lambda: _build_imex_fixed_driver(
+        model, dt, n_steps, save_every, fft_cache, diffusivities, use_strang
+    ))
 
 
 def integrate_imex_fixed_dt(
@@ -2036,37 +2285,13 @@ def integrate_imex_fixed_dt(
         Tuple of (t_history, y_history, final_state), laid out as in
         integrate_fixed_dt: one history entry per saved step, interior
         points only, and the full padded state at t_end.
+
+    Notes:
+        The compiled loop is cached and reused; see integrate_fixed_dt.
     """
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
     _validate_time_resolution(t0, t_end, dt, "integrate_imex_fixed_dt")
 
-    # See integrate_fixed_dt: time is carried wider than the state and
-    # each timestamp is t0 + i*dt rather than a running sum.
-    time_dtype = _time_dtype()
-    t0_time = jnp.array(t0, dtype=time_dtype)
-    dt_time = jnp.array(dt, dtype=time_dtype)
-
-    class ScanState(NamedTuple):
-        t: jnp.ndarray
-        y: StateDict
-        step: jnp.ndarray
-
-    def advance(carry: ScanState) -> ScanState:
-        if use_strang:
-            y_new = imex_strang_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
-        else:
-            y_new = imex_euler_step(model, carry.y, carry.t, dt, fft_cache, diffusivities)
-        next_step = carry.step + 1
-        return ScanState(
-            t=t0_time + next_step.astype(time_dtype) * dt_time,
-            y=_to_state_dtype(y_new, model.dtype),
-            step=next_step
-        )
-
-    init_carry = ScanState(t=t0_time, y=y0, step=jnp.array(0, dtype=jnp.int32))
-
-    t_history, y_history, final_carry = _run_fixed_steps(
-        advance, init_carry, n_steps, save_every, model.grid
-    )
-
-    return t_history, y_history, final_carry.y
+    driver = _imex_fixed_driver(model, y0, dt, n_steps, save_every, fft_cache,
+                               diffusivities, use_strang)
+    return driver(y0, t0)
