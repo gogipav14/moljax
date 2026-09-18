@@ -65,6 +65,32 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **`etd_integrate` builds its compiled loop once per set of static
+  parameters instead of once per call.** The same defect as in the
+  fixed-step and adaptive drivers below, and the same fix: the ETD stepping
+  loop was assembled from Python closures created inside `etd_integrate`,
+  so each call was a new function object to JAX and three identical calls
+  traced and compiled the same scan three times (Codex kernels_etd_model.md
+  finding 5, 2026-09-14; introduced with the cc60058 compile change). On a
+  128-point periodic grid with `D = 0.05`, `N(u) = -u^3/2`, six steps of
+  `dt = 0.05` and `save_every = 2`, three identical calls cost 0.112,
+  0.054, 0.053 s for ETD1 (five XLA compilations then one each) and 0.333,
+  0.113, 0.108 s for ETD2 (fifteen then two each); they now cost 0.104,
+  0.001, 0.000 s and 0.122, 0.000, 0.001 s, with nothing compiled after the
+  first call. The block schedule (the ETD2 seed step, the lead block that
+  re-anchors the saves, the number of full blocks and the tail) moved into
+  `_etd_schedule`, so the compiled driver and the caller that labels the
+  snapshots derive it from the same place; the loop is keyed on the method,
+  `dt`, the step count, `save_every`, the linear operators and the
+  nonlinear right-hand side, with the state and the start time as
+  arguments, so continuing a run from where the last one stopped compiles
+  nothing. Results are bit-for-bit identical to the parent commit for
+  ETD1, ETD2 and ETDRK4.
+  `tests/test_fft_operators.py::TestETDDriverIsCompiledOnce` counts traces
+  through a counting nonlinear right-hand side and checks that a changed
+  `dt`, `save_every`, method or grid size retraces;
+  `::TestETDIntegrateStepSchedule` passes unchanged.
+
 - **The fixed-step and adaptive integrators build their compiled loop once
   per set of static parameters instead of once per call.**
   `integrate_fixed_dt`, `integrate_imex_fixed_dt`, `adaptive_integrate` and

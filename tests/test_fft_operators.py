@@ -37,6 +37,7 @@ from moljax.core.fft_operators import (
 )
 from moljax.core.fft_solvers import laplacian_symbol_1d, solve_helmholtz_1d
 from moljax.core.grid import Grid1D
+from moljax.core.model import clear_compiled_drivers
 
 
 def get_interior_coords(grid: Grid1D) -> jnp.ndarray:
@@ -1402,3 +1403,149 @@ class TestFFTPreconditioner:
             if stiffness > 10:
                 assert cond_identity > 10 * cond_fft, \
                     "FFT should be much better conditioned for stiff problems"
+
+
+class TestETDDriverIsCompiledOnce:
+    """Identical etd_integrate calls reuse one compiled loop.
+
+    etd_integrate built its stepping loop out of Python closures created
+    inside the function, so every call handed jax.jit a function object it
+    had never seen before and JAX's compilation cache could not hit: three
+    identical calls traced and compiled the same scan three times. The loop
+    is now built once per set of static parameters (the method, dt, the
+    step count, save_every, the linear operators and the nonlinear
+    right-hand side) and kept in a bounded cache; the state and the start
+    time are arguments, so only the first call traces.
+
+    A retrace is counted rather than an XLA compilation: a Python-side
+    counter in the nonlinear right-hand side behaves the same way on every
+    jax version, where the wording of jax's compilation log does not, and
+    nothing is compiled without first being traced.
+    """
+
+    D = 0.05
+    T_SPAN = (0.0, 0.3)
+    DT = 0.05
+
+    def _problem(self, n=128):
+        """A diffusion operator, a counting cubic reaction, and a sine initial state."""
+        grid = Grid1D.uniform(n, x_min=0.0, x_max=1.0)
+        x = get_interior_coords(grid)
+        u0 = {'u': jnp.sin(2 * jnp.pi * x)}
+        op = DiffusionOperator(grid, self.D)
+        traces = []
+
+        def rhs(state, t):
+            traces.append(1)
+            return {'u': -0.5 * state['u'] ** 3}
+
+        return u0, {'u': op}, rhs, traces
+
+    def _run(self, u0, ops, rhs, method='etd1', save_every=2, dt=None, t_span=None):
+        return etd_integrate(
+            u0, t_span or self.T_SPAN, dt or self.DT, ops, rhs,
+            method=method, save_every=save_every,
+        )
+
+    @pytest.mark.parametrize("method", ["etd1", "etd2", "etdrk4"])
+    def test_three_identical_calls_trace_once(self, method):
+        u0, ops, rhs, traces = self._problem()
+        clear_compiled_drivers()
+        counts, results = [], []
+        for _ in range(3):
+            before = len(traces)
+            results.append(self._run(u0, ops, rhs, method=method))
+            counts.append(len(traces) - before)
+        assert counts[0] > 0, "the first call must trace the loop"
+        assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
+        # And the reused loop gives back the same numbers, bit for bit.
+        for repeat in results[1:]:
+            for a, b in zip(jax.tree_util.tree_leaves(results[0]),
+                            jax.tree_util.tree_leaves(repeat), strict=True):
+                np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
+
+    @pytest.mark.parametrize("method", ["etd1", "etd2", "etdrk4"])
+    def test_changing_dt_retraces(self, method):
+        """dt fixes the step count, so it is a constant of the loop, not an argument."""
+        u0, ops, rhs, traces = self._problem()
+        clear_compiled_drivers()
+        self._run(u0, ops, rhs, method=method)
+        before = len(traces)
+        self._run(u0, ops, rhs, method=method, dt=0.025)
+        assert len(traces) > before, "a different dt reused a loop built for another"
+
+    def test_changing_save_every_retraces(self):
+        u0, ops, rhs, traces = self._problem()
+        clear_compiled_drivers()
+        self._run(u0, ops, rhs, save_every=2)
+        before = len(traces)
+        self._run(u0, ops, rhs, save_every=3)
+        assert len(traces) > before, "a different save_every reused the same loop"
+
+    def test_changing_the_grid_size_retraces(self):
+        """A different grid is different shapes throughout, and a different operator."""
+        u0, ops, rhs, traces = self._problem(n=128)
+        clear_compiled_drivers()
+        self._run(u0, ops, rhs)
+        before = len(traces)
+        grid = Grid1D.uniform(64, x_min=0.0, x_max=1.0)
+        x = get_interior_coords(grid)
+        self._run({'u': jnp.sin(2 * jnp.pi * x)}, {'u': DiffusionOperator(grid, self.D)},
+                  rhs)
+        assert len(traces) > before
+
+    def test_changing_the_method_retraces(self):
+        u0, ops, rhs, traces = self._problem()
+        clear_compiled_drivers()
+        self._run(u0, ops, rhs, method='etd1')
+        before = len(traces)
+        self._run(u0, ops, rhs, method='etdrk4')
+        assert len(traces) > before, "a different method reused the same loop"
+
+    def test_a_new_start_time_and_state_reuse_the_loop(self):
+        """Neither is a constant of the loop, so continuing a run compiles nothing."""
+        u0, ops, rhs, traces = self._problem()
+        clear_compiled_drivers()
+        _, hist = self._run(u0, ops, rhs)
+        before = len(traces)
+        self._run(hist[-1], ops, rhs, t_span=(0.3, 0.6))
+        assert len(traces) == before, "continuing from t_end retraced"
+
+    def test_clear_compiled_drivers_forces_a_rebuild(self):
+        u0, ops, rhs, traces = self._problem()
+        clear_compiled_drivers()
+        t_first, first = self._run(u0, ops, rhs)
+        before = len(traces)
+        clear_compiled_drivers()
+        t_again, again = self._run(u0, ops, rhs)
+        assert len(traces) > before, "clearing the cache did not force a rebuild"
+        # The rebuilt loop is the same program, so it answers identically.
+        np.testing.assert_array_equal(np.asarray(t_first), np.asarray(t_again))
+        for a, b in zip(jax.tree_util.tree_leaves(first),
+                        jax.tree_util.tree_leaves(again), strict=True):
+            np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
+
+    @pytest.mark.parametrize("method,final,middle", [
+        ("etd1", 0.3906119208773372, 0.6023184473234932),
+        ("etd2", 0.39445951008964814, 0.6039780095346537),
+        ("etdrk4", 0.3945839667668551, 0.6052293813565648),
+    ])
+    def test_the_trajectory_is_unchanged(self, method, final, middle):
+        """The values recorded on the parent commit, before the caching.
+
+        Six steps of dt = 0.05 on a 128-point periodic grid with
+        D = 0.05 and N(u) = -u^3/2, save_every = 2, sampled at interior
+        point 17. Compared to 1e-13 relative rather than bit for bit
+        because CI runs two jax versions whose CPU lowerings differ in the
+        last bit or two (jax 0.6.2 gives 0.39061192087733737 for the first
+        of these where jax 0.9.1 gives 0.3906119208773372); bit identity
+        within one process is asserted by test_three_identical_calls_trace_once
+        and test_clear_compiled_drivers_forces_a_rebuild.
+        """
+        u0, ops, rhs, _ = self._problem()
+        clear_compiled_drivers()
+        t_hist, hist = self._run(u0, ops, rhs, method=method)
+        assert len(hist) == 4
+        assert float(t_hist[-1]) == pytest.approx(0.3, abs=1e-15)
+        assert float(hist[-1]['u'][17]) == pytest.approx(final, rel=1e-13)
+        assert float(hist[1]['u'][17]) == pytest.approx(middle, rel=1e-13)

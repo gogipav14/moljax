@@ -29,6 +29,12 @@ from jax import lax
 
 from moljax.core.fft_operators import FFTLinearOperator
 from moljax.core.jit_kernels import phi1, phi2, phi3
+from moljax.core.model import CompiledDriverCache, state_cache_key, static_cache_key
+
+# Re-exported so that a caller holding on to ETD drivers can drop them from
+# the module they came from; the registry lives with the identity helpers in
+# model, and this clears moljax.core.stepping's drivers too.
+from moljax.core.model import clear_compiled_drivers as clear_compiled_drivers
 from moljax.core.state import StateDict
 
 
@@ -336,6 +342,175 @@ def _etd_step_count(t0: float, t_end: float, dt: float) -> int:
     return n_steps
 
 
+class _ETDSchedule(NamedTuple):
+    """
+    How etd_integrate splits n_steps into an eager seed and compiled blocks.
+
+    Derived from the method, the step count and save_every alone, so it is
+    the same for every call that shares a compiled driver, and both the
+    driver (which needs the block sizes) and the caller (which needs to
+    label the snapshots) can work it out for themselves.
+
+    n_done is the steps taken before the blocks begin: one for ETD2, whose
+    first step seeds the previous nonlinear term from None and is therefore
+    a Python-level branch, and none for ETD1 and ETDRK4. lead is the extra
+    steps needed to reach the first save boundary, n_saves the number of
+    save_every-sized blocks the outer scan runs, and n_tail the steps left
+    over after them.
+    """
+    n_done: int
+    lead: int
+    n_done_aligned: int
+    record_lead: bool
+    n_saves: int
+    n_tail: int
+
+
+def _etd_schedule(method: str, n_steps: int, save_every: int) -> _ETDSchedule:
+    """
+    Work out etd_integrate's block structure.
+
+    ETD2's eager seed step (n_done == 1) lands on absolute step 1, which is
+    a save boundary only when save_every == 1; for any larger save_every it
+    sits mid-block. `lead` is the number of extra steps needed to reach the
+    next boundary at a multiple of save_every (0 for ETD1/ETDRK4, whose
+    n_done == 0 is already a boundary). Running it as its own short block
+    first re-anchors every subsequent save to the same absolute-step grid
+    ETD1/ETDRK4 use, instead of offsetting all of them by the seed step
+    (the bug this fixes: save_every == 2 saved at steps 3, 5, ... instead
+    of 2, 4, ...).
+
+    record_lead is true only when the lead block reaches a genuine
+    intermediate save point; if it consumes every remaining step,
+    n_done_aligned == n_steps and that state is the final state, recorded
+    by etd_integrate's closing block instead (this is also why a plain
+    save_every == 1 seed step, lead == 0, is still recorded: n_done_aligned
+    == n_done == 1 is itself already the first save boundary).
+    """
+    n_done = 1 if method == 'etd2' else 0
+    n_rem = n_steps - n_done
+    lead = min((save_every - n_done % save_every) % save_every, n_rem)
+    n_done_aligned = n_done + lead
+    record_lead = 0 < n_done_aligned < n_steps
+    n_rem -= lead
+    n_saves = n_rem // save_every
+    n_tail = n_rem - n_saves * save_every
+    return _ETDSchedule(n_done, lead, n_done_aligned, record_lead, n_saves, n_tail)
+
+
+# The compiled ETD loops, one per set of static parameters. The loop used to
+# be built as a fresh closure on every call, so it was a new Python object
+# each time and JAX's compilation cache could not recognize it: three
+# identical etd_integrate calls traced and compiled the same scan three
+# times. Keeping the closure alive across calls is what lets that cache hit.
+_ETD_DRIVERS = CompiledDriverCache("fft_integrators.etd_integrate")
+
+
+def _build_etd_driver(dt, n_steps, save_every, linear_ops, nonlinear_rhs, method):
+    """
+    Compile etd_integrate's stepping loop for one set of static parameters.
+
+    dt, the step count, save_every and the method are closure constants:
+    they are what the loop is built out of, and dt fixes the step count in
+    the first place. The state and the start time are arguments, so a run
+    that only differs in its initial condition, or one that continues from
+    where the last one stopped, reuses the same executable.
+
+    Returns (lead_state, stacked, final_state), with lead_state None unless
+    the lead block lands on an intermediate save point and stacked None when
+    there are no full blocks to scan over.
+    """
+    sched = _etd_schedule(method, n_steps, save_every)
+
+    def run(u0, t_start):
+        # Hoist the method dispatch out of the loop. ETD2 carries the previous
+        # nonlinear term; its first step seeds that term from None, which is a
+        # Python-level branch inside etd2_step, so it is taken before the
+        # compiled loop rather than inside it. The loop itself only ever sees a
+        # concrete N_prev array threaded through the carry, both across
+        # fori_loop steps and across scan iterations, so it is never re-seeded
+        # at a block boundary.
+        if method == 'etd2':
+            seed_state, seed_N = etd2_step(u0, t_start, dt, linear_ops, nonlinear_rhs, None)
+            carry = (seed_state, seed_N)
+
+            def advance(c, t):
+                return etd2_step(c[0], t, dt, linear_ops, nonlinear_rhs, c[1])
+
+            def state_of(c):
+                return c[0]
+        else:
+            step_impl = etd1_step if method == 'etd1' else etdrk4_step
+            carry = u0
+
+            def advance(c, t):
+                return step_impl(c, t, dt, linear_ops, nonlinear_rhs)
+
+            def state_of(c):
+                return c
+
+        def run_block(c, step_offset, count):
+            """Advance `c` by `count` steps. The i-th (0-based) step lands on
+            absolute step n_done + step_offset + i, so the time passed to
+            `advance` matches the pre-rewrite single scan's per-step time
+            exactly (t_start + dt * absolute_step_index)."""
+
+            def body(i, c):
+                t = t_start + dt * (sched.n_done + step_offset + i)
+                return advance(c, t)
+
+            return lax.fori_loop(0, count, body, c)
+
+        if sched.lead > 0:
+            carry = run_block(carry, 0, sched.lead)
+        lead_state = state_of(carry) if sched.record_lead else None
+
+        if sched.n_saves > 0:
+            def save_body(c, block_index):
+                c = run_block(c, sched.lead + block_index * save_every, save_every)
+                return c, state_of(c)
+
+            carry, stacked = lax.scan(save_body, carry, jnp.arange(sched.n_saves))
+        else:
+            stacked = None
+
+        if sched.n_tail > 0:
+            carry = run_block(carry, sched.lead + sched.n_saves * save_every, sched.n_tail)
+
+        return lead_state, stacked, state_of(carry)
+
+    return jax.jit(run)
+
+
+def _etd_driver(u0, dt, n_steps, save_every, linear_ops, nonlinear_rhs, method):
+    """
+    Look up, or build, the compiled ETD loop for these parameters.
+
+    The key holds everything that determines the trace and nothing that does
+    not: the state's structure and avals but not its values, dt with its
+    Python type (a np.float32 dt is strongly typed and promotes differently
+    from a Python float of the same value), the step schedule, the linear
+    operators and the nonlinear right-hand side by identity, and the x64
+    flag, which decides what dtype the times are carried in. See
+    moljax.core.model.static_cache_key for why keying by identity is safe
+    while the entry is alive.
+    """
+    key = (
+        'etd_integrate',
+        state_cache_key(u0),
+        static_cache_key(dt),
+        n_steps,
+        save_every,
+        static_cache_key(linear_ops),
+        static_cache_key(nonlinear_rhs),
+        method,
+        bool(jax.config.jax_enable_x64),
+    )
+    return _ETD_DRIVERS.get_or_build(key, lambda: _build_etd_driver(
+        dt, n_steps, save_every, linear_ops, nonlinear_rhs, method
+    ))
+
+
 def etd_integrate(
     u0: StateDict,
     t_span: tuple[float, float],
@@ -363,6 +538,15 @@ def etd_integrate(
         is always the state at t_end, independent of save_every.
 
     Notes:
+        The compiled loop is cached and reused. A call whose method, dt,
+        step count, save_every, linear operators and nonlinear right-hand
+        side match an earlier one's, with a state of the same structure,
+        shapes and dtypes, runs the executable that call built rather than
+        tracing a new one; the state and ``t_span[0]`` are arguments of
+        that executable, so continuing a run from where the last one
+        stopped compiles nothing. The cache holds 32 entries, each pinning
+        what its loop closes over; ``clear_compiled_drivers`` empties it.
+
         The time-stepping loop is compiled as an outer ``lax.scan`` over
         saved snapshots, each covering ``save_every`` steps taken by an
         inner ``lax.fori_loop``, with any leftover steps (when
@@ -389,97 +573,20 @@ def etd_integrate(
 
     t_start, t_end = t_span
     n_steps = _etd_step_count(t_start, t_end, dt)
+    sched = _etd_schedule(method, n_steps, save_every)
 
-    # Hoist the method dispatch out of the loop. ETD2 carries the previous
-    # nonlinear term; its first step seeds that term from None, which is a
-    # Python-level branch inside etd2_step, so it is taken eagerly before
-    # the compiled loop. The loop itself only ever sees a concrete N_prev
-    # array threaded through the carry, both across fori_loop steps and
-    # across scan iterations, so it is never re-seeded at a block boundary.
-    if method == 'etd2':
-        seed_state, seed_N = etd2_step(u0, t_start, dt, linear_ops, nonlinear_rhs, None)
-        carry = (seed_state, seed_N)
-        n_done = 1
-
-        def advance(c, t):
-            return etd2_step(c[0], t, dt, linear_ops, nonlinear_rhs, c[1])
-
-        def state_of(c):
-            return c[0]
-    else:
-        step_impl = etd1_step if method == 'etd1' else etdrk4_step
-        carry = u0
-        n_done = 0
-
-        def advance(c, t):
-            return step_impl(c, t, dt, linear_ops, nonlinear_rhs)
-
-        def state_of(c):
-            return c
-
-    n_rem = n_steps - n_done
-
-    def run_block(c, step_offset, count):
-        """Advance `c` by `count` steps. The i-th (0-based) step lands on
-        absolute step n_done + step_offset + i, so the time passed to
-        `advance` matches the pre-rewrite single scan's per-step time
-        exactly (t_start + dt * absolute_step_index)."""
-
-        def body(i, c):
-            t = t_start + dt * (n_done + step_offset + i)
-            return advance(c, t)
-
-        return lax.fori_loop(0, count, body, c)
-
-    # ETD2's eager seed step (n_done == 1) lands on absolute step 1, which
-    # is a save boundary only when save_every == 1; for any larger
-    # save_every it sits mid-block. `lead` is the number of extra steps
-    # needed to reach the next boundary at a multiple of save_every (0 for
-    # ETD1/ETDRK4, whose n_done == 0 is already a boundary). Running it as
-    # its own short block first re-anchors every subsequent save to the
-    # same absolute-step grid ETD1/ETDRK4 use, instead of offsetting all of
-    # them by the seed step (the bug this fixes: save_every == 2 saved at
-    # steps 3, 5, ... instead of 2, 4, ...).
-    lead = min((save_every - n_done % save_every) % save_every, n_rem)
-    n_done_aligned = n_done + lead
-    if lead > 0:
-        carry = run_block(carry, 0, lead)
-    lead_state = state_of(carry)
-    # True only when the lead block reaches a genuine intermediate save
-    # point; if it consumes every remaining step, n_done_aligned == n_steps
-    # and that state is the final state, handled by the block below instead
-    # (this is also why a plain save_every == 1 seed step, lead == 0, is
-    # still recorded here: n_done_aligned == n_done == 1 is itself already
-    # the first save boundary).
-    record_lead = 0 < n_done_aligned < n_steps
-
-    n_rem -= lead
-    n_saves = n_rem // save_every
-    n_tail = n_rem - n_saves * save_every
-
-    if n_saves > 0:
-        def save_body(c, block_index):
-            c = run_block(c, lead + block_index * save_every, save_every)
-            return c, state_of(c)
-
-        carry, stacked = lax.scan(save_body, carry, jnp.arange(n_saves))
-    else:
-        stacked = None
-
-    if n_tail > 0:
-        carry = run_block(carry, lead + n_saves * save_every, n_tail)
-
-    final_state = state_of(carry)
+    driver = _etd_driver(u0, dt, n_steps, save_every, linear_ops, nonlinear_rhs, method)
+    lead_state, stacked, final_state = driver(u0, t_start)
 
     t_history = [t_start]
     state_history = [u0]
 
-    if record_lead:
-        t_history.append(t_start + dt * n_done_aligned)
+    if sched.record_lead:
+        t_history.append(t_start + dt * sched.n_done_aligned)
         state_history.append(lead_state)
 
-    for block_index in range(n_saves):
-        step_count = n_done_aligned + (block_index + 1) * save_every
+    for block_index in range(sched.n_saves):
+        step_count = sched.n_done_aligned + (block_index + 1) * save_every
         t_history.append(t_start + dt * step_count)
         state_history.append(jax.tree.map(lambda a, i=block_index: a[i], stacked))
 
@@ -489,7 +596,7 @@ def etd_integrate(
     # way it represents exactly n_steps steps, so its label is the caller's
     # own t_end rather than a recomputed t_start + n_steps * dt, which can
     # differ from t_end at the last bit or two of precision.
-    if n_saves > 0 and n_tail == 0:
+    if sched.n_saves > 0 and sched.n_tail == 0:
         t_history[-1] = t_end
     else:
         t_history.append(t_end)
