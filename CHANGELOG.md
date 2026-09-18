@@ -827,6 +827,27 @@ All notable changes to moljax are documented here.
   local error as if it were second order. `be_only` now returns `y_cn` on
   the startup branch and keeps `y_be` for the BE method itself.
 
+- **`newton_krylov._gmres_solve` passed `max_krylov_iters` straight through
+  as `jax.scipy.sparse.linalg.gmres`'s `maxiter`, which counts restart
+  cycles of `gmres`'s own default `restart = 20`, so the real Krylov budget
+  per Newton step was 20x the documented value with no way to cap the
+  Krylov space itself below 20.** `diag(1..8)`, `b = ones(8)`, `x0 = 0`,
+  `max_krylov_iters = 1` solved to machine precision (residual about
+  4.2e-15): `restart` defaulted to 20, `gmres` itself clips that to the
+  problem size (8), so a single allowed restart cycle still built the full
+  8-dimensional Krylov space. `NKStats.lin_iters` documents
+  `max_krylov_iters` as the budget made available (not the iterations
+  spent, since `gmres` returns no count) and stays that way; that part was
+  never the bug (`test_nk_lin_iters_is_the_krylov_budget` still pins it).
+  Fixed by adding a `restart` field to `NKParams` (default 20, matching
+  `gmres`'s own default) and deriving `gmres`'s `restart`/`maxiter` pair
+  from the total budget: `restart_used = min(max_krylov_iters, restart)`,
+  `maxiter = ceil(max_krylov_iters / restart_used)`, so the enforced budget
+  never exceeds `max_krylov_iters` by more than `restart_used - 1`
+  matvecs. `tests/test_nk.py::TestGmresBudget` reproduces the diag(1..8)
+  case (residual now well above 1e-3 at `max_krylov_iters = 1`) and checks
+  that a budget covering the system size still solves exactly.
+
 ### Added
 
 - **`nilt_solve_linear_pde` and `compare_nilt_vs_timestepping` require

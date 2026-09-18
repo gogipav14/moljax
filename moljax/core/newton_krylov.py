@@ -35,8 +35,34 @@ class NKParams(NamedTuple):
 
     newton_tol is compared with the unweighted 2-norm of the flattened
     residual (all fields, all points, no grid weighting), so it scales
-    with sqrt(number of unknowns). max_krylov_iters is the GMRES budget
-    per Newton step; see NKStats.lin_iters.
+    with sqrt(number of unknowns). max_krylov_iters is the total Krylov
+    budget per Newton step: the number of matrix-vector products GMRES is
+    allowed, across every restart cycle combined.
+
+    jax.scipy.sparse.linalg.gmres itself does not take a total matvec
+    budget; it takes a Krylov subspace size ("restart", 20 by default) and
+    a cycle count ("maxiter", rebuilding that subspace from the previous
+    cycle's result each time). _gmres_solve derives both from
+    max_krylov_iters and restart:
+
+        restart_used = min(max_krylov_iters, restart)
+        maxiter = ceil(max_krylov_iters / restart_used)
+
+    so the enforced budget restart_used * maxiter equals max_krylov_iters
+    exactly whenever max_krylov_iters <= restart or is a multiple of it,
+    and otherwise overshoots by fewer than restart_used matvecs (GMRES
+    also stops early on its own convergence test, so this is a ceiling,
+    not a target). Before this derivation existed, max_krylov_iters was
+    passed straight through as gmres's maxiter with restart left at its
+    default of 20, so the true budget was 20x the documented value and
+    there was no way to cap the Krylov space itself below 20 (see
+    NKStats.lin_iters for what the reported statistic means).
+
+    restart is the Krylov subspace dimension gmres builds per cycle
+    (gmres's own "restart" parameter; default 20 to match it), capped by
+    max_krylov_iters so a budget smaller than the default restart size
+    still limits the subspace built in a single cycle instead of being
+    silently widened back out to 20.
 
     max_backtrack = 0 means "no line search": the damped step
     x + damping * dx is applied unconditionally every Newton iteration,
@@ -46,6 +72,7 @@ class NKParams(NamedTuple):
     """
     max_newton_iters: int = 10
     max_krylov_iters: int = 50
+    restart: int = 20
     newton_tol: float = 1e-8
     krylov_tol: float = 1e-6
     damping: float = 1.0
@@ -58,7 +85,9 @@ class NKStats(NamedTuple):
     """Newton-Krylov solver statistics.
 
     lin_iters is the Krylov budget that was made available, newton_iters
-    times max_krylov_iters, not the iterations spent:
+    times max_krylov_iters (the NKParams field, i.e. the total matvec
+    ceiling _gmres_solve enforces via its derived restart/maxiter pair,
+    not the restart/maxiter values themselves), not the iterations spent:
     jax.scipy.sparse.linalg.gmres returns (x, info) with no count.
     final_res_norm is the unweighted 2-norm of the residual at the
     returned solution and converged is final_res_norm < newton_tol.
@@ -109,6 +138,7 @@ def _gmres_solve(
     x0: jnp.ndarray,
     tol: float,
     max_iters: int,
+    restart: int = 20,
     M: Callable[[jnp.ndarray], jnp.ndarray] | None = None
 ) -> tuple[jnp.ndarray, int]:
     """
@@ -122,17 +152,35 @@ def _gmres_solve(
         b: Right-hand side
         x0: Initial guess
         tol: Convergence tolerance
-        max_iters: Maximum iterations
+        max_iters: Total Krylov budget (NKParams.max_krylov_iters), not
+            gmres's own maxiter. gmres takes a Krylov subspace size
+            ("restart") and a cycle count ("maxiter") that rebuilds that
+            subspace from the previous cycle's result; passing max_iters
+            straight through as maxiter with restart left at its default
+            of 20 (the pre-fix behavior) made the true budget 20x
+            max_iters, with no way to cap the Krylov space itself below
+            20. This derives restart_used = min(max_iters, restart) and
+            maxiter = ceil(max_iters / restart_used), so
+            restart_used * maxiter never exceeds max_iters by more than
+            restart_used - 1 (see NKParams.max_krylov_iters).
+        restart: Requested Krylov subspace size per restart cycle, capped
+            by max_iters (NKParams.restart).
         M: Optional left preconditioner
 
     Returns:
         Tuple of (solution, max_iters). JAX's gmres returns (x, info) with
         info always None, so no iteration count is available inside a
-        traced loop; the budget is returned in its place and summed into
+        traced loop; the requested budget (max_iters, not
+        restart_used * maxiter) is returned in its place and summed into
         NKStats.lin_iters.
     """
     try:
         from jax.scipy.sparse.linalg import gmres
+
+        # Total Krylov budget -> gmres's own (restart, maxiter) pair. See
+        # the max_iters docstring above and NKParams.max_krylov_iters.
+        restart_used = max(1, min(max_iters, restart))
+        maxiter = -(-max_iters // restart_used)  # ceil(max_iters / restart_used)
 
         # Wrap matvec in LinearOperator-like callable
         def linear_op(v):
@@ -144,9 +192,15 @@ def _gmres_solve(
             def precond_matvec(v):
                 return M(matvec(v))
             b_precond = M(b)
-            result, info = gmres(precond_matvec, b_precond, x0=x0, tol=tol, maxiter=max_iters)
+            result, info = gmres(
+                precond_matvec, b_precond, x0=x0, tol=tol,
+                restart=restart_used, maxiter=maxiter
+            )
         else:
-            result, info = gmres(linear_op, b, x0=x0, tol=tol, maxiter=max_iters)
+            result, info = gmres(
+                linear_op, b, x0=x0, tol=tol,
+                restart=restart_used, maxiter=maxiter
+            )
 
         return result, max_iters
 
@@ -314,6 +368,7 @@ def newton_krylov_solve(
             x0=jnp.zeros_like(r_flat),
             tol=nk_params.krylov_tol,
             max_iters=nk_params.max_krylov_iters,
+            restart=nk_params.restart,
             M=precond_apply_flat if not isinstance(preconditioner, IdentityPreconditioner) else None
         )
 

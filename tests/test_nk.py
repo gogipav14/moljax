@@ -23,6 +23,7 @@ from moljax.core.grid import Grid1D
 from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import (
     NKParams,
+    _gmres_solve,
     _jvp_matvec,
     bdf2_alpha0,
     create_bdf2_residual,
@@ -517,6 +518,81 @@ class TestNKRobustness:
             f"max_backtrack=0 left the iterate at {result.solution['u']}, expected 1.0"
         assert bool(result.stats.converged)
         assert float(result.stats.final_res_norm) < 1e-12
+
+
+class TestGmresBudget:
+    """max_krylov_iters is the total Krylov budget: _gmres_solve must derive
+    gmres's own restart/maxiter pair from it (restart_used =
+    min(budget, NKParams.restart), maxiter = ceil(budget / restart_used))
+    instead of passing the budget straight through as gmres's maxiter with
+    restart left at its default of 20.
+
+    Before the fix, max_iters=1 passed straight through as maxiter still
+    left restart at gmres's default of 20, which gmres itself clips to the
+    problem size (8, for the system below): a single restart cycle then
+    still built the full 8-dimensional Krylov space and solved the 8x8
+    diagonal system to machine precision, so a documented per-step budget
+    of 1 had no effect on the solve at all.
+    """
+
+    def test_budget_of_one_leaves_a_residual_on_diag_1_to_8(self):
+        """diag(1..8) x = ones, x0 = 0. A single Krylov direction cannot
+        reach the exact solution (the diagonal isn't a scalar multiple of
+        the identity), so the residual after a budget of 1 must be well
+        above machine precision.
+        """
+        n = 8
+        diag = jnp.arange(1, n + 1, dtype=jnp.float64)
+        b = jnp.ones(n, dtype=jnp.float64)
+
+        call_count = 0
+
+        def matvec(v):
+            nonlocal call_count
+            call_count += 1
+            return diag * v
+
+        x, budget = _gmres_solve(
+            matvec=matvec, b=b, x0=jnp.zeros(n, dtype=jnp.float64),
+            tol=1e-12, max_iters=1, restart=20,
+        )
+
+        residual = float(jnp.linalg.norm(b - diag * x))
+        assert residual > 1e-3, (
+            f"a Krylov budget of 1 must not reach near machine precision, "
+            f"got residual {residual:.3e}"
+        )
+        assert budget == 1
+        # jax.scipy.sparse.linalg.gmres builds its Krylov loop with
+        # lax.while_loop, so outside jit the Python-level matvec is only
+        # invoked a handful of times while tracing (the actual iteration
+        # count runs inside the compiled loop, invisible to a Python-side
+        # counter); this only guards against a gross regression such as
+        # the old restart=20 default rebuilding the whole trace per
+        # restart cycle.
+        assert call_count < 20, f"unexpectedly many matvec traces: {call_count}"
+
+    def test_budget_covering_the_system_still_solves_exactly(self):
+        """A budget >= the system size must still solve exactly: the derived
+        restart/maxiter pair must not under-cap a budget that should be
+        sufficient for an exact Krylov solve.
+        """
+        n = 8
+        diag = jnp.arange(1, n + 1, dtype=jnp.float64)
+        b = jnp.ones(n, dtype=jnp.float64)
+
+        x, budget = _gmres_solve(
+            matvec=lambda v: diag * v, b=b, x0=jnp.zeros(n, dtype=jnp.float64),
+            tol=1e-12, max_iters=8, restart=20,
+        )
+
+        residual = float(jnp.linalg.norm(b - diag * x))
+        assert residual < 1e-8, residual
+        assert budget == 8
+
+    def test_default_nk_params_restart_is_twenty(self):
+        """NKParams.restart defaults to gmres's own default restart size."""
+        assert NKParams().restart == 20
 
 
 def decay_model(nx: int = 4) -> MOLModel:
