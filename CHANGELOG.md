@@ -848,6 +848,25 @@ All notable changes to moljax are documented here.
   case (residual now well above 1e-3 at `max_krylov_iters = 1`) and checks
   that a budget covering the system size still solves exactly.
 
+- **`FFTDiffusionPreconditioner.apply` (`preconditioners.py`) promoted a
+  float32 residual to float64 when its FFT cache was the default float64
+  one.** `solve_helmholtz` divides the residual's FFT by
+  `1 - dt*D*laplacian_symbol`; with a float32 residual and a float64
+  `fft_cache.laplacian_symbol` (the default from `create_fft_cache`,
+  independent of the model's own dtype), the division promotes the result
+  to float64. With no ghost cells the promoted array is stored directly, so
+  a Newton solve's `jax.jvp` through the preconditioner raised a hard
+  `TypeError` (float32 primal, float64 tangent); with one ghost cell the
+  float64 result was instead written into the float32 array via
+  `.at[...].set`, which JAX only downcasts silently today and warns
+  (`FutureWarning`) will become an error. Fixed by casting the FFT solve's
+  output back to the residual's own dtype before embedding or returning
+  it, so the preconditioner applies in that dtype regardless of the
+  cache's. `tests/test_preconditioners.py::TestFFTDiffusionPreconditionerFloat32Residual`
+  runs a float32 Newton solve of `F(u) = 2u - 1` with the default (float64)
+  cache at `n_ghost = 0` and `n_ghost = 1`, asserting no `FutureWarning`/
+  `UserWarning`, a converged solve, and a float32 output.
+
 ### Added
 
 - **`nilt_solve_linear_pde` and `compare_nilt_vs_timestepping` require

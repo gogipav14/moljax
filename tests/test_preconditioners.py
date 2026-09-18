@@ -14,16 +14,24 @@ The fix identifies the bin by integer index instead.
 import os
 import subprocess
 import sys
+import warnings
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core.fft_solvers import create_fft_cache_1d
 from moljax.core.grid import Grid1D
+from moljax.core.newton_krylov import NKParams, newton_krylov_solve
 from moljax.core.operators import laplacian_1d
-from moljax.core.preconditioners import DiffusionPreconditioner, _odd_symbol_wavenumber
+from moljax.core.preconditioners import (
+    DiffusionPreconditioner,
+    FFTDiffusionPreconditioner,
+    _odd_symbol_wavenumber,
+)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -256,3 +264,49 @@ class TestDiffusionPreconditionerJacobi:
 
         x_final = self._solve(rhs, grid, dt, D, n_iterations=500)
         assert np.max(np.abs(np.array(x_final) - x_dense)) < 1e-8
+
+
+class TestFFTDiffusionPreconditionerFloat32Residual:
+    """FFTDiffusionPreconditioner.apply must apply in the residual's own
+    dtype even when its FFT cache is a wider one (the default float64
+    cache from create_fft_cache_1d, reused under x64 regardless of the
+    model's own dtype).
+
+    Before the fix, solve_helmholtz divided a float32 FFT by the cache's
+    float64 denominator, promoting its output to float64. With no ghost
+    cells the preconditioned vector is stored as-is, so the Newton-Krylov
+    loop's jax.jvp then saw a float32 primal and a float64 tangent: a hard
+    TypeError. With one ghost cell the float64 result is instead written
+    into the float32 array via .at[...].set, which JAX downcasts silently
+    today but warns (FutureWarning) will become an error.
+    """
+
+    @pytest.mark.parametrize("n_ghost", [0, 1])
+    def test_float32_solve_succeeds_with_default_cache_and_no_warnings(self, n_ghost):
+        grid = Grid1D.uniform(8, 0.0, 1.0, n_ghost=n_ghost)
+        cache = create_fft_cache_1d(grid)  # default dtype: float64
+        precond = FFTDiffusionPreconditioner(
+            field_diffusivity_keys={'u': 'D'}, fft_cache=cache
+        )
+        params = {'D': 1.0}
+
+        def residual(x):
+            return {'u': 2.0 * x['u'] - 1.0}
+
+        x0 = {'u': jnp.zeros(grid.nx_total, dtype=jnp.float32)}
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = newton_krylov_solve(
+                residual, x0, grid, params, preconditioner=precond,
+                nk_params=NKParams(newton_tol=1e-6)
+            )
+
+        dtype_warnings = [
+            w for w in caught
+            if issubclass(w.category, (FutureWarning, UserWarning))
+        ]
+        assert not dtype_warnings, [str(w.message) for w in dtype_warnings]
+        assert bool(result.stats.converged)
+        assert result.solution['u'].dtype == jnp.float32
+        assert jnp.allclose(result.solution['u'], 0.5, atol=1e-5)

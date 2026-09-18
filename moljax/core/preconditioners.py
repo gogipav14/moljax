@@ -293,6 +293,24 @@ class FFTDiffusionPreconditioner:
                     use_rfft=getattr(self.fft_cache, 'use_rfft', False)
                 )
 
+                # The FFT cache (fft_cache.laplacian_symbol) is typically
+                # built once at float64 (create_fft_cache's default) and
+                # reused across every apply() call regardless of the
+                # residual's own dtype. Dividing a float32 FFT of
+                # r_interior by that float64 denominator inside
+                # solve_helmholtz promotes the result to float64, so a
+                # float32 residual comes back float32 with a Newton solve
+                # that JVPs through this preconditioner: jax.jvp then sees
+                # a float32 primal and a float64 tangent, a hard TypeError
+                # when there are no ghost cells (the array is stored
+                # directly) and a FutureWarning-then-silent-downcast when
+                # it is embedded back with .at[...].set (which JAX warns
+                # will become an error). Casting back to the residual's
+                # own dtype here makes the preconditioner apply in that
+                # dtype regardless of the cache's, so it works with a
+                # default (float64) cache and a float32 state alike.
+                x_interior = x_interior.astype(r_interior.dtype)
+
                 # Embed back if needed
                 if is_interior_only:
                     x_field = x_interior
@@ -533,6 +551,12 @@ def create_fft_preconditioner(
 ) -> FFTDiffusionPreconditioner:
     """
     Create FFT-based diffusion preconditioner for periodic domains.
+
+    fft_cache may be a different (typically wider) dtype than the state it
+    ends up applied to, e.g. the default float64 cache from create_fft_cache
+    used with a float32 model under x64: FFTDiffusionPreconditioner.apply
+    casts its output back to the residual's own dtype, so a float32 state
+    works with the default cache without a dtype mismatch.
 
     Args:
         field_diffusivity_keys: Dict mapping field name to diffusivity param key
