@@ -56,8 +56,12 @@ dev = [
 viz = [
     "matplotlib>=3.7",
 ]
+bench = [
+    "diffrax>=0.7",
+]
 all = [
     "moljax[dev,viz]",
+    # bench is intentionally excluded; it is an external comparator.
 ]
 
 [project.urls]
