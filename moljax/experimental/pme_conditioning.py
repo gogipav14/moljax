@@ -125,9 +125,9 @@ def d0_variant(
     """Select one named frozen-coefficient variant from an interior state."""
     previous = interior_values(u_prev, grid)
     if d0_kind == "frozen_mean":
-        return d0_frozen_mean(previous, m)
+        return d0_frozen_mean(previous, m, epsilon=epsilon)
     if d0_kind == "frozen_bulk":
-        return d0_frozen_bulk(previous, m)
+        return d0_frozen_bulk(previous, m, epsilon=epsilon)
     if d0_kind == "floor":
         return d0_floor(m, epsilon)
     if d0_kind == "const":

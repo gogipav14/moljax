@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from time import perf_counter
@@ -22,11 +23,17 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
+import jax.numpy as jnp
+import numpy as np
 import pme_breakdown
 import porous_fisher_conditioning
 
 DEFAULT_CHECKPOINT_DIR = Path("/tmp/moljax-stage2-conditioning-checkpoints")
+PME_BATCH_SCHEMA = "stage2_conditioning_pme_batch_v3"
+POROUS_FISHER_BATCH_SCHEMA = "stage2_conditioning_porous_fisher_batch_v3"
+SOURCE_STATE_ARTIFACT_SCHEMA = "stage2_conditioning_source_state_v1"
 BBA5A94_AUDIT_SCHEMA = "stage2_conditioning_bba5a94_verdict_audit_v1"
+C1_OPTION_A_AUDIT_SCHEMA = "stage2_conditioning_c1_option_a_audit_v1"
 GEOMETRY_LADDER = ((32, 120, 2), (64, 180, 2), (96, 240, 2))
 BASE_GEOMETRY_BUDGET = {"n_angles": 16, "fov_max_iters": 60, "fov_n_restarts": 2}
 
@@ -183,6 +190,169 @@ def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def _source_state_identity(state: jax.Array | np.ndarray) -> dict[str, Any]:
+    """Return the exact identity of the state supplied to a diagnostic."""
+    values = np.asarray(jax.device_get(state), dtype=np.float64)
+    digest = hashlib.sha256()
+    digest.update(str(values.shape).encode())
+    digest.update(values.dtype.str.encode())
+    digest.update(values.tobytes(order="C"))
+    return {
+        "sha256": digest.hexdigest(),
+        "shape": list(values.shape),
+        "dtype": values.dtype.str,
+    }
+
+
+def _atomic_save_array(path: Path, state: jax.Array) -> None:
+    """Persist one source array atomically without serializing it through JSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("wb") as stream:
+        np.save(stream, np.asarray(jax.device_get(state), dtype=np.float64), allow_pickle=False)
+    os.replace(temporary, path)
+
+
+def _source_state_paths(
+    checkpoint_dir: Path,
+    study: str,
+    source_key: str,
+) -> tuple[Path, Path, Path]:
+    """Return the artifact paths for one stable source-state key."""
+    if study not in {"pme", "porous_fisher"}:
+        raise ValueError(f"Unsupported source-state study: {study}")
+    if not source_key.replace("_", "").replace("-", "").isalnum():
+        raise ValueError(f"Unsafe source-state key: {source_key!r}")
+    relative = Path("source_states") / f"{study}_{source_key}.npy"
+    array_path = checkpoint_dir / relative
+    return relative, array_path, array_path.with_suffix(".json")
+
+
+def _load_saved_source_state(
+    checkpoint_dir: Path,
+    study: str,
+    source_key: str,
+) -> tuple[jax.Array, dict[str, Any]]:
+    """Load and hash-verify one persisted source state before diagnostic use."""
+    expected_relative, expected_array, manifest_path = _source_state_paths(
+        checkpoint_dir, study, source_key
+    )
+    manifest = _load_checkpoint(manifest_path)
+    if (
+        manifest.get("schema") != SOURCE_STATE_ARTIFACT_SCHEMA
+        or manifest.get("study") != study
+        or manifest.get("source_key") != source_key
+        or manifest.get("relative_path") != str(expected_relative)
+    ):
+        raise RuntimeError(f"Source-state artifact identity mismatch: {manifest_path}")
+    if not expected_array.is_file():
+        raise RuntimeError(f"Missing source-state array: {expected_array}")
+    values = np.load(expected_array, allow_pickle=False)
+    state = jax.block_until_ready(jnp.asarray(values, dtype=jnp.float64))
+    observed_identity = _source_state_identity(state)
+    expected_identity = manifest.get("source_state_identity")
+    if observed_identity != expected_identity:
+        raise RuntimeError(f"Source-state artifact hash mismatch: {expected_array}")
+    state_solver = dict(manifest.get("state_solver", {}))
+    artifact = state_solver.get("source_state_artifact")
+    if (
+        not bool(state_solver.get("converged"))
+        or state_solver.get("source_state_identity") != expected_identity
+        or artifact is None
+        or artifact.get("relative_path") != str(expected_relative)
+        or artifact.get("source_state_identity") != expected_identity
+    ):
+        raise RuntimeError(f"Source-state provenance mismatch: {manifest_path}")
+    return state, state_solver
+
+
+def _persist_source_state(
+    checkpoint_dir: Path,
+    study: str,
+    source_key: str,
+    state: jax.Array,
+    state_solver: dict[str, Any],
+) -> tuple[jax.Array, dict[str, Any]]:
+    """Save a converged source state, then reload its verified diagnostic array."""
+    if not bool(state_solver.get("converged")):
+        return state, state_solver
+    relative, array_path, manifest_path = _source_state_paths(checkpoint_dir, study, source_key)
+    identity = _source_state_identity(state)
+    solver = deepcopy(state_solver)
+    solver_identity = solver.get("source_state_identity")
+    if solver_identity is not None and solver_identity != identity:
+        raise RuntimeError(
+            f"Solved {study} source state differs from its solver identity: {source_key}"
+        )
+    artifact = {
+        "relative_path": str(relative),
+        "source_state_identity": identity,
+    }
+    solver["source_state_identity"] = identity
+    solver["source_state_artifact"] = artifact
+    _atomic_save_array(array_path, state)
+    _atomic_write(
+        manifest_path,
+        {
+            "schema": SOURCE_STATE_ARTIFACT_SCHEMA,
+            "study": study,
+            "source_key": source_key,
+            "relative_path": str(relative),
+            "source_state_identity": identity,
+            "state_solver": solver,
+        },
+    )
+    return _load_saved_source_state(checkpoint_dir, study, source_key)
+
+
+def _load_or_persist_source_state(
+    checkpoint_dir: Path,
+    study: str,
+    source_key: str,
+    solve: Callable[[], tuple[jax.Array, dict[str, Any]]],
+) -> tuple[jax.Array, dict[str, Any]]:
+    """Reuse an exact source artifact, or solve once and make it authoritative."""
+    _, _, manifest_path = _source_state_paths(checkpoint_dir, study, source_key)
+    if manifest_path.is_file():
+        return _load_saved_source_state(checkpoint_dir, study, source_key)
+    state, state_solver = solve()
+    return _persist_source_state(checkpoint_dir, study, source_key, state, state_solver)
+
+
+def _load_record_source_state(
+    checkpoint_dir: Path,
+    study: str,
+    record: dict[str, Any],
+) -> tuple[jax.Array, dict[str, Any]]:
+    """Load the exact persisted state named by a regenerated result record."""
+    solver_key = "reference_state_solver" if study == "pme" else "state_solver"
+    try:
+        stored_solver = record[solver_key]
+        artifact = stored_solver["source_state_artifact"]
+        relative = Path(artifact["relative_path"])
+    except KeyError as error:
+        raise RuntimeError(
+            f"Record lacks persisted source-state provenance: {_record_key(study, record)}"
+        ) from error
+    if relative.is_absolute() or ".." in relative.parts:
+        raise RuntimeError(f"Unsafe source-state artifact path: {relative}")
+    filename = relative.name
+    prefix = f"{study}_"
+    suffix = ".npy"
+    if not filename.startswith(prefix) or not filename.endswith(suffix):
+        raise RuntimeError(f"Unexpected source-state artifact name: {relative}")
+    source_key = filename[len(prefix) : -len(suffix)]
+    state, state_solver = _load_saved_source_state(checkpoint_dir, study, source_key)
+    if (
+        stored_solver.get("source_state_identity") != state_solver["source_state_identity"]
+        or artifact.get("source_state_identity") != state_solver["source_state_identity"]
+    ):
+        raise RuntimeError(
+            f"Persisted source-state identity differs from record: {_record_key(study, record)}"
+        )
+    return state, state_solver
+
+
 def _load_checkpoint(path: Path) -> dict[str, Any]:
     """Load one completed checkpoint or fail with its exact location."""
     try:
@@ -207,17 +377,38 @@ def _run_pme_batch(checkpoint_dir: Path, m: int) -> Path:
     checkpoint = _pme_checkpoint_path(checkpoint_dir, m)
     if checkpoint.exists():
         existing = _load_checkpoint(checkpoint)
-        if existing.get("schema") == "stage2_conditioning_pme_batch_v1" and existing.get("m") == m:
+        if existing.get("schema") == PME_BATCH_SCHEMA and existing.get("m") == m:
             print(f"checkpoint exists: {checkpoint}")
             return checkpoint
         raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
 
     working_output = checkpoint.with_suffix(".working.json")
     started_at = perf_counter()
-    report = pme_breakdown.run_breakdown_study(config._replace(output_path=str(working_output)))
+
+    def source_state_provider(
+        initial_state: jax.Array,
+        grid: pme_breakdown.NodeCenteredDirichletGrid,
+        exponent: int,
+        front_case: int,
+        _target_halfwidth: float,
+        provider_config: pme_breakdown.BreakdownConfig,
+    ) -> tuple[jax.Array, dict[str, Any]]:
+        return _load_or_persist_source_state(
+            checkpoint_dir,
+            "pme",
+            f"m{exponent}_front{front_case}",
+            lambda: pme_breakdown._solve_one_step(
+                initial_state, grid, exponent, provider_config, "frozen_bulk"
+            ),
+        )
+
+    report = pme_breakdown.run_breakdown_study(
+        config._replace(output_path=str(working_output)),
+        source_state_provider=source_state_provider,
+    )
     working_output.unlink(missing_ok=True)
     payload = {
-        "schema": "stage2_conditioning_pme_batch_v1",
+        "schema": PME_BATCH_SCHEMA,
         "m": m,
         "config": config._asdict(),
         "records": report["records"],
@@ -226,6 +417,10 @@ def _run_pme_batch(checkpoint_dir: Path, m: int) -> Path:
         "batch_wall_seconds": perf_counter() - started_at,
     }
     _atomic_write(checkpoint, payload)
+    if report["source_state_status"]["source_state_unusable_records"]:
+        raise RuntimeError(
+            f"PME m={m} has unconverged reference states; conditioning was not assessed"
+        )
     print(f"completed m={m}: records={len(payload['records'])} checkpoint={checkpoint}")
     return checkpoint
 
@@ -237,7 +432,7 @@ def _run_porous_fisher_batch(checkpoint_dir: Path, reaction: float) -> Path:
     if checkpoint.exists():
         existing = _load_checkpoint(checkpoint)
         if (
-            existing.get("schema") == "stage2_conditioning_porous_fisher_batch_v1"
+            existing.get("schema") == POROUS_FISHER_BATCH_SCHEMA
             and existing.get("reaction") == reaction
         ):
             print(f"checkpoint exists: {checkpoint}")
@@ -246,12 +441,29 @@ def _run_porous_fisher_batch(checkpoint_dir: Path, reaction: float) -> Path:
 
     working_output = checkpoint.with_suffix(".working.json")
     started_at = perf_counter()
+
+    def source_state_provider(
+        initial_state: jax.Array,
+        grid: porous_fisher_conditioning.NodeCenteredDirichletGrid,
+        source_reaction: float,
+        provider_config: porous_fisher_conditioning.ReactionStudyConfig,
+    ) -> tuple[jax.Array, dict[str, Any]]:
+        return _load_or_persist_source_state(
+            checkpoint_dir,
+            "porous_fisher",
+            f"r{source_reaction:g}",
+            lambda: porous_fisher_conditioning._advance_to_visited_state(
+                initial_state, grid, r=source_reaction, config=provider_config
+            ),
+        )
+
     report = porous_fisher_conditioning.run_reaction_study(
-        config._replace(output_path=str(working_output))
+        config._replace(output_path=str(working_output)),
+        source_state_provider=source_state_provider,
     )
     working_output.unlink(missing_ok=True)
     payload = {
-        "schema": "stage2_conditioning_porous_fisher_batch_v1",
+        "schema": POROUS_FISHER_BATCH_SCHEMA,
         "reaction": reaction,
         "config": config._asdict(),
         "records": report["records"],
@@ -259,6 +471,11 @@ def _run_porous_fisher_batch(checkpoint_dir: Path, reaction: float) -> Path:
         "batch_wall_seconds": perf_counter() - started_at,
     }
     _atomic_write(checkpoint, payload)
+    if report["source_state_status"]["source_state_unusable_records"]:
+        raise RuntimeError(
+            f"Porous--Fisher r={reaction:g} has an unconverged reference state; "
+            "conditioning was not assessed"
+        )
     print(
         "completed "
         f"reaction={reaction:g}: records={len(payload['records'])} checkpoint={checkpoint}"
@@ -274,10 +491,7 @@ def _assemble_pme(checkpoint_dir: Path, output_path: Path) -> dict[str, Any]:
     centering: dict[str, Any] | None = None
     for m in config.m_values:
         checkpoint = _load_checkpoint(_pme_checkpoint_path(checkpoint_dir, m))
-        if (
-            checkpoint.get("schema") != "stage2_conditioning_pme_batch_v1"
-            or checkpoint.get("m") != m
-        ):
+        if checkpoint.get("schema") != PME_BATCH_SCHEMA or checkpoint.get("m") != m:
             raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
         records.extend(checkpoint["records"])
         runtimes.append(float(checkpoint["runtime_seconds"]))
@@ -305,6 +519,11 @@ def _assemble_pme(checkpoint_dir: Path, output_path: Path) -> dict[str, Any]:
             "timing": "total runtime only",
         },
         "runtime_seconds": sum(runtimes),
+        "source_state_status": {
+            "all_converged": True,
+            "converged_records": len(records),
+            "source_state_unusable_records": 0,
+        },
         "gmres_measurement_note": (
             "actual_gmres is an explicit residual-history count for the fixed system "
             "P^-1 J delta = P^-1 (-R), not NKStats.lin_iters."
@@ -336,7 +555,7 @@ def _assemble_porous_fisher(checkpoint_dir: Path, output_path: Path) -> dict[str
     for reaction in config.reaction_values:
         checkpoint = _load_checkpoint(_porous_fisher_checkpoint_path(checkpoint_dir, reaction))
         if (
-            checkpoint.get("schema") != "stage2_conditioning_porous_fisher_batch_v1"
+            checkpoint.get("schema") != POROUS_FISHER_BATCH_SCHEMA
             or checkpoint.get("reaction") != reaction
         ):
             raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
@@ -361,9 +580,14 @@ def _assemble_porous_fisher(checkpoint_dir: Path, output_path: Path) -> dict[str
         ),
         "config": config._asdict(),
         "runtime_seconds": sum(runtimes),
+        "source_state_status": {
+            "all_converged": True,
+            "converged_records": len(records),
+            "source_state_unusable_records": 0,
+        },
         "physical_model": {
-            "equation": "u_t = d_xx(u**2 + epsilon**2) + r*u*(1-u)",
-            "diffusivity": "D(u)=2*u",
+            "equation": "u_t = d_xx(Phi_epsilon(u)) + r*u*(1-u)",
+            "diffusivity": "D_epsilon(u)=2*sqrt(u**2 + epsilon**2)",
             "preconditioner_scope": "diffusion-only D0 Helmholtz; reaction is unpreconditioned",
         },
         "gmres_measurement_note": (
@@ -399,6 +623,20 @@ def _record_key(study: str, record: dict[str, Any]) -> str:
     return (
         f"r={float(record['r']):.17g};dt={float(record['analysis_dt']):.17g};d0={record['d0_kind']}"
     )
+
+
+def _require_converged_state(
+    study: str,
+    record: dict[str, Any],
+    state_solver: dict[str, Any],
+) -> None:
+    """Fail closed before assessing a source state that did not converge."""
+    key = _record_key(study, record)
+    if not bool(state_solver["converged"]):
+        raise RuntimeError(
+            f"Refusing to assess {key}: source-state solve did not converge "
+            f"(residual={state_solver['final_residual_l2']})"
+        )
 
 
 def _geometry_snapshot(
@@ -499,28 +737,17 @@ def _load_resolution_checkpoint(
 
 
 def _priority_reaction_resolution(record: dict[str, Any]) -> dict[str, Any] | None:
-    """Return a previously observed priority resolution without rerunning it."""
-    if "r" not in record or record["d0_kind"] != "identity":
-        return None
-    key = (float(record["r"]), float(record["analysis_dt"]))
-    attempts = PRIORITY_REACTION_RESOLUTIONS.get(key)
-    if attempts is None:
-        return None
-    final = dict(attempts[-1])
-    if not _is_certified(final):
-        raise RuntimeError(f"Priority resolution is not certified: r={key[0]}, dt={key[1]}")
-    return {
-        "status": "CERTIFIED",
-        "source": "prior_priority_probe",
-        "attempts": [dict(attempt) for attempt in attempts],
-        "final": final,
-        "final_category": f"CERTIFIED_{final['verdict'].upper()}",
-        "final_verdict": final["verdict"],
-    }
+    """Disable reuse of pre-C1 priority probes during a full regeneration."""
+    del record
+    return None
 
 
-def _assess_pme_record(record: dict[str, Any], budget: tuple[int, int, int]) -> dict[str, Any]:
-    """Recreate one PME state and assess it at one requested geometry budget."""
+def _assess_pme_record(
+    checkpoint_dir: Path,
+    record: dict[str, Any],
+    budget: tuple[int, int, int],
+) -> dict[str, Any]:
+    """Load one persisted PME state and assess it at one geometry budget."""
     n_angles, fov_max_iters, fov_n_restarts = budget
     config = pme_breakdown.BreakdownConfig(
         n_angles=n_angles,
@@ -529,9 +756,8 @@ def _assess_pme_record(record: dict[str, Any], budget: tuple[int, int, int]) -> 
     )
     grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
     m = int(record["m"])
-    target_halfwidth = float(record["target_support_halfwidth"])
-    state = pme_breakdown._initial_state(grid, m, config.t0, target_halfwidth)
-    state, _ = pme_breakdown._solve_one_step(state, grid, m, config, "frozen_bulk")
+    state, state_solver = _load_record_source_state(checkpoint_dir, "pme", record)
+    _require_converged_state("pme", record, state_solver)
     diagnostic = pme_breakdown.assess_pme_state(
         state,
         grid,
@@ -561,9 +787,11 @@ def _assess_pme_record(record: dict[str, Any], budget: tuple[int, int, int]) -> 
 
 
 def _assess_porous_fisher_record(
-    record: dict[str, Any], budget: tuple[int, int, int]
+    checkpoint_dir: Path,
+    record: dict[str, Any],
+    budget: tuple[int, int, int],
 ) -> dict[str, Any]:
-    """Recreate one reaction-axis state and assess it at one geometry budget."""
+    """Load one persisted reaction-axis state and assess it at one geometry budget."""
     n_angles, fov_max_iters, fov_n_restarts = budget
     config = porous_fisher_conditioning.ReactionStudyConfig(
         n_angles=n_angles,
@@ -573,16 +801,9 @@ def _assess_porous_fisher_record(
     grid = porous_fisher_conditioning.NodeCenteredDirichletGrid.uniform(
         config.nx, config.x_min, config.x_max
     )
-    initial = porous_fisher_conditioning.porous_fisher_traveling_wave(
-        grid.x_coords(),
-        config.initial_time,
-        r=config.reference_wave_r,
-        c=porous_fisher_conditioning.wave_speed(config.reference_wave_r),
-    )
     reaction = float(record["r"])
-    state, _ = porous_fisher_conditioning._advance_to_visited_state(
-        initial, grid, r=reaction, config=config
-    )
+    state, state_solver = _load_record_source_state(checkpoint_dir, "porous_fisher", record)
+    _require_converged_state("porous_fisher", record, state_solver)
     d0_kind = str(record["d0_kind"])
     diagnostic = porous_fisher_conditioning.assess_porous_fisher_state(
         state,
@@ -612,12 +833,150 @@ def _assess_porous_fisher_record(
     )
 
 
-def _resolve_record(study: str, record: dict[str, Any]) -> dict[str, Any]:
+def _c1_option_a_measure_pme_record(
+    checkpoint_dir: Path,
+    record: dict[str, Any],
+    budget: tuple[int, int, int],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load one persisted PME state and retain its final-budget work evidence."""
+
+    n_angles, fov_max_iters, fov_n_restarts = budget
+    config = pme_breakdown.BreakdownConfig(
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_n_restarts=fov_n_restarts,
+    )
+    grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
+    m = int(record["m"])
+    state, state_solver = _load_record_source_state(checkpoint_dir, "pme", record)
+    _require_converged_state("pme", record, state_solver)
+    epsilon = 0.0 if m == 1 else config.epsilon
+    d0_kind = str(record["d0_kind"])
+    diagnostic = pme_breakdown.assess_pme_state(
+        state,
+        grid,
+        float(m),
+        float(record["analysis_dt"]),
+        epsilon,
+        d0_kind,
+        const_value=config.const_d0,
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_residual_tolerance=config.fov_residual_tolerance,
+        fov_n_restarts=fov_n_restarts,
+        arnoldi_steps=config.arnoldi_steps,
+        seed=(
+            20260900 + 1000 * m + 10 * int(record["front_case"]) + config.d0_kinds.index(d0_kind)
+        ),
+    )
+    actual_gmres = pme_breakdown.measure_gmres_iterations(
+        state,
+        grid,
+        float(m),
+        float(record["analysis_dt"]),
+        epsilon,
+        d0_kind,
+        tol=config.krylov_tol,
+        max_iters=config.max_krylov_iters,
+        const_value=config.const_d0,
+    )
+    snapshot = _geometry_snapshot(
+        diagnostic,
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_n_restarts=fov_n_restarts,
+    )
+    return snapshot, {
+        "d0_used": diagnostic["d0"],
+        "sigma": float(diagnostic["d0"] * float(record["analysis_dt"]) / grid.dx**2),
+        "adjoint_identity": diagnostic["adjoint_error"],
+        "adjoint_tolerance": diagnostic["adjoint_tolerance"],
+        "rates": diagnostic["rates"],
+        "actual_gmres": actual_gmres,
+        "front_max_gradient": float(
+            jnp.max(jnp.abs(jnp.diff(pme_breakdown.interior_values(state, grid)))) / grid.dx
+        ),
+        "reference_state_solver": dict(state_solver),
+    }
+
+
+def _c1_option_a_measure_porous_fisher_record(
+    checkpoint_dir: Path,
+    record: dict[str, Any],
+    budget: tuple[int, int, int],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load one persisted Porous--Fisher state and retain final-budget work evidence."""
+    n_angles, fov_max_iters, fov_n_restarts = budget
+    config = porous_fisher_conditioning.ReactionStudyConfig(
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_n_restarts=fov_n_restarts,
+    )
+    grid = porous_fisher_conditioning.NodeCenteredDirichletGrid.uniform(
+        config.nx, config.x_min, config.x_max
+    )
+    reaction = float(record["r"])
+    state, state_solver = _load_record_source_state(checkpoint_dir, "porous_fisher", record)
+    _require_converged_state("porous_fisher", record, state_solver)
+    d0_kind = str(record["d0_kind"])
+    diagnostic = porous_fisher_conditioning.assess_porous_fisher_state(
+        state,
+        grid,
+        r=reaction,
+        dt=float(record["analysis_dt"]),
+        epsilon=config.epsilon,
+        d0_kind=d0_kind,
+        const_value=config.const_d0,
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_residual_tolerance=config.fov_residual_tolerance,
+        fov_n_restarts=fov_n_restarts,
+        arnoldi_steps=config.arnoldi_steps,
+        seed=(
+            20260880
+            + 1000 * int(100 * reaction)
+            + 10 * int(100 * float(record["analysis_dt"]))
+            + config.d0_kinds.index(d0_kind)
+        ),
+    )
+    actual_gmres = porous_fisher_conditioning.measure_porous_fisher_gmres_iterations(
+        state,
+        grid,
+        r=reaction,
+        dt=float(record["analysis_dt"]),
+        epsilon=config.epsilon,
+        d0_kind=d0_kind,
+        tol=config.krylov_tol,
+        max_iters=config.max_krylov_iters,
+        const_value=config.const_d0,
+    )
+    snapshot = _geometry_snapshot(
+        diagnostic,
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_n_restarts=fov_n_restarts,
+    )
+    return snapshot, {
+        "d0_used": diagnostic["d0"],
+        "sigma": float(diagnostic["d0"] * float(record["analysis_dt"]) / grid.dx**2),
+        "adjoint_identity": diagnostic["adjoint_error"],
+        "adjoint_tolerance": diagnostic["adjoint_tolerance"],
+        "rates": diagnostic["rates"],
+        "actual_gmres": actual_gmres,
+        "state_solver": dict(state_solver),
+    }
+
+
+def _resolve_record(
+    checkpoint_dir: Path,
+    study: str,
+    record: dict[str, Any],
+) -> dict[str, Any]:
     """Run the bounded ladder for one previously uncertified record."""
     assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
     attempts: list[dict[str, Any]] = []
     for budget in GEOMETRY_LADDER:
-        attempt = assessor(record, budget)
+        attempt = assessor(checkpoint_dir, record, budget)
         attempts.append(attempt)
         if _is_certified(attempt):
             return {
@@ -655,7 +1014,7 @@ def _resolve_one_record(checkpoint_dir: Path, study: str, key: str) -> None:
         print(f"resolution checkpoint exists: {key}")
         return
     started_at = perf_counter()
-    resolution = _resolve_record(study, record)
+    resolution = _resolve_record(checkpoint_dir, study, record)
     resolution["wall_seconds"] = perf_counter() - started_at
     checkpoint["resolved"][key] = resolution
     _atomic_write(_resolution_checkpoint_path(checkpoint_dir, study), checkpoint)
@@ -708,6 +1067,19 @@ def _attach_final_resolution(
         resolution = _resolution_metadata(study, record, checkpoint)
         final = resolution["final"]
         final_budget = f"{final['n_angles']}/{final['fov_max_iters']}/{final['fov_n_restarts']}"
+        _replace_geometry_fields(updated, final)
+        updated["geometry_budget"] = {
+            "n_angles": final["n_angles"],
+            "fov_max_iters": final["fov_max_iters"],
+            "fov_n_restarts": final["fov_n_restarts"],
+        }
+        if study == "pme":
+            updated["predicted_iterations_from_envelope"] = (
+                pme_breakdown.predicted_iterations_from_envelope(
+                    float(final["disk_rate"]),
+                    tol=float(report["config"]["krylov_tol"]),
+                )
+            )
         updated["geometry_resolution"] = resolution
         updated["final_verdict"] = resolution["final_verdict"]
         updated["final_category"] = resolution["final_category"]
@@ -744,6 +1116,23 @@ def _attach_final_resolution(
             "support_not_converged": cap_residual_failures,
         },
     }
+    if study == "pme":
+        updated_report["regime_claim"] = pme_breakdown._regime_claim(final_records)
+        updated_report["rank_claim"] = pme_breakdown._rank_claim(final_records)
+        updated_report["predictor_quality"] = pme_breakdown._predictor_quality(final_records)
+        updated_report["correlation"] = pme_breakdown._correlation_pairs(final_records)
+        updated_report["regime_map"] = pme_breakdown._regime_map(final_records)
+        updated_report["verdict_on_decision_procedure"] = (
+            pme_breakdown._verdict_on_decision_procedure(final_records)
+        )
+    else:
+        updated_report["regime_claim"] = porous_fisher_conditioning._regime_claim(final_records)
+        updated_report["verdict_on_decision_procedure"] = (
+            porous_fisher_conditioning._verdict_on_decision_procedure(final_records)
+        )
+        updated_report["reaction_effect"] = porous_fisher_conditioning._reaction_effect(
+            final_records
+        )
     return updated_report
 
 
@@ -845,17 +1234,22 @@ def _verdict_shift_reason(
     record: dict[str, Any], expected: dict[str, Any], observed: dict[str, Any]
 ) -> str | None:
     """Return a closed operational label for a changed current-main verdict."""
+    recorded_category = str(record["final_category"])
+    observed_category = _category_from_snapshot(observed)
+    if recorded_category != observed_category:
+        if recorded_category == "UNCERTIFIED_AT_CAP":
+            return "support_certification_recovered"
+        if observed_category == "UNCERTIFIED_AT_CAP":
+            return "support_certification_lost"
     if observed["verdict"] == expected["verdict"]:
         return None
     if observed["n_right_real_outliers"] is None:
         return "domain_guard_null_outliers"
-    if not _is_certified(observed):
-        return "insufficient_geometry_resolution"
-    if observed["origin_enclosed"] and not expected["origin_enclosed"]:
-        return "origin_enclosure"
+    if observed["origin_enclosed"] != expected["origin_enclosed"]:
+        return "origin_enclosure_change"
     if observed["n_right_real_outliers"] != record["n_right_real_outliers"]:
         return "new_outlier_gate"
-    return "other"
+    return "geometry_verdict_shift"
 
 
 def _audit_one_bba5a94_record(checkpoint_dir: Path, study: str, key: str) -> None:
@@ -872,7 +1266,7 @@ def _audit_one_bba5a94_record(checkpoint_dir: Path, study: str, key: str) -> Non
         return
     assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
     started_at = perf_counter()
-    observed = assessor(record, _recorded_final_budget(record))
+    observed = assessor(checkpoint_dir, record, _recorded_final_budget(record))
     _verify_recorded_budget(record, observed, key)
     expected = _recorded_current_snapshot(record)
     reason = _verdict_shift_reason(record, expected, observed)
@@ -1007,6 +1401,252 @@ def _assemble_bba5a94_audit(checkpoint_dir: Path, study: str, output_path: Path)
     )
 
 
+def _load_result(path: Path) -> dict[str, Any]:
+    """Load one completed result JSON used as an immutable audit reference."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Missing audit result JSON: {path}") from error
+
+
+def _c1_option_a_checkpoint_path(checkpoint_dir: Path, study: str) -> Path:
+    """Return the external per-record checkpoint for the Option-A re-audit."""
+    return checkpoint_dir / f"{study}_c1_option_a_audit_v1.json"
+
+
+def _load_c1_option_a_checkpoint(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+) -> dict[str, Any]:
+    """Load or initialize a recorded-budget C1 audit checkpoint."""
+    path = _c1_option_a_checkpoint_path(checkpoint_dir, study)
+    digest = _base_digest(reference_path)
+    if not path.exists():
+        return {
+            "schema": C1_OPTION_A_AUDIT_SCHEMA,
+            "study": study,
+            "reference_result": str(reference_path),
+            "reference_sha256": digest,
+            "audited": {},
+        }
+    payload = _load_checkpoint(path)
+    if (
+        payload.get("schema") != C1_OPTION_A_AUDIT_SCHEMA
+        or payload.get("study") != study
+        or payload.get("reference_result") != str(reference_path)
+        or payload.get("reference_sha256") != digest
+    ):
+        raise RuntimeError(f"C1 audit checkpoint identity mismatch: {path}")
+    return payload
+
+
+def _c1_option_a_audit_one_record(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+    key: str,
+) -> None:
+    """Reassess one pre-C1 terminal record at its recorded final budget."""
+    reference = _load_result(reference_path)
+    records = {_record_key(study, record): record for record in reference["records"]}
+    try:
+        record = records[key]
+    except KeyError as error:
+        raise RuntimeError(f"Unknown {study} C1 audit key: {key}") from error
+    checkpoint = _load_c1_option_a_checkpoint(checkpoint_dir, study, reference_path)
+    if key in checkpoint["audited"]:
+        print(f"C1 audit checkpoint exists: {key}")
+        return
+
+    measure = (
+        _c1_option_a_measure_pme_record
+        if study == "pme"
+        else _c1_option_a_measure_porous_fisher_record
+    )
+    started_at = perf_counter()
+    observed, measurement = measure(checkpoint_dir, record, _recorded_final_budget(record))
+    _verify_recorded_budget(record, observed, key)
+    recorded = _recorded_current_snapshot(record)
+    recorded_category = str(record["final_category"])
+    current_category = _category_from_snapshot(observed)
+    change_reason = _verdict_shift_reason(record, recorded, observed)
+    if change_reason is None and current_category != recorded_category:
+        change_reason = "support_reproducibility_change"
+    checkpoint["audited"][key] = {
+        "recorded": recorded,
+        "observed": observed,
+        "recorded_final_category": recorded_category,
+        "current_final_category": current_category,
+        "measurement": measurement,
+        "verdict_changed": observed["verdict"] != recorded["verdict"],
+        "category_changed": current_category != recorded_category,
+        "change_reason": change_reason,
+        "wall_seconds": perf_counter() - started_at,
+    }
+    path = _c1_option_a_checkpoint_path(checkpoint_dir, study)
+    _atomic_write(path, checkpoint)
+    print(
+        f"C1 audited {key}: category={current_category} "
+        f"changed={checkpoint['audited'][key]['category_changed']} checkpoint={path}"
+    )
+
+
+def _list_pending_c1_option_a_audit(checkpoint_dir: Path, study: str, reference_path: Path) -> None:
+    """List every pre-C1 terminal record not yet observed under Option A."""
+    reference = _load_result(reference_path)
+    checkpoint = _load_c1_option_a_checkpoint(checkpoint_dir, study, reference_path)
+    pending = [
+        _record_key(study, record)
+        for record in reference["records"]
+        if _record_key(study, record) not in checkpoint["audited"]
+    ]
+    print(json.dumps(pending, indent=2))
+
+
+def _c1_option_a_resolution(record: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
+    """Build C1 terminal metadata without presenting pre-fix attempts as current."""
+    observed = dict(audit["observed"])
+    category = _category_from_snapshot(observed)
+    recorded = _recorded_current_snapshot(record)
+    category_changed = category != str(record["final_category"])
+    reason = _verdict_shift_reason(record, recorded, observed)
+    return {
+        "status": "CERTIFIED" if _is_certified(observed) else "UNCERTIFIED_AT_CAP",
+        "source": "c1_option_a_recorded_budget_audit",
+        "description": (
+            "The Option-A operator was reassessed once at the pre-C1 record's terminal "
+            "budget with two restarts; this audit deliberately does not re-search budgets."
+        ),
+        "recorded_pre_c1_budget": _recorded_final_snapshot(record),
+        "attempts": [observed],
+        "final": observed,
+        "final_category": category,
+        "final_verdict": observed["verdict"] if _is_certified(observed) else None,
+        "pre_c1": {
+            "final_category": str(record["final_category"]),
+            "verdict_changed": observed["verdict"] != recorded["verdict"],
+            "category_changed": category_changed,
+            "change_reason": reason,
+        },
+    }
+
+
+def _replace_geometry_fields(record: dict[str, Any], observed: dict[str, Any]) -> None:
+    """Replace every persisted geometry reading with its C1 observation."""
+    for field in (
+        "supports_consistent",
+        "corroboration_attempted",
+        "supports_converged",
+        "supports_corroborated",
+        "max_support_residual",
+        "disk_rate",
+        "epsilon_zero",
+        "origin_enclosed",
+        "n_right_real_outliers",
+        "predicted_gmres_factor",
+        "verdict",
+    ):
+        record[field] = observed[field]
+
+
+def _assemble_c1_option_a_audit(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+    output_path: Path,
+) -> None:
+    """Build final Option-A results from recorded-budget fresh measurements."""
+    reference = _load_result(reference_path)
+    checkpoint = _load_c1_option_a_checkpoint(checkpoint_dir, study, reference_path)
+    reference_by_key = {_record_key(study, record): record for record in reference["records"]}
+    missing = set(reference_by_key).difference(checkpoint["audited"])
+    if missing:
+        raise RuntimeError(
+            f"Cannot assemble C1 audit; {len(missing)} records remain: {sorted(missing)[:3]}"
+        )
+
+    records: list[dict[str, Any]] = []
+    categories: dict[str, int] = {}
+    budget_counts: dict[str, int] = {}
+    changed_keys: list[str] = []
+    reason_counts: dict[str, int] = {}
+    for key in sorted(reference_by_key):
+        reference_record = reference_by_key[key]
+        audit = checkpoint["audited"][key]
+        observed = audit["observed"]
+        updated = dict(reference_record)
+        updated.update(audit["measurement"])
+        _replace_geometry_fields(updated, observed)
+        if study == "pme":
+            updated["predicted_iterations_from_envelope"] = (
+                pme_breakdown.predicted_iterations_from_envelope(
+                    float(observed["disk_rate"]),
+                    tol=float(reference["config"]["krylov_tol"]),
+                )
+            )
+        resolution = _c1_option_a_resolution(reference_record, audit)
+        updated["geometry_resolution"] = resolution
+        updated["final_category"] = resolution["final_category"]
+        updated["final_verdict"] = resolution["final_verdict"]
+        category = str(resolution["final_category"])
+        categories[category] = categories.get(category, 0) + 1
+        final = resolution["final"]
+        if resolution["status"] == "CERTIFIED":
+            budget = f"{final['n_angles']}/{final['fov_max_iters']}/{final['fov_n_restarts']}"
+            budget_counts[budget] = budget_counts.get(budget, 0) + 1
+        if resolution["pre_c1"]["category_changed"]:
+            changed_keys.append(key)
+            reason = resolution["pre_c1"]["change_reason"] or "certification_status_changed"
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        records.append(updated)
+
+    report = dict(reference)
+    report["records"] = records
+    report["runtime_seconds"] = sum(
+        float(checkpoint["audited"][key]["wall_seconds"]) for key in reference_by_key
+    )
+    report["geometry_resolution"] = {
+        "description": (
+            "Option-A C1 re-audit at each record's pre-C1 terminal budget with two restarts. "
+            "No budget ladder was rerun; uncorroborated current evidence remains "
+            "UNCERTIFIED_AT_CAP."
+        ),
+        "source_schema": C1_OPTION_A_AUDIT_SCHEMA,
+        "reference_result": str(reference_path),
+        "reference_sha256": _base_digest(reference_path),
+        "recorded_budget_only": True,
+        "final_category_counts": categories,
+        "certifying_budget_counts": budget_counts,
+        "category_changed_count": len(changed_keys),
+        "change_reason_counts": reason_counts,
+        "changed_record_keys": changed_keys,
+    }
+    if study == "pme":
+        report["regime_claim"] = pme_breakdown._regime_claim(records)
+        report["rank_claim"] = pme_breakdown._rank_claim(records)
+        report["predictor_quality"] = pme_breakdown._predictor_quality(records)
+        report["correlation"] = pme_breakdown._correlation_pairs(records)
+        report["regime_map"] = pme_breakdown._regime_map(records)
+        report["verdict_on_decision_procedure"] = pme_breakdown._verdict_on_decision_procedure(
+            records
+        )
+    else:
+        report["regime_claim"] = porous_fisher_conditioning._regime_claim(records)
+        report["verdict_on_decision_procedure"] = (
+            porous_fisher_conditioning._verdict_on_decision_procedure(records)
+        )
+        report["reaction_effect"] = porous_fisher_conditioning._reaction_effect(records)
+    if study == "porous_fisher":
+        report["physical_model"] = {
+            "equation": "u_t = d_xx(Phi_epsilon(u)) + r*u*(1-u)",
+            "diffusivity": "D_epsilon(u)=2*sqrt(u**2 + epsilon**2)",
+            "preconditioner_scope": "diffusion-only D0 Helmholtz; reaction is unpreconditioned",
+        }
+    _atomic_write(output_path, report)
+    print(f"assembled C1 Option-A audit: study={study} records={len(records)} output={output_path}")
+
+
 def _list_pending_resolution(checkpoint_dir: Path, study: str) -> None:
     """Print deterministic keys for uncertified records not resolved by a prior probe."""
     base_path, report = _load_base_report(study)
@@ -1057,6 +1697,25 @@ def main() -> None:
         action="store_true",
         help="Apply all audited current-main verdicts and certification fields",
     )
+    parser.add_argument(
+        "--list-pending-c1-option-a-audit",
+        action="store_true",
+        help="List pre-C1 terminal records not yet reassessed under Option A",
+    )
+    parser.add_argument(
+        "--audit-c1-option-a-record",
+        help="Reassess one pre-C1 terminal record under Option A at its stored budget",
+    )
+    parser.add_argument(
+        "--assemble-c1-option-a-audit",
+        action="store_true",
+        help="Assemble all recorded-budget Option-A readings into final results",
+    )
+    parser.add_argument(
+        "--reference-result",
+        type=Path,
+        help="Immutable pre-C1 final result JSON used only for record keys and budgets",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--output", type=Path, help="Override the canonical result path")
     args = parser.parse_args()
@@ -1071,6 +1730,9 @@ def main() -> None:
             args.list_pending_bba5a94_audit,
             args.audit_bba5a94_record,
             args.assemble_bba5a94_audit,
+            args.list_pending_c1_option_a_audit,
+            args.audit_c1_option_a_record,
+            args.assemble_c1_option_a_audit,
         )
     )
     if actions != 1:
@@ -1088,6 +1750,21 @@ def main() -> None:
     if args.audit_bba5a94_record:
         _audit_one_bba5a94_record(args.checkpoint_dir, args.study, args.audit_bba5a94_record)
         return
+    if args.list_pending_c1_option_a_audit:
+        if args.reference_result is None:
+            parser.error("--list-pending-c1-option-a-audit requires --reference-result")
+        _list_pending_c1_option_a_audit(args.checkpoint_dir, args.study, args.reference_result)
+        return
+    if args.audit_c1_option_a_record:
+        if args.reference_result is None:
+            parser.error("--audit-c1-option-a-record requires --reference-result")
+        _c1_option_a_audit_one_record(
+            args.checkpoint_dir,
+            args.study,
+            args.reference_result,
+            args.audit_c1_option_a_record,
+        )
+        return
     if args.assemble_final_resolution:
         _assemble_final_resolution(
             args.checkpoint_dir,
@@ -1099,6 +1776,16 @@ def main() -> None:
         _assemble_bba5a94_audit(
             args.checkpoint_dir,
             args.study,
+            args.output or _base_output_path(args.study),
+        )
+        return
+    if args.assemble_c1_option_a_audit:
+        if args.reference_result is None:
+            parser.error("--assemble-c1-option-a-audit requires --reference-result")
+        _assemble_c1_option_a_audit(
+            args.checkpoint_dir,
+            args.study,
+            args.reference_result,
             args.output or _base_output_path(args.study),
         )
         return

@@ -97,9 +97,10 @@ def build_porous_fisher_linearization(
 ) -> PorousFisherLinearization:
     """Build ``P^-1 J`` for a Porous--Fisher BE residual.
 
-    The reused ``m=2`` D0 variants approximate only the diffusion derivative
-    ``2*u``.  The logistic reaction derivative remains in ``J`` and is not
-    represented in the Helmholtz preconditioner.
+    The reused ``m=2`` D0 variants approximate only the positive regularized
+    diffusion derivative ``2*sqrt(u**2 + epsilon**2)``.  The logistic reaction
+    derivative remains in ``J`` and is not represented in the Helmholtz
+    preconditioner.
     """
     previous = jnp.asarray(u_prev, dtype=jnp.float64)
     residual = make_porous_fisher_residual(

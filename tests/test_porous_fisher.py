@@ -8,6 +8,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import pytest
 
+import benchmarks.porous_fisher_conditioning as porous_fisher_benchmark
 from benchmarks.porous_fisher_conditioning import ReactionStudyConfig, run_reaction_study
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 from moljax.experimental.porous_fisher import (
@@ -16,6 +17,47 @@ from moljax.experimental.porous_fisher import (
     wave_front_position,
     wave_speed,
 )
+
+
+def test_unconverged_reaction_reference_state_is_not_assessed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """The reaction study must fail closed before conditioning assessment."""
+
+    def failed_state(initial_state, grid, *, r, config):
+        del grid, r, config
+        return initial_state, {
+            "status": "source_state_unusable",
+            "converged": False,
+            "newton_iters": 1,
+            "final_residual_l2": 1.0,
+            "newton_tolerance": 1.0e-8,
+        }
+
+    def forbidden_assessment(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("conditioning assessment must not run")
+
+    monkeypatch.setattr(porous_fisher_benchmark, "_advance_to_visited_state", failed_state)
+    monkeypatch.setattr(
+        porous_fisher_benchmark,
+        "assess_porous_fisher_state",
+        forbidden_assessment,
+    )
+    report = run_reaction_study(
+        ReactionStudyConfig(
+            nx=16,
+            reaction_values=(1.0,),
+            analysis_dt_values=(0.02,),
+            d0_kinds=("identity",),
+            output_path=str(tmp_path / "unusable.json"),
+        )
+    )
+
+    assert report["source_state_status"]["source_state_unusable_records"] == 1
+    assert report["records"][0]["conditioning_assessed"] is False
+    assert "verdict" not in report["records"][0]
 
 
 @pytest.mark.slow

@@ -11,18 +11,17 @@ from moljax.experimental.node_centered import (
     NodeCenteredDirichletGrid,
     node_centered_dirichlet_laplacian,
 )
+from moljax.experimental.nonlinear_diffusion import regularized_porous_medium_potential
 
 
 def porous_fisher_potential(u: jax.Array, *, epsilon: float = 1.0e-5) -> jax.Array:
-    """Return ``phi(u) = u**2 + epsilon**2`` for degenerate diffusion.
+    """Return the smooth positive-diffusivity ``m=2`` flux potential.
 
-    Its derivative is ``phi'(u) = 2*u``, so the flux form
-    ``d_xx(phi(u))`` has density-dependent diffusivity ``D(u) = 2*u``.
-    The additive ``epsilon**2`` is retained for a common regularized-potential
-    interface and cancels under the Laplacian for this ``m=2`` case.
+    ``phi'(u) = 2 * sqrt(u**2 + epsilon**2)`` is non-negative, including for
+    a small negative state undershoot.  The potential is zero anchored so the
+    node-centred homogeneous Dirichlet boundary value is zero.
     """
-    values = jnp.asarray(u, dtype=jnp.float64)
-    return values**2 + epsilon**2
+    return regularized_porous_medium_potential(u, 2.0, epsilon=epsilon)
 
 
 def porous_fisher_rhs(
@@ -34,12 +33,13 @@ def porous_fisher_rhs(
 ) -> jax.Array:
     """Return the node-centred Porous--Fisher RHS.
 
-    This discretizes ``u_t = d_xx(u**2 + epsilon**2) + r*u*(1-u)``.
-    The diffusion is the degenerate flux form with ``D(u)=2*u``.  The
-    node-centred stencil enforces homogeneous Dirichlet values at both finite
-    endpoints.  This matches the zero state ahead of a right-moving front;
-    the left endpoint is placed far behind the front, where validation excludes
-    its artificial boundary layer.
+    This discretizes ``u_t = d_xx(Phi_epsilon(u)) + r*u*(1-u)`` with
+    ``Phi_epsilon'(u)=2*sqrt(u**2+epsilon**2)``.  The non-negative diffusion
+    coefficient prevents a negative numerical undershoot from becoming
+    anti-diffusive.  The node-centred stencil enforces homogeneous Dirichlet
+    values at both finite endpoints.  This matches the zero state ahead of a
+    right-moving front; the left endpoint is placed far behind the front,
+    where validation excludes its artificial boundary layer.
 
     The arithmetic path is branchless and remains differentiable with respect
     to the interior state.

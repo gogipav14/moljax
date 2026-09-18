@@ -18,33 +18,45 @@ from moljax.experimental.node_centered import (
 PMEGrid = Grid1D | NodeCenteredDirichletGrid
 
 
-def d0_frozen_mean(u: jax.Array, m: float) -> float:
-    """Return ``m * mean(u)**(m - 1)`` for an interior PME state."""
-    mean = jnp.mean(jnp.asarray(u, dtype=jnp.float64))
-    return float(m * mean ** (m - 1.0))
+def d0_frozen_mean(u: jax.Array, m: float, *, epsilon: float = 0.0) -> float:
+    """Return the regularized diffusivity at the sign-safe mean state."""
+    mean = jnp.abs(jnp.mean(jnp.asarray(u, dtype=jnp.float64)))
+    return float(m * (mean**2 + epsilon**2) ** ((m - 1.0) / 2.0))
 
 
-def _d0_frozen_bulk_value(u: jax.Array, m: float, *, quantile: float = 0.9) -> jax.Array:
+def _d0_frozen_bulk_value(
+    u: jax.Array,
+    m: float,
+    *,
+    epsilon: float = 0.0,
+    quantile: float = 0.9,
+) -> jax.Array:
     """Return the frozen-bulk D0 as a JAX scalar for staged experimental use."""
     if not 0.0 < quantile <= 1.0:
         raise ValueError("quantile must lie in (0, 1]")
     reference = jnp.quantile(jnp.abs(jnp.asarray(u, dtype=jnp.float64)), quantile)
-    return m * reference ** (m - 1.0)
+    return m * (reference**2 + epsilon**2) ** ((m - 1.0) / 2.0)
 
 
-def d0_frozen_bulk(u: jax.Array, m: float, *, quantile: float = 0.9) -> float:
-    """Return ``m * q(|u|)**(m - 1)`` using a robust bulk-state quantile.
+def d0_frozen_bulk(
+    u: jax.Array,
+    m: float,
+    *,
+    epsilon: float = 0.0,
+    quantile: float = 0.9,
+) -> float:
+    """Return the regularized diffusivity at a robust bulk-state quantile.
 
     The default 90th percentile avoids diluting the frozen diffusivity by the
     large zero-state region surrounding a compact porous-medium profile.
     """
     if not 0.0 < quantile <= 1.0:
         raise ValueError("quantile must lie in (0, 1]")
-    return float(_d0_frozen_bulk_value(u, m, quantile=quantile))
+    return float(_d0_frozen_bulk_value(u, m, epsilon=epsilon, quantile=quantile))
 
 
 def d0_floor(m: float, epsilon: float) -> float:
-    """Return the regularization-floor coefficient ``m * epsilon**(m - 1)``."""
+    """Return ``D_epsilon(0) = m * epsilon**(m - 1)`` for Option A."""
     return float(m * epsilon ** (m - 1.0))
 
 

@@ -2,11 +2,75 @@
 
 from __future__ import annotations
 
+from math import isclose
+
+import jax
 import jax.numpy as jnp
 
 from moljax.core.grid import Grid1D
 from moljax.core.operators import laplacian_1d
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
+
+
+def porous_medium_diffusivity(
+    u: jax.Array,
+    m: float,
+    *,
+    epsilon: float = 1.0e-5,
+) -> jax.Array:
+    """Return the smooth non-negative diffusivity for the regularized PME.
+
+    The flux potential used below has derivative
+    ``D_epsilon(u) = m * (u**2 + epsilon**2)**((m - 1) / 2)``.  In particular,
+    it remains non-negative for undershoots and has the positive floor
+    ``m * epsilon**(m - 1)`` at the zero state.
+    """
+    values = jnp.asarray(u)
+    return m * (values**2 + epsilon**2) ** ((m - 1.0) / 2.0)
+
+
+def regularized_porous_medium_potential(
+    u: jax.Array,
+    m: float,
+    *,
+    epsilon: float = 1.0e-5,
+) -> jax.Array:
+    """Return the zero-anchored potential whose derivative is ``D_epsilon``.
+
+    For the integer exponents staged by the experimental PME studies this uses
+    the exact recurrence for integrals of ``(u**2 + epsilon**2)**p``.  It
+    preserves the intended linearization ``L_h @ diag(D_epsilon(u))`` without
+    numerical quadrature in the operator hot path.  The ``epsilon=0`` path is
+    retained for the unregularized linear-control tests.
+    """
+    exponent = int(round(m))
+    if exponent < 1 or not isclose(m, float(exponent), rel_tol=0.0, abs_tol=1.0e-12):
+        raise ValueError("The staged regularized PME potential requires integer m >= 1")
+
+    values = jnp.asarray(u)
+    if epsilon == 0.0:
+        return jnp.sign(values) * jnp.abs(values) ** exponent
+
+    epsilon_value = jnp.asarray(epsilon, dtype=values.dtype)
+    radius_squared = values**2 + epsilon_value**2
+    if exponent % 2:
+        integral = values
+        power = 0.0
+        steps = (exponent - 1) // 2
+    else:
+        integral = jnp.arcsinh(values / epsilon_value)
+        power = -0.5
+        steps = exponent // 2
+
+    for _ in range(steps):
+        next_power = power + 1.0
+        denominator = 2.0 * next_power + 1.0
+        integral = (
+            values * radius_squared**next_power / denominator
+            + (2.0 * next_power * epsilon_value**2 / denominator) * integral
+        )
+        power = next_power
+    return exponent * integral
 
 
 def _regularized_potential_with_dirichlet_zero(
@@ -15,11 +79,15 @@ def _regularized_potential_with_dirichlet_zero(
     m: float,
     epsilon: float,
 ) -> jnp.ndarray:
-    """Build ``(u**2 + epsilon**2)**(m/2)`` with zero-state boundary data."""
+    """Build the positive-diffusivity potential with zero-state boundary data."""
     ng = grid.n_ghost
     interior = grid.interior_slice
-    phi_boundary = jnp.asarray(epsilon, dtype=u.dtype) ** m
-    phi = jnp.zeros_like(u).at[interior].set((u[interior] ** 2 + epsilon**2) ** (m / 2.0))
+    phi_boundary = jnp.asarray(0.0, dtype=u.dtype)
+    phi = (
+        jnp.zeros_like(u)
+        .at[interior]
+        .set(regularized_porous_medium_potential(u[interior], m, epsilon=epsilon))
+    )
 
     for offset in range(ng):
         phi = phi.at[ng - 1 - offset].set(2.0 * phi_boundary - phi[ng + offset])
@@ -39,12 +107,13 @@ def porous_medium_flux_rhs(
     """Apply a regularized one-dimensional porous-medium diffusion operator.
 
     This returns a padded array containing the semi-discrete right-hand side
-    for ``u_t = d²phi/dx²`` with ``phi = (u² + epsilon²)**(m/2)``.  The
-    interior stencil is the conservative central-flux form
+    for ``u_t = d²Phi_epsilon(u)/dx²`` with
+    ``Phi_epsilon'(u) = m * (u² + epsilon²)**((m - 1)/2)``.  The interior
+    stencil is the conservative central-flux form
     ``((phi[i+1] - phi[i]) - (phi[i] - phi[i-1])) / dx²``, supplied by
     :func:`moljax.core.operators.laplacian_1d`.  Ghost values of ``phi`` are
-    chosen so that the cell-face state boundary condition is ``u = 0``;
-    consequently ``phi`` takes the regularized boundary value ``epsilon**m``.
+    chosen so that the cell-face state boundary condition is ``u = 0`` and
+    consequently ``Phi_epsilon(0) = 0``.
 
     The state-based regularization is smooth and branchless, which keeps the
     operator differentiable with respect to ``u``.  It perturbs the unregularized
@@ -80,17 +149,19 @@ def porous_medium_node_centered_rhs(
 
     The unknowns occupy the interior nodes of a uniform grid whose boundary
     nodes are fixed at zero.  With
-    ``phi(u) = (u**2 + epsilon**2)**(m/2)``, this uses the three-point stencil
-    for ``d²phi/dx²`` after adjoining the boundary value ``epsilon**m``.  It
-    therefore shares the node-centred Dirichlet convention of the DST-I
-    Helmholtz inverse exactly.  The state regularization is smooth and
-    branchless, so JAX can differentiate the operator directly.
+    ``Phi_epsilon'(u) = m * (u**2 + epsilon**2)**((m - 1)/2)``, this uses the
+    three-point stencil for ``d²Phi_epsilon/dx²`` after adjoining the zero
+    boundary potential.  Its Jacobian is therefore
+    ``L_h @ diag(D_epsilon(u))`` with ``D_epsilon >= 0``.  It shares the
+    node-centred Dirichlet convention of the DST-I Helmholtz inverse exactly.
+    The state regularization is smooth and branchless, so JAX can
+    differentiate the operator directly.
     """
     interior = jnp.asarray(u)
     if interior.shape != (grid.nx,):
         raise ValueError(f"Expected shape {(grid.nx,)}, got {interior.shape}")
-    phi = (interior**2 + epsilon**2) ** (m / 2.0)
-    boundary = jnp.asarray(epsilon, dtype=interior.dtype) ** m
+    phi = regularized_porous_medium_potential(interior, m, epsilon=epsilon)
+    boundary = jnp.asarray(0.0, dtype=interior.dtype)
     padded = jnp.concatenate((boundary[None], phi, boundary[None]))
     return (padded[2:] - 2.0 * padded[1:-1] + padded[:-2]) / grid.dx**2
 

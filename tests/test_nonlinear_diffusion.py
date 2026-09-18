@@ -10,9 +10,13 @@ import numpy as np
 import pytest
 
 from moljax.core.grid import Grid1D
+from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 from moljax.experimental.nonlinear_diffusion import (
     barenblatt,
+    porous_medium_diffusivity,
     porous_medium_flux_rhs,
+    porous_medium_node_centered_rhs,
+    regularized_porous_medium_potential,
     support_halfwidth,
 )
 
@@ -23,7 +27,7 @@ def test_regularization_error_is_small_against_coarse_grid_scale(m: float, b: fl
     fine_grid = Grid1D.uniform(2001, -4.0, 4.0)
     u = barenblatt(fine_grid.x_coords(), 1.0, m, b=b)
     phi_true = u**m
-    phi_regularized = (u**2 + 1.0e-10) ** (m / 2.0)
+    phi_regularized = regularized_porous_medium_potential(u, m, epsilon=1.0e-5)
 
     regularization_error = float(jnp.max(jnp.abs(phi_regularized - phi_true)))
     coarse_h = 8.0 / 200.0
@@ -71,6 +75,47 @@ def test_linear_control_has_second_order_max_norm_accuracy() -> None:
     order = float(np.polyfit(np.log(spacings), np.log(errors), 1)[0])
     print(f"linear-control max-norm errors={errors}, observed_order={order:.6f}")
     assert 1.7 <= order <= 2.3
+
+
+@pytest.mark.parametrize("m", (1.0, 2.0, 3.0, 4.0, 6.0, 8.0))
+def test_regularized_potential_derivative_is_the_positive_diffusivity(m: float) -> None:
+    """The staged potential differentiates exactly to the Option-A coefficient."""
+    values = jnp.asarray((-1.0e-3, -1.0e-5, 0.0, 1.0e-5, 1.0e-3), dtype=jnp.float64)
+    epsilon = 1.0e-5
+    _, derivative = jax.jvp(
+        lambda state: regularized_porous_medium_potential(state, m, epsilon=epsilon),
+        (values,),
+        (jnp.ones_like(values),),
+    )
+
+    expected = porous_medium_diffusivity(values, m, epsilon=epsilon)
+    assert jnp.all(expected >= 0.0)
+    assert jnp.allclose(derivative, expected, rtol=2.0e-12, atol=2.0e-12)
+    assert float(expected[2]) == pytest.approx(m * epsilon ** (m - 1.0))
+
+
+def test_negative_undershoot_cannot_create_an_antidiffusive_pme_jacobian() -> None:
+    """A negative undershoot retains a non-positive diffusion-RHS spectrum."""
+    grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)
+    epsilon = 1.0e-5
+    state = jnp.full(grid.nx, -1.0e-3, dtype=jnp.float64)
+    diffusivity = porous_medium_diffusivity(state, 2.0, epsilon=epsilon)
+    jacobian = jax.jacfwd(
+        lambda candidate: porous_medium_node_centered_rhs(candidate, grid, 2.0, epsilon=epsilon)
+    )(state)
+    laplacian = np.diag(np.full(grid.nx, -2.0))
+    laplacian += np.diag(np.ones(grid.nx - 1), 1) + np.diag(np.ones(grid.nx - 1), -1)
+    laplacian /= grid.dx**2
+
+    assert jnp.all(diffusivity >= 0.0)
+    assert np.allclose(
+        np.asarray(jacobian),
+        laplacian @ np.diag(np.asarray(diffusivity)),
+        rtol=1.0e-11,
+        atol=1.0e-11,
+    )
+    eigenvalues = np.linalg.eigvals(np.asarray(jacobian))
+    assert float(np.max(eigenvalues.real)) <= 1.0e-10
 
 
 # Chosen so R(2) is approximately 2.4, leaving a margin inside [-4, 4].

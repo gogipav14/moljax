@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
+from collections.abc import Callable
 from math import sqrt
 from pathlib import Path
 from statistics import median
@@ -14,6 +17,7 @@ from typing import Any, NamedTuple
 import jax
 
 jax.config.update("jax_enable_x64", True)
+import numpy as np
 
 from moljax.core.newton_krylov import NKParams, newton_krylov_solve
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
@@ -45,11 +49,45 @@ class ReactionStudyConfig(NamedTuple):
     fov_residual_tolerance: float = 1.0e-3
     fov_n_restarts: int = 2
     arnoldi_steps: int = 6
-    max_newton_iters: int = 8
+    max_newton_iters: int = 13
+    max_backtrack: int = 6
     max_krylov_iters: int = 400
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
     output_path: str = "benchmarks/results/porous_fisher_conditioning.json"
+
+
+SourceStateProvider = Callable[
+    [jax.Array, NodeCenteredDirichletGrid, float, ReactionStudyConfig],
+    tuple[jax.Array, dict[str, Any]],
+]
+
+
+def _git_revision(*args: str) -> str:
+    """Return one local Git identity without contacting a remote."""
+    repository = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ("git", *args),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _source_state_identity(state: jax.Array) -> dict[str, Any]:
+    """Return a deterministic identity for one solved reference state."""
+    values = np.asarray(jax.device_get(state), dtype=np.float64)
+    digest = hashlib.sha256()
+    digest.update(str(values.shape).encode())
+    digest.update(values.dtype.str.encode())
+    digest.update(values.tobytes(order="C"))
+    return {
+        "sha256": digest.hexdigest(),
+        "shape": list(values.shape),
+        "dtype": values.dtype.str,
+    }
 
 
 def _summary(values: list[float]) -> dict[str, float | int | None]:
@@ -118,16 +156,25 @@ def _advance_to_visited_state(
             max_krylov_iters=config.max_krylov_iters,
             newton_tol=config.newton_tol,
             krylov_tol=config.krylov_tol,
+            max_backtrack=config.max_backtrack,
         ),
         dt=config.state_dt,
     )
     solution = jax.block_until_ready(result.solution)
+    converged = bool(result.stats.converged)
     return solution, {
         "d0": float(d0),
-        "converged": bool(result.stats.converged),
+        "status": "converged" if converged else "source_state_unusable",
+        "converged": converged,
         "newton_iters": int(result.stats.newton_iters),
         "configured_krylov_budget_total": int(result.stats.lin_iters),
         "final_residual_l2": float(result.stats.final_res_norm),
+        "newton_tolerance": config.newton_tol,
+        "max_newton_iters": config.max_newton_iters,
+        "max_backtrack": config.max_backtrack,
+        "source_state_identity": _source_state_identity(solution),
+        "repository_head": _git_revision("rev-parse", "HEAD"),
+        "base_revision": _git_revision("merge-base", "HEAD", "upstream/main"),
     }
 
 
@@ -259,7 +306,11 @@ def _reaction_effect(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, Any]:
+def run_reaction_study(
+    config: ReactionStudyConfig | None = None,
+    *,
+    source_state_provider: SourceStateProvider | None = None,
+) -> dict[str, Any]:
     """Run the reaction-axis conditioning study and write its JSON report."""
     if config is None:
         config = ReactionStudyConfig()
@@ -279,9 +330,29 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
     )
     records: list[dict[str, Any]] = []
     for r in config.reaction_values:
-        state, state_solver = _advance_to_visited_state(initial_state, grid, r=r, config=config)
+        if source_state_provider is None:
+            state, state_solver = _advance_to_visited_state(initial_state, grid, r=r, config=config)
+        else:
+            state, state_solver = source_state_provider(initial_state, grid, r, config)
         for analysis_dt in config.analysis_dt_values:
             for index, d0_kind in enumerate(config.d0_kinds):
+                if not bool(state_solver["converged"]):
+                    records.append(
+                        {
+                            "r": r,
+                            "analysis_dt": analysis_dt,
+                            "d0_kind": d0_kind,
+                            "source_state_status": "source_state_unusable",
+                            "conditioning_assessed": False,
+                            "geometry_budget": {
+                                "n_angles": config.n_angles,
+                                "fov_max_iters": config.fov_max_iters,
+                                "fov_n_restarts": config.fov_n_restarts,
+                            },
+                            "state_solver": dict(state_solver),
+                        }
+                    )
+                    continue
                 diagnostics = assess_porous_fisher_state(
                     state,
                     grid,
@@ -319,6 +390,13 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
                         "r": r,
                         "analysis_dt": analysis_dt,
                         "d0_kind": d0_kind,
+                        "source_state_status": "converged",
+                        "conditioning_assessed": True,
+                        "geometry_budget": {
+                            "n_angles": config.n_angles,
+                            "fov_max_iters": config.fov_max_iters,
+                            "fov_n_restarts": config.fov_n_restarts,
+                        },
                         "d0_used": diagnostics["d0"],
                         "sigma": float(diagnostics["d0"] * analysis_dt / grid.dx**2),
                         "adjoint_identity": diagnostics["adjoint_error"],
@@ -341,6 +419,30 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
                 )
 
     runtime_seconds = perf_counter() - started_at
+    unusable_records = [
+        record for record in records if record["source_state_status"] == "source_state_unusable"
+    ]
+    source_state_status = {
+        "all_converged": not unusable_records,
+        "converged_records": len(records) - len(unusable_records),
+        "source_state_unusable_records": len(unusable_records),
+    }
+    if unusable_records:
+        report = {
+            "description": (
+                "Experimental Porous--Fisher conditioning study stopped before conditioning "
+                "assessment because at least one reference state did not converge."
+            ),
+            "config": config._asdict(),
+            "runtime_seconds": runtime_seconds,
+            "source_state_status": source_state_status,
+            "records": records,
+        }
+        output = Path(config.output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return report
+
     identity_records = [record for record in records if record["d0_kind"] == "identity"]
     identity_iterations = [
         float(record["actual_gmres"]["iterations"]) for record in identity_records
@@ -360,9 +462,10 @@ def run_reaction_study(config: ReactionStudyConfig | None = None) -> dict[str, A
         ),
         "config": config._asdict(),
         "runtime_seconds": runtime_seconds,
+        "source_state_status": source_state_status,
         "physical_model": {
-            "equation": "u_t = d_xx(u**2 + epsilon**2) + r*u*(1-u)",
-            "diffusivity": "D(u)=2*u",
+            "equation": "u_t = d_xx(Phi_epsilon(u)) + r*u*(1-u)",
+            "diffusivity": "D_epsilon(u)=2*sqrt(u**2 + epsilon**2)",
             "preconditioner_scope": "diffusion-only D0 Helmholtz; reaction is unpreconditioned",
         },
         "gmres_measurement_note": (

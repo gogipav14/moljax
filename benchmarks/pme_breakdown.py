@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
+from collections.abc import Callable
 from itertools import combinations
 from math import isfinite, sqrt
 from pathlib import Path
@@ -16,6 +19,7 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
+import numpy as np
 
 from moljax.core.grid import Grid1D
 from moljax.core.newton_krylov import NKParams, newton_krylov_solve
@@ -56,13 +60,47 @@ class BreakdownConfig(NamedTuple):
     fov_n_restarts: int = 2
     arnoldi_steps: int = 6
     const_d0: float = 1.0
-    max_newton_iters: int = 8
+    max_newton_iters: int = 13
+    max_backtrack: int = 6
     max_krylov_iters: int = 400
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
     m_values: tuple[int, ...] = (1, 2, 3, 4, 6, 8)
     d0_kinds: tuple[str, ...] = ("frozen_mean", "frozen_bulk", "floor", "const", "identity")
     output_path: str = "benchmarks/results/pme_breakdown.json"
+
+
+SourceStateProvider = Callable[
+    [jax.Array, NodeCenteredDirichletGrid, int, int, float, BreakdownConfig],
+    tuple[jax.Array, dict[str, Any]],
+]
+
+
+def _git_revision(*args: str) -> str:
+    """Return one local Git identity without contacting a remote."""
+    repository = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ("git", *args),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _source_state_identity(state: jax.Array) -> dict[str, Any]:
+    """Return a deterministic identity for one solved interior state."""
+    values = np.asarray(jax.device_get(state), dtype=np.float64)
+    digest = hashlib.sha256()
+    digest.update(str(values.shape).encode())
+    digest.update(values.dtype.str.encode())
+    digest.update(values.tobytes(order="C"))
+    return {
+        "sha256": digest.hexdigest(),
+        "shape": list(values.shape),
+        "dtype": values.dtype.str,
+    }
 
 
 def _heat_gaussian(x: jax.Array, t: float) -> jax.Array:
@@ -121,16 +159,25 @@ def _solve_one_step(
             max_krylov_iters=config.max_krylov_iters,
             newton_tol=config.newton_tol,
             krylov_tol=config.krylov_tol,
+            max_backtrack=config.max_backtrack,
         ),
         dt=config.state_dt,
     )
     solution = jax.block_until_ready(result.solution)
+    converged = bool(result.stats.converged)
     return padded_values(solution, grid), {
         "d0": float(d0),
-        "converged": bool(result.stats.converged),
+        "status": "converged" if converged else "source_state_unusable",
+        "converged": converged,
         "newton_iters": int(result.stats.newton_iters),
         "configured_krylov_budget_total": int(result.stats.lin_iters),
         "final_residual_l2": float(result.stats.final_res_norm),
+        "newton_tolerance": config.newton_tol,
+        "max_newton_iters": config.max_newton_iters,
+        "max_backtrack": config.max_backtrack,
+        "source_state_identity": _source_state_identity(solution),
+        "repository_head": _git_revision("rev-parse", "HEAD"),
+        "base_revision": _git_revision("merge-base", "HEAD", "upstream/main"),
     }
 
 
@@ -635,6 +682,31 @@ def _record_state(
     epsilon = 0.0 if m == 1 else config.epsilon
     visited_interior = interior_values(state, grid)
     front_gradient = float(jnp.max(jnp.abs(jnp.diff(visited_interior))) / grid.dx)
+    if not bool(state_solver["converged"]):
+        for d0_kind in config.d0_kinds:
+            records.append(
+                {
+                    "m": m,
+                    "front_case": front_case,
+                    "target_support_halfwidth": target_halfwidth,
+                    "visited_step": 1,
+                    "visited_time": config.t0 + config.state_dt,
+                    "reference_state_dt": config.state_dt,
+                    "analysis_dt": analysis_dt,
+                    "front_max_gradient": front_gradient,
+                    "d0_kind": d0_kind,
+                    "source_state_status": "source_state_unusable",
+                    "conditioning_assessed": False,
+                    "reference_state_solver": dict(state_solver),
+                    "geometry_budget": {
+                        "n_angles": config.n_angles,
+                        "fov_max_iters": config.fov_max_iters,
+                        "fov_n_restarts": config.fov_n_restarts,
+                    },
+                    "centering_mismatch_note": centering["decision"],
+                }
+            )
+        return
     for index, d0_kind in enumerate(config.d0_kinds):
         diagnostics = assess_pme_state(
             state,
@@ -673,6 +745,13 @@ def _record_state(
                 "analysis_dt": analysis_dt,
                 "front_max_gradient": front_gradient,
                 "d0_kind": d0_kind,
+                "source_state_status": "converged",
+                "conditioning_assessed": True,
+                "geometry_budget": {
+                    "n_angles": config.n_angles,
+                    "fov_max_iters": config.fov_max_iters,
+                    "fov_n_restarts": config.fov_n_restarts,
+                },
                 "d0_used": diagnostics["d0"],
                 "sigma": float(diagnostics["d0"] * analysis_dt / grid.dx**2),
                 "adjoint_identity": diagnostics["adjoint_error"],
@@ -699,7 +778,11 @@ def _record_state(
         )
 
 
-def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]:
+def run_breakdown_study(
+    config: BreakdownConfig | None = None,
+    *,
+    source_state_provider: SourceStateProvider | None = None,
+) -> dict[str, Any]:
     """Run the powered D0-variant sweep and write the decision-grade JSON report."""
     if config is None:
         config = BreakdownConfig()
@@ -714,8 +797,18 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
     records: list[dict[str, Any]] = []
     for m in config.m_values:
         for front_case, target_halfwidth in enumerate(config.front_target_halfwidths, start=1):
-            state = _initial_state(grid, m, config.t0, target_halfwidth)
-            state, state_solver = _solve_one_step(state, grid, m, config, "frozen_bulk")
+            initial_state = _initial_state(grid, m, config.t0, target_halfwidth)
+            if source_state_provider is None:
+                state, state_solver = _solve_one_step(initial_state, grid, m, config, "frozen_bulk")
+            else:
+                state, state_solver = source_state_provider(
+                    initial_state,
+                    grid,
+                    m,
+                    front_case,
+                    target_halfwidth,
+                    config,
+                )
             for analysis_dt in config.analysis_dt_values:
                 _record_state(
                     records,
@@ -731,6 +824,30 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
                 )
 
     runtime_seconds = perf_counter() - started_at
+    unusable_records = [
+        record for record in records if record["source_state_status"] == "source_state_unusable"
+    ]
+    source_state_status = {
+        "all_converged": not unusable_records,
+        "converged_records": len(records) - len(unusable_records),
+        "source_state_unusable_records": len(unusable_records),
+    }
+    if unusable_records:
+        report = {
+            "description": (
+                "Experimental PME conditioning study stopped before conditioning assessment "
+                "because at least one reference state did not converge."
+            ),
+            "config": config._asdict(),
+            "runtime_seconds": runtime_seconds,
+            "source_state_status": source_state_status,
+            "centering": centering,
+            "records": records,
+        }
+        output = Path(config.output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return report
     decision = _verdict_on_decision_procedure(records)
     dynamic_range = decision["identity_iteration_dynamic_range"]
     if not dynamic_range["meets_tenfold_gate"]:
@@ -750,6 +867,7 @@ def run_breakdown_study(config: BreakdownConfig | None = None) -> dict[str, Any]
             "timing": "total runtime only",
         },
         "runtime_seconds": runtime_seconds,
+        "source_state_status": source_state_status,
         "gmres_measurement_note": (
             "actual_gmres is an explicit residual-history count for the fixed system "
             "P^-1 J delta = P^-1 (-R), not NKStats.lin_iters."

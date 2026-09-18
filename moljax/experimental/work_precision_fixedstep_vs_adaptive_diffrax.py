@@ -347,7 +347,7 @@ def _build_jitted_be_integrator(
                 dt=dt,
                 epsilon=config.epsilon,
             )
-        d0 = _d0_frozen_bulk_value(state, 2.0)
+        d0 = _d0_frozen_bulk_value(state, 2.0, epsilon=config.epsilon)
         preconditioner = PMEHelmholtzPreconditioner(
             d0=d0,
             dt=dt,
