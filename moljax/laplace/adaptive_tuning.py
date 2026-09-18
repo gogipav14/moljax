@@ -18,6 +18,12 @@ localization. That quantity is zero by construction, because the spectrum is
 mirrored into exact Hermitian symmetry before the ifft, so those sensors
 never fired on a badly resolved transform; the ones above do.
 
+All three are normalized, which is what makes them portable and also what
+blinds them to the exponential amplification: exp(a t) scales the signal and
+its error alike. compute_richardson_difference closes that gap by measuring,
+rather than estimating, what the grid discards: it inverts a second time at
+dt/2 and compares the two answers on the samples they share.
+
 The triad dt = 2T/N is re-normalized after every adjustment, and the loop is
 bounded: max_iterations refinements, then an optional projection fallback.
 """
@@ -46,6 +52,10 @@ class QualityTier(NamedTuple):
     tail_energy_fraction: float  # RMS share of the top tenth of the resolved band
     tail_ratio: float            # energy of f e^{-at} beyond t_end, relative to [0, t_end]
     r_late: float                # share of imaginary leakage in the last third of [0, t_end]
+    # Relative RMS gap between this inversion and the same inversion at dt/2,
+    # from compute_richardson_difference. NaN when the verification did not
+    # run (verify_truncation=False, or a verdict reached before it).
+    richardson_difference: float = float('nan')
 
 
 # (warn, crit) per sensor and policy. Calibrated on 1/(s+1) at N = 256:
@@ -183,6 +193,168 @@ def classify_quality(
     if tail_ratio > th['tail_ratio'][0]:
         return verdict('acceptable', f'{wraparound} (wraparound marginal)')
     return verdict('good', 'all sensors within normal range')
+
+
+# =============================================================================
+# Truncation verification (Richardson)
+# =============================================================================
+
+# Relative RMS gap above which the coarse inversion counts as unresolved.
+# Calibrated on 100/(s + 1)^2 with the numerical abscissa 49 of
+# J = [[-1, 100], [0, -1]], where shortening the window raises the shift and
+# so the amplification, and on the transforms the tuner tests already cover.
+# Difference (D) against the true relative RMS error (E) at the tuner's own
+# parameters, float64:
+#
+#   window t_end   0.05    0.10    0.15    0.20    0.25    0.333
+#   A_exp        1.2e+3  1.3e+4  1.6e+5  1.8e+6  2.1e+7  1.2e+9
+#   E            4.2e-4  3.3e-3  4.6e-2  6.2e-1  8.3e+0  6.0e+2
+#   D            2.9e-4  3.2e-3  4.5e-2  6.4e-1  8.4e+0  7.7e+0
+#
+# D tracks E within a factor of three until the coarse answer loses its last
+# digit, after which it saturates near 7 because the refined inversion is
+# wrong too; either way it is far above any grid that resolves its transform.
+# The largest D among the transforms the tuner rates 'good' today is 0.128
+# (e^{-t} cos 2t over t_end = 10, true error 0.34); 1/(s - 2) over t_end = 5,
+# the shift-inside-the-budget guard, reads 0.121. The smallest D that must
+# fire is 0.638 (the window t_end = 0.2 above, true error 0.62). 0.3 is the
+# geometric midpoint of that gap, a factor 2.3 above the loosest passing case
+# and 2.1 below the tightest failing one, and by the ratios above it admits
+# a true relative error of at most about 3 * 0.3.
+_TRUNCATION_TOLERANCE = 0.3
+
+
+def compute_richardson_difference(
+    F_eval,
+    *,
+    params: TunedNILTParams,
+    t_end: float,
+    dtype=jnp.float64,
+    coarse: NILTResult | None = None,
+) -> float:
+    """
+    Relative RMS gap between this inversion and the same inversion at dt/2.
+
+    The bandwidth sensors say how much of F(a + i omega) sits at the edge of
+    the resolved band, relative to the rest of F. What the truncated tail
+    costs f is that share amplified by exp(a t), and a ratio cannot see a
+    factor that multiplies its numerator and denominator alike. The only way
+    to learn the size of the discarded term is to keep some of it: invert
+    again with the band doubled and look at how much the answer moves.
+
+    The refinement halves dt and doubles N at fixed T and fixed a, so
+    Delta omega = pi / T is unchanged, the Nyquist frequency pi / dt doubles,
+    and the refined time grid t_j = j dt / 2 contains the coarse one at its
+    even indices. The comparison therefore needs no interpolation: it is
+    taken on the coarse samples in [0, t_end],
+
+        D = RMS(f_fine - f_coarse) / RMS(f_fine),
+
+    with the refined inversion in the denominator because it is the better
+    estimate of f, which keeps D an estimate of the coarse answer's own
+    relative error rather than a quantity that saturates at 1.
+
+    Undamped, unlike the wraparound sensor, which measures the damped
+    inverse f(t) e^{-a t} because periodization is a property of the damped
+    signal. Here the exponential is the point: on the t_end = 1/3 window of
+    100/(s + 1)^2 with a = 62.8 the damped difference reads 1.9e-2 and the
+    undamped one 7.7, against a true relative error of 6.0e+2. Damping the
+    comparison would hide exactly the term this sensor exists to find.
+
+    Cost: one extra inversion of the same F at twice the size, the single
+    most expensive thing the tuner does.
+
+    Args:
+        F_eval: Laplace-domain function F(s), as passed to the tuner
+        params: The parameters whose grid is under test
+        t_end: End of the valid interval; the comparison uses [0, t_end]
+        dtype: Working precision, the tuner's own
+        coarse: The inversion already computed at ``params`` by
+            nilt_fft_uniform, reused when given so that only the refined
+            inversion is paid for
+
+    Returns:
+        D >= 0, or inf when either inversion is not finite (a non-finite
+        answer is not a resolved one). NaN only if [0, t_end] holds no
+        sample of the grid.
+    """
+    if coarse is None:
+        coarse = nilt_fft_uniform(
+            F_eval, dt=params.dt, N=params.N, a=params.a, dtype=dtype, t_end=t_end
+        )
+    try:
+        fine = nilt_fft_uniform(
+            F_eval, dt=params.dt / 2.0, N=2 * params.N, a=params.a,
+            dtype=dtype, t_end=t_end,
+        )
+    except ValueError:
+        # exp(a t) is representable on the coarse grid but not on the refined
+        # one, whose last sample sits dt/2 later: the shift is at the overflow
+        # budget, which is far past any budget that leaves the answer meaning.
+        return float('inf')
+
+    t = coarse.t
+    n_valid = min(int(jnp.searchsorted(t, t_end, side='right')), int(t.shape[0]))
+    if n_valid <= 0:
+        return float('nan')
+
+    f_coarse = coarse.f[:n_valid]
+    f_fine = fine.f[:2 * n_valid:2]
+    diff = f_fine - f_coarse
+    rms_diff = float(jnp.sqrt(jnp.mean(diff ** 2)))
+    rms_fine = float(jnp.sqrt(jnp.mean(f_fine ** 2)))
+    if not (math.isfinite(rms_diff) and math.isfinite(rms_fine)):
+        return float('inf')
+    return rms_diff / (rms_fine + float(jnp.finfo(f_fine.dtype).tiny))
+
+
+def _refine_for_truncation(
+    params: TunedNILTParams, max_N: int
+) -> tuple[TunedNILTParams, str]:
+    """Double N at fixed T, the bandwidth remedy, for an unresolved
+    truncation difference.
+
+    The retuning ladder is not consulted here: its first two rungs read
+    sensors that have already passed, and its third halves a, which moves
+    the contour rather than the band and would change the very quantity the
+    verification is trying to resolve. At the cap the parameters come back
+    unchanged (same object), as retune_based_on_diagnostics does.
+    """
+    N_new = min(2 * params.N, max_N)
+    if N_new == params.N:
+        return params, "at max_N, no change"
+    dt_new = 2.0 * params.T / N_new
+    action = f"increased N: {params.N} → {N_new} (truncation verification)"
+    return TunedNILTParams(
+        dt=dt_new,
+        N=N_new,
+        T=params.T,
+        a=params.a,
+        omega_max=float(jnp.pi / dt_new),
+        omega_req=params.omega_req,
+        bound_sources=params.bound_sources,
+        warnings=params.warnings + [f"Retuned: {action}"],
+        diagnostics=params.diagnostics,
+    ), action
+
+
+def _unresolved_truncation_reason(
+    difference: float, tolerance: float, N: int, exhausted: str
+) -> str:
+    """Why a grid that satisfies every other condition is still not trusted.
+
+    ``exhausted`` names what ran out, the N cap or the iteration budget, so
+    the caller can tell "there is no wider band to try" from "there was no
+    attempt left to try it".
+    """
+    return (
+        f"unresolved truncation: inverting again at dt/2 moves the answer by "
+        f"{difference:.3e} of its own RMS, above the truncation tolerance "
+        f"{tolerance:.3e}. The tail of F beyond pi/dt is amplified by "
+        f"exp(a t) and the normalized sensors cannot see it; doubling N from "
+        f"{N} is the remedy and {exhausted}. Split the interval, invert in "
+        "higher precision, or allow a larger N"
+    )
 
 
 # =============================================================================
@@ -326,8 +498,12 @@ def _infeasible_amplification(
     so the recommendation brings the amplification inside the budget rather
     than merely shortening the interval. It is not by itself a guarantee of
     accuracy: the bandwidth truncation error is amplified by exp(a t_end)
-    too, and the normalized sensors do not see that, so a window near the
-    budget still wants its grid checked against a finer one.
+    too, and the normalized sensors do not see that. The recommended window
+    is therefore not assumed to be accurate, it is verified: step 5 of
+    tune_nilt_adaptive inverts it a second time at dt/2 and compares
+    (compute_richardson_difference). On the t_end = 1/3 window this refusal
+    recommends, that comparison reads 7.7 against a tolerance of 0.3, and
+    the window comes back 'poor' rather than 'good'.
     """
     a_required = required_abscissa(sigma, params.T, delta_min=delta_min, eps_tail=eps_tail)
     error_floor = eps_machine * cfl.exp_amplification
@@ -381,6 +557,8 @@ def tune_nilt_adaptive(
     quality_tier: Literal['conservative', 'balanced', 'aggressive'] = 'balanced',
     enable_projection_fallback: bool = True,
     amplification_tolerance: float = 1e-6,
+    verify_truncation: bool = True,
+    truncation_tolerance: float = _TRUNCATION_TOLERANCE,
     **tune_kwargs
 ) -> AdaptiveTuningResult:
     """
@@ -393,10 +571,12 @@ def tune_nilt_adaptive(
        tune_nilt_adaptive_cfl uses, for the two conditions the pilot's
        sensors cannot see (see below)
     4. Quality check: classify_quality()
-    5. If poor: one corrective action from retune_based_on_diagnostics(),
+    5. Truncation verification: a second inversion at dt/2, compared with
+       the first (see below); skipped when verify_truncation is False
+    6. If poor: one corrective action from retune_based_on_diagnostics(),
        at most max_iterations times; the loop also stops when the N cap
        leaves nothing to change
-    6. If still poor: the Hermitian projection is tried as a last resort.
+    7. If still poor: the Hermitian projection is tried as a last resort.
        The projection cannot move the bandwidth or wraparound sensors (the
        spectrum is Hermitian by construction), so this rarely changes the
        verdict; it is kept so ``actions`` records that everything was tried,
@@ -425,12 +605,32 @@ def tune_nilt_adaptive(
     "infeasible:" and a UserWarning recommending a split, rather than a
     confident wrong number.
 
-    The budget bounds the amplified rounding noise. It does not bound the
-    amplified *truncation* error: the tail of F beyond pi/dt is amplified by
-    exp(a t_end) as well, and band_edge_ratio, being a ratio, cannot see
-    that either. A shift well inside the budget can still need a finer grid
-    than the operator's own bandwidth asks for, and the only reliable check
-    there is a second inversion at dt/2.
+    **Why step 5 exists.** The budget of step 3 bounds the amplified
+    rounding noise. It does not bound the amplified *truncation* error: the
+    tail of F beyond pi/dt is amplified by exp(a t_end) as well, and
+    band_edge_ratio, being a ratio, cannot see that either. A shift well
+    inside the budget can still need a finer grid than the operator's own
+    bandwidth asks for. On the t_end = 1/3 window of the J above, a = 62.8
+    and N = 256 pass every condition of steps 3 and 4 (A_exp = 1.24e9 below
+    the budget 4.5e9, band_edge_ratio 0.011) and the answer is 600 times its
+    own size wrong.
+
+    No closed-form condition separates those two cases usefully: the
+    rigorous tail bound is one to four orders of magnitude pessimistic here,
+    and the cheap heuristics correlate with the true error only within two
+    decades. So the check is a measurement rather than an estimate. The
+    inversion is repeated at dt/2 with T and a held fixed, which doubles the
+    resolved band and leaves the coarse samples inside the refined grid, and
+    the two are compared on those samples over [0, t_end]:
+    compute_richardson_difference. A gap above truncation_tolerance means
+    the discarded tail is still changing the answer, and the remedy is the
+    bandwidth remedy, doubling N. The measured gap is recorded in
+    ``quality.richardson_difference`` whether it passes or not.
+
+    Cost: one extra inversion of F at twice the size per iteration, roughly
+    doubling the tuner's work. verify_truncation=False buys that back and
+    restores the behavior described in the paragraph above, including its
+    gap.
 
     Args:
         F_eval: Laplace-domain function F(s)
@@ -443,6 +643,18 @@ def tune_nilt_adaptive(
         enable_projection_fallback: If True, try the projection when retuning fails
         amplification_tolerance: Relative accuracy budget for the
             exponential amplification (default 1e-6)
+        verify_truncation: If True (default), verify the resolved bandwidth
+            with a second inversion at dt/2 before accepting a verdict of
+            'good' or 'acceptable'. It costs one extra inversion at twice
+            the size per iteration; it is on by default because without it
+            the tuner reports 'good' on answers that are hundreds of times
+            wrong. False reproduces the pre-verification behavior exactly.
+        truncation_tolerance: Relative RMS gap between the two inversions
+            above which the grid counts as unresolved (default 0.3; see
+            _TRUNCATION_TOLERANCE for the calibration). It is a separate
+            budget from amplification_tolerance, which measures amplified
+            rounding noise against the unit roundoff and is some seven
+            orders of magnitude tighter than any grid error.
         **tune_kwargs: Additional kwargs for tune_nilt_params()
 
     Returns:
@@ -470,8 +682,9 @@ def tune_nilt_adaptive(
     sigma = params.diagnostics.get('alpha')
     delta_min = tune_kwargs.get('delta_min', 1e-3)
     eps_tail = tune_kwargs.get('eps_tail', 1e-8)
+    max_N = tune_kwargs.get('N_max', 8192)
 
-    # Steps 2-5: bounded refinement loop
+    # Steps 2-6: bounded refinement loop
     for iteration in range(max_iterations + 1):
         result = nilt_fft_uniform(
             F_eval,
@@ -509,17 +722,57 @@ def tune_nilt_adaptive(
         quality = classify_quality(result.diagnostics, tier=quality_tier)
 
         if quality.tier in ['good', 'acceptable']:
+            if not verify_truncation:
+                return AdaptiveTuningResult(
+                    params=params,
+                    result=result,
+                    quality=quality,
+                    iterations=iteration,
+                    actions=actions
+                )
+
+            # Step 5: the sensors agree with themselves; ask whether a wider
+            # band would agree with them.
+            difference = compute_richardson_difference(
+                F_eval, params=params, t_end=t_end, dtype=dtype, coarse=result
+            )
+            quality = quality._replace(richardson_difference=difference)
+
+            if not (difference > truncation_tolerance):
+                return AdaptiveTuningResult(
+                    params=params,
+                    result=result,
+                    quality=quality,
+                    iterations=iteration,
+                    actions=actions
+                )
+
+            refined, action = _refine_for_truncation(params, max_N)
+            if iteration < max_iterations and refined is not params:
+                actions.append(action)
+                params = refined
+                continue
+
+            exhausted = (
+                "the iteration budget is spent"
+                if refined is not params
+                else f"N is at the cap {max_N}"
+            )
+            reason = _unresolved_truncation_reason(
+                difference, truncation_tolerance, params.N, exhausted
+            )
+            _warnings.warn(f"NILT tuning refused: {reason}", UserWarning, stacklevel=2)
             return AdaptiveTuningResult(
                 params=params,
                 result=result,
-                quality=quality,
+                quality=quality._replace(tier='poor', reason=reason),
                 iterations=iteration,
-                actions=actions
+                actions=actions + [f"refused: {reason}"],
             )
 
         if iteration < max_iterations:
             new_params, action = retune_based_on_diagnostics(
-                params, quality, bounds=bounds, max_N=tune_kwargs.get('N_max', 8192)
+                params, quality, bounds=bounds, max_N=max_N
             )
             actions.append(action)
             if new_params is not params:
@@ -527,7 +780,7 @@ def tune_nilt_adaptive(
                 continue
         break
 
-    # Step 5: still poor with nothing left to adjust
+    # Step 7: still poor with nothing left to adjust
     if enable_projection_fallback:
         result_proj = nilt_fft_uniform(
             F_eval,
@@ -582,6 +835,8 @@ def tune_nilt_adaptive_cfl(
     tau_tail: float = 1e-2,
     tau_chi: float = 2.0,
     A_max: float = 1e6,
+    verify_truncation: bool = True,
+    truncation_tolerance: float = _TRUNCATION_TOLERANCE,
     **tune_kwargs
 ) -> AdaptiveTuningResult:
     """
@@ -606,6 +861,18 @@ def tune_nilt_adaptive_cfl(
        against required_abscissa after every adjustment and a window that
        needs an inadmissible a is reported as infeasible.
 
+    Once all five hold, the resolved bandwidth is verified rather than
+    estimated: the inversion is repeated at dt/2 with T and a fixed and the
+    two answers are compared on the samples they share
+    (compute_richardson_difference). R_tail is measured on F alone and so
+    misses the exp(a t) that multiplies whatever the band discards; a gap
+    above truncation_tolerance therefore means the grid is not resolved
+    however comfortably R_tail passed. The remedy is the bandwidth remedy,
+    doubling N, and when neither the cap nor the iteration budget allows
+    another doubling the verdict is 'poor' with a reason naming truncation.
+    The verification runs at the one exit that would otherwise report
+    'good'; the exits that already report a violation keep their verdict.
+
     The default tolerances are met by tune_nilt_params' own defaults on a
     well-posed transform (tau_chi = 2.0 admits chi = pi/2 at
     period_factor = 4; tau_tail = 1e-2 admits the 5e-3 tail of 1/(s+1) at
@@ -624,6 +891,13 @@ def tune_nilt_adaptive_cfl(
         tau_tail: Bandwidth tail energy tolerance
         tau_chi: Quadrature phase-step tolerance
         A_max: Maximum exponential amplification
+        verify_truncation: If True (default), verify the resolved bandwidth
+            with a second inversion at dt/2 before reporting that all
+            conditions are met. It costs one extra inversion at twice the
+            size; False reproduces the pre-verification behavior exactly.
+        truncation_tolerance: Relative RMS gap between the two inversions
+            above which the grid counts as unresolved (default 0.3; see
+            _TRUNCATION_TOLERANCE for the calibration)
         **tune_kwargs: Additional kwargs for tune_nilt_params()
 
     Returns:
@@ -655,6 +929,7 @@ def tune_nilt_adaptive_cfl(
     delta_min = tune_kwargs.get('delta_min', 1e-3)
     eps_tail = tune_kwargs.get('eps_tail', 1e-8)
     sigma = params.diagnostics.get('alpha')
+    max_N = tune_kwargs.get('N_max', 8192)
 
     for iteration in range(max_iterations + 1):
         # Step 2: Run NILT with diagnostics
@@ -667,6 +942,11 @@ def tune_nilt_adaptive_cfl(
             t_end=t_end,
             return_diagnostics=True
         )
+        # Kept for the truncation verification, which compares like with
+        # like: step 4 may replace `result` with the half-step inversion,
+        # whose grid t = (n + 1/2) dt shares no sample but t = 0 with its
+        # own refinement at dt/2.
+        result_uniform = result
 
         # Step 3: Check CFL conditions
         cfl = check_spectral_cfl_conditions(
@@ -706,12 +986,45 @@ def tune_nilt_adaptive_cfl(
                 all_conditions_met=not remaining,
             )
 
-        # Step 5: All conditions met -> done
+        # Step 5: All conditions met -> verify the bandwidth, then done
         if cfl.all_conditions_met:
+            quality = _quality_from_diagnostics(
+                'good', 'all CFL conditions satisfied', result.diagnostics, result
+            )
+            if verify_truncation and quality.tier == 'good':
+                difference = compute_richardson_difference(
+                    F_eval, params=params, t_end=t_end, dtype=dtype,
+                    coarse=result_uniform,
+                )
+                quality = quality._replace(richardson_difference=difference)
+                if difference > truncation_tolerance:
+                    refined, action = _refine_for_truncation(params, max_N)
+                    if iteration < max_iterations and refined is not params:
+                        actions.append(action)
+                        params = refined
+                        continue
+                    exhausted = (
+                        "the iteration budget is spent"
+                        if refined is not params
+                        else f"N is at the cap {max_N}"
+                    )
+                    reason = _unresolved_truncation_reason(
+                        difference, truncation_tolerance, params.N, exhausted
+                    )
+                    _warnings.warn(
+                        f"NILT CFL tuning refused: {reason}", UserWarning, stacklevel=2
+                    )
+                    return AdaptiveTuningResult(
+                        params=params,
+                        result=result,
+                        quality=quality._replace(tier='poor', reason=reason),
+                        iterations=iteration,
+                        actions=actions + [f"refused: {reason}"],
+                    )
             return AdaptiveTuningResult(
                 params=params,
                 result=result,
-                quality=_quality_from_diagnostics('good', 'all CFL conditions satisfied', result.diagnostics, result),
+                quality=quality,
                 iterations=iteration,
                 actions=actions
             )

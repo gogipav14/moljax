@@ -4,6 +4,65 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **The adaptive NILT tuners verify the resolved bandwidth with a second
+  inversion at `dt/2` instead of trusting a ratio that cannot see the
+  exponential amplification.** `tune_nilt_adaptive`'s accuracy budget
+  `A_max = amplification_tolerance / eps_machine` bounds the amplified
+  rounding floor, and nothing bounded the amplified *truncation* error: the
+  tail of `F` beyond `pi/dt` comes back multiplied by `exp(a t_end)` too, and
+  `band_edge_ratio`, a ratio, cannot see a factor that scales its numerator
+  and denominator alike. With the numerical abscissa 49 of
+  `J = [[-1, 100], [0, -1]]` and its off-diagonal resolvent
+  `F(s) = 100/(s + 1)^2`, the `t_end = 1/3` window passed every condition
+  (`A_exp = 1.24e9` under the budget `4.5e9`, `band_edge_ratio` 0.011) and
+  came back "good, all sensors within normal range" at a relative RMS error
+  of 600. No closed-form condition separated that from a healthy grid: the
+  rigorous tail bound is one to four orders of magnitude pessimistic there
+  and the cheap heuristics correlate with the true error only within two
+  decades. The check is therefore a measurement. New
+  `compute_richardson_difference` (exported) inverts a second time with `dt`
+  halved and `N` doubled at fixed `T` and fixed `a`, which doubles the
+  resolved band and leaves the coarse samples at the refined grid's even
+  indices, and returns the relative RMS gap between the two on the coarse
+  samples in `[0, t_end]`, undamped: on the window above the damped gap
+  reads 1.9e-2 and the undamped one 7.7, so damping the comparison, as the
+  wraparound sensor does for its own reasons, would hide exactly the term
+  this sensor exists to find. The gap tracks the true relative error within a
+  factor of three over five decades (0.05 to 1/3 windows of the `J` above:
+  measured 2.9e-4, 3.2e-3, 4.5e-2, 6.4e-1, 8.4e+0 against true 4.2e-4,
+  3.3e-3, 4.6e-2, 6.2e-1, 8.3e+0) and the new
+  `truncation_tolerance` default 0.3 is the geometric midpoint of the gap
+  between the loosest transform the tuner rates good today (0.128,
+  `e^{-t} cos 2t` over `t_end = 10`) and the tightest window that must fire
+  (0.638, `t_end = 0.2`, true error 0.62). On disagreement the ladder applies
+  the bandwidth remedy, doubling `N` and re-verifying up to `N_max` and the
+  iteration budget, and only then reports `poor` with a reason beginning
+  "unresolved truncation:" plus a `UserWarning`, never `good`; the measured
+  gap is recorded on `QualityTier.richardson_difference` (new field,
+  defaulting to NaN) whether it passes or not. `tune_nilt_adaptive` runs the
+  check after the CFL conditions and `classify_quality` both pass;
+  `tune_nilt_adaptive_cfl` runs it at the one exit that would otherwise
+  report "all CFL conditions satisfied", comparing the uniform pilot rather
+  than the half-step inversion, whose grid `t = (n + 1/2) dt` shares no
+  sample but `t = 0` with its own refinement. Both take
+  `verify_truncation: bool = True`; it costs one extra inversion at twice the
+  size per iteration (measured 1.3x total tune time over a twelve-transform
+  battery) and is on by default because the alternative is a confident
+  verdict on an answer that is hundreds of times wrong.
+  `verify_truncation=False` reproduces the previous behavior exactly,
+  including the documented gap. The `t_end = 1/3` window is the only verdict
+  that changes: `good` to `poor`, with the true error dropping from 6.0e+2 to
+  8.6 as the ladder widens the band; the neighboring `t_end = 0.2` window
+  stays `good` and its true error falls from 0.62 to 0.075 because one
+  doubling resolves it.
+  `tests/test_adaptive_tuning_quality.py::TestTruncationVerification` covers
+  the caught window, the flag-off reproduction of the gap, the undamped
+  choice, the grid alignment, the recorded field, the CFL path and a
+  non-finite inversion (inf, not NaN, so no threshold comparison silently
+  passes).
+
 ### Changed
 
 - **`numerical_range`'s LOBPCG restart seeding now depends on the operator

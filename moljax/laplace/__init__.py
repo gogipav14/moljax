@@ -17,6 +17,7 @@ Main components:
 from .adaptive_tuning import (
     AdaptiveTuningResult,
     QualityTier,
+    compute_richardson_difference,
     retune_based_on_diagnostics,
     tune_nilt_adaptive,
     tune_nilt_adaptive_cfl,
@@ -207,6 +208,7 @@ __all__ = [
     'QualityTier',
     'AdaptiveTuningResult',
     'classify_quality_tier',
+    'compute_richardson_difference',
     'retune_based_on_diagnostics',
     'tune_nilt_adaptive',
     'tune_nilt_adaptive_cfl',

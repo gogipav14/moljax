@@ -17,6 +17,7 @@ Each test demonstrates QUANTITATIVE improvement:
 - Quality metrics (ε_Im, localization) as supporting evidence
 """
 
+import math
 import warnings
 
 import jax
@@ -35,6 +36,7 @@ from moljax.laplace import (
     classify_quality,
     classify_quality_tier,
     compute_eps_im,
+    compute_richardson_difference,
     compute_wraparound_tail_ratio,
     create_transfer_function_from_fft_operator,
     exponential_decay_F,
@@ -972,7 +974,12 @@ class TestAmplificationBudget:
         admit jointly, not just a shorter one: the shift the tuner picks for
         it amplifies by less than A_max. (Shortening the window raises a,
         since the wraparound margin ln(1/eps_tail)/(2T) grows, so this is
-        not automatic.)"""
+        not automatic.)
+
+        The window it recommends is not therefore accurate: the truncation
+        verification of TestTruncationVerification rates this very window
+        'poor', which is why the assertion below is about the reason not
+        being an amplification refusal rather than about the tier."""
         def F(s):
             return 100.0 / (s + 1.0) ** 2
 
@@ -1215,3 +1222,230 @@ class TestNonFiniteAndMissingSensors:
 if __name__ == '__main__':
     # Run tests with verbose output
     pytest.main([__file__, '-v', '-s'])
+
+
+class TestTruncationVerification:
+    """tune_nilt_adaptive verifies the resolved bandwidth instead of
+    estimating it.
+
+    The amplification budget of TestAmplificationBudget bounds amplified
+    rounding noise. It does not bound the amplified truncation error: what
+    the grid discards past pi/dt comes back multiplied by exp(a t_end) too,
+    and band_edge_ratio, being a ratio, cannot see a factor that multiplies
+    its numerator and denominator alike. The check is therefore a
+    measurement, a second inversion at dt/2 compared with the first on the
+    samples they share.
+
+    Calibration of that difference D against the true relative RMS error E,
+    float64, at the parameters the unverified tuner returns:
+
+        case                            a        N        D        E
+        exp(-t), t_end=20            0.000     256  1.45e-1  3.72e-1
+        exp(-t), t_end=6.4           0.000     256  7.50e-2  2.23e-1
+        t exp(-t), t_end=10          0.000     256  6.40e-3  1.26e-2
+        1/(s(s+1)), t_end=10         0.461     256  1.12e-3  2.16e-3
+        e^{-t} cos 2t, t_end=10      0.000     256  1.28e-1  3.39e-1
+        1/(s-2), t_end=5             2.921     256  1.21e-1  1.11e-1
+        osc, coarse N                4.505     256  1.82e-2  3.26e-2
+        osc, fine N                  4.505    2048  6.76e-4  1.31e-3
+        J, t_end=0.15               79.701     256  4.52e-2  4.56e-2
+        J, t_end=0.2                72.026     256  6.38e-1  6.20e-1
+        J, t_end=1/3                62.816     256  7.70e+0  6.00e+2
+        J, t_end=1 (refused at 3)   53.605     256  6.61e+0  2.65e+17
+
+    D tracks E within a factor of three until the coarse answer loses its
+    last digit, then saturates near 7 because the refined inversion is wrong
+    too. The tolerance 0.3 is the geometric midpoint of the gap between the
+    loosest case that must pass (0.128) and the tightest that must fire
+    (0.638).
+    """
+
+    J_BOUNDS = {'rho': 1.0, 're_max': 49.0, 'im_max': 0.0}
+
+    @staticmethod
+    def _J_transform(s):
+        """F(s) = 100/(s+1)^2, the off-diagonal resolvent of
+        J = [[-1, 100], [0, -1]]; f(t) = 100 t exp(-t)."""
+        return 100.0 / (s + 1.0) ** 2
+
+    @staticmethod
+    def _J_exact(t):
+        return 100.0 * t * jnp.exp(-t)
+
+    def test_the_amplified_truncation_window_is_no_longer_good(self):
+        """The t_end = 1/3 window of the J above passes every other
+        condition (A_exp = 1.24e9 under the budget 4.5e9, band_edge_ratio
+        0.011) and is 600 times its own size wrong. The verification catches
+        exactly that."""
+        with pytest.warns(UserWarning, match="unresolved truncation"):
+            result = tune_nilt_adaptive(
+                self._J_transform, t_end=1.0 / 3.0, bounds=self.J_BOUNDS,
+                dtype=jnp.float64,
+            )
+
+        assert result.quality.tier == 'poor', result.quality.reason
+        assert result.quality.reason.startswith('unresolved truncation:')
+        assert 'truncation' in result.quality.reason
+        # The ladder tried the bandwidth remedy before giving up.
+        assert any('truncation verification' in a for a in result.actions), result.actions
+        assert result.params.N > 256
+
+    def test_verify_truncation_false_reproduces_the_documented_gap(self):
+        """The flag is an escape hatch, not a second policy: with it off the
+        same window comes back 'good' with every sensor in range, which is
+        the behavior the docstring documented as the open gap."""
+        t_end = 1.0 / 3.0
+        result = tune_nilt_adaptive(
+            self._J_transform, t_end=t_end, bounds=self.J_BOUNDS,
+            dtype=jnp.float64, verify_truncation=False,
+        )
+
+        assert result.quality.tier == 'good', result.quality.reason
+        assert result.quality.reason == 'all sensors within normal range'
+        assert result.params.N == 256
+        assert math.isnan(result.quality.richardson_difference)
+
+        # ... and it is hundreds of times wrong, which is why the default is on.
+        error = compute_rms_error(
+            result.result.f, self._J_exact(result.result.t), result.result.t, t_end
+        )
+        assert error > 1e2, error
+
+    def test_a_resolved_grid_keeps_its_verdict_and_records_the_difference(self):
+        """exp(-t) on the tuner's own grid is unaffected: same parameters,
+        same verdict, and a difference an order of magnitude inside the
+        tolerance. The floor is the grid's own first-order truncation error
+        (1/(s+1) decays only like 1/omega), not rounding."""
+        def F(s):
+            return exponential_decay_F(s, alpha=1.0)
+
+        bounds = SpectralBounds(rho=10.0, re_max=-1.0, im_max=5.0,
+                                methods_used={'analytic': 'test'}, warnings=[])
+        kwargs = dict(t_end=6.4, bounds=bounds, dtype=jnp.float64)
+
+        off = tune_nilt_adaptive(F, verify_truncation=False, **kwargs)
+        on = tune_nilt_adaptive(F, verify_truncation=True, **kwargs)
+
+        assert off.quality.tier == 'good'
+        assert on.quality.tier == 'good', on.quality.reason
+        assert on.params.N == off.params.N
+        assert on.params.dt == off.params.dt
+        assert on.actions == off.actions
+        assert on.quality.richardson_difference == pytest.approx(7.50e-2, rel=0.1)
+        assert on.quality.richardson_difference < 0.3
+
+    def test_the_ladder_resolves_a_marginal_window(self):
+        """On the t_end = 0.2 window the difference is 0.638 at N = 256 and
+        the true error 0.62. The remedy is the bandwidth remedy: doubling N
+        brings both down by an order of magnitude, and the verdict stays
+        'good' rather than becoming a refusal."""
+        t_end = 0.2
+        off = tune_nilt_adaptive(
+            self._J_transform, t_end=t_end, bounds=self.J_BOUNDS,
+            dtype=jnp.float64, verify_truncation=False,
+        )
+        on = tune_nilt_adaptive(
+            self._J_transform, t_end=t_end, bounds=self.J_BOUNDS,
+            dtype=jnp.float64, verify_truncation=True,
+        )
+
+        assert on.quality.tier == 'good', on.quality.reason
+        assert on.params.N == 2 * off.params.N
+        assert on.quality.richardson_difference < 0.3
+
+        error_off = compute_rms_error(
+            off.result.f, self._J_exact(off.result.t), off.result.t, t_end
+        )
+        error_on = compute_rms_error(
+            on.result.f, self._J_exact(on.result.t), on.result.t, t_end
+        )
+        assert error_off > 0.5, error_off
+        assert error_on < error_off / 5.0, (error_off, error_on)
+
+    def test_the_comparison_is_undamped(self):
+        """Damping the comparison, as the wraparound sensor does, would hide
+        the very term this sensor exists to find: on the t_end = 1/3 window
+        the damped difference reads 0.019, inside any plausible tolerance,
+        while the undamped one reads 7.7 against a true error of 600."""
+        t_end = 1.0 / 3.0
+        params = tune_nilt_params(t_end=t_end, bounds=self.J_BOUNDS, dtype=jnp.float64)
+        coarse = nilt_fft_uniform(self._J_transform, dt=params.dt, N=params.N,
+                                  a=params.a, dtype=jnp.float64, t_end=t_end)
+        fine = nilt_fft_uniform(self._J_transform, dt=params.dt / 2.0, N=2 * params.N,
+                                a=params.a, dtype=jnp.float64, t_end=t_end)
+
+        # The refined grid contains the coarse one at its even indices, so no
+        # interpolation enters the comparison.
+        assert jnp.allclose(fine.t[::2], coarse.t)
+
+        n_valid = int(jnp.searchsorted(coarse.t, t_end, side='right'))
+        f_coarse = coarse.f[:n_valid]
+        f_fine = fine.f[:2 * n_valid:2]
+        damping = jnp.exp(-params.a * coarse.t[:n_valid])
+
+        undamped = float(jnp.sqrt(jnp.mean((f_fine - f_coarse) ** 2))
+                         / jnp.sqrt(jnp.mean(f_fine ** 2)))
+        damped = float(jnp.sqrt(jnp.mean(((f_fine - f_coarse) * damping) ** 2))
+                       / jnp.sqrt(jnp.mean((f_fine * damping) ** 2)))
+
+        assert undamped == pytest.approx(7.70, rel=0.02)
+        assert damped == pytest.approx(1.94e-2, rel=0.05)
+        assert damped < 0.3 < undamped
+
+        sensor = compute_richardson_difference(
+            self._J_transform, params=params, t_end=t_end, dtype=jnp.float64
+        )
+        assert sensor == pytest.approx(undamped, rel=1e-9)
+
+    def test_a_non_finite_inversion_is_never_resolved(self):
+        """inf, not NaN: every threshold comparison against NaN is False,
+        which would fall through to 'resolved'."""
+        params = tune_nilt_params(t_end=1.0, bounds=self.J_BOUNDS, dtype=jnp.float64)
+
+        def F_nan(s):
+            return jnp.full(s.shape, jnp.nan, dtype=jnp.complex128)
+
+        difference = compute_richardson_difference(
+            F_nan, params=params, t_end=1.0, dtype=jnp.float64
+        )
+        assert difference == float('inf')
+
+    def test_the_cfl_tuner_verifies_after_its_conditions_pass(self):
+        """The CFL tuner reaches the same window through its own five
+        conditions (with A_max raised past A_exp = 1.24e9 so that
+        conditioning is not what fires) and used to report 'all CFL
+        conditions satisfied'. R_tail is measured on F alone, so it misses
+        the exp(a t) as well."""
+        t_end = 1.0 / 3.0
+        kwargs = dict(t_end=t_end, bounds=self.J_BOUNDS, dtype=jnp.float64, A_max=1e10)
+
+        off = tune_nilt_adaptive_cfl(self._J_transform, verify_truncation=False, **kwargs)
+        assert off.quality.tier == 'good'
+        assert off.quality.reason == 'all CFL conditions satisfied'
+        assert math.isnan(off.quality.richardson_difference)
+
+        with pytest.warns(UserWarning, match="unresolved truncation"):
+            on = tune_nilt_adaptive_cfl(self._J_transform, verify_truncation=True, **kwargs)
+        assert on.quality.tier == 'poor', on.quality.reason
+        assert on.quality.reason.startswith('unresolved truncation:')
+        assert on.quality.richardson_difference > 0.3
+        assert on.params.N > off.params.N
+
+    def test_the_difference_is_recorded_on_every_verified_verdict(self):
+        """Callers read the measured gap off the verdict, whether it passed
+        or not, so a marginal grid can be told from a comfortable one."""
+        bounds = SpectralBounds(rho=10.0, re_max=-1.0, im_max=5.0,
+                                methods_used={'analytic': 'test'}, warnings=[])
+
+        passing = tune_nilt_adaptive(
+            lambda s: 1.0 / (s + 1.0) ** 2, t_end=10.0, bounds=bounds, dtype=jnp.float64
+        )
+        assert math.isfinite(passing.quality.richardson_difference)
+        assert passing.quality.richardson_difference == pytest.approx(6.40e-3, rel=0.1)
+
+        with pytest.warns(UserWarning, match="unresolved truncation"):
+            failing = tune_nilt_adaptive(
+                self._J_transform, t_end=1.0 / 3.0, bounds=self.J_BOUNDS,
+                dtype=jnp.float64,
+            )
+        assert failing.quality.richardson_difference == pytest.approx(8.20, rel=0.05)
