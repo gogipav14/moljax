@@ -179,7 +179,9 @@ def test_assess_pme_state_has_a_valid_adjoint_gate_and_verdict() -> None:
     )
 
     assert result["adjoint_error"] <= 1.0e-8
-    assert result["verdict"] in {"adequate", "investigate", "indeterminate"}
+    assert result["verdict"] in {"adequate", "investigate", "indeterminate", "provisional"}
+    assert result["epsilon_zero_full_operator_evidence"] is False
+    assert result["arnoldi_k_achieved"] == 6
 
 
 @pytest.mark.slow

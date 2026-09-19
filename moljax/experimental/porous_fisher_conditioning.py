@@ -192,7 +192,8 @@ def assess_porous_fisher_state(
     key_real, key_imag = jax.random.split(jax.random.PRNGKey(seed + 1))
     start = jax.random.normal(key_real, (operator.n,), dtype=jnp.float64)
     start = start + 1j * jax.random.normal(key_imag, (operator.n,), dtype=jnp.float64)
-    _, hessenberg = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
+    arnoldi_result = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
+    hessenberg = arnoldi_result.hessenberg
     ritz = ritz_values(hessenberg)
     epsilon_at_zero = epsilon_zero(hessenberg)
     field_of_values = numerical_range(
@@ -205,7 +206,12 @@ def assess_porous_fisher_state(
         n_restarts=fov_n_restarts,
     )
     rates = estimate_rates(field_of_values, ritz)
-    assessment = assess_preconditioner(field_of_values, ritz, epsilon_at_zero)
+    assessment = assess_preconditioner(
+        field_of_values,
+        ritz,
+        epsilon_at_zero,
+        coverage=arnoldi_result,
+    )
 
     return {
         "d0_kind": d0_kind,
@@ -216,6 +222,12 @@ def assess_porous_fisher_state(
         "verdict": assessment.verdict,
         "disk_rate": float(assessment.disk_rate),
         "epsilon_zero": float(assessment.epsilon_zero),
+        "epsilon_zero_full_operator_evidence": bool(assessment.epsilon_zero_full_operator_evidence),
+        "verdict_reason": assessment.verdict_reason,
+        "arnoldi_k_requested": int(arnoldi_result.k_requested),
+        "arnoldi_k_achieved": int(arnoldi_result.k_achieved),
+        "arnoldi_breakdown": bool(arnoldi_result.breakdown),
+        "arnoldi_residual_norm": float(arnoldi_result.residual_norm),
         "predicted_gmres_factor": (
             None
             if assessment.predicted_gmres_factor is None

@@ -34,6 +34,7 @@ POROUS_FISHER_BATCH_SCHEMA = "stage2_conditioning_porous_fisher_batch_v3"
 SOURCE_STATE_ARTIFACT_SCHEMA = "stage2_conditioning_source_state_v1"
 BBA5A94_AUDIT_SCHEMA = "stage2_conditioning_bba5a94_verdict_audit_v1"
 C1_OPTION_A_AUDIT_SCHEMA = "stage2_conditioning_c1_option_a_audit_v1"
+CURRENT_MAIN_AUDIT_SCHEMA = "stage2_conditioning_current_main_verdict_audit_v1"
 GEOMETRY_LADDER = ((32, 120, 2), (64, 180, 2), (96, 240, 2))
 BASE_GEOMETRY_BUDGET = {"n_angles": 16, "fov_max_iters": 60, "fov_n_restarts": 2}
 
@@ -658,6 +659,14 @@ def _geometry_snapshot(
         "max_support_residual": float(record["max_support_residual"]),
         "disk_rate": float(record["disk_rate"]),
         "epsilon_zero": float(record["epsilon_zero"]),
+        "epsilon_zero_full_operator_evidence": bool(
+            record.get("epsilon_zero_full_operator_evidence", False)
+        ),
+        "verdict_reason": record.get("verdict_reason"),
+        "arnoldi_k_requested": record.get("arnoldi_k_requested"),
+        "arnoldi_k_achieved": record.get("arnoldi_k_achieved"),
+        "arnoldi_breakdown": record.get("arnoldi_breakdown"),
+        "arnoldi_residual_norm": record.get("arnoldi_residual_norm"),
         "origin_enclosed": bool(record["origin_enclosed"]),
         "n_right_real_outliers": (
             None
@@ -1252,6 +1261,24 @@ def _verdict_shift_reason(
     return "geometry_verdict_shift"
 
 
+def _current_main_shift_reason(
+    record: dict[str, Any], expected: dict[str, Any], observed: dict[str, Any]
+) -> str | None:
+    """Classify a changed final reading under the current conditioning semantics."""
+    if (
+        expected["verdict"] == "adequate"
+        and observed["verdict"] == "provisional"
+        and not observed["epsilon_zero_full_operator_evidence"]
+    ):
+        return "reduced_arnoldi_epsilon_zero_coverage_gate"
+    if (
+        expected["supports_consistent"] != observed["supports_consistent"]
+        or expected["supports_corroborated"] != observed["supports_corroborated"]
+    ):
+        return "operator_tied_restart_seed_corroboration_change"
+    return _verdict_shift_reason(record, expected, observed)
+
+
 def _audit_one_bba5a94_record(checkpoint_dir: Path, study: str, key: str) -> None:
     """Reassess one stored terminal budget and atomically checkpoint its current reading."""
     result_path, report = _load_base_report(study)
@@ -1542,6 +1569,12 @@ def _replace_geometry_fields(record: dict[str, Any], observed: dict[str, Any]) -
         "max_support_residual",
         "disk_rate",
         "epsilon_zero",
+        "epsilon_zero_full_operator_evidence",
+        "verdict_reason",
+        "arnoldi_k_requested",
+        "arnoldi_k_achieved",
+        "arnoldi_breakdown",
+        "arnoldi_residual_norm",
         "origin_enclosed",
         "n_right_real_outliers",
         "predicted_gmres_factor",
@@ -1647,6 +1680,234 @@ def _assemble_c1_option_a_audit(
     print(f"assembled C1 Option-A audit: study={study} records={len(records)} output={output_path}")
 
 
+def _current_main_audit_checkpoint_path(checkpoint_dir: Path, study: str) -> Path:
+    """Return the independent per-record checkpoint for a rebased-main audit."""
+    return checkpoint_dir / f"{study}_current_main_verdict_audit_v1.json"
+
+
+def _load_current_main_audit_checkpoint(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+    audit_base_revision: str,
+) -> dict[str, Any]:
+    """Load or initialize a resumable recorded-budget audit on the current base."""
+    path = _current_main_audit_checkpoint_path(checkpoint_dir, study)
+    digest = _base_digest(reference_path)
+    if not path.exists():
+        return {
+            "schema": CURRENT_MAIN_AUDIT_SCHEMA,
+            "study": study,
+            "reference_result": str(reference_path),
+            "reference_sha256": digest,
+            "audit_base_revision": audit_base_revision,
+            "audited": {},
+        }
+    payload = _load_checkpoint(path)
+    if (
+        payload.get("schema") != CURRENT_MAIN_AUDIT_SCHEMA
+        or payload.get("study") != study
+        or payload.get("reference_result") != str(reference_path)
+        or payload.get("reference_sha256") != digest
+        or payload.get("audit_base_revision") != audit_base_revision
+    ):
+        raise RuntimeError(f"Current-main audit checkpoint identity mismatch: {path}")
+    return payload
+
+
+def _audit_one_current_main_record(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+    audit_base_revision: str,
+    key: str,
+) -> None:
+    """Reassess one persisted state at its final recorded geometry budget only."""
+    reference = _load_result(reference_path)
+    records = {_record_key(study, record): record for record in reference["records"]}
+    try:
+        record = records[key]
+    except KeyError as error:
+        raise RuntimeError(f"Unknown {study} current-main audit key: {key}") from error
+    checkpoint = _load_current_main_audit_checkpoint(
+        checkpoint_dir, study, reference_path, audit_base_revision
+    )
+    if key in checkpoint["audited"]:
+        print(f"current-main audit checkpoint exists: {key}")
+        return
+
+    assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
+    started_at = perf_counter()
+    observed = assessor(checkpoint_dir, record, _recorded_final_budget(record))
+    _verify_recorded_budget(record, observed, key)
+    recorded = _recorded_current_snapshot(record)
+    recorded_category = str(record["final_category"])
+    current_category = _category_from_snapshot(observed)
+    reason = _current_main_shift_reason(record, recorded, observed)
+    category_changed = current_category != recorded_category
+    checkpoint["audited"][key] = {
+        "recorded": recorded,
+        "observed": observed,
+        "recorded_final_category": recorded_category,
+        "current_final_category": current_category,
+        "verdict_changed": observed["verdict"] != recorded["verdict"],
+        "category_changed": category_changed,
+        "change_reason": reason,
+        "wall_seconds": perf_counter() - started_at,
+    }
+    path = _current_main_audit_checkpoint_path(checkpoint_dir, study)
+    _atomic_write(path, checkpoint)
+    print(
+        f"audited {key}: category={current_category} changed={category_changed} "
+        f"reason={reason} checkpoint={path}"
+    )
+
+
+def _list_pending_current_main_audit(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+    audit_base_revision: str,
+) -> None:
+    """List records not yet re-read under the current conditioning revision."""
+    reference = _load_result(reference_path)
+    checkpoint = _load_current_main_audit_checkpoint(
+        checkpoint_dir, study, reference_path, audit_base_revision
+    )
+    pending = [
+        _record_key(study, record)
+        for record in reference["records"]
+        if _record_key(study, record) not in checkpoint["audited"]
+    ]
+    print(json.dumps(pending, indent=2))
+
+
+def _current_main_resolution(record: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
+    """Attach the current-base reading without relabeling it as a budget search."""
+    observed = dict(audit["observed"])
+    category = str(audit["current_final_category"])
+    return {
+        "status": "CERTIFIED" if _is_certified(observed) else "UNCERTIFIED_AT_CAP",
+        "source": "current_main_recorded_budget_audit",
+        "description": (
+            "The persisted, SHA256-verified converged source state was reassessed once at its "
+            "already-recorded terminal budget with two restarts after rebasing onto the current "
+            "conditioning revision. This audit does not re-solve source states or re-search "
+            "the geometry budget."
+        ),
+        "recorded_pre_current_main_budget": _recorded_final_snapshot(record),
+        "attempts": [observed],
+        "final": observed,
+        "final_category": category,
+        "final_verdict": observed["verdict"] if _is_certified(observed) else None,
+        "pre_current_main": {
+            "final_category": audit["recorded_final_category"],
+            "verdict_changed": bool(audit["verdict_changed"]),
+            "category_changed": bool(audit["category_changed"]),
+            "change_reason": audit["change_reason"],
+        },
+    }
+
+
+def _assemble_current_main_audit(
+    checkpoint_dir: Path,
+    study: str,
+    reference_path: Path,
+    audit_base_revision: str,
+    output_path: Path,
+) -> None:
+    """Assemble all recorded-budget readings into the current-base result report."""
+    reference = _load_result(reference_path)
+    checkpoint = _load_current_main_audit_checkpoint(
+        checkpoint_dir, study, reference_path, audit_base_revision
+    )
+    reference_by_key = {_record_key(study, record): record for record in reference["records"]}
+    missing = set(reference_by_key).difference(checkpoint["audited"])
+    if missing:
+        raise RuntimeError(
+            f"Cannot assemble current-main audit; {len(missing)} records remain: {sorted(missing)[:3]}"
+        )
+
+    records: list[dict[str, Any]] = []
+    categories: dict[str, int] = {}
+    budget_counts: dict[str, int] = {}
+    changed_keys: list[str] = []
+    reason_counts: dict[str, int] = {}
+    for record in reference["records"]:
+        key = _record_key(study, record)
+        audit = checkpoint["audited"][key]
+        observed = audit["observed"]
+        updated = dict(record)
+        _replace_geometry_fields(updated, observed)
+        if study == "pme":
+            updated["predicted_iterations_from_envelope"] = (
+                pme_breakdown.predicted_iterations_from_envelope(
+                    float(observed["disk_rate"]),
+                    tol=float(reference["config"]["krylov_tol"]),
+                )
+            )
+        resolution = _current_main_resolution(record, audit)
+        updated["geometry_resolution"] = resolution
+        updated["final_category"] = resolution["final_category"]
+        updated["final_verdict"] = resolution["final_verdict"]
+        category = str(resolution["final_category"])
+        categories[category] = categories.get(category, 0) + 1
+        final = resolution["final"]
+        if resolution["status"] == "CERTIFIED":
+            budget = f"{final['n_angles']}/{final['fov_max_iters']}/{final['fov_n_restarts']}"
+            budget_counts[budget] = budget_counts.get(budget, 0) + 1
+        if audit["category_changed"]:
+            changed_keys.append(key)
+            reason = audit["change_reason"] or "certification_status_changed"
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        records.append(updated)
+
+    report = dict(reference)
+    report["records"] = records
+    report_resolution = dict(reference["geometry_resolution"])
+    report_resolution.update(
+        {
+            "description": (
+                "Final geometry readings were re-audited against the current conditioning "
+                "revision at each record's already-recorded terminal budget with two restarts. "
+                "Persisted source states were loaded and SHA256-verified; no source state or "
+                "budget ladder was regenerated."
+            ),
+            "source_schema": CURRENT_MAIN_AUDIT_SCHEMA,
+            "reference_result": str(reference_path),
+            "reference_sha256": _base_digest(reference_path),
+            "audit_base_revision": audit_base_revision,
+            "recorded_budget_only": True,
+            "final_category_counts": categories,
+            "certifying_budget_counts": budget_counts,
+            "category_changed_count": len(changed_keys),
+            "change_reason_counts": reason_counts,
+            "changed_record_keys": changed_keys,
+        }
+    )
+    report["geometry_resolution"] = report_resolution
+    report["conditioning_audit_base_revision"] = audit_base_revision
+    if study == "pme":
+        report["regime_claim"] = pme_breakdown._regime_claim(records)
+        report["rank_claim"] = pme_breakdown._rank_claim(records)
+        report["predictor_quality"] = pme_breakdown._predictor_quality(records)
+        report["correlation"] = pme_breakdown._correlation_pairs(records)
+        report["regime_map"] = pme_breakdown._regime_map(records)
+        report["verdict_on_decision_procedure"] = pme_breakdown._verdict_on_decision_procedure(
+            records
+        )
+    else:
+        report["regime_claim"] = porous_fisher_conditioning._regime_claim(records)
+        report["verdict_on_decision_procedure"] = (
+            porous_fisher_conditioning._verdict_on_decision_procedure(records)
+        )
+        report["reaction_effect"] = porous_fisher_conditioning._reaction_effect(records)
+    _atomic_write(output_path, report)
+    print(
+        f"assembled current-main audit: study={study} records={len(records)} output={output_path}"
+    )
+
+
 def _list_pending_resolution(checkpoint_dir: Path, study: str) -> None:
     """Print deterministic keys for uncertified records not resolved by a prior probe."""
     base_path, report = _load_base_report(study)
@@ -1712,9 +1973,27 @@ def main() -> None:
         help="Assemble all recorded-budget Option-A readings into final results",
     )
     parser.add_argument(
+        "--list-pending-current-main-audit",
+        action="store_true",
+        help="List records not yet re-audited on the specified current conditioning revision",
+    )
+    parser.add_argument(
+        "--audit-current-main-record",
+        help="Reassess one persisted source state at its stored terminal geometry budget",
+    )
+    parser.add_argument(
+        "--assemble-current-main-audit",
+        action="store_true",
+        help="Assemble every re-audited current-main reading into the result report",
+    )
+    parser.add_argument(
         "--reference-result",
         type=Path,
-        help="Immutable pre-C1 final result JSON used only for record keys and budgets",
+        help="Immutable prior final result JSON used only for record keys and budgets",
+    )
+    parser.add_argument(
+        "--audit-base-revision",
+        help="Immutable conditioning base revision being measured by a current-main audit",
     )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--output", type=Path, help="Override the canonical result path")
@@ -1733,6 +2012,9 @@ def main() -> None:
             args.list_pending_c1_option_a_audit,
             args.audit_c1_option_a_record,
             args.assemble_c1_option_a_audit,
+            args.list_pending_current_main_audit,
+            args.audit_current_main_record,
+            args.assemble_current_main_audit,
         )
     )
     if actions != 1:
@@ -1786,6 +2068,46 @@ def main() -> None:
             args.checkpoint_dir,
             args.study,
             args.reference_result,
+            args.output or _base_output_path(args.study),
+        )
+        return
+    if args.list_pending_current_main_audit:
+        if args.reference_result is None or args.audit_base_revision is None:
+            parser.error(
+                "--list-pending-current-main-audit requires --reference-result and "
+                "--audit-base-revision"
+            )
+        _list_pending_current_main_audit(
+            args.checkpoint_dir,
+            args.study,
+            args.reference_result,
+            args.audit_base_revision,
+        )
+        return
+    if args.audit_current_main_record:
+        if args.reference_result is None or args.audit_base_revision is None:
+            parser.error(
+                "--audit-current-main-record requires --reference-result and --audit-base-revision"
+            )
+        _audit_one_current_main_record(
+            args.checkpoint_dir,
+            args.study,
+            args.reference_result,
+            args.audit_base_revision,
+            args.audit_current_main_record,
+        )
+        return
+    if args.assemble_current_main_audit:
+        if args.reference_result is None or args.audit_base_revision is None:
+            parser.error(
+                "--assemble-current-main-audit requires --reference-result and "
+                "--audit-base-revision"
+            )
+        _assemble_current_main_audit(
+            args.checkpoint_dir,
+            args.study,
+            args.reference_result,
+            args.audit_base_revision,
             args.output or _base_output_path(args.study),
         )
         return
