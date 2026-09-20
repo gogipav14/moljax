@@ -59,7 +59,7 @@ from moljax.core.stepping import (
     ssprk3_step,
 )
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 __all__ = [
     # Grid
     "Grid1D",

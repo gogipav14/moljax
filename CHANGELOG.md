@@ -4,6 +4,8 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-20
+
 ### Added
 
 - **`full_operator_epsilon_zero` returns the full operator's exact
@@ -78,6 +80,16 @@ All notable changes to moljax are documented here.
   choice, the grid alignment, the recorded field, the CFL path and a
   non-finite inversion (inf, not NaN, so no threshold comparison silently
   passes).
+
+
+- **`nilt_solve_linear_pde` and `compare_nilt_vs_timestepping` require
+  64-bit precision.** They now call `moljax._precision.require_x64`, as
+  `gaver_stehfest_method` and the rest of the NILT stack do, so a float32
+  call raises the same clear `RuntimeError` naming the entry point instead
+  of running the inversion at a precision the Bromwich contour's `e^{a t}`
+  factor (about 100 at the tuned shift) immediately spends.
+  `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction::test_bridge_requires_x64`
+  covers this.
 
 ### Changed
 
@@ -246,6 +258,170 @@ All notable changes to moljax are documented here.
   `tests/test_pseudospectra.py` gained coverage assertions
   (`k_requested`/`k_achieved`/`breakdown`/`residual_norm`) on the existing
   Arnoldi tests plus a legacy-indexing regression test.
+
+
+- **Time is no longer carried in the state's dtype.** `integrate_fixed_dt`,
+  `integrate_imex_fixed_dt`, `adaptive_integrate` and
+  `adaptive_integrate_imex` all built their clock from `model.dtype`
+  (`jnp.array(t0, dtype=model.dtype)`) and accumulated it one step at a
+  time. At `t0 = 1e6` in float32 the spacing is 0.0625, so `t + 0.01`
+  rounds straight back to `t`: the fixed-step run took all 100 steps at
+  the same instant and RK4 returned `u = 0` instead of 0.5 on
+  `u' = t - t0`, and the adaptive run stopped with `MAX_STEPS_REACHED` and
+  `t_final` still exactly `1e6`. A float32 state is a choice about the
+  field, not a statement that the clock fits in 24 bits of mantissa, so
+  time now follows JAX's default float type (float64 when x64 is enabled)
+  regardless of the state's dtype, and the fixed-step path takes each
+  timestamp as `t0 + i*dt` rather than as a running sum (one rounding in
+  total instead of one per step: 1000 steps of 0.001 now land on exactly
+  1.0 instead of 1.0000000000000007). The state itself stays in its own
+  dtype: a step's result is cast back, so a right-hand side that uses `t`
+  cannot silently widen the field or break a loop carry's dtype. Both
+  reproductions now give 0.5. **Public surface:** `AdaptiveResult.t_final`
+  and `t_history`, and `integrate_fixed_dt`'s `t_history`, are float64 for
+  a float32 model under x64 (`y_final` and `dt_history` are unchanged);
+  and when x64 is off, so there is no wider type to fall back on, a `dt`
+  that is unrepresentable at `t0` now raises `ValueError` at validation
+  instead of running and advancing nothing.
+  `tests/test_integrators.py::TestTimeIsNotCarriedInTheStateDtype` covers
+  the two reproductions, the drift, and the refusal.
+  `TestAdaptive::test_adaptive_float32_model_under_x64` now pins
+  `y_final` and `dt_history` as float32 and `t_final` as float64.
+
+- **The IMEX steppers' explicit part is now everything the FFT diffusion
+  split does not handle, not just `model.nonlinear_rhs`.**
+  `imex_euler_step`, `imex_strang_step` and `imex_ssprk2_step` evaluated
+  `model.nonlinear_rhs` for their explicit stages, which assumes a model's
+  linear operators are exactly the diffusion the FFT solve inverts.
+  `create_advection_diffusion_model` folds advection into the same
+  `LinearOp` as the diffusion, so with `D = 0` the FFT solve was the
+  identity, the explicit part was zero (the model has no nonlinear
+  operators), and every IMEX step returned the state untouched: max-abs
+  change 8.60e-16 on a 16x16 sine whose advective right-hand side has
+  max-abs 0.9936, with `adaptive_integrate_imex` reporting `SUCCESS` on a
+  state that never moved. The explicit part is now `model.rhs` minus the
+  diffusion the split treats implicitly, `D * Laplacian(y)`, taken with
+  the same `D` and through the same spectral operator the Helmholtz solve
+  inverts (`diffusion_rhs_fft`), so the two cancel to roundoff: the FFT
+  symbol is `(2 cos(k dx) - 2)/dx^2 + (2 cos(k dy) - 2)/dy^2`, the symbol
+  of the same second-difference stencil the models' Laplacian operators
+  use, checked numerically to a relative 1e-12. The same 16x16 advection
+  case now moves by 9.93e-3 in one step of `dt = 0.01` and tracks an
+  explicit RK4 reference to a relative 2e-7 (Strang and SSPRK2) over ten
+  steps. A model with no linear operators states a right-hand side that
+  contains no diffusion, so nothing is subtracted there and its steps are
+  bit-identical. **Public surface:** the three steppers now raise
+  `ValueError` when a diffusive field's boundary condition is not
+  periodic, which the split's Laplacian cannot represent, or when
+  `diffusivities` names a field the model does not have, instead of
+  quietly stepping the wrong operator. Cost: one Laplacian evaluation per
+  stage on top of the model's own right-hand side. Reaction-diffusion and
+  pure-diffusion models are unchanged to 1e-12 (the explicit part of
+  Gray-Scott is its reaction, and a diffusion-only Strang step is still
+  the exact discrete decay).
+  `tests/test_imex.py::TestIMEXExplicitPart` and
+  `::TestIMEXSplitValidation` cover all of this.
+
+- **A step whose Newton solve failed no longer takes the PID controller's
+  accepted branch, and one step's rejections are now bounded.**
+  `propose_dt` and `propose_dt_imex` decided acceptance from
+  `err_ratio <= 1.0` alone, but an error estimate built from a failed
+  solve can be arbitrarily small, so a failed step was handed to the PID
+  controller, whose growth term (up to `max_factor = 5`) outran the
+  integrator's halving on rejection. On `u' = -u` at `u0 = 1000` in
+  float32, where the default `newton_tol = 1e-8` is below the float32
+  spacing of 1000 and no solve can ever converge, `dt` plateaued between
+  1.6e-3 and 1.8e-3 and `adaptive_integrate(..., max_steps=1)` never
+  returned at all (killed at 90 s): `max_steps` bounds accepted steps and
+  no step was ever accepted. Both proposal functions now take the
+  integrator's own `accepted` decision (error test **and** finiteness
+  **and** solve convergence), so a failed step always takes the rejected
+  branch, whose factor is at most 1 and which the implicit robustness
+  limiter can only shrink further. **Public surface:** `propose_dt` and
+  `propose_dt_imex` gained an optional `accepted` argument, defaulting to
+  the old `err_ratio <= 1.0` so existing callers are unchanged;
+  `adaptive_integrate` and `adaptive_integrate_imex` gained
+  `max_rejections_per_step` (default 10, CVODE's `MXNCF`), the consecutive
+  rejections one step may spend before the run stops with the new
+  `StatusCode.MAX_ATTEMPTS_REACHED` (6). That budget is independent of
+  `max_steps`, which counts accepted steps only. Both integrators also
+  keep the controller state the proposal returns on a rejection; they used
+  to discard it, which is why `consecutive_rejects` was written but never
+  seen by anyone. The reproduction now stops in about 2 s with
+  `MAX_ATTEMPTS_REACHED`, 0 accepted steps and 10 rejections. Well-posed
+  runs are untouched: the six methods on a logistic model, RK4 and BDF2 on
+  a stiff decay that does reject steps, and both IMEX variants on
+  Gray-Scott give identical statuses, accept/reject counts, `dt` histories
+  and `t` histories before and after.
+  `tests/test_dt_policy.py::TestRejectionsTerminate` covers all three.
+
+- **`integrate_fixed_dt` no longer returns a failed Newton solve as an
+  ordinary result; it raises.** `do_be`, `do_cn` and `do_bdf2` each dropped
+  the `NKStats` their step function returns (`y_new, _ = be_step(...)`) and
+  the scan carry had no status field at all, where the adaptive integrator
+  carries a `StatusCode` and rejects a step on `nk_stats.converged`. On
+  `u' = -u^3`, `u0 = 1`, `dt = 1` with `max_newton_iters = 1`, `be_step`
+  returns `u = 0.5` with `converged = False` and residual `0.6495`, and
+  `integrate_fixed_dt` returned that `0.5` with no indication of any kind.
+  The scan now carries a status: a step whose state is not finite, or whose
+  Newton-Krylov solve did not converge, records `NON_FINITE_VALUES` or
+  `NK_FAILED`, keeps the last good state, and turns every later step into a
+  no-op. **Public surface:** the default return is still the same
+  three-element tuple (every caller in the tree and every documented
+  example unpacks exactly three values), and a run that did not finish now
+  raises `RuntimeError` naming the status. The new `return_status=True`
+  keyword returns the `StatusCode` as a fourth element instead of raising,
+  which is what a caller tracing this function under `jit` must use, since
+  raising on a tracer is not possible. A run in which nothing fails is
+  unchanged: the four fixed-step methods on the 8x8 Gray-Scott model
+  (`t_end = 0.5`, `dt = 0.05`) produce bit-identical histories and final
+  states before and after.
+  `tests/test_integrators.py::TestFixedStepReportsFailedSolves` covers the
+  reproduction, the frozen tail, the explicit blow-up, and the
+  bit-identical converging run.
+
+- **`exact_cfl_dt('imex')` and `exact_cfl_dt('etd')` now raise
+  `NotImplementedError` instead of returning `safety * 1.0`.** Both
+  branches ignored `op.eigenvalues` entirely and returned a literal
+  constant that looked like a real stability bound; no caller in the tree
+  uses either branch (grep confirms). A wrong number that resembles a
+  real answer is worse than a refusal, so both now name the unimplemented
+  branch in the raised error instead. `'explicit'` is unaffected.
+
+- **`cn_step` and `bdf2_step` now hand the preconditioner their own effective
+  diffusive step, not the outer `dt`.** `newton_krylov_solve` builds the
+  `PrecondContext` from whatever `dt` it is given, but CN's Newton Jacobian
+  is `I - (dt/2)*F'(y)` and BDF2's is `alpha0*I - dt*F'(y)`
+  (`alpha0 = (1+2w)/(1+w)`, 1.5 at a constant step): passing the outer `dt`
+  to a linear FFT diffusion preconditioner built for `(I - dt*D*Laplacian)`
+  makes it only approximately invert the actual Jacobian. `cn_step` now
+  passes `dt/2`; `bdf2_step` passes `dt/alpha0` and scales the
+  preconditioner's output by `1/alpha0`, via two new `newton_krylov_solve`
+  keywords, `precond_dt` (default `dt`) and `precond_scale` (default 1).
+  Measured on a 16-point periodic grid at `dt*D = 1` (constant step): CN's
+  preconditioned eigenvalues were `[0.50, 1.0]`, now exactly `1`; BDF2's
+  were `[1.00, 1.5]`, now exactly `1`. Performance only (fewer Krylov
+  iterations to converge); no step produces a different result.
+
+- **`imex_ssprk2_step` no longer recomputes each stage's Laplacian through a
+  second FFT round trip.** Both stages already solve
+  `(I - gamma dt L) U = rhs`, so `L U = (U - rhs) / (gamma * dt)` on the
+  interior; the step used this identity for neither and called
+  `diffusion_rhs_fft` again instead. No numerical change (the two agree to
+  about 3e-14 on a Gray-Scott state); measured about 1.5x faster per step
+  with the redundant FFT removed.
+
+- **The numerical range is a 2-spectral set, not a `1 + sqrt(2)`-spectral
+  set.** Crouzeix's conjecture was proved in 2026 with the sharp constant 2
+  (Jin, "The Numerical Range Is a 2-Spectral Set", Preprints.org,
+  doi:10.20944/preprints202607.1919.v4; Lorist and Schwenninger, "A solution
+  to Crouzeix's conjecture", arXiv:2608.03841), superseding Crouzeix and
+  Palencia, SIAM J. Matrix Anal. Appl. 38(2) 2017, doi:10.1137/17M1116672.
+  `_CP_PREFACTOR` is now a single definition in `field_of_values.py`
+  (`non_normality.py` carried its own duplicate), imported by
+  `non_normality.py` and `figures.py`. The drawn Crouzeix-Palencia envelopes
+  tighten by a factor of `(1 + sqrt(2)) / 2`, about 1.21x; no verdict in
+  `assess_preconditioner` depends on the constant's value.
 
 ### Fixed
 
@@ -1016,17 +1192,6 @@ All notable changes to moljax are documented here.
   unchanged (they check scaling ratios or single-term limits that the new
   formula still satisfies).
 
-### Added
-
-- **`nilt_solve_linear_pde` and `compare_nilt_vs_timestepping` require
-  64-bit precision.** They now call `moljax._precision.require_x64`, as
-  `gaver_stehfest_method` and the rest of the NILT stack do, so a float32
-  call raises the same clear `RuntimeError` naming the entry point instead
-  of running the inversion at a precision the Bromwich contour's `e^{a t}`
-  factor (about 100 at the tuned shift) immediately spends.
-  `tests/test_fft_nilt_bridge.py::TestSmallEigenvalueReconstruction::test_bridge_requires_x64`
-  covers this.
-
 ### Removed
 
 - **The unused inner `step` closure in `make_etd1_integrator`.** `integrate`
@@ -1035,171 +1200,6 @@ All notable changes to moljax are documented here.
   `carry[2]`, so any future caller would have hit an `IndexError`
   immediately. Dead code with no callers (checked at the bytecode level in
   `test_jit_kernels.py::test_etd1_integrator_has_no_dead_step`).
-
-### Changed
-
-- **Time is no longer carried in the state's dtype.** `integrate_fixed_dt`,
-  `integrate_imex_fixed_dt`, `adaptive_integrate` and
-  `adaptive_integrate_imex` all built their clock from `model.dtype`
-  (`jnp.array(t0, dtype=model.dtype)`) and accumulated it one step at a
-  time. At `t0 = 1e6` in float32 the spacing is 0.0625, so `t + 0.01`
-  rounds straight back to `t`: the fixed-step run took all 100 steps at
-  the same instant and RK4 returned `u = 0` instead of 0.5 on
-  `u' = t - t0`, and the adaptive run stopped with `MAX_STEPS_REACHED` and
-  `t_final` still exactly `1e6`. A float32 state is a choice about the
-  field, not a statement that the clock fits in 24 bits of mantissa, so
-  time now follows JAX's default float type (float64 when x64 is enabled)
-  regardless of the state's dtype, and the fixed-step path takes each
-  timestamp as `t0 + i*dt` rather than as a running sum (one rounding in
-  total instead of one per step: 1000 steps of 0.001 now land on exactly
-  1.0 instead of 1.0000000000000007). The state itself stays in its own
-  dtype: a step's result is cast back, so a right-hand side that uses `t`
-  cannot silently widen the field or break a loop carry's dtype. Both
-  reproductions now give 0.5. **Public surface:** `AdaptiveResult.t_final`
-  and `t_history`, and `integrate_fixed_dt`'s `t_history`, are float64 for
-  a float32 model under x64 (`y_final` and `dt_history` are unchanged);
-  and when x64 is off, so there is no wider type to fall back on, a `dt`
-  that is unrepresentable at `t0` now raises `ValueError` at validation
-  instead of running and advancing nothing.
-  `tests/test_integrators.py::TestTimeIsNotCarriedInTheStateDtype` covers
-  the two reproductions, the drift, and the refusal.
-  `TestAdaptive::test_adaptive_float32_model_under_x64` now pins
-  `y_final` and `dt_history` as float32 and `t_final` as float64.
-
-- **The IMEX steppers' explicit part is now everything the FFT diffusion
-  split does not handle, not just `model.nonlinear_rhs`.**
-  `imex_euler_step`, `imex_strang_step` and `imex_ssprk2_step` evaluated
-  `model.nonlinear_rhs` for their explicit stages, which assumes a model's
-  linear operators are exactly the diffusion the FFT solve inverts.
-  `create_advection_diffusion_model` folds advection into the same
-  `LinearOp` as the diffusion, so with `D = 0` the FFT solve was the
-  identity, the explicit part was zero (the model has no nonlinear
-  operators), and every IMEX step returned the state untouched: max-abs
-  change 8.60e-16 on a 16x16 sine whose advective right-hand side has
-  max-abs 0.9936, with `adaptive_integrate_imex` reporting `SUCCESS` on a
-  state that never moved. The explicit part is now `model.rhs` minus the
-  diffusion the split treats implicitly, `D * Laplacian(y)`, taken with
-  the same `D` and through the same spectral operator the Helmholtz solve
-  inverts (`diffusion_rhs_fft`), so the two cancel to roundoff: the FFT
-  symbol is `(2 cos(k dx) - 2)/dx^2 + (2 cos(k dy) - 2)/dy^2`, the symbol
-  of the same second-difference stencil the models' Laplacian operators
-  use, checked numerically to a relative 1e-12. The same 16x16 advection
-  case now moves by 9.93e-3 in one step of `dt = 0.01` and tracks an
-  explicit RK4 reference to a relative 2e-7 (Strang and SSPRK2) over ten
-  steps. A model with no linear operators states a right-hand side that
-  contains no diffusion, so nothing is subtracted there and its steps are
-  bit-identical. **Public surface:** the three steppers now raise
-  `ValueError` when a diffusive field's boundary condition is not
-  periodic, which the split's Laplacian cannot represent, or when
-  `diffusivities` names a field the model does not have, instead of
-  quietly stepping the wrong operator. Cost: one Laplacian evaluation per
-  stage on top of the model's own right-hand side. Reaction-diffusion and
-  pure-diffusion models are unchanged to 1e-12 (the explicit part of
-  Gray-Scott is its reaction, and a diffusion-only Strang step is still
-  the exact discrete decay).
-  `tests/test_imex.py::TestIMEXExplicitPart` and
-  `::TestIMEXSplitValidation` cover all of this.
-
-- **A step whose Newton solve failed no longer takes the PID controller's
-  accepted branch, and one step's rejections are now bounded.**
-  `propose_dt` and `propose_dt_imex` decided acceptance from
-  `err_ratio <= 1.0` alone, but an error estimate built from a failed
-  solve can be arbitrarily small, so a failed step was handed to the PID
-  controller, whose growth term (up to `max_factor = 5`) outran the
-  integrator's halving on rejection. On `u' = -u` at `u0 = 1000` in
-  float32, where the default `newton_tol = 1e-8` is below the float32
-  spacing of 1000 and no solve can ever converge, `dt` plateaued between
-  1.6e-3 and 1.8e-3 and `adaptive_integrate(..., max_steps=1)` never
-  returned at all (killed at 90 s): `max_steps` bounds accepted steps and
-  no step was ever accepted. Both proposal functions now take the
-  integrator's own `accepted` decision (error test **and** finiteness
-  **and** solve convergence), so a failed step always takes the rejected
-  branch, whose factor is at most 1 and which the implicit robustness
-  limiter can only shrink further. **Public surface:** `propose_dt` and
-  `propose_dt_imex` gained an optional `accepted` argument, defaulting to
-  the old `err_ratio <= 1.0` so existing callers are unchanged;
-  `adaptive_integrate` and `adaptive_integrate_imex` gained
-  `max_rejections_per_step` (default 10, CVODE's `MXNCF`), the consecutive
-  rejections one step may spend before the run stops with the new
-  `StatusCode.MAX_ATTEMPTS_REACHED` (6). That budget is independent of
-  `max_steps`, which counts accepted steps only. Both integrators also
-  keep the controller state the proposal returns on a rejection; they used
-  to discard it, which is why `consecutive_rejects` was written but never
-  seen by anyone. The reproduction now stops in about 2 s with
-  `MAX_ATTEMPTS_REACHED`, 0 accepted steps and 10 rejections. Well-posed
-  runs are untouched: the six methods on a logistic model, RK4 and BDF2 on
-  a stiff decay that does reject steps, and both IMEX variants on
-  Gray-Scott give identical statuses, accept/reject counts, `dt` histories
-  and `t` histories before and after.
-  `tests/test_dt_policy.py::TestRejectionsTerminate` covers all three.
-
-- **`integrate_fixed_dt` no longer returns a failed Newton solve as an
-  ordinary result; it raises.** `do_be`, `do_cn` and `do_bdf2` each dropped
-  the `NKStats` their step function returns (`y_new, _ = be_step(...)`) and
-  the scan carry had no status field at all, where the adaptive integrator
-  carries a `StatusCode` and rejects a step on `nk_stats.converged`. On
-  `u' = -u^3`, `u0 = 1`, `dt = 1` with `max_newton_iters = 1`, `be_step`
-  returns `u = 0.5` with `converged = False` and residual `0.6495`, and
-  `integrate_fixed_dt` returned that `0.5` with no indication of any kind.
-  The scan now carries a status: a step whose state is not finite, or whose
-  Newton-Krylov solve did not converge, records `NON_FINITE_VALUES` or
-  `NK_FAILED`, keeps the last good state, and turns every later step into a
-  no-op. **Public surface:** the default return is still the same
-  three-element tuple (every caller in the tree and every documented
-  example unpacks exactly three values), and a run that did not finish now
-  raises `RuntimeError` naming the status. The new `return_status=True`
-  keyword returns the `StatusCode` as a fourth element instead of raising,
-  which is what a caller tracing this function under `jit` must use, since
-  raising on a tracer is not possible. A run in which nothing fails is
-  unchanged: the four fixed-step methods on the 8x8 Gray-Scott model
-  (`t_end = 0.5`, `dt = 0.05`) produce bit-identical histories and final
-  states before and after.
-  `tests/test_integrators.py::TestFixedStepReportsFailedSolves` covers the
-  reproduction, the frozen tail, the explicit blow-up, and the
-  bit-identical converging run.
-
-- **`exact_cfl_dt('imex')` and `exact_cfl_dt('etd')` now raise
-  `NotImplementedError` instead of returning `safety * 1.0`.** Both
-  branches ignored `op.eigenvalues` entirely and returned a literal
-  constant that looked like a real stability bound; no caller in the tree
-  uses either branch (grep confirms). A wrong number that resembles a
-  real answer is worse than a refusal, so both now name the unimplemented
-  branch in the raised error instead. `'explicit'` is unaffected.
-
-- **`cn_step` and `bdf2_step` now hand the preconditioner their own effective
-  diffusive step, not the outer `dt`.** `newton_krylov_solve` builds the
-  `PrecondContext` from whatever `dt` it is given, but CN's Newton Jacobian
-  is `I - (dt/2)*F'(y)` and BDF2's is `alpha0*I - dt*F'(y)`
-  (`alpha0 = (1+2w)/(1+w)`, 1.5 at a constant step): passing the outer `dt`
-  to a linear FFT diffusion preconditioner built for `(I - dt*D*Laplacian)`
-  makes it only approximately invert the actual Jacobian. `cn_step` now
-  passes `dt/2`; `bdf2_step` passes `dt/alpha0` and scales the
-  preconditioner's output by `1/alpha0`, via two new `newton_krylov_solve`
-  keywords, `precond_dt` (default `dt`) and `precond_scale` (default 1).
-  Measured on a 16-point periodic grid at `dt*D = 1` (constant step): CN's
-  preconditioned eigenvalues were `[0.50, 1.0]`, now exactly `1`; BDF2's
-  were `[1.00, 1.5]`, now exactly `1`. Performance only (fewer Krylov
-  iterations to converge); no step produces a different result.
-
-- **`imex_ssprk2_step` no longer recomputes each stage's Laplacian through a
-  second FFT round trip.** Both stages already solve
-  `(I - gamma dt L) U = rhs`, so `L U = (U - rhs) / (gamma * dt)` on the
-  interior; the step used this identity for neither and called
-  `diffusion_rhs_fft` again instead. No numerical change (the two agree to
-  about 3e-14 on a Gray-Scott state); measured about 1.5x faster per step
-  with the redundant FFT removed.
-
-- **The numerical range is a 2-spectral set, not a `1 + sqrt(2)`-spectral
-  set.** Crouzeix's conjecture was proved in 2026 with the sharp constant 2
-  (Jin, "The Numerical Range Is a 2-Spectral Set", Preprints.org,
-  doi:10.20944/preprints202607.1919.v4; Lorist and Schwenninger, "A solution
-  to Crouzeix's conjecture", arXiv:2608.03841), superseding Crouzeix and
-  Palencia, SIAM J. Matrix Anal. Appl. 38(2) 2017, doi:10.1137/17M1116672.
-  `_CP_PREFACTOR` is now a single definition in `field_of_values.py`
-  (`non_normality.py` carried its own duplicate), imported by
-  `non_normality.py` and `figures.py`. The drawn Crouzeix-Palencia envelopes
-  tighten by a factor of `(1 + sqrt(2)) / 2`, about 1.21x; no verdict in
-  `assess_preconditioner` depends on the constant's value.
 
 ## [1.2.0] - 2026-09-06
 
