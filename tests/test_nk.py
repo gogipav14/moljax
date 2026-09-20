@@ -595,6 +595,70 @@ class TestGmresBudget:
         assert NKParams().restart == 20
 
 
+class TestLineSearchDepth:
+    """backtrack_step's lax.scan must stop evaluating candidates once one
+    has been accepted, so its cost tracks where a solve happens to accept,
+    not the configured max_backtrack ceiling.
+    """
+
+    def test_line_search_cost_does_not_scale_with_max_backtrack(self):
+        """arctan(x) from x0 = [10, 10, 10] (the same overshoot case as
+        test_failed_line_search_does_not_increase_residual, on a Grid1D.
+        uniform(1, ...) grid, with NKParams(max_newton_iters=20,
+        newton_tol=1e-12)) converges in 12 Newton iterations along the
+        identical trajectory for every max_backtrack in (4, 6, 8, 12)
+        (max_backtrack=3 stagnates instead, see
+        test_stagnated_newton_exits_early).
+
+        Before this test's fix, backtrack_step's lax.scan body called
+        residual_fn(x_new) unconditionally on every one of its
+        max_backtrack iterations even after a candidate had already been
+        accepted, so counting residual_fn executions with
+        jax.debug.callback (which fires once per real execution and
+        survives the jax.jvp calls the Krylov matvecs make) gave 113 / 137
+        / 161 / 209 evaluations for max_backtrack = 4 / 6 / 8 / 12 on this
+        checkout: identical solutions, growing cost. The fix short-circuits
+        the scan body once accepted is True, so all four depths must cost
+        the same.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+        x0 = {'u': jnp.array([10.0, 10.0, 10.0])}
+
+        def make_residual():
+            calls: list[int] = []
+
+            def residual(x):
+                jax.debug.callback(lambda: calls.append(1))
+                return {'u': jnp.arctan(x['u'])}
+
+            return residual, calls
+
+        counts = {}
+        solutions = {}
+        res_norms = {}
+        for mb in (4, 6, 8, 12):
+            residual, calls = make_residual()
+            result = newton_krylov_solve(
+                residual_fn=residual,
+                x0=x0,
+                grid=grid,
+                params={},
+                nk_params=NKParams(max_newton_iters=20, newton_tol=1e-12, max_backtrack=mb)
+            )
+            jax.block_until_ready(result)
+            counts[mb] = len(calls)
+            solutions[mb] = result.solution['u']
+            res_norms[mb] = float(result.stats.final_res_norm)
+
+        assert counts[4] == counts[6] == counts[8] == counts[12], \
+            f"residual evaluation count scales with max_backtrack: {counts}"
+        for mb in (6, 8, 12):
+            assert jnp.allclose(solutions[mb], solutions[4]), \
+                f"solution at max_backtrack={mb} differs from max_backtrack=4"
+            assert res_norms[mb] == res_norms[4], \
+                f"final_res_norm at max_backtrack={mb} differs from max_backtrack=4"
+
+
 def decay_model(nx: int = 4) -> MOLModel:
     """y' = -y on every grid point, periodic, so exp(-t) is the exact solution."""
     grid = Grid1D.uniform(nx, 0.0, 1.0)

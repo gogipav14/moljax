@@ -234,6 +234,26 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **The Newton-Krylov line search stops evaluating candidates once one is accepted.**
+  `newton_step`'s `backtrack_step`, the body of the `lax.scan` backtracking loop in
+  `newton_krylov.py`, called `residual_fn(x_new)` on every one of its
+  `max_backtrack` iterations unconditionally, even after an earlier iteration had
+  already accepted a candidate: `lax.cond` only gated the bookkeeping
+  (`best_x_flat`/`best_r_norm` and friends), never the residual evaluation itself,
+  so depth cost one residual evaluation per candidate on every Newton step
+  regardless of whether a candidate had already been accepted. On the arctan
+  overshoot solve from `x0 = [10, 10, 10]` (`NKParams(max_newton_iters=20,
+  newton_tol=1e-12)`), residual evaluations were 113 / 137 / 161 / 209 at
+  `max_backtrack` 4 / 6 / 8 / 12, all four converging to the identical solution, so
+  every evaluation past the first depth's worth was wasted. Fixed by wrapping the
+  scan body in `lax.cond(accepted, lambda: carry, try_candidate)`: once accepted,
+  the carry passes through unchanged and `try_candidate` (the old body, verbatim)
+  never runs, so all four depths now cost 87 evaluations and results are
+  bit-identical to before at every depth (`max_backtrack` 3, 4, 6, 8, 12).
+  `tests/test_nk.py::TestLineSearchDepth::test_line_search_cost_does_not_scale_with_max_backtrack`
+  counts residual executions with `jax.debug.callback` (survives `jax.jvp`) and
+  checks the four depths cost the same and land on the identical solution.
+
 - **The periodic Laplacian symbol built as `(2*cos(k*dx) - 2)/dx^2` catastrophically
   cancelled in float32.** `laplacian_symbol_1d` and both 2D builders
   (`laplacian_symbol_2d`, `laplacian_symbol_2d_rfft`) in `fft_solvers.py` subtracted

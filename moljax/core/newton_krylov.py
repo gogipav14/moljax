@@ -378,43 +378,64 @@ def newton_krylov_solve(
         def backtrack_step(carry, _):
             alpha_bt, x_bt_flat, r_bt_norm, accepted, best_x_flat, best_r_norm = carry
 
-            # Candidate update
-            x_new_flat = x_bt_flat + alpha_bt * dx_flat
-            x_new = unravel(x_new_flat)
-            r_new = residual_fn(x_new)
-            r_new_flat, _ = ravel_pytree(r_new)
-            r_new_norm = jnp.linalg.norm(r_new_flat)
+            def try_candidate():
+                # Candidate update
+                x_new_flat = x_bt_flat + alpha_bt * dx_flat
+                x_new = unravel(x_new_flat)
+                r_new = residual_fn(x_new)
+                r_new_flat, _ = ravel_pytree(r_new)
+                r_new_norm = jnp.linalg.norm(r_new_flat)
 
-            # Accept if residual decreased sufficiently
-            accept = r_new_norm < (1.0 - nk_params.min_residual_decrease * alpha_bt) * r_bt_norm
+                # Accept if residual decreased sufficiently
+                accept = r_new_norm < (1.0 - nk_params.min_residual_decrease * alpha_bt) * r_bt_norm
 
-            # Update if accepted, otherwise reduce alpha
-            new_alpha = lax.cond(
-                jnp.logical_or(accept, accepted),
-                lambda: alpha_bt,
-                lambda: alpha_bt * nk_params.backtrack_factor
-            )
-            new_x_flat = lax.cond(
-                jnp.logical_and(accept, jnp.logical_not(accepted)),
-                lambda: x_new_flat,
-                lambda: x_bt_flat
-            )
-            new_r_norm = lax.cond(
-                jnp.logical_and(accept, jnp.logical_not(accepted)),
-                lambda: r_new_norm,
-                lambda: r_bt_norm
-            )
-            new_accepted = jnp.logical_or(accepted, accept)
+                # Update if accepted, otherwise reduce alpha
+                new_alpha = lax.cond(
+                    jnp.logical_or(accept, accepted),
+                    lambda: alpha_bt,
+                    lambda: alpha_bt * nk_params.backtrack_factor
+                )
+                new_x_flat = lax.cond(
+                    jnp.logical_and(accept, jnp.logical_not(accepted)),
+                    lambda: x_new_flat,
+                    lambda: x_bt_flat
+                )
+                new_r_norm = lax.cond(
+                    jnp.logical_and(accept, jnp.logical_not(accepted)),
+                    lambda: r_new_norm,
+                    lambda: r_bt_norm
+                )
+                new_accepted = jnp.logical_or(accepted, accept)
 
-            # Track the best candidate tried so far (by residual norm), so
-            # that if no candidate ever satisfies the Armijo-style decrease
-            # test, the loop still has something no worse than the starting
-            # iterate to fall back on instead of the untried full step.
-            is_better = r_new_norm < best_r_norm
-            new_best_x_flat = lax.cond(is_better, lambda: x_new_flat, lambda: best_x_flat)
-            new_best_r_norm = lax.cond(is_better, lambda: r_new_norm, lambda: best_r_norm)
+                # Track the best candidate tried so far (by residual norm), so
+                # that if no candidate ever satisfies the Armijo-style decrease
+                # test, the loop still has something no worse than the starting
+                # iterate to fall back on instead of the untried full step.
+                is_better = r_new_norm < best_r_norm
+                new_best_x_flat = lax.cond(is_better, lambda: x_new_flat, lambda: best_x_flat)
+                new_best_r_norm = lax.cond(is_better, lambda: r_new_norm, lambda: best_r_norm)
 
-            return (new_alpha, new_x_flat, new_r_norm, new_accepted, new_best_x_flat, new_best_r_norm), None
+                return (new_alpha, new_x_flat, new_r_norm, new_accepted, new_best_x_flat, new_best_r_norm)
+
+            # Once accepted is True, every remaining scan iteration paid for
+            # a residual_fn(x_new) evaluation whose result was then only
+            # used to (maybe) update best_x_flat/best_r_norm: the other four
+            # carry entries are pinned once accepted (new_alpha/new_x_flat/
+            # new_r_norm all short-circuit to their pre-candidate values via
+            # the `accept, accepted` and `accepted` conditions above, and
+            # new_accepted stays True). But best_x_flat/best_r_norm are only
+            # ever read below through lax.cond(accepted, ..., best_x_flat),
+            # i.e. exactly when accepted is False -- and once this iteration
+            # sees accepted already True, that branch is never taken again
+            # for the rest of the scan. So skipping try_candidate() once
+            # accepted leaves x_final_flat/r_final bit-identical while
+            # saving one residual evaluation per remaining depth.
+            #
+            # Under vmap, lax.cond lowers to a select and both branches
+            # still execute for every batch element, so this only saves
+            # work per solve (accepted is a scalar), not per batch element;
+            # correctness is unaffected either way.
+            return lax.cond(accepted, lambda: carry, try_candidate), None
 
         # max_backtrack is a static Python int (a NKParams field, not a
         # traced value), so branching on it in Python is fine under
