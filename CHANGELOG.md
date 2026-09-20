@@ -81,6 +81,21 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **`NKParams.max_backtrack` defaults to 8, not 3.** With `backtrack_factor = 0.5`,
+  depth `d` reaches `alpha = 2 ** -(d - 1)` before the line search gives up: 3
+  stopped at 0.25, 6 at 0.03125, 8 at 0.0078125. A stiff wide-front porous-medium
+  solve stalled at the old default (the accepted alpha never got below 0.25) and
+  converged once raised to 6; 8 leaves one more binary decade of margin. A solve
+  that previously stagnated after one Newton iteration at depth 3 may now converge
+  at the new default instead; no existing test's pinned numbers move; the tests
+  that need the depth-3 stagnation to exercise it (`test_failed_line_search_does_not_increase_residual`,
+  `test_stagnated_newton_exits_early`) already pin `max_backtrack=3` explicitly and
+  are unaffected. Since the line search now stops evaluating candidates once one is
+  accepted (see the "Fixed" entry above), the deeper default costs nothing on a
+  step that accepts and only one residual evaluation per extra depth on a step that
+  reaches the stagnation fallback. `tests/test_nk.py::TestDefaultBacktrackDepth`
+  covers both the rescued arctan overshoot solve and the `alpha <= 1%` guarantee.
+
 - **`etd_integrate` builds its compiled loop once per set of static
   parameters instead of once per call.** The same defect as in the
   fixed-step and adaptive drivers below, and the same fix: the ETD stepping

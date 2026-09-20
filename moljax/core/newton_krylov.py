@@ -69,6 +69,35 @@ class NKParams(NamedTuple):
     with no candidate ever checked against the Armijo-style decrease test.
     This differs from max_backtrack = 1, which does check that one
     candidate and falls back to the starting iterate if it fails.
+
+    max_backtrack defaults to 8, not 3. With backtrack_factor = 0.5, depth
+    d reaches alpha = 2 ** -(d - 1) before the line search gives up on a
+    step: 3 stops at 0.25, 6 at 0.03125, 8 at 0.0078125. A stiff wide-front
+    porous-medium solve stalled at the old default of 3 (the accepted
+    alpha never got below 0.25) and converged once max_backtrack was
+    raised to 6; 8 leaves one more binary decade of margin past that
+    reading. backtrack_step stops evaluating candidates once one is
+    accepted, so a step that accepts at depth j costs j residual
+    evaluations regardless of how high max_backtrack is set, and the extra
+    depth from 3 to 8 costs nothing on any step that accepts. It only
+    costs anything on a step where no candidate ever satisfies the
+    decrease test: one additional residual evaluation per unit of extra
+    depth, on that step alone.
+
+    The symptom that says to raise max_backtrack further: a step reporting
+    converged = False with newton_iters == 1 and final_res_norm about
+    equal to the residual the solve entered with. That is the stagnation
+    exit (NewtonState.stagnated, see test_stagnated_newton_exits_early):
+    every candidate down to alpha = 2 ** -(max_backtrack - 1) failed the
+    Armijo-style decrease test, so the loop exited rather than repeat the
+    identical rejected line search. Raising newton_tol or max_newton_iters
+    does not help here, since a stagnated step is a fixed point of the
+    whole Newton loop, not something more iterations would move past.
+    Going past 8 makes sense for a good but very long Newton direction
+    that only pays off after many halvings, typical of a stiff wide
+    diffusion front; the cost is the one extra residual evaluation per
+    extra depth described above, paid only on steps that reach the
+    fallback.
     """
     max_newton_iters: int = 10
     max_krylov_iters: int = 50
@@ -77,7 +106,7 @@ class NKParams(NamedTuple):
     krylov_tol: float = 1e-6
     damping: float = 1.0
     backtrack_factor: float = 0.5
-    max_backtrack: int = 3
+    max_backtrack: int = 8
     min_residual_decrease: float = 1e-4
 
 

@@ -659,6 +659,57 @@ class TestLineSearchDepth:
                 f"final_res_norm at max_backtrack={mb} differs from max_backtrack=4"
 
 
+class TestDefaultBacktrackDepth:
+    """NKParams.max_backtrack defaults to 8, not 3: with backtrack_factor =
+    0.5 the old default of 3 only reaches alpha = 0.25 before the line
+    search gives up, which is not deep enough for a good but long Newton
+    direction, and stiff wide-front porous-medium solves stalled there.
+    """
+
+    def test_deeper_default_backtracking_rescues_an_overshoot_solve(self):
+        """The arctan overshoot solve from x0 = [10, 10, 10] (the same case
+        as test_failed_line_search_does_not_increase_residual) converges
+        under the NKParams default (max_backtrack=8) but stagnates after a
+        single Newton iteration at max_backtrack=3, exactly the failure
+        mode the default is raised to avoid.
+        """
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        def residual(x):
+            return {'u': jnp.arctan(x['u'])}
+
+        x0 = {'u': jnp.array([10.0, 10.0, 10.0])}
+
+        default_result = newton_krylov_solve(
+            residual_fn=residual,
+            x0=x0,
+            grid=grid,
+            params={},
+            nk_params=NKParams(max_newton_iters=20, newton_tol=1e-8)
+        )
+        assert bool(default_result.stats.converged), \
+            "the default max_backtrack should converge this solve"
+
+        shallow_result = newton_krylov_solve(
+            residual_fn=residual,
+            x0=x0,
+            grid=grid,
+            params={},
+            nk_params=NKParams(max_newton_iters=20, newton_tol=1e-8, max_backtrack=3)
+        )
+        assert int(shallow_result.stats.newton_iters) == 1
+        assert not bool(shallow_result.stats.converged)
+
+    def test_default_max_backtrack_reaches_alpha_below_one_percent(self):
+        """NKParams.max_backtrack defaults to 8, deep enough that
+        backtrack_factor ** (max_backtrack - 1), the smallest alpha the
+        line search tries before giving up, is at most 1%.
+        """
+        params = NKParams()
+        assert params.max_backtrack == 8
+        assert params.backtrack_factor ** (params.max_backtrack - 1) <= 0.01
+
+
 def decay_model(nx: int = 4) -> MOLModel:
     """y' = -y on every grid point, periodic, so exp(-t) is the exact solution."""
     grid = Grid1D.uniform(nx, 0.0, 1.0)
