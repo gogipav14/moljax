@@ -12,6 +12,7 @@ import pytest
 from moljax.conditioning import (
     arnoldi,
     epsilon_zero,
+    full_operator_epsilon_zero,
     pseudospectrum_dense,
     reduced_pseudospectrum,
     ritz_values,
@@ -168,6 +169,71 @@ def test_arnoldi_breakdown_trims_to_the_completed_invariant_block():
     assert result.k_achieved == 3
     assert result.breakdown is True
     assert result.residual_norm < 1.0e-9
+
+
+@pytest.mark.parametrize("matrix", [_grcar(8), _normal_matrix()], ids=["grcar", "normal"])
+def test_full_operator_epsilon_zero_matches_the_dense_singular_value(matrix: np.ndarray):
+    """The full-operator helper agrees with a direct dense SVD, without Arnoldi."""
+    n = matrix.shape[0]
+    actual = full_operator_epsilon_zero(_matvec(matrix), n)
+    expected = np.linalg.svd(matrix, compute_uv=False)[-1]
+    assert actual == pytest.approx(expected, abs=1.0e-10)
+
+
+def test_full_operator_epsilon_zero_agrees_with_pseudospectrum_dense():
+    """The helper's value equals ``pseudospectrum_dense``'s on the same operator.
+
+    This also pins the ``_materialize`` refactor: both call paths must build
+    the identical dense matrix and read off the identical smallest singular
+    value.
+    """
+    matrix = _grcar(6)
+    action = _matvec(matrix)
+    real_grid = np.linspace(-1.0, 3.0, 3)
+    imag_grid = np.linspace(-2.5, 2.5, 3)
+
+    actual = full_operator_epsilon_zero(action, 6)
+    dense = pseudospectrum_dense(action, 6, real_grid, imag_grid)
+    assert actual == dense.epsilon_zero
+
+
+def test_full_operator_epsilon_zero_sees_the_mode_a_reduced_arnoldi_misses():
+    """A decoupled mode a reduced Arnoldi projection never excites is still seen.
+
+    Same operator and start vector as
+    ``test_arnoldi_breakdown_does_not_promote_a_reduced_epsilon_zero_to_adequate``
+    in ``tests/test_non_normality.py``: ``A`` has a diagonal first entry with
+    no coupling out of it, so ``v0 = [0, 1, ..., 1]`` never excites it and
+    Arnoldi breaks down at dimension 7 of 8, reading a reduced
+    ``epsilon_zero`` of about 0.598 that has nothing to do with the true
+    ``sigma_min(A) = 0.05``.  The full-operator helper does not depend on
+    ``v0`` at all, so it reads the true value directly.
+    """
+    diagonal = np.array([0.05, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9])
+    matrix = np.diag(diagonal)
+    for row in range(1, 7):
+        matrix[row, row + 1] = 0.02
+    matrix = matrix.astype(np.complex128)
+    action = _matvec(matrix)
+
+    v0 = jnp.asarray([0.0, 1, 1, 1, 1, 1, 1, 1], dtype=jnp.complex128)
+    arnoldi_result = arnoldi(action, v0, 8)
+    assert arnoldi_result.k_achieved == 7
+    assert arnoldi_result.breakdown is True
+    reduced_epsilon = epsilon_zero(arnoldi_result.hessenberg)
+    assert reduced_epsilon == pytest.approx(0.598, abs=5.0e-4)
+
+    actual = full_operator_epsilon_zero(action, 8)
+    assert actual == pytest.approx(0.05, abs=1.0e-9)
+
+
+def test_full_operator_epsilon_zero_rejects_invalid_arguments():
+    """``n`` must be positive and ``dtype`` must be complex128."""
+    action = _matvec(_grcar(4))
+    with pytest.raises(ValueError, match="n must be positive"):
+        full_operator_epsilon_zero(action, 0)
+    with pytest.raises(ValueError, match="dtype=jnp.complex128"):
+        full_operator_epsilon_zero(action, 4, dtype=jnp.complex64)
 
 
 @pytest.mark.parametrize("scale", [1.0, 1.0e-15])

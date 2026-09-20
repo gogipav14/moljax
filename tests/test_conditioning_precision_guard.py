@@ -31,7 +31,12 @@ _CHECK_SCRIPT = textwrap.dedent(
     import numpy as np
 
     from moljax.conditioning.non_normality import assess_preconditioner
-    from moljax.conditioning.pseudospectra import arnoldi, epsilon_zero, pseudospectrum_dense
+    from moljax.conditioning.pseudospectra import (
+        arnoldi,
+        epsilon_zero,
+        full_operator_epsilon_zero,
+        pseudospectrum_dense,
+    )
 
     def check(name, fn):
         try:
@@ -47,6 +52,10 @@ _CHECK_SCRIPT = textwrap.dedent(
         lambda: pseudospectrum_dense(lambda x: x, 2, np.array([0.0]), np.array([0.0])),
     )
     check("arnoldi", lambda: arnoldi(lambda x: x, np.ones(2), 1))
+    check(
+        "full_operator_epsilon_zero",
+        lambda: full_operator_epsilon_zero(lambda x: x, 2),
+    )
     check("assess_preconditioner", lambda: assess_preconditioner(None, np.ones(4), 0.1))
     """
 )
@@ -75,6 +84,7 @@ def test_public_entry_points_require_x64_in_a_fresh_process():
         "epsilon_zero",
         "pseudospectrum_dense",
         "arnoldi",
+        "full_operator_epsilon_zero",
         "assess_preconditioner",
     }, result.stdout + result.stderr
     for name, line in lines.items():

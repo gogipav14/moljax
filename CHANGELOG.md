@@ -6,6 +6,22 @@ All notable changes to moljax are documented here.
 
 ### Added
 
+- **`full_operator_epsilon_zero` returns the full operator's exact
+  smallest singular value at the origin from a matvec alone.**
+  `assess_preconditioner` correctly caps a bare or reduced-projection
+  `epsilon_zero` at `provisional`, because a reduced Arnoldi projection's
+  smallest singular value is not a lower bound on the full operator's. Until
+  now the only way to get a genuine full-operator value was
+  `pseudospectrum_dense`, which also requires a grid, or a full-dimensional
+  `arnoldi(matvec, v0, k=n)`, which depends on `v0` exciting every mode and
+  on reaching `k_achieved == n` without a breakdown. The new helper
+  materializes the operator and takes its dense SVD directly, so the result
+  is a valid lower bound by construction; pass it to
+  `assess_preconditioner(..., full_operator_lower_bound=True)` to unlock
+  `adequate`. Cost is `O(n)` matvec calls plus one dense complex128 SVD, so
+  it is intended for the few thousand dimensions or fewer where that is
+  cheap, and only for records whose other gates already pass.
+
 - **The adaptive NILT tuners verify the resolved bandwidth with a second
   inversion at `dt/2` instead of trusting a ratio that cannot see the
   exponential amplification.** `tune_nilt_adaptive`'s accuracy budget

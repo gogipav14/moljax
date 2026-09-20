@@ -209,6 +209,13 @@ def _forward_residual_norm(
     return float(jnp.linalg.norm(action - basis @ hessenberg))
 
 
+def _materialize(matvec: Matvec, n: int) -> jax.Array:
+    """Return the dense ``n x n`` matrix behind ``matvec`` by columns."""
+    identity = jnp.eye(n, dtype=jnp.complex128)
+    columns = jax.vmap(lambda column: _complex_action(matvec, column))(identity.T)
+    return columns.T
+
+
 def _sigma_min_grid(
     matrix: jax.Array,
     real_grid: jax.Array,
@@ -258,6 +265,69 @@ def epsilon_zero(hessenberg: jax.Array) -> float:
     return float(jnp.linalg.svd(projection, compute_uv=False)[-1])
 
 
+def full_operator_epsilon_zero(
+    matvec: Matvec,
+    n: int,
+    *,
+    dtype: jnp.dtype = jnp.complex128,
+) -> float:
+    """Return the full operator's exact smallest singular value at ``z = 0``.
+
+    ``epsilon_zero(hessenberg)`` reads the smallest singular value off
+    whatever Hessenberg block it is handed; if that block came from a
+    reduced Arnoldi projection (``k_achieved`` less than the operator's
+    dimension, typically an invariant-subspace breakdown the start vector
+    ``v0`` never excites), the number is not a lower bound on the full
+    operator's ``sigma_min`` and :func:`moljax.conditioning.non_normality.
+    assess_preconditioner` correctly caps it at ``provisional``. This helper
+    sidesteps that dependence on ``v0`` and on a breakdown path entirely: it
+    materializes the operator (:func:`pseudospectrum_dense`'s approach,
+    factored out as :func:`_materialize`) and takes the dense SVD, so the
+    result is the exact full-operator ``sigma_min`` at the origin by
+    construction, not an estimate that happens to agree with it. Pass the
+    result to :func:`~moljax.conditioning.non_normality.assess_preconditioner`
+    as ``full_operator_epsilon_zero(matvec, n)`` together with
+    ``full_operator_lower_bound=True``::
+
+        assess_preconditioner(fov, ritz, full_operator_epsilon_zero(matvec, n),
+                               full_operator_lower_bound=True)
+
+    When the Ritz values themselves are also wanted from the same
+    factorization, :func:`arnoldi` run with ``k=n`` (a full-dimensional
+    Krylov sweep) is the alternative: pass its result as ``coverage`` instead
+    of setting ``full_operator_lower_bound``. That path still depends on
+    ``v0`` exciting every mode and on reaching ``k_achieved == n`` without a
+    breakdown, which is exactly the dependence this helper avoids.
+
+    Cost: ``2n`` ``matvec`` calls (real and imaginary parts, through
+    :func:`_complex_action`) to build the ``n x n`` dense matrix, plus one
+    dense complex128 SVD, plus ``16 * n**2`` bytes to hold the matrix (about
+    16 MB at ``n = 1024``, comfortably under a second; about 268 MB at
+    ``n = 4096``). Above a few thousand dimensions this stops being cheap;
+    use :func:`arnoldi` plus :func:`reduced_pseudospectrum` and accept a
+    ``provisional`` verdict instead. Because the cost is not negligible,
+    compute it only for records whose other gates already pass rather than
+    unconditionally.
+
+    Args:
+        matvec: Callable computing ``A @ v`` for one vector ``v``.
+        n: The operator's dimension.
+        dtype: Complex working dtype. This diagnostic requires
+            ``complex128`` to provide float64 accuracy.
+
+    Raises:
+        RuntimeError: If 64-bit precision is not enabled.
+        ValueError: If ``n`` is not positive, or ``dtype`` is not
+            ``complex128``.
+    """
+    require_x64("conditioning diagnostics")
+    if n < 1:
+        raise ValueError("n must be positive")
+    if jnp.dtype(dtype) != jnp.dtype(jnp.complex128):
+        raise ValueError("conditioning diagnostics require dtype=jnp.complex128")
+    return float(jnp.linalg.svd(_materialize(matvec, n), compute_uv=False)[-1])
+
+
 def ritz_values(hessenberg: jax.Array) -> jax.Array:
     """Return eigenvalues of the square leading Arnoldi projection.
 
@@ -294,9 +364,7 @@ def pseudospectrum_dense(
         raise ValueError("real_grid and imag_grid must be one-dimensional")
     if real.size == 0 or imag.size == 0:
         raise ValueError("real_grid and imag_grid must be nonempty")
-    identity = jnp.eye(n, dtype=jnp.complex128)
-    columns = jax.vmap(lambda column: _complex_action(matvec, column))(identity.T)
-    matrix = columns.T
+    matrix = _materialize(matvec, n)
     return PseudospectraResult(
         real_grid=real,
         imag_grid=imag,

@@ -556,7 +556,11 @@ def assess_preconditioner(
             full operator's smallest singular value by some means other than
             ``coverage`` (for example, a closed-form bound or a converged
             full-dimensional computation performed elsewhere). Taken at face
-            value; this function does not re-derive it.
+            value; this function does not re-derive it. The supported way to
+            obtain such a value from a matvec alone is
+            :func:`moljax.conditioning.pseudospectra.full_operator_epsilon_zero`,
+            which materializes the operator and returns its exact
+            full-operator ``sigma_min`` at the origin.
 
     Raises:
         RuntimeError: If 64-bit precision is not enabled.

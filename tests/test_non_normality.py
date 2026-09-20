@@ -22,6 +22,7 @@ from moljax.conditioning import (
     crouzeix_palencia_envelope,
     enclosing_disk_rate,
     estimate_rates,
+    full_operator_epsilon_zero,
     numerical_range,
     right_real_outliers,
     ritz_values,
@@ -391,6 +392,41 @@ def test_full_dimensional_arnoldi_projection_can_still_reach_adequate():
     fov = numerical_range(matvec, matvec_adjoint, 8, n_angles=16, n_restarts=2)
     assessment = assess_preconditioner(
         fov, ritz, reduced_epsilon_zero, coverage=arnoldi_result
+    )
+    assert assessment.verdict == "adequate"
+    assert assessment.epsilon_zero_full_operator_evidence is True
+    assert assessment.verdict_reason is None
+
+
+def test_full_operator_epsilon_zero_unlocks_adequate():
+    """``full_operator_epsilon_zero`` plus ``full_operator_lower_bound`` reaches adequate.
+
+    Same diagonal operator as
+    ``test_full_dimensional_arnoldi_projection_can_still_reach_adequate``,
+    which unlocks ``adequate`` via a full-dimensional ``coverage``.  This is
+    the alternative unlock path: get ``epsilon_zero`` from the full-operator
+    helper instead of from Arnoldi, and vouch for it with
+    ``full_operator_lower_bound=True``.
+    """
+    diagonal = np.array([0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25])
+    operator = jnp.asarray(np.diag(diagonal), dtype=jnp.complex128)
+
+    def matvec(value: jax.Array) -> jax.Array:
+        return operator @ value
+
+    def matvec_adjoint(value: jax.Array) -> jax.Array:
+        return operator.conj().T @ value
+
+    v0 = jnp.ones(8, dtype=jnp.complex128)
+    arnoldi_result = arnoldi(matvec, v0, 8)
+    ritz = ritz_values(arnoldi_result.hessenberg)
+
+    full_epsilon = full_operator_epsilon_zero(matvec, 8)
+    assert full_epsilon == pytest.approx(float(diagonal.min()), rel=1.0e-9)
+
+    fov = numerical_range(matvec, matvec_adjoint, 8, n_angles=16, n_restarts=2)
+    assessment = assess_preconditioner(
+        fov, ritz, full_epsilon, full_operator_lower_bound=True
     )
     assert assessment.verdict == "adequate"
     assert assessment.epsilon_zero_full_operator_evidence is True
