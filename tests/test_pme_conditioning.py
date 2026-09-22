@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from math import ceil, floor, isinf, sqrt
 from pathlib import Path
 
@@ -109,15 +110,16 @@ def test_persisted_source_state_is_reused_and_hash_verified(
             "newton_tolerance": 1.0e-8,
         }
 
+    fingerprint = stage2_regeneration._pme_source_fingerprint(BreakdownConfig(nx=3), 2, 3, 3.0)
     saved_state, saved_solver = stage2_regeneration._load_or_persist_source_state(
-        tmp_path, "pme", "m2_front3", solve_once
+        tmp_path, "pme", "m2_front3", fingerprint, solve_once
     )
 
     def must_not_resolve() -> tuple[jax.Array, dict[str, object]]:
         raise AssertionError("persisted source state was unexpectedly re-solved")
 
     loaded_state, loaded_solver = stage2_regeneration._load_or_persist_source_state(
-        tmp_path, "pme", "m2_front3", must_not_resolve
+        tmp_path, "pme", "m2_front3", fingerprint, must_not_resolve
     )
 
     assert calls == 1
@@ -129,7 +131,7 @@ def test_persisted_source_state_is_reused_and_hash_verified(
     artifact_path = tmp_path / artifact["relative_path"]
     np.save(artifact_path, np.zeros(3, dtype=np.float64), allow_pickle=False)
     with pytest.raises(RuntimeError, match="artifact hash mismatch"):
-        stage2_regeneration._load_saved_source_state(tmp_path, "pme", "m2_front3")
+        stage2_regeneration._load_saved_source_state(tmp_path, "pme", "m2_front3", fingerprint)
 
 
 def _dense_gmres_iterations(matrix: np.ndarray, rhs: np.ndarray, tol: float, max_iters: int) -> int:
@@ -622,3 +624,237 @@ def test_ill_conditioned_diagonal_tracks_scipy_gmres() -> None:
         if expected:
             assert stats["final_relative_residual"] <= 1.0e-8
             assert reference["measured"] <= 1.0e-8
+
+
+def _stage2_regeneration(monkeypatch: pytest.MonkeyPatch):
+    """Import the Stage-2 regeneration entry point the way its runners do."""
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "benchmarks"))
+    return importlib.import_module("regenerate_stage2_conditioning")
+
+
+def _converged_probe_solver() -> dict[str, object]:
+    """Return the minimal converged solver metadata a persisted state needs."""
+    return {
+        "status": "converged",
+        "converged": True,
+        "newton_iters": 3,
+        "final_residual_l2": 1.0e-12,
+        "newton_tolerance": 1.0e-8,
+    }
+
+
+def test_source_state_cache_is_keyed_by_generation_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state cached under one configuration must not be reused under another."""
+    stage2 = _stage2_regeneration(monkeypatch)
+    original = jnp.asarray((0.125, 0.5, 0.25), dtype=jnp.float64)
+    replacement = jnp.asarray((0.5, 0.25, 0.125), dtype=jnp.float64)
+    fingerprint = stage2._pme_source_fingerprint(BreakdownConfig(nx=3), 2, 1, 0.25)
+    foreign = stage2._pme_source_fingerprint(BreakdownConfig(nx=3, epsilon=1.0e-3), 2, 1, 0.25)
+
+    assert fingerprint != foreign
+
+    stage2._load_or_persist_source_state(
+        tmp_path, "pme", "m2_front1", fingerprint, lambda: (original, _converged_probe_solver())
+    )
+
+    def must_not_resolve() -> tuple[jax.Array, dict[str, object]]:
+        raise AssertionError("an identical configuration was regenerated")
+
+    reused, _ = stage2._load_or_persist_source_state(
+        tmp_path, "pme", "m2_front1", fingerprint, must_not_resolve
+    )
+
+    assert np.array_equal(np.asarray(reused), np.asarray(original))
+
+    regenerated, _ = stage2._load_or_persist_source_state(
+        tmp_path, "pme", "m2_front1", foreign, lambda: (replacement, _converged_probe_solver())
+    )
+
+    assert np.array_equal(np.asarray(regenerated), np.asarray(replacement))
+    with pytest.raises(stage2.StaleSourceStateError, match="different configuration"):
+        stage2._load_saved_source_state(tmp_path, "pme", "m2_front1", fingerprint)
+
+
+def test_record_loader_refuses_a_foreign_source_state_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An m2/front1 artifact must fail closed for an m8/front3 record."""
+    stage2 = _stage2_regeneration(monkeypatch)
+    config = BreakdownConfig(nx=3)
+    state = jnp.asarray((0.125, 0.5, 0.25), dtype=jnp.float64)
+    fingerprint = stage2._pme_source_fingerprint(config, 2, 1, config.front_target_halfwidths[0])
+    _, solver = stage2._persist_source_state(
+        tmp_path, "pme", "m2_front1", state, _converged_probe_solver(), fingerprint
+    )
+    matching = {"m": 2, "front_case": 1, "analysis_dt": 2.0, "d0_kind": "identity"}
+    matching["reference_state_solver"] = solver
+    foreign = dict(matching, m=8, front_case=3)
+
+    loaded, _ = stage2._load_record_source_state(
+        tmp_path, "pme", matching, stage2._pme_record_fingerprint(config, matching)
+    )
+
+    assert np.array_equal(np.asarray(loaded), np.asarray(state))
+    with pytest.raises(RuntimeError, match="fingerprint differs"):
+        stage2._load_record_source_state(
+            tmp_path, "pme", foreign, stage2._pme_record_fingerprint(config, foreign)
+        )
+
+
+class _BatchWasRebuilt(RuntimeError):
+    """Raised by a stubbed study runner to show that a batch was regenerated."""
+
+
+def _pme_batch_config(stage2):
+    """Return the batch configuration the PME batch runner builds for ``m = 2``."""
+    return stage2.pme_breakdown.BreakdownConfig(m_values=(2,))
+
+
+def _write_legacy_pme_source_state(stage2, checkpoint_dir: Path, source_key: str) -> dict:
+    """Write a pre-fingerprint (v1) source-state artifact the way the old code did."""
+    relative, array_path, manifest_path = stage2._source_state_paths(
+        checkpoint_dir, "pme", source_key
+    )
+    state = jnp.asarray((0.125, 0.5, 0.25), dtype=jnp.float64)
+    array_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(array_path, np.asarray(state, dtype=np.float64), allow_pickle=False)
+    identity = stage2._source_state_identity(state)
+    solver = dict(
+        _converged_probe_solver(),
+        source_state_identity=identity,
+        source_state_artifact={
+            "relative_path": str(relative),
+            "source_state_identity": identity,
+        },
+    )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema": "stage2_conditioning_source_state_v1",
+                "study": "pme",
+                "source_key": source_key,
+                "relative_path": str(relative),
+                "source_state_identity": identity,
+                "state_solver": solver,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return solver
+
+
+def _write_pme_batch(stage2, checkpoint_dir: Path, schema: str, solver: dict) -> Path:
+    """Write a completed PME batch checkpoint under the requested batch schema."""
+    record = {
+        "m": 2,
+        "front_case": 1,
+        "analysis_dt": 2.0,
+        "d0_kind": "identity",
+        "actual_gmres": {"iterations": 7, "converged": True},
+        "reference_state_solver": solver,
+    }
+    checkpoint = stage2._pme_checkpoint_path(checkpoint_dir, 2)
+    checkpoint.write_text(
+        json.dumps(
+            {
+                "schema": schema,
+                "m": 2,
+                "config": _pme_batch_config(stage2)._asdict(),
+                "records": [record],
+                "centering": {"note": "synthetic"},
+                "runtime_seconds": 1.0,
+                "batch_wall_seconds": 1.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return checkpoint
+
+
+def _write_pme_dependent_checkpoint(stage2, checkpoint_dir: Path) -> Path:
+    """Write one checkpoint derived from the assembled PME batches."""
+    dependent = stage2._bba5a94_audit_checkpoint_path(checkpoint_dir, "pme")
+    dependent.write_text(
+        json.dumps({"schema": stage2.BBA5A94_AUDIT_SCHEMA, "audited": {}}), encoding="utf-8"
+    )
+    return dependent
+
+
+def test_pre_change_pme_batch_checkpoint_is_rebuilt_not_returned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A batch completed before the artifact schema bump must not be returned.
+
+    Its records were measured on v1 artifacts that carry no generation
+    fingerprint, so assembly would republish diagnostics that reassessment
+    then rejects.  The batch and the checkpoints derived from it are discarded
+    and the batch is regenerated instead.
+    """
+    stage2 = _stage2_regeneration(monkeypatch)
+
+    def rebuilt(*args: object, **kwargs: object) -> dict[str, object]:
+        raise _BatchWasRebuilt("the batch runner regenerated the batch")
+
+    monkeypatch.setattr(stage2.pme_breakdown, "run_breakdown_study", rebuilt)
+    solver = _write_legacy_pme_source_state(stage2, tmp_path, "m2_front1")
+    checkpoint = _write_pme_batch(stage2, tmp_path, "stage2_conditioning_pme_batch_v3", solver)
+    dependent = _write_pme_dependent_checkpoint(stage2, tmp_path)
+
+    with pytest.raises(_BatchWasRebuilt):
+        stage2._run_pme_batch(tmp_path, 2)
+
+    assert not checkpoint.is_file()
+    assert not dependent.is_file()
+
+
+def test_pme_batch_on_unfingerprinted_source_states_is_rebuilt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Carrying the current batch schema is not enough to accept a batch."""
+    stage2 = _stage2_regeneration(monkeypatch)
+
+    def rebuilt(*args: object, **kwargs: object) -> dict[str, object]:
+        raise _BatchWasRebuilt("the batch runner regenerated the batch")
+
+    monkeypatch.setattr(stage2.pme_breakdown, "run_breakdown_study", rebuilt)
+    solver = _write_legacy_pme_source_state(stage2, tmp_path, "m2_front1")
+    checkpoint = _write_pme_batch(stage2, tmp_path, stage2.PME_BATCH_SCHEMA, solver)
+    dependent = _write_pme_dependent_checkpoint(stage2, tmp_path)
+
+    with pytest.raises(_BatchWasRebuilt):
+        stage2._run_pme_batch(tmp_path, 2)
+
+    assert not checkpoint.is_file()
+    assert not dependent.is_file()
+
+
+def test_pme_batch_on_matching_source_states_is_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A batch whose artifacts are current with matching fingerprints is complete."""
+    stage2 = _stage2_regeneration(monkeypatch)
+
+    def must_not_rerun(*args: object, **kwargs: object) -> dict[str, object]:
+        raise AssertionError("a compatible batch was unexpectedly regenerated")
+
+    monkeypatch.setattr(stage2.pme_breakdown, "run_breakdown_study", must_not_rerun)
+    config = _pme_batch_config(stage2)
+    fingerprint = stage2._pme_source_fingerprint(
+        config, 2, 1, config.front_target_halfwidths[0]
+    )
+    _, solver = stage2._persist_source_state(
+        tmp_path,
+        "pme",
+        "m2_front1",
+        jnp.asarray((0.125, 0.5, 0.25), dtype=jnp.float64),
+        _converged_probe_solver(),
+        fingerprint,
+    )
+    checkpoint = _write_pme_batch(stage2, tmp_path, stage2.PME_BATCH_SCHEMA, solver)
+    dependent = _write_pme_dependent_checkpoint(stage2, tmp_path)
+
+    assert stage2._run_pme_batch(tmp_path, 2) == checkpoint
+    assert checkpoint.is_file()
+    assert dependent.is_file()
