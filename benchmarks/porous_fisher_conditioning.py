@@ -62,17 +62,43 @@ SourceStateProvider = Callable[
 ]
 
 
-def _git_revision(*args: str) -> str:
-    """Return one local Git identity without contacting a remote."""
+def _git_revision(*args: str) -> str | None:
+    """Return one local Git identity, or ``None`` when it is unavailable."""
     repository = Path(__file__).resolve().parent.parent
-    result = subprocess.run(
-        ("git", *args),
-        cwd=repository,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
+    try:
+        result = subprocess.run(
+            ("git", *args),
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _provenance_revisions() -> dict[str, str]:
+    """Capture optional Git provenance without making assessment depend on remotes."""
+    repository_head = _git_revision("rev-parse", "HEAD")
+    base_revision = _git_revision("merge-base", "HEAD", "upstream/main")
+    if base_revision is not None:
+        return {
+            "repository_head": repository_head or "unavailable",
+            "base_revision": base_revision,
+            "base_revision_source": "merge-base-upstream",
+        }
+    if repository_head is not None:
+        return {
+            "repository_head": repository_head,
+            "base_revision": repository_head,
+            "base_revision_source": "head-fallback",
+        }
+    return {
+        "repository_head": "unavailable",
+        "base_revision": "unavailable",
+        "base_revision_source": "unavailable",
+    }
 
 
 def _source_state_identity(state: jax.Array) -> dict[str, Any]:
@@ -172,8 +198,7 @@ def _advance_to_visited_state(
         "max_newton_iters": config.max_newton_iters,
         "max_backtrack": nk_params.max_backtrack,
         "source_state_identity": _source_state_identity(solution),
-        "repository_head": _git_revision("rev-parse", "HEAD"),
-        "base_revision": _git_revision("merge-base", "HEAD", "upstream/main"),
+        **_provenance_revisions(),
     }
 
 
