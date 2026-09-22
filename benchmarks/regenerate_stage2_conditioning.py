@@ -28,10 +28,17 @@ import numpy as np
 import pme_breakdown
 import porous_fisher_conditioning
 
+import moljax
+
 DEFAULT_CHECKPOINT_DIR = Path("/tmp/moljax-stage2-conditioning-checkpoints")
-PME_BATCH_SCHEMA = "stage2_conditioning_pme_batch_v3"
-POROUS_FISHER_BATCH_SCHEMA = "stage2_conditioning_porous_fisher_batch_v3"
-SOURCE_STATE_ARTIFACT_SCHEMA = "stage2_conditioning_source_state_v1"
+# A batch is only as current as the source states its records were measured on,
+# so the two batch schemas move with SOURCE_STATE_ARTIFACT_SCHEMA.  Leaving them
+# behind would let an already-completed batch return its pre-fingerprint records
+# to assembly, which then republishes diagnostics that reassessment refuses.
+PME_BATCH_SCHEMA = "stage2_conditioning_pme_batch_v4"
+POROUS_FISHER_BATCH_SCHEMA = "stage2_conditioning_porous_fisher_batch_v4"
+SOURCE_STATE_ARTIFACT_SCHEMA = "stage2_conditioning_source_state_v2"
+SOURCE_STATE_FINGERPRINT_SCHEMA = "stage2_conditioning_source_state_fingerprint_v1"
 BBA5A94_AUDIT_SCHEMA = "stage2_conditioning_bba5a94_verdict_audit_v1"
 C1_OPTION_A_AUDIT_SCHEMA = "stage2_conditioning_c1_option_a_audit_v1"
 CURRENT_MAIN_AUDIT_SCHEMA = "stage2_conditioning_current_main_verdict_audit_v1"
@@ -207,6 +214,98 @@ def _source_state_identity(state: jax.Array | np.ndarray) -> dict[str, Any]:
     }
 
 
+class StaleSourceStateError(RuntimeError):
+    """A persisted source state was generated under a different configuration."""
+
+
+def _pme_source_fingerprint(
+    config: pme_breakdown.BreakdownConfig,
+    m: int,
+    front_case: int,
+    target_halfwidth: float,
+) -> dict[str, Any]:
+    """Return every parameter that determines one PME source-state solve.
+
+    The cache key is only ``m`` and the front case, so the cache is reusable
+    across runs of the same study and misleading across any other.  This
+    fingerprint records the rest: the regularization, the reference step size,
+    the grid, the initial-state parameters and the library revision.  The
+    geometry budget is deliberately absent because it does not enter the solve.
+    """
+    return {
+        "schema": SOURCE_STATE_FINGERPRINT_SCHEMA,
+        "study": "pme",
+        "m": int(m),
+        "front_case": int(front_case),
+        "front_target_halfwidth": float(target_halfwidth),
+        "epsilon": 0.0 if int(m) == 1 else float(config.epsilon),
+        "state_dt": float(config.state_dt),
+        "state_d0_kind": "frozen_bulk",
+        "const_d0": float(config.const_d0),
+        "initial_state": {
+            "kind": "m1_heat_kernel" if int(m) == 1 else "barenblatt",
+            "t0": float(config.t0),
+        },
+        "nx": int(config.nx),
+        "x_min": float(config.x_min),
+        "x_max": float(config.x_max),
+        "newton_tol": float(config.newton_tol),
+        "krylov_tol": float(config.krylov_tol),
+        "max_newton_iters": int(config.max_newton_iters),
+        "max_krylov_iters": int(config.max_krylov_iters),
+        "moljax_version": str(moljax.__version__),
+    }
+
+
+def _porous_fisher_source_fingerprint(
+    config: porous_fisher_conditioning.ReactionStudyConfig,
+    reaction: float,
+) -> dict[str, Any]:
+    """Return every parameter that determines one reaction-axis source solve."""
+    return {
+        "schema": SOURCE_STATE_FINGERPRINT_SCHEMA,
+        "study": "porous_fisher",
+        "r": float(reaction),
+        "epsilon": float(config.epsilon),
+        "state_dt": float(config.state_dt),
+        "state_d0_kind": "frozen_bulk",
+        "const_d0": float(config.const_d0),
+        "initial_state": {
+            "kind": "porous_fisher_traveling_wave",
+            "initial_time": float(config.initial_time),
+            "reference_wave_r": float(config.reference_wave_r),
+        },
+        "nx": int(config.nx),
+        "x_min": float(config.x_min),
+        "x_max": float(config.x_max),
+        "newton_tol": float(config.newton_tol),
+        "krylov_tol": float(config.krylov_tol),
+        "max_newton_iters": int(config.max_newton_iters),
+        "max_krylov_iters": int(config.max_krylov_iters),
+        "moljax_version": str(moljax.__version__),
+    }
+
+
+def _pme_record_fingerprint(
+    config: pme_breakdown.BreakdownConfig,
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the source-state fingerprint one PME record must have been built on."""
+    front_case = int(record["front_case"])
+    halfwidths = config.front_target_halfwidths
+    if not 1 <= front_case <= len(halfwidths):
+        raise RuntimeError(f"Unknown PME front case: {front_case}")
+    return _pme_source_fingerprint(config, int(record["m"]), front_case, halfwidths[front_case - 1])
+
+
+def _porous_fisher_record_fingerprint(
+    config: porous_fisher_conditioning.ReactionStudyConfig,
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the source-state fingerprint one reaction-axis record was built on."""
+    return _porous_fisher_source_fingerprint(config, float(record["r"]))
+
+
 def _atomic_save_array(path: Path, state: jax.Array) -> None:
     """Persist one source array atomically without serializing it through JSON."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,19 +334,36 @@ def _load_saved_source_state(
     checkpoint_dir: Path,
     study: str,
     source_key: str,
+    fingerprint: dict[str, Any],
 ) -> tuple[jax.Array, dict[str, Any]]:
-    """Load and hash-verify one persisted source state before diagnostic use."""
+    """Load, hash-verify and configuration-verify one persisted source state.
+
+    The array hash alone only proves that the file was not corrupted.  A
+    manifest written under a different epsilon, reference step size, grid,
+    initial state or library revision carries a different generation
+    fingerprint, and reusing it would silently mix configurations, so it raises
+    :class:`StaleSourceStateError` for the caller to regenerate or fail closed.
+    """
     expected_relative, expected_array, manifest_path = _source_state_paths(
         checkpoint_dir, study, source_key
     )
     manifest = _load_checkpoint(manifest_path)
     if (
-        manifest.get("schema") != SOURCE_STATE_ARTIFACT_SCHEMA
-        or manifest.get("study") != study
+        manifest.get("study") != study
         or manifest.get("source_key") != source_key
         or manifest.get("relative_path") != str(expected_relative)
     ):
         raise RuntimeError(f"Source-state artifact identity mismatch: {manifest_path}")
+    if manifest.get("schema") != SOURCE_STATE_ARTIFACT_SCHEMA:
+        raise StaleSourceStateError(
+            f"Source-state artifact schema is {manifest.get('schema')!r}, "
+            f"not {SOURCE_STATE_ARTIFACT_SCHEMA!r}: {manifest_path}"
+        )
+    if manifest.get("generation_fingerprint") != fingerprint:
+        raise StaleSourceStateError(
+            f"Source-state artifact was generated under a different configuration: "
+            f"{manifest_path}"
+        )
     if not expected_array.is_file():
         raise RuntimeError(f"Missing source-state array: {expected_array}")
     values = np.load(expected_array, allow_pickle=False)
@@ -264,6 +380,7 @@ def _load_saved_source_state(
         or artifact is None
         or artifact.get("relative_path") != str(expected_relative)
         or artifact.get("source_state_identity") != expected_identity
+        or artifact.get("generation_fingerprint") != fingerprint
     ):
         raise RuntimeError(f"Source-state provenance mismatch: {manifest_path}")
     return state, state_solver
@@ -275,6 +392,7 @@ def _persist_source_state(
     source_key: str,
     state: jax.Array,
     state_solver: dict[str, Any],
+    fingerprint: dict[str, Any],
 ) -> tuple[jax.Array, dict[str, Any]]:
     """Save a converged source state, then reload its verified diagnostic array."""
     if not bool(state_solver.get("converged")):
@@ -290,6 +408,7 @@ def _persist_source_state(
     artifact = {
         "relative_path": str(relative),
         "source_state_identity": identity,
+        "generation_fingerprint": fingerprint,
     }
     solver["source_state_identity"] = identity
     solver["source_state_artifact"] = artifact
@@ -302,32 +421,50 @@ def _persist_source_state(
             "source_key": source_key,
             "relative_path": str(relative),
             "source_state_identity": identity,
+            "generation_fingerprint": fingerprint,
             "state_solver": solver,
         },
     )
-    return _load_saved_source_state(checkpoint_dir, study, source_key)
+    return _load_saved_source_state(checkpoint_dir, study, source_key, fingerprint)
 
 
 def _load_or_persist_source_state(
     checkpoint_dir: Path,
     study: str,
     source_key: str,
+    fingerprint: dict[str, Any],
     solve: Callable[[], tuple[jax.Array, dict[str, Any]]],
 ) -> tuple[jax.Array, dict[str, Any]]:
-    """Reuse an exact source artifact, or solve once and make it authoritative."""
+    """Reuse an exact source artifact, or solve once and make it authoritative.
+
+    An artifact whose generation fingerprint does not match the requested
+    configuration is stale, not reusable, so it is regenerated in place.
+    """
     _, _, manifest_path = _source_state_paths(checkpoint_dir, study, source_key)
     if manifest_path.is_file():
-        return _load_saved_source_state(checkpoint_dir, study, source_key)
+        try:
+            return _load_saved_source_state(checkpoint_dir, study, source_key, fingerprint)
+        except StaleSourceStateError as stale:
+            print(f"regenerating stale source state: {stale}")
     state, state_solver = solve()
-    return _persist_source_state(checkpoint_dir, study, source_key, state, state_solver)
+    return _persist_source_state(
+        checkpoint_dir, study, source_key, state, state_solver, fingerprint
+    )
 
 
 def _load_record_source_state(
     checkpoint_dir: Path,
     study: str,
     record: dict[str, Any],
+    fingerprint: dict[str, Any],
 ) -> tuple[jax.Array, dict[str, Any]]:
-    """Load the exact persisted state named by a regenerated result record."""
+    """Load the exact persisted state named by a regenerated result record.
+
+    This path fails closed.  A record whose stored artifact was generated under
+    another configuration, or an artifact whose own fingerprint has since moved,
+    is refused rather than regenerated: the record's published numbers were
+    produced on the original state and cannot be reconciled with a new one.
+    """
     solver_key = "reference_state_solver" if study == "pme" else "state_solver"
     try:
         stored_solver = record[solver_key]
@@ -345,7 +482,19 @@ def _load_record_source_state(
     if not filename.startswith(prefix) or not filename.endswith(suffix):
         raise RuntimeError(f"Unexpected source-state artifact name: {relative}")
     source_key = filename[len(prefix) : -len(suffix)]
-    state, state_solver = _load_saved_source_state(checkpoint_dir, study, source_key)
+    if artifact.get("generation_fingerprint") != fingerprint:
+        raise RuntimeError(
+            "Record source-state fingerprint differs from the requested configuration: "
+            f"{_record_key(study, record)}"
+        )
+    try:
+        state, state_solver = _load_saved_source_state(
+            checkpoint_dir, study, source_key, fingerprint
+        )
+    except StaleSourceStateError as stale:
+        raise RuntimeError(
+            f"Refusing to reassess {_record_key(study, record)} on a stale source state: {stale}"
+        ) from stale
     if (
         stored_solver.get("source_state_identity") != state_solver["source_state_identity"]
         or artifact.get("source_state_identity") != state_solver["source_state_identity"]
@@ -374,16 +523,107 @@ def _porous_fisher_checkpoint_path(checkpoint_dir: Path, reaction: float) -> Pat
     return checkpoint_dir / f"porous_fisher_r{reaction:g}.json"
 
 
+def _dependent_checkpoint_paths(checkpoint_dir: Path, study: str) -> tuple[Path, ...]:
+    """Return every checkpoint derived from one study's assembled batches."""
+    return (
+        _resolution_checkpoint_path(checkpoint_dir, study),
+        _bba5a94_audit_checkpoint_path(checkpoint_dir, study),
+        _c1_option_a_checkpoint_path(checkpoint_dir, study),
+        _current_main_audit_checkpoint_path(checkpoint_dir, study),
+        _v121_recovery_checkpoint_path(checkpoint_dir, study),
+    )
+
+
+def _incompatible_batch_source_states(
+    checkpoint_dir: Path,
+    study: str,
+    existing: dict[str, Any],
+    record_fingerprint: Callable[[dict[str, Any]], dict[str, Any]],
+) -> str | None:
+    """Return why a completed batch is not reusable, or ``None`` if it is.
+
+    A batch is complete only when every source state its records were measured
+    on still exists under the current artifact schema with a generation
+    fingerprint matching this batch's configuration.  Anything else is a batch
+    whose numbers this run can neither reproduce nor verify: returning it lets
+    assembly republish diagnostics that reassessment then refuses, so the
+    caller rebuilds it instead.
+    """
+    solver_key = "reference_state_solver" if study == "pme" else "state_solver"
+    records = existing.get("records")
+    if not isinstance(records, list) or not records:
+        return "the batch holds no records"
+    verified: set[tuple[str, str]] = set()
+    for record in records:
+        key = _record_key(study, record)
+        stored_solver = record.get(solver_key)
+        artifact = (
+            stored_solver.get("source_state_artifact")
+            if isinstance(stored_solver, dict)
+            else None
+        )
+        if not isinstance(artifact, dict):
+            return f"{key} lacks persisted source-state provenance"
+        try:
+            fingerprint = record_fingerprint(record)
+        except (KeyError, RuntimeError) as error:
+            return f"{key} has no reproducible source-state fingerprint: {error}"
+        if artifact.get("generation_fingerprint") != fingerprint:
+            return f"{key} was measured on a differently configured source state"
+        cached = (str(artifact.get("relative_path")), json.dumps(fingerprint, sort_keys=True))
+        if cached in verified:
+            continue
+        try:
+            _load_record_source_state(checkpoint_dir, study, record, fingerprint)
+        except RuntimeError as error:
+            return f"{key} has no current source-state artifact: {error}"
+        verified.add(cached)
+    return None
+
+
+def _invalidate_batch(checkpoint_dir: Path, study: str, checkpoint: Path, reason: str) -> None:
+    """Discard an incompatible batch checkpoint and everything derived from it."""
+    print(f"invalidating batch checkpoint {checkpoint}: {reason}")
+    checkpoint.unlink(missing_ok=True)
+    checkpoint.with_suffix(".working.json").unlink(missing_ok=True)
+    for dependent in _dependent_checkpoint_paths(checkpoint_dir, study):
+        if dependent.is_file():
+            print(f"invalidating dependent checkpoint: {dependent}")
+            dependent.unlink()
+
+
 def _run_pme_batch(checkpoint_dir: Path, m: int) -> Path:
-    """Run and atomically checkpoint one PME exponent batch if needed."""
+    """Run and atomically checkpoint one PME exponent batch if needed.
+
+    An existing checkpoint counts as complete only after its source states are
+    validated against this configuration.  A batch written under an older
+    schema, or one whose artifacts no longer match, is invalidated along with
+    the checkpoints derived from it and rebuilt rather than returned.
+    """
     config = pme_breakdown.BreakdownConfig(m_values=(m,))
     checkpoint = _pme_checkpoint_path(checkpoint_dir, m)
     if checkpoint.exists():
         existing = _load_checkpoint(checkpoint)
-        if existing.get("schema") == PME_BATCH_SCHEMA and existing.get("m") == m:
-            print(f"checkpoint exists: {checkpoint}")
-            return checkpoint
-        raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
+        if existing.get("m") != m:
+            raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
+        if existing.get("schema") != PME_BATCH_SCHEMA:
+            _invalidate_batch(
+                checkpoint_dir,
+                "pme",
+                checkpoint,
+                f"batch schema is {existing.get('schema')!r}, not {PME_BATCH_SCHEMA!r}",
+            )
+        else:
+            incompatible = _incompatible_batch_source_states(
+                checkpoint_dir,
+                "pme",
+                existing,
+                lambda record: _pme_record_fingerprint(config, record),
+            )
+            if incompatible is None:
+                print(f"checkpoint exists: {checkpoint}")
+                return checkpoint
+            _invalidate_batch(checkpoint_dir, "pme", checkpoint, incompatible)
 
     working_output = checkpoint.with_suffix(".working.json")
     started_at = perf_counter()
@@ -393,13 +633,14 @@ def _run_pme_batch(checkpoint_dir: Path, m: int) -> Path:
         grid: pme_breakdown.NodeCenteredDirichletGrid,
         exponent: int,
         front_case: int,
-        _target_halfwidth: float,
+        target_halfwidth: float,
         provider_config: pme_breakdown.BreakdownConfig,
     ) -> tuple[jax.Array, dict[str, Any]]:
         return _load_or_persist_source_state(
             checkpoint_dir,
             "pme",
             f"m{exponent}_front{front_case}",
+            _pme_source_fingerprint(provider_config, exponent, front_case, target_halfwidth),
             lambda: pme_breakdown._solve_one_step(
                 initial_state, grid, exponent, provider_config, "frozen_bulk"
             ),
@@ -429,18 +670,37 @@ def _run_pme_batch(checkpoint_dir: Path, m: int) -> Path:
 
 
 def _run_porous_fisher_batch(checkpoint_dir: Path, reaction: float) -> Path:
-    """Run and atomically checkpoint one reaction-strength batch if needed."""
+    """Run and atomically checkpoint one reaction-strength batch if needed.
+
+    As in the PME batches, a completed checkpoint is reused only when every
+    source state it depends on still carries the current artifact schema and a
+    fingerprint matching this configuration.
+    """
     config = porous_fisher_conditioning.ReactionStudyConfig(reaction_values=(reaction,))
     checkpoint = _porous_fisher_checkpoint_path(checkpoint_dir, reaction)
     if checkpoint.exists():
         existing = _load_checkpoint(checkpoint)
-        if (
-            existing.get("schema") == POROUS_FISHER_BATCH_SCHEMA
-            and existing.get("reaction") == reaction
-        ):
-            print(f"checkpoint exists: {checkpoint}")
-            return checkpoint
-        raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
+        if existing.get("reaction") != reaction:
+            raise RuntimeError(f"Checkpoint identity mismatch: {checkpoint}")
+        if existing.get("schema") != POROUS_FISHER_BATCH_SCHEMA:
+            _invalidate_batch(
+                checkpoint_dir,
+                "porous_fisher",
+                checkpoint,
+                f"batch schema is {existing.get('schema')!r}, "
+                f"not {POROUS_FISHER_BATCH_SCHEMA!r}",
+            )
+        else:
+            incompatible = _incompatible_batch_source_states(
+                checkpoint_dir,
+                "porous_fisher",
+                existing,
+                lambda record: _porous_fisher_record_fingerprint(config, record),
+            )
+            if incompatible is None:
+                print(f"checkpoint exists: {checkpoint}")
+                return checkpoint
+            _invalidate_batch(checkpoint_dir, "porous_fisher", checkpoint, incompatible)
 
     working_output = checkpoint.with_suffix(".working.json")
     started_at = perf_counter()
@@ -455,6 +715,7 @@ def _run_porous_fisher_batch(checkpoint_dir: Path, reaction: float) -> Path:
             checkpoint_dir,
             "porous_fisher",
             f"r{source_reaction:g}",
+            _porous_fisher_source_fingerprint(provider_config, source_reaction),
             lambda: porous_fisher_conditioning._advance_to_visited_state(
                 initial_state, grid, r=source_reaction, config=provider_config
             ),
@@ -784,7 +1045,9 @@ def _assess_pme_record(
     )
     grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
     m = int(record["m"])
-    state, state_solver = _load_record_source_state(checkpoint_dir, "pme", record)
+    state, state_solver = _load_record_source_state(
+        checkpoint_dir, "pme", record, _pme_record_fingerprint(config, record)
+    )
     _require_converged_state("pme", record, state_solver)
     diagnostic = pme_breakdown.assess_pme_state(
         state,
@@ -833,7 +1096,12 @@ def _assess_porous_fisher_record(
         config.nx, config.x_min, config.x_max
     )
     reaction = float(record["r"])
-    state, state_solver = _load_record_source_state(checkpoint_dir, "porous_fisher", record)
+    state, state_solver = _load_record_source_state(
+        checkpoint_dir,
+        "porous_fisher",
+        record,
+        _porous_fisher_record_fingerprint(config, record),
+    )
     _require_converged_state("porous_fisher", record, state_solver)
     d0_kind = str(record["d0_kind"])
     diagnostic = porous_fisher_conditioning.assess_porous_fisher_state(
@@ -880,7 +1148,9 @@ def _c1_option_a_measure_pme_record(
     )
     grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
     m = int(record["m"])
-    state, state_solver = _load_record_source_state(checkpoint_dir, "pme", record)
+    state, state_solver = _load_record_source_state(
+        checkpoint_dir, "pme", record, _pme_record_fingerprint(config, record)
+    )
     _require_converged_state("pme", record, state_solver)
     epsilon = 0.0 if m == 1 else config.epsilon
     d0_kind = str(record["d0_kind"])
@@ -948,7 +1218,12 @@ def _c1_option_a_measure_porous_fisher_record(
         config.nx, config.x_min, config.x_max
     )
     reaction = float(record["r"])
-    state, state_solver = _load_record_source_state(checkpoint_dir, "porous_fisher", record)
+    state, state_solver = _load_record_source_state(
+        checkpoint_dir,
+        "porous_fisher",
+        record,
+        _porous_fisher_record_fingerprint(config, record),
+    )
     _require_converged_state("porous_fisher", record, state_solver)
     d0_kind = str(record["d0_kind"])
     diagnostic = porous_fisher_conditioning.assess_porous_fisher_state(
