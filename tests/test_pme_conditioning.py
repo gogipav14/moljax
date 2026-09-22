@@ -620,6 +620,101 @@ def test_record_loader_refuses_a_foreign_source_state_artifact(
         )
 
 
+_PROBE_DIAGNOSTIC = {
+    "supports_consistent": True,
+    "corroboration_attempted": True,
+    "supports_converged": True,
+    "supports_corroborated": True,
+    "max_support_residual": 1.0e-6,
+    "disk_rate": 0.5,
+    "epsilon_zero": 0.5,
+    "epsilon_zero_reduced_arnoldi": 0.5,
+    "full_operator_epsilon_zero": None,
+    "full_operator_epsilon_zero_seconds": None,
+    "epsilon_zero_full_operator_evidence": False,
+    "verdict_reason": None,
+    "arnoldi_k_requested": 6,
+    "arnoldi_k_achieved": 6,
+    "arnoldi_breakdown": False,
+    "arnoldi_residual_norm": 0.0,
+    "origin_enclosed": False,
+    "n_right_real_outliers": 0,
+    "predicted_gmres_factor": 0.5,
+    "verdict": "adequate",
+    "d0": 2.0,
+}
+
+
+def _persisted_const_record(
+    stage2, tmp_path: Path, config: BreakdownConfig, d0_used: float
+) -> dict[str, object]:
+    """Persist a source state and return a const-D0 record that points at it."""
+    state = jnp.asarray((0.125, 0.5, 0.25), dtype=jnp.float64)
+    fingerprint = stage2._pme_source_fingerprint(config, 2, 1, config.front_target_halfwidths[0])
+    _, solver = stage2._persist_source_state(
+        tmp_path, "pme", "m2_front1", state, _converged_probe_solver(), fingerprint
+    )
+    grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
+    analysis_dt = 2.0
+    return {
+        "m": 2,
+        "front_case": 1,
+        "analysis_dt": analysis_dt,
+        "d0_kind": "const",
+        "d0_used": d0_used,
+        "sigma": d0_used * analysis_dt / grid.dx**2,
+        "reference_state_solver": solver,
+    }
+
+
+def test_record_is_reassessed_on_its_own_recorded_d0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reassessed operator must carry the record's D0, not a fresh default."""
+    stage2 = _stage2_regeneration(monkeypatch)
+    config = BreakdownConfig(nx=3, const_d0=2.0)
+    record = _persisted_const_record(stage2, tmp_path, config, 2.0)
+    captured: dict[str, object] = {}
+
+    def capture(state, grid, m, dt, epsilon, d0_kind, **kwargs):
+        del state
+        captured.update(
+            {
+                "nx": grid.nx,
+                "m": m,
+                "dt": dt,
+                "epsilon": epsilon,
+                "d0_kind": d0_kind,
+                "const_value": kwargs["const_value"],
+            }
+        )
+        return dict(_PROBE_DIAGNOSTIC)
+
+    monkeypatch.setattr(stage2.pme_breakdown, "assess_pme_state", capture)
+    stage2._assess_pme_record(tmp_path, record, (16, 60, 2), report_config=config._asdict())
+
+    assert captured["const_value"] == 2.0
+    assert captured["nx"] == 3
+    assert captured["dt"] == 2.0
+    assert captured["epsilon"] == config.epsilon
+
+
+def test_record_whose_d0_contradicts_its_configuration_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A record that the stored configuration cannot reproduce must fail closed."""
+    stage2 = _stage2_regeneration(monkeypatch)
+    config = BreakdownConfig(nx=3, const_d0=1.0)
+    record = _persisted_const_record(stage2, tmp_path, config, 2.0)
+
+    def must_not_assess(*args, **kwargs):
+        raise AssertionError("a contradictory record was assessed")
+
+    monkeypatch.setattr(stage2.pme_breakdown, "assess_pme_state", must_not_assess)
+    with pytest.raises(RuntimeError, match="Reconstructed D0"):
+        stage2._assess_pme_record(tmp_path, record, (16, 60, 2), report_config=config._asdict())
+
+
 class _BatchWasRebuilt(RuntimeError):
     """Raised by a stubbed study runner to show that a batch was regenerated."""
 

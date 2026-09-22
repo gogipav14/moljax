@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from collections.abc import Callable
 from copy import deepcopy
@@ -29,6 +30,7 @@ import pme_breakdown
 import porous_fisher_conditioning
 
 import moljax
+from moljax.experimental.pme_conditioning import d0_variant
 
 DEFAULT_CHECKPOINT_DIR = Path("/tmp/moljax-stage2-conditioning-checkpoints")
 # A batch is only as current as the source states its records were measured on,
@@ -903,6 +905,93 @@ def _require_converged_state(
         )
 
 
+def _study_config_from_record_report(
+    study: str,
+    report_config: dict[str, Any],
+    budget: tuple[int, int, int],
+) -> pme_breakdown.BreakdownConfig | porous_fisher_conditioning.ReactionStudyConfig:
+    """Rebuild the study configuration a report's records were produced under.
+
+    Reassessing a record with a freshly defaulted configuration is only correct
+    while every default still equals what the report was run with.  The report
+    stores its own configuration, so the operator is reconstructed from that and
+    only the geometry budget is replaced.
+    """
+    factory: Any = (
+        pme_breakdown.BreakdownConfig
+        if study == "pme"
+        else porous_fisher_conditioning.ReactionStudyConfig
+    )
+    unknown = sorted(set(report_config) - set(factory._fields))
+    if unknown:
+        raise RuntimeError(f"Stored {study} configuration has unknown fields: {unknown}")
+    fields = {
+        name: tuple(value) if isinstance(value, list) else value
+        for name, value in report_config.items()
+    }
+    n_angles, fov_max_iters, fov_n_restarts = budget
+    return factory(**fields)._replace(
+        n_angles=n_angles,
+        fov_max_iters=fov_max_iters,
+        fov_n_restarts=fov_n_restarts,
+    )
+
+
+def _require_reconstructed_operator_matches_record(
+    study: str,
+    record: dict[str, Any],
+    state: jax.Array,
+    state_solver: dict[str, Any],
+    grid: porous_fisher_conditioning.NodeCenteredDirichletGrid,
+    m: float,
+    epsilon: float,
+    dt: float,
+    const_value: float,
+) -> float:
+    """Fail closed unless the rebuilt operator is the one the record was read on.
+
+    ``d0_used`` and ``sigma`` are the operator data the record carries.  With
+    the exponent and the persisted state they pin the frozen coefficient, the
+    step size and the grid spacing, and the persisted state's shape pins the
+    number of unknowns.  Attaching recovery evidence to any other operator would
+    credit a reading that operator never produced.
+    """
+    key = _record_key(study, record)
+    recorded_dt = float(record["analysis_dt"])
+    if dt != recorded_dt:
+        raise RuntimeError(
+            f"Reconstructed dt {dt!r} differs from the record's {recorded_dt!r}: {key}"
+        )
+    shape = list(state_solver["source_state_identity"]["shape"])
+    if shape != [grid.nx]:
+        raise RuntimeError(
+            f"Reconstructed grid has {grid.nx} unknowns, the record's state {shape}: {key}"
+        )
+    d0 = float(
+        d0_variant(
+            state,
+            grid,
+            float(m),
+            epsilon,
+            str(record["d0_kind"]),
+            const_value=const_value,
+        )
+    )
+    recorded_d0 = float(record["d0_used"])
+    if not math.isclose(d0, recorded_d0, rel_tol=1.0e-9, abs_tol=1.0e-12):
+        raise RuntimeError(
+            f"Reconstructed D0 {d0!r} differs from the record's d0_used {recorded_d0!r} "
+            f"(epsilon={epsilon!r}, const_value={const_value!r}): {key}"
+        )
+    recorded_sigma = float(record["sigma"])
+    sigma = d0 * recorded_dt / grid.dx**2
+    if not math.isclose(sigma, recorded_sigma, rel_tol=1.0e-9, abs_tol=1.0e-12):
+        raise RuntimeError(
+            f"Reconstructed sigma {sigma!r} differs from the record's {recorded_sigma!r}: {key}"
+        )
+    return d0
+
+
 def _geometry_snapshot(
     record: dict[str, Any],
     *,
@@ -1034,27 +1123,36 @@ def _assess_pme_record(
     record: dict[str, Any],
     budget: tuple[int, int, int],
     *,
+    report_config: dict[str, Any],
     full_operator_epsilon_evidence: bool = False,
 ) -> dict[str, Any]:
     """Load one persisted PME state and assess it at one geometry budget."""
     n_angles, fov_max_iters, fov_n_restarts = budget
-    config = pme_breakdown.BreakdownConfig(
-        n_angles=n_angles,
-        fov_max_iters=fov_max_iters,
-        fov_n_restarts=fov_n_restarts,
-    )
+    config = _study_config_from_record_report("pme", report_config, budget)
     grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
     m = int(record["m"])
+    epsilon = 0.0 if m == 1 else config.epsilon
     state, state_solver = _load_record_source_state(
         checkpoint_dir, "pme", record, _pme_record_fingerprint(config, record)
     )
     _require_converged_state("pme", record, state_solver)
+    _require_reconstructed_operator_matches_record(
+        "pme",
+        record,
+        pme_breakdown.interior_values(state, grid),
+        state_solver,
+        grid,
+        float(m),
+        epsilon,
+        float(record["analysis_dt"]),
+        config.const_d0,
+    )
     diagnostic = pme_breakdown.assess_pme_state(
         state,
         grid,
         float(m),
         float(record["analysis_dt"]),
-        0.0 if m == 1 else config.epsilon,
+        epsilon,
         str(record["d0_kind"]),
         const_value=config.const_d0,
         n_angles=n_angles,
@@ -1083,15 +1181,12 @@ def _assess_porous_fisher_record(
     record: dict[str, Any],
     budget: tuple[int, int, int],
     *,
+    report_config: dict[str, Any],
     full_operator_epsilon_evidence: bool = False,
 ) -> dict[str, Any]:
     """Load one persisted reaction-axis state and assess it at one geometry budget."""
     n_angles, fov_max_iters, fov_n_restarts = budget
-    config = porous_fisher_conditioning.ReactionStudyConfig(
-        n_angles=n_angles,
-        fov_max_iters=fov_max_iters,
-        fov_n_restarts=fov_n_restarts,
-    )
+    config = _study_config_from_record_report("porous_fisher", report_config, budget)
     grid = porous_fisher_conditioning.NodeCenteredDirichletGrid.uniform(
         config.nx, config.x_min, config.x_max
     )
@@ -1103,6 +1198,17 @@ def _assess_porous_fisher_record(
         _porous_fisher_record_fingerprint(config, record),
     )
     _require_converged_state("porous_fisher", record, state_solver)
+    _require_reconstructed_operator_matches_record(
+        "porous_fisher",
+        record,
+        state,
+        state_solver,
+        grid,
+        2.0,
+        config.epsilon,
+        float(record["analysis_dt"]),
+        config.const_d0,
+    )
     d0_kind = str(record["d0_kind"])
     diagnostic = porous_fisher_conditioning.assess_porous_fisher_state(
         state,
@@ -1137,15 +1243,13 @@ def _c1_option_a_measure_pme_record(
     checkpoint_dir: Path,
     record: dict[str, Any],
     budget: tuple[int, int, int],
+    *,
+    report_config: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load one persisted PME state and retain its final-budget work evidence."""
 
     n_angles, fov_max_iters, fov_n_restarts = budget
-    config = pme_breakdown.BreakdownConfig(
-        n_angles=n_angles,
-        fov_max_iters=fov_max_iters,
-        fov_n_restarts=fov_n_restarts,
-    )
+    config = _study_config_from_record_report("pme", report_config, budget)
     grid = pme_breakdown.NodeCenteredDirichletGrid.uniform(config.nx, config.x_min, config.x_max)
     m = int(record["m"])
     state, state_solver = _load_record_source_state(
@@ -1153,6 +1257,17 @@ def _c1_option_a_measure_pme_record(
     )
     _require_converged_state("pme", record, state_solver)
     epsilon = 0.0 if m == 1 else config.epsilon
+    _require_reconstructed_operator_matches_record(
+        "pme",
+        record,
+        pme_breakdown.interior_values(state, grid),
+        state_solver,
+        grid,
+        float(m),
+        epsilon,
+        float(record["analysis_dt"]),
+        config.const_d0,
+    )
     d0_kind = str(record["d0_kind"])
     diagnostic = pme_breakdown.assess_pme_state(
         state,
@@ -1206,14 +1321,12 @@ def _c1_option_a_measure_porous_fisher_record(
     checkpoint_dir: Path,
     record: dict[str, Any],
     budget: tuple[int, int, int],
+    *,
+    report_config: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Load one persisted Porous--Fisher state and retain final-budget work evidence."""
     n_angles, fov_max_iters, fov_n_restarts = budget
-    config = porous_fisher_conditioning.ReactionStudyConfig(
-        n_angles=n_angles,
-        fov_max_iters=fov_max_iters,
-        fov_n_restarts=fov_n_restarts,
-    )
+    config = _study_config_from_record_report("porous_fisher", report_config, budget)
     grid = porous_fisher_conditioning.NodeCenteredDirichletGrid.uniform(
         config.nx, config.x_min, config.x_max
     )
@@ -1225,6 +1338,17 @@ def _c1_option_a_measure_porous_fisher_record(
         _porous_fisher_record_fingerprint(config, record),
     )
     _require_converged_state("porous_fisher", record, state_solver)
+    _require_reconstructed_operator_matches_record(
+        "porous_fisher",
+        record,
+        state,
+        state_solver,
+        grid,
+        2.0,
+        config.epsilon,
+        float(record["analysis_dt"]),
+        config.const_d0,
+    )
     d0_kind = str(record["d0_kind"])
     diagnostic = porous_fisher_conditioning.assess_porous_fisher_state(
         state,
@@ -1278,12 +1402,13 @@ def _resolve_record(
     checkpoint_dir: Path,
     study: str,
     record: dict[str, Any],
+    report_config: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the bounded ladder for one previously uncertified record."""
     assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
     attempts: list[dict[str, Any]] = []
     for budget in GEOMETRY_LADDER:
-        attempt = assessor(checkpoint_dir, record, budget)
+        attempt = assessor(checkpoint_dir, record, budget, report_config=report_config)
         attempts.append(attempt)
         if _is_certified(attempt):
             return {
@@ -1321,7 +1446,7 @@ def _resolve_one_record(checkpoint_dir: Path, study: str, key: str) -> None:
         print(f"resolution checkpoint exists: {key}")
         return
     started_at = perf_counter()
-    resolution = _resolve_record(checkpoint_dir, study, record)
+    resolution = _resolve_record(checkpoint_dir, study, record, report["config"])
     resolution["wall_seconds"] = perf_counter() - started_at
     checkpoint["resolved"][key] = resolution
     _atomic_write(_resolution_checkpoint_path(checkpoint_dir, study), checkpoint)
@@ -1591,7 +1716,9 @@ def _audit_one_bba5a94_record(checkpoint_dir: Path, study: str, key: str) -> Non
         return
     assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
     started_at = perf_counter()
-    observed = assessor(checkpoint_dir, record, _recorded_final_budget(record))
+    observed = assessor(
+        checkpoint_dir, record, _recorded_final_budget(record), report_config=report["config"]
+    )
     _verify_recorded_budget(record, observed, key)
     expected = _recorded_current_snapshot(record)
     reason = _verdict_shift_reason(record, expected, observed)
@@ -1790,7 +1917,12 @@ def _c1_option_a_audit_one_record(
         else _c1_option_a_measure_porous_fisher_record
     )
     started_at = perf_counter()
-    observed, measurement = measure(checkpoint_dir, record, _recorded_final_budget(record))
+    observed, measurement = measure(
+        checkpoint_dir,
+        record,
+        _recorded_final_budget(record),
+        report_config=reference["config"],
+    )
     _verify_recorded_budget(record, observed, key)
     recorded = _recorded_current_snapshot(record)
     recorded_category = str(record["final_category"])
@@ -2039,7 +2171,12 @@ def _audit_one_current_main_record(
 
     assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
     started_at = perf_counter()
-    observed = assessor(checkpoint_dir, record, _recorded_final_budget(record))
+    observed = assessor(
+        checkpoint_dir,
+        record,
+        _recorded_final_budget(record),
+        report_config=reference["config"],
+    )
     _verify_recorded_budget(record, observed, key)
     recorded = _recorded_current_snapshot(record)
     recorded_category = str(record["final_category"])
@@ -2259,6 +2396,7 @@ def _assess_v121_record(
     study: str,
     record: dict[str, Any],
     budget: tuple[int, int, int],
+    report_config: dict[str, Any],
     *,
     full_operator_epsilon_evidence: bool = False,
 ) -> dict[str, Any]:
@@ -2268,6 +2406,7 @@ def _assess_v121_record(
         checkpoint_dir,
         record,
         budget,
+        report_config=report_config,
         full_operator_epsilon_evidence=full_operator_epsilon_evidence,
     )
 
@@ -2276,6 +2415,7 @@ def _recover_v121_record(
     checkpoint_dir: Path,
     study: str,
     record: dict[str, Any],
+    report_config: dict[str, Any],
 ) -> dict[str, Any]:
     """Recover only support-cap or reduced-Arnoldi evidence on one final record."""
     original = _recorded_final_snapshot(record)
@@ -2289,7 +2429,11 @@ def _recover_v121_record(
             if max_iters <= recorded_max_iters:
                 continue
             attempt = _assess_v121_record(
-                checkpoint_dir, study, record, (n_angles, max_iters, n_restarts)
+                checkpoint_dir,
+                study,
+                record,
+                (n_angles, max_iters, n_restarts),
+                report_config,
             )
             support_attempts.append(attempt)
             final = attempt
@@ -2307,6 +2451,7 @@ def _recover_v121_record(
                 int(final["fov_max_iters"]),
                 int(final["fov_n_restarts"]),
             ),
+            report_config,
             full_operator_epsilon_evidence=True,
         )
         final = full_evidence_attempt
@@ -2346,7 +2491,7 @@ def _recover_one_v121_record(
         print(f"v1.2.1 recovery checkpoint exists: {key}")
         return
     started_at = perf_counter()
-    recovery = _recover_v121_record(checkpoint_dir, study, record)
+    recovery = _recover_v121_record(checkpoint_dir, study, record, report["config"])
     recovery["wall_seconds"] = perf_counter() - started_at
     checkpoint["recovered"][key] = recovery
     path = _v121_recovery_checkpoint_path(checkpoint_dir, study)
