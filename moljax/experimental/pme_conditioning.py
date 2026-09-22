@@ -195,6 +195,38 @@ def build_pme_linearization(
     return PMELinearization(operator, residual, preconditioner, context, d0, rhs)
 
 
+def _candidate_relative_residual(
+    matvec: Callable[[jax.Array], jax.Array],
+    vector_rhs: jax.Array,
+    norm_rhs: float,
+    basis: list[jax.Array],
+    triangular: list[list[float]],
+    rotated_rhs: list[float],
+    n_columns: int,
+) -> float:
+    """Return the measured ``||b - A x|| / ||b||`` of one GMRES candidate.
+
+    ``triangular`` holds the rotated Hessenberg columns, so the candidate
+    coefficients follow from back substitution against the leading
+    ``n_columns`` rotated right-hand-side entries.  This costs one extra
+    matrix-vector product and is only used where the rotated residual estimate
+    is not trustworthy.
+    """
+    if n_columns == 0:
+        return float(jnp.linalg.norm(vector_rhs)) / norm_rhs
+    weights = [0.0] * n_columns
+    for row in reversed(range(n_columns)):
+        total = rotated_rhs[row]
+        for column in range(row + 1, n_columns):
+            total -= triangular[column][row] * weights[column]
+        weights[row] = total / triangular[row][row]
+    candidate = jnp.zeros_like(vector_rhs)
+    for weight, basis_vector in zip(weights, basis[:n_columns], strict=True):
+        candidate = candidate + weight * basis_vector
+    residual = vector_rhs - jnp.real(matvec(candidate))
+    return float(jnp.linalg.norm(residual)) / norm_rhs
+
+
 def _counted_gmres(
     matvec: Callable[[jax.Array], jax.Array],
     rhs: jax.Array,
@@ -209,6 +241,24 @@ def _counted_gmres(
     the GMRES residual norm, so no dense least-squares solve is needed at each
     step.  It intentionally trades JIT fusion for an explicit, trustworthy
     iteration count; the operator itself remains matrix-free and JIT-compatible.
+
+    A rotated column whose pivot vanishes is an Arnoldi breakdown, not
+    convergence.  Zeroing the Givens sine there would make the rotated
+    right-hand-side entry vanish whatever the right-hand side is, so such a
+    column stops the iteration, sets ``breakdown`` in the returned stats, and
+    the reported residual becomes the explicitly measured
+    ``||b - A x|| / ||b||`` of the best candidate that the accumulated Krylov
+    space supports.  Convergence is claimed only if that measured residual
+    meets ``tol``.
+
+    A pivot is small only relative to the operator, so the cutoff is
+    ``sqrt(eps)`` times the largest absolute Hessenberg entry seen so far.
+    An absolute cutoff would report ``A = [1e-9]``, ``b = [1]`` as a
+    breakdown although that system has condition number one and is solved
+    exactly by one iteration.  A pivot that is small but nonzero is also not
+    read as a breakdown on its own: the candidate it defines is constructed
+    and evaluated, and breakdown is declared only when the measured
+    ``||b - A x|| / ||b||`` does not meet ``tol``.
     """
     if tol <= 0.0:
         raise ValueError("tol must be positive")
@@ -218,14 +268,22 @@ def _counted_gmres(
     vector_rhs = jnp.asarray(rhs, dtype=jnp.float64)
     norm_rhs = float(jnp.linalg.norm(vector_rhs))
     if norm_rhs == 0.0:
-        return {"converged": True, "iterations": 0, "final_relative_residual": 0.0}
+        return {
+            "converged": True,
+            "iterations": 0,
+            "final_relative_residual": 0.0,
+            "breakdown": False,
+        }
 
     basis = [vector_rhs / norm_rhs]
     cosines: list[float] = []
     sines: list[float] = []
+    triangular: list[list[float]] = []
     rotated_rhs = [norm_rhs] + [0.0] * max_iters
-    threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
+    relative_threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
+    hessenberg_scale = 0.0
     final_relative_residual = 1.0
+    breakdown = False
 
     for column in range(max_iters):
         candidate_vector = jnp.real(matvec(basis[column]))
@@ -241,6 +299,8 @@ def _counted_gmres(
 
         arnoldi_subdiagonal = float(jnp.linalg.norm(candidate_vector))
         hessenberg_column = coefficients + [arnoldi_subdiagonal]
+        hessenberg_scale = max(hessenberg_scale, max(abs(entry) for entry in hessenberg_column))
+        threshold = relative_threshold * hessenberg_scale
         for row, (cosine, sine) in enumerate(zip(cosines, sines, strict=True)):
             upper = cosine * hessenberg_column[row] + sine * hessenberg_column[row + 1]
             hessenberg_column[row + 1] = (
@@ -251,23 +311,57 @@ def _counted_gmres(
         diagonal = hessenberg_column[column]
         subdiagonal = hessenberg_column[column + 1]
         normalization = hypot(diagonal, subdiagonal)
-        if normalization <= threshold:
-            cosine, sine = 1.0, 0.0
-        else:
-            cosine, sine = diagonal / normalization, subdiagonal / normalization
+        if normalization == 0.0:
+            measured = _candidate_relative_residual(
+                matvec,
+                vector_rhs,
+                norm_rhs,
+                basis,
+                triangular,
+                rotated_rhs,
+                column,
+            )
+            return {
+                "converged": measured <= tol,
+                "iterations": len(basis),
+                "final_relative_residual": measured,
+                "breakdown": True,
+            }
+        cosine, sine = diagonal / normalization, subdiagonal / normalization
         cosines.append(cosine)
         sines.append(sine)
+        hessenberg_column[column] = normalization
+        hessenberg_column[column + 1] = 0.0
+        triangular.append(hessenberg_column[: column + 1])
         previous_rhs = rotated_rhs[column]
         rotated_rhs[column] = cosine * previous_rhs
         rotated_rhs[column + 1] = -sine * previous_rhs
         final_relative_residual = abs(rotated_rhs[column + 1]) / norm_rhs
+        if normalization <= threshold:
+            measured = _candidate_relative_residual(
+                matvec,
+                vector_rhs,
+                norm_rhs,
+                basis,
+                triangular,
+                rotated_rhs,
+                column + 1,
+            )
+            return {
+                "converged": measured <= tol,
+                "iterations": column + 1,
+                "final_relative_residual": measured,
+                "breakdown": measured > tol,
+            }
         if final_relative_residual <= tol:
             return {
                 "converged": True,
                 "iterations": column + 1,
                 "final_relative_residual": final_relative_residual,
+                "breakdown": False,
             }
         if arnoldi_subdiagonal <= threshold:
+            breakdown = True
             break
         basis.append(candidate_vector / arnoldi_subdiagonal)
 
@@ -275,6 +369,7 @@ def _counted_gmres(
         "converged": False,
         "iterations": len(basis),
         "final_relative_residual": final_relative_residual,
+        "breakdown": breakdown,
     }
 
 

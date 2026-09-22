@@ -20,6 +20,7 @@ from moljax.core.grid import Grid1D
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 from moljax.experimental.nonlinear_diffusion import barenblatt
 from moljax.experimental.pme_conditioning import (
+    _counted_gmres,
     assess_pme_state,
     build_pme_linearization,
     measure_gmres_iterations,
@@ -29,6 +30,10 @@ from moljax.experimental.pme_preconditioner import (
     d0_floor,
     d0_frozen_mean,
     helmholtz_inverse_relative_residual,
+)
+from moljax.experimental.porous_fisher_conditioning import (
+    build_porous_fisher_linearization,
+    measure_porous_fisher_gmres_iterations,
 )
 
 
@@ -431,4 +436,106 @@ def test_regime_map_reports_non_benign_high_stiffness_cells(tmp_path) -> None:
     assert len(high_stiffness_nonlinear) == 2
     assert all(
         cell["identity_iteration_range"]["ratio"] >= 5.0 for cell in high_stiffness_nonlinear
+    )
+
+
+def test_singular_pf_linearization_reports_breakdown_not_convergence() -> None:
+    """A vanishing rotated pivot must not be read as a zero GMRES residual."""
+    grid = NodeCenteredDirichletGrid.uniform(1, -1.0, 1.0)
+    state = jnp.asarray((0.25,), dtype=jnp.float64)
+    settings = {"r": 4.5, "dt": 1.0, "epsilon": 0.1875, "d0_kind": "identity"}
+    linearization = build_porous_fisher_linearization(state, grid, **settings)
+    jacobian = jax.jacfwd(linearization.operator.matvec)(jnp.zeros(1, dtype=jnp.float64))
+
+    assert float(jnp.max(jnp.abs(jacobian))) == 0.0
+    assert float(jnp.linalg.norm(linearization.rhs)) > 0.5
+
+    stats = measure_porous_fisher_gmres_iterations(
+        state, grid, tol=1.0e-10, max_iters=8, **settings
+    )
+
+    assert stats["converged"] is False
+    assert stats["final_relative_residual"] == pytest.approx(1.0)
+    assert stats["breakdown"] is True
+
+
+def test_nonsingular_gmres_measurement_is_unchanged_by_breakdown_detection() -> None:
+    """Breakdown detection must not move a solvable system's count or residual."""
+    grid = NodeCenteredDirichletGrid.uniform(16, -1.0, 1.0)
+    state = jnp.maximum(1.0 - grid.x_coords() ** 2, 0.0)
+    expected = {
+        "identity": 1.1181463722680472e-12,
+        "frozen_mean": 3.2488832540148357e-19,
+    }
+    for d0_kind, residual in expected.items():
+        stats = measure_gmres_iterations(
+            state,
+            grid,
+            2.0,
+            0.1,
+            1.0e-3,
+            d0_kind,
+            tol=1.0e-10,
+            max_iters=64,
+        )
+        assert stats["converged"] is True
+        assert stats["iterations"] == 8
+        assert stats["final_relative_residual"] == pytest.approx(residual, rel=1.0e-6)
+        assert stats["breakdown"] is False
+
+
+def test_breakdown_cutoff_is_relative_to_the_operator_scale() -> None:
+    """A small invertible operator must not be mistaken for a breakdown.
+
+    ``A = [1e-9]``, ``b = [1]`` has condition number one and is solved exactly
+    by one iteration, but its rotated pivot is below an absolute ``sqrt(eps)``
+    cutoff.  The scaled and unscaled systems must be reported identically,
+    while an exactly singular operator still breaks down.
+    """
+    rhs = jnp.asarray((1.0,), dtype=jnp.float64)
+    scaled = _counted_gmres(lambda v: 1.0e-9 * v, rhs, tol=1.0e-10, max_iters=8)
+    unscaled = _counted_gmres(lambda v: 1.0 * v, rhs, tol=1.0e-10, max_iters=8)
+
+    assert scaled["breakdown"] is False
+    assert scaled["converged"] is True
+    assert scaled["iterations"] == 1
+    assert scaled["final_relative_residual"] <= 1.0e-10
+    assert scaled == unscaled
+
+    singular = _counted_gmres(
+        lambda v: jnp.zeros_like(v),
+        jnp.asarray((0.61025382,), dtype=jnp.float64),
+        tol=1.0e-10,
+        max_iters=8,
+    )
+
+    assert singular["breakdown"] is True
+    assert singular["converged"] is False
+    assert singular["final_relative_residual"] == pytest.approx(1.0)
+
+
+def test_small_nonzero_pivot_is_decided_by_the_measured_residual() -> None:
+    """A pivot that is small but nonzero still yields a candidate to evaluate.
+
+    ``diag(1, 1e-12)`` against ``b = (1, 1)`` drives the second rotated pivot
+    below ``sqrt(eps)`` times the Hessenberg scale without making it vanish.
+    The candidate the column defines is constructed either way; only its
+    measured ``||b - A x|| / ||b||`` decides whether that is a breakdown.
+    """
+    diagonal = jnp.asarray((1.0, 1.0e-12), dtype=jnp.float64)
+    rhs = jnp.asarray((1.0, 1.0), dtype=jnp.float64)
+    refused = _counted_gmres(lambda v: diagonal * v, rhs, tol=1.0e-10, max_iters=8)
+
+    assert refused["breakdown"] is True
+    assert refused["converged"] is False
+    assert refused["iterations"] == 2
+    assert 1.0e-10 < refused["final_relative_residual"] < 1.0
+
+    accepted = _counted_gmres(lambda v: diagonal * v, rhs, tol=1.0e-2, max_iters=8)
+
+    assert accepted["breakdown"] is False
+    assert accepted["converged"] is True
+    assert accepted["iterations"] == 2
+    assert accepted["final_relative_residual"] == pytest.approx(
+        refused["final_relative_residual"]
     )
