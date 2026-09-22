@@ -121,6 +121,10 @@ and the origin is outside. They are baseline controls, not nonlinear-PME
 evidence.
 
 The following breakdown covers the 135 records with `m` in `{2, 4, 8}`.
+It aggregates all three front cases for that subset (38 adequate records); the
+`m=3` and `m=6` subsets, not shown in this table, contribute 8 and 10
+adequate records, respectively. With the 3 adequate `m=1` identity controls,
+the full PME adequate count reconciles as `38 + 8 + 10 + 3 = 59`.
 
 | Variant | Adequate | Investigate | Indeterminate | At cap |
 | --- | ---: | ---: | ---: | ---: |
