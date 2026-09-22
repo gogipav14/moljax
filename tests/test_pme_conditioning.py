@@ -20,6 +20,7 @@ from moljax.core.grid import Grid1D
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 from moljax.experimental.nonlinear_diffusion import barenblatt
 from moljax.experimental.pme_conditioning import (
+    _counted_gmres,
     assess_pme_state,
     build_pme_linearization,
     measure_gmres_iterations,
@@ -29,6 +30,10 @@ from moljax.experimental.pme_preconditioner import (
     d0_floor,
     d0_frozen_mean,
     helmholtz_inverse_relative_residual,
+)
+from moljax.experimental.porous_fisher_conditioning import (
+    build_porous_fisher_linearization,
+    measure_porous_fisher_gmres_iterations,
 )
 
 
@@ -432,3 +437,188 @@ def test_regime_map_reports_non_benign_high_stiffness_cells(tmp_path) -> None:
     assert all(
         cell["identity_iteration_range"]["ratio"] >= 5.0 for cell in high_stiffness_nonlinear
     )
+
+
+def test_singular_pf_linearization_reports_breakdown_not_convergence() -> None:
+    """A vanishing rotated pivot must not be read as a zero GMRES residual."""
+    grid = NodeCenteredDirichletGrid.uniform(1, -1.0, 1.0)
+    state = jnp.asarray((0.25,), dtype=jnp.float64)
+    settings = {"r": 4.5, "dt": 1.0, "epsilon": 0.1875, "d0_kind": "identity"}
+    linearization = build_porous_fisher_linearization(state, grid, **settings)
+    jacobian = jax.jacfwd(linearization.operator.matvec)(jnp.zeros(1, dtype=jnp.float64))
+
+    assert float(jnp.max(jnp.abs(jacobian))) == 0.0
+    assert float(jnp.linalg.norm(linearization.rhs)) > 0.5
+
+    stats = measure_porous_fisher_gmres_iterations(
+        state, grid, tol=1.0e-10, max_iters=8, **settings
+    )
+
+    assert stats["converged"] is False
+    assert stats["final_relative_residual"] == pytest.approx(1.0)
+    assert stats["breakdown"] is True
+
+
+def test_nonsingular_gmres_measurement_is_unchanged_by_breakdown_detection() -> None:
+    """Breakdown detection must not move a solvable system's count or residual."""
+    grid = NodeCenteredDirichletGrid.uniform(16, -1.0, 1.0)
+    state = jnp.maximum(1.0 - grid.x_coords() ** 2, 0.0)
+    expected = {
+        "identity": 1.1181463722680472e-12,
+        "frozen_mean": 3.2488832540148357e-19,
+    }
+    for d0_kind, residual in expected.items():
+        stats = measure_gmres_iterations(
+            state,
+            grid,
+            2.0,
+            0.1,
+            1.0e-3,
+            d0_kind,
+            tol=1.0e-10,
+            max_iters=64,
+        )
+        assert stats["converged"] is True
+        assert stats["iterations"] == 8
+        assert stats["final_relative_residual"] == pytest.approx(residual, rel=1.0e-6)
+        assert stats["breakdown"] is False
+
+
+def test_breakdown_cutoff_is_relative_to_the_operator_scale() -> None:
+    """A small invertible operator must not be mistaken for a breakdown.
+
+    ``A = [1e-9]``, ``b = [1]`` has condition number one and is solved exactly
+    by one iteration, although its rotated pivot is below an absolute
+    ``sqrt(eps)``.  The scaled and unscaled systems must be reported
+    identically, while an exactly singular operator still breaks down.
+    """
+    rhs = jnp.asarray((1.0,), dtype=jnp.float64)
+    scaled = _counted_gmres(lambda v: 1.0e-9 * v, rhs, tol=1.0e-10, max_iters=8)
+    unscaled = _counted_gmres(lambda v: 1.0 * v, rhs, tol=1.0e-10, max_iters=8)
+
+    assert scaled["breakdown"] is False
+    assert scaled["converged"] is True
+    assert scaled["iterations"] == 1
+    assert scaled["final_relative_residual"] <= 1.0e-10
+    assert scaled == unscaled
+
+    singular = _counted_gmres(
+        lambda v: jnp.zeros_like(v),
+        jnp.asarray((0.61025382,), dtype=jnp.float64),
+        tol=1.0e-10,
+        max_iters=8,
+    )
+
+    assert singular["breakdown"] is True
+    assert singular["converged"] is False
+    assert singular["iterations"] == 1
+    assert singular["final_relative_residual"] == pytest.approx(1.0)
+
+
+def test_invariant_krylov_space_is_decided_by_the_measured_residual() -> None:
+    """At an invariant Krylov space only the measured residual decides.
+
+    ``diag(1, 1e-12)`` against ``b = (1, 1)`` spans its Krylov space in two
+    columns, so the second Arnoldi subdiagonal vanishes to roundoff and the
+    rotated estimate collapses to about ``1e-20``.  The triangular system is
+    nonsingular, but its candidate's measured ``||b - A x|| / ||b||`` is
+    about ``1.3e-4``, so ``tol = 1e-10`` is a breakdown reported with that
+    measured residual and ``tol = 1e-2`` is convergence.  SciPy's GMRES agrees
+    that ``tol = 1e-10`` is not reached.
+    """
+    diagonal = jnp.asarray((1.0, 1.0e-12), dtype=jnp.float64)
+    rhs = jnp.asarray((1.0, 1.0), dtype=jnp.float64)
+    refused = _counted_gmres(lambda v: diagonal * v, rhs, tol=1.0e-10, max_iters=8)
+
+    assert refused["breakdown"] is True
+    assert refused["converged"] is False
+    assert refused["iterations"] == 2
+    assert 1.0e-10 < refused["final_relative_residual"] < 1.0
+
+    accepted = _counted_gmres(lambda v: diagonal * v, rhs, tol=1.0e-2, max_iters=8)
+
+    assert accepted["breakdown"] is False
+    assert accepted["converged"] is True
+    assert accepted["iterations"] == 2
+    assert accepted["final_relative_residual"] <= 1.0e-2
+
+    reference = _scipy_gmres(np.diag(np.asarray(diagonal)), np.asarray(rhs), tol=1.0e-10)
+    assert reference["converged"] is False
+    assert reference["measured"] > 1.0e-10
+
+
+def _scipy_gmres(matrix: np.ndarray, rhs: np.ndarray, *, tol: float) -> dict[str, object]:
+    """Run unrestarted SciPy GMRES and return its count and measured residual."""
+    from scipy.sparse.linalg import gmres
+
+    history: list[float] = []
+    solution, info = gmres(
+        matrix,
+        rhs,
+        rtol=tol,
+        atol=0.0,
+        restart=2 * rhs.size,
+        maxiter=1,
+        callback=history.append,
+        callback_type="pr_norm",
+    )
+    measured = float(np.linalg.norm(rhs - matrix @ solution) / np.linalg.norm(rhs))
+    return {"converged": info == 0, "iterations": len(history), "measured": measured}
+
+
+def test_small_rotated_pivot_does_not_truncate_a_solvable_system() -> None:
+    """A small rotated pivot with a nonzero subdiagonal is no reason to stop.
+
+    For ``A = diag(1e9, 1, 2)``, ``b = (1, 1, 1)`` the second rotated pivot
+    is about ``3e-9`` times ``||A v_2||`` and far below ``sqrt(eps)`` times
+    the largest Hessenberg entry, but the Arnoldi subdiagonal is not small
+    relative to that column, so the Krylov space still grows.  The third
+    column spans the space; convergence there is decided by the measured
+    residual, so ``converged`` already certifies ``||b - A x|| / ||b|| <= tol``.
+    """
+    diagonal = np.asarray((1.0e9, 1.0, 2.0))
+    rhs = np.ones(3)
+    stats = _counted_gmres(
+        lambda v: jnp.asarray(diagonal) * v, jnp.asarray(rhs), tol=1.0e-7, max_iters=8
+    )
+
+    assert stats["converged"] is True
+    assert stats["breakdown"] is False
+    assert stats["iterations"] == 3
+    assert stats["final_relative_residual"] <= 1.0e-7
+
+    reference = _scipy_gmres(np.diag(diagonal), rhs, tol=1.0e-7)
+    assert reference["converged"] is True
+    assert reference["iterations"] == 3
+    assert reference["measured"] <= 1.0e-7
+
+
+def _diagonal_matvec(diagonal: np.ndarray):
+    """Return the matrix-free action of ``diag(diagonal)``."""
+    entries = jnp.asarray(diagonal, dtype=jnp.float64)
+    return lambda v: entries * v
+
+
+def test_ill_conditioned_diagonal_tracks_scipy_gmres() -> None:
+    """A condition-number-1e8 system converges when SciPy's GMRES does.
+
+    Twenty distinct eigenvalues logspaced over ``[1e-4, 1e4]`` need the full
+    Krylov space, whose last column is an invariant-subspace breakdown decided
+    by the measured residual.  Widening the spectrum to ``[1e-8, 1e8]``
+    (condition number ``1e16``) defeats both implementations at ``1e-8``.
+    """
+    rhs = np.ones(20)
+    for exponent, expected in ((4.0, True), (8.0, False)):
+        diagonal = np.logspace(-exponent, exponent, 20)
+        stats = _counted_gmres(
+            _diagonal_matvec(diagonal), jnp.asarray(rhs), tol=1.0e-8, max_iters=40
+        )
+        reference = _scipy_gmres(np.diag(diagonal), rhs, tol=1.0e-8)
+
+        assert stats["converged"] is expected
+        assert reference["converged"] is expected
+        assert stats["breakdown"] is not expected
+        assert abs(stats["iterations"] - reference["iterations"]) <= 1
+        if expected:
+            assert stats["final_relative_residual"] <= 1.0e-8
+            assert reference["measured"] <= 1.0e-8
