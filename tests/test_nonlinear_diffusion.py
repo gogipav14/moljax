@@ -10,7 +10,10 @@ import numpy as np
 import pytest
 
 from moljax.core.grid import Grid1D
-from moljax.experimental.node_centered import NodeCenteredDirichletGrid
+from moljax.experimental.node_centered import (
+    NodeCenteredDirichletGrid,
+    node_centered_dirichlet_laplacian,
+)
 from moljax.experimental.nonlinear_diffusion import (
     barenblatt,
     porous_medium_diffusivity,
@@ -133,3 +136,21 @@ def test_barenblatt_support_is_compact_and_contained(m: float, b: float) -> None
     assert mass > 0.0
     assert float(jnp.min(u)) >= 0.0
     assert float(jnp.max(jnp.abs(u[outside]))) <= 1.0e-12
+
+
+def test_linear_control_jacobian_keeps_exact_zero_node_columns() -> None:
+    """``m=1`` must linearize to the discrete Laplacian, zero-valued nodes included."""
+    grid = NodeCenteredDirichletGrid.uniform(5, -1.0, 1.0)
+    state = jnp.asarray((-2.0, -1.0e-3, 0.0, 1.0e-3, 2.0), dtype=jnp.float64)
+    jacobian = jax.jacfwd(
+        lambda values: porous_medium_node_centered_rhs(values, grid, 1.0, epsilon=0.0)
+    )(state)
+    laplacian = jax.jacfwd(lambda values: node_centered_dirichlet_laplacian(values, grid))(state)
+
+    assert float(jnp.max(jnp.abs(jacobian - laplacian))) <= 1.0e-12
+    assert (
+        float(
+            jnp.max(jnp.abs(regularized_porous_medium_potential(state, 1.0, epsilon=0.0) - state))
+        )
+        == 0.0
+    )
