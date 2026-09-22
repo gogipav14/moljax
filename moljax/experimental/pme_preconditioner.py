@@ -56,7 +56,11 @@ def d0_frozen_bulk(
 
 
 def d0_floor(m: float, epsilon: float) -> float:
-    """Return ``D_epsilon(0) = m * epsilon**(m - 1)`` for Option A."""
+    """Return the exact positive Option-A floor ``D_epsilon(0)``.
+
+    For ``D_epsilon(u) = m * (u**2 + epsilon**2)**((m - 1) / 2)``, the
+    zero-state value is exactly ``m * epsilon**(m - 1)``.
+    """
     return float(m * epsilon ** (m - 1.0))
 
 

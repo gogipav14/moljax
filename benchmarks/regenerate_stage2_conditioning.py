@@ -35,7 +35,9 @@ SOURCE_STATE_ARTIFACT_SCHEMA = "stage2_conditioning_source_state_v1"
 BBA5A94_AUDIT_SCHEMA = "stage2_conditioning_bba5a94_verdict_audit_v1"
 C1_OPTION_A_AUDIT_SCHEMA = "stage2_conditioning_c1_option_a_audit_v1"
 CURRENT_MAIN_AUDIT_SCHEMA = "stage2_conditioning_current_main_verdict_audit_v1"
+V121_RECOVERY_SCHEMA = "stage2_conditioning_v1_2_1_recovery_v1"
 GEOMETRY_LADDER = ((32, 120, 2), (64, 180, 2), (96, 240, 2))
+SUPPORT_ITERATION_LADDER = (240, 480)
 BASE_GEOMETRY_BUDGET = {"n_angles": 16, "fov_max_iters": 60, "fov_n_restarts": 2}
 
 # These four measurements were completed before the broad escalation pass.  They
@@ -659,6 +661,21 @@ def _geometry_snapshot(
         "max_support_residual": float(record["max_support_residual"]),
         "disk_rate": float(record["disk_rate"]),
         "epsilon_zero": float(record["epsilon_zero"]),
+        "epsilon_zero_reduced_arnoldi": (
+            None
+            if record.get("epsilon_zero_reduced_arnoldi") is None
+            else float(record["epsilon_zero_reduced_arnoldi"])
+        ),
+        "full_operator_epsilon_zero": (
+            None
+            if record.get("full_operator_epsilon_zero") is None
+            else float(record["full_operator_epsilon_zero"])
+        ),
+        "full_operator_epsilon_zero_seconds": (
+            None
+            if record.get("full_operator_epsilon_zero_seconds") is None
+            else float(record["full_operator_epsilon_zero_seconds"])
+        ),
         "epsilon_zero_full_operator_evidence": bool(
             record.get("epsilon_zero_full_operator_evidence", False)
         ),
@@ -755,6 +772,8 @@ def _assess_pme_record(
     checkpoint_dir: Path,
     record: dict[str, Any],
     budget: tuple[int, int, int],
+    *,
+    full_operator_epsilon_evidence: bool = False,
 ) -> dict[str, Any]:
     """Load one persisted PME state and assess it at one geometry budget."""
     n_angles, fov_max_iters, fov_n_restarts = budget
@@ -780,6 +799,7 @@ def _assess_pme_record(
         fov_residual_tolerance=config.fov_residual_tolerance,
         fov_n_restarts=fov_n_restarts,
         arnoldi_steps=config.arnoldi_steps,
+        full_operator_epsilon_evidence=full_operator_epsilon_evidence,
         seed=(
             20260900
             + 1000 * m
@@ -799,6 +819,8 @@ def _assess_porous_fisher_record(
     checkpoint_dir: Path,
     record: dict[str, Any],
     budget: tuple[int, int, int],
+    *,
+    full_operator_epsilon_evidence: bool = False,
 ) -> dict[str, Any]:
     """Load one persisted reaction-axis state and assess it at one geometry budget."""
     n_angles, fov_max_iters, fov_n_restarts = budget
@@ -827,6 +849,7 @@ def _assess_porous_fisher_record(
         fov_residual_tolerance=config.fov_residual_tolerance,
         fov_n_restarts=fov_n_restarts,
         arnoldi_steps=config.arnoldi_steps,
+        full_operator_epsilon_evidence=full_operator_epsilon_evidence,
         seed=(
             20260880
             + 1000 * int(100 * reaction)
@@ -1569,6 +1592,9 @@ def _replace_geometry_fields(record: dict[str, Any], observed: dict[str, Any]) -
         "max_support_residual",
         "disk_rate",
         "epsilon_zero",
+        "epsilon_zero_reduced_arnoldi",
+        "full_operator_epsilon_zero",
+        "full_operator_epsilon_zero_seconds",
         "epsilon_zero_full_operator_evidence",
         "verdict_reason",
         "arnoldi_k_requested",
@@ -1908,6 +1934,325 @@ def _assemble_current_main_audit(
     )
 
 
+def _v121_recovery_checkpoint_path(checkpoint_dir: Path, study: str) -> Path:
+    """Return the resumable v1.2.1 evidence-recovery checkpoint for one study."""
+    return checkpoint_dir / f"{study}_v1_2_1_recovery_v1.json"
+
+
+def _load_v121_recovery_checkpoint(
+    checkpoint_dir: Path,
+    study: str,
+    result_path: Path,
+    audit_base_revision: str,
+) -> dict[str, Any]:
+    """Load or initialize recovery evidence bound to one resolved base report."""
+    path = _v121_recovery_checkpoint_path(checkpoint_dir, study)
+    digest = _base_digest(result_path)
+    if not path.exists():
+        return {
+            "schema": V121_RECOVERY_SCHEMA,
+            "study": study,
+            "reference_result": str(result_path),
+            "reference_sha256": digest,
+            "audit_base_revision": audit_base_revision,
+            "recovered": {},
+        }
+    payload = _load_checkpoint(path)
+    if (
+        payload.get("schema") != V121_RECOVERY_SCHEMA
+        or payload.get("study") != study
+        or payload.get("reference_result") != str(result_path)
+        or payload.get("reference_sha256") != digest
+        or payload.get("audit_base_revision") != audit_base_revision
+    ):
+        raise RuntimeError(f"v1.2.1 recovery checkpoint identity mismatch: {path}")
+    return payload
+
+
+def _v121_recovery_required(record: dict[str, Any]) -> bool:
+    """Return whether a record needs full-evidence or support-cap recovery."""
+    category = str(record["final_category"])
+    if category == "CERTIFIED_PROVISIONAL":
+        return True
+    return category == "UNCERTIFIED_AT_CAP" and not bool(
+        _recorded_final_snapshot(record)["supports_converged"]
+    )
+
+
+def _assess_v121_record(
+    checkpoint_dir: Path,
+    study: str,
+    record: dict[str, Any],
+    budget: tuple[int, int, int],
+    *,
+    full_operator_epsilon_evidence: bool = False,
+) -> dict[str, Any]:
+    """Read one persisted state at one budget, optionally with full epsilon evidence."""
+    assessor = _assess_pme_record if study == "pme" else _assess_porous_fisher_record
+    return assessor(
+        checkpoint_dir,
+        record,
+        budget,
+        full_operator_epsilon_evidence=full_operator_epsilon_evidence,
+    )
+
+
+def _recover_v121_record(
+    checkpoint_dir: Path,
+    study: str,
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Recover only support-cap or reduced-Arnoldi evidence on one final record."""
+    original = _recorded_final_snapshot(record)
+    final = dict(original)
+    support_attempts: list[dict[str, Any]] = []
+    category_before = str(record["final_category"])
+
+    if category_before == "UNCERTIFIED_AT_CAP" and not final["supports_converged"]:
+        n_angles, recorded_max_iters, n_restarts = _recorded_final_budget(record)
+        for max_iters in SUPPORT_ITERATION_LADDER:
+            if max_iters <= recorded_max_iters:
+                continue
+            attempt = _assess_v121_record(
+                checkpoint_dir, study, record, (n_angles, max_iters, n_restarts)
+            )
+            support_attempts.append(attempt)
+            final = attempt
+            if final["supports_converged"]:
+                break
+
+    full_evidence_attempt = None
+    if _is_certified(final) and final["verdict"] == "provisional":
+        full_evidence_attempt = _assess_v121_record(
+            checkpoint_dir,
+            study,
+            record,
+            (
+                int(final["n_angles"]),
+                int(final["fov_max_iters"]),
+                int(final["fov_n_restarts"]),
+            ),
+            full_operator_epsilon_evidence=True,
+        )
+        final = full_evidence_attempt
+
+    return {
+        "category_before": category_before,
+        "initial": original,
+        "support_escalation_attempts": support_attempts,
+        "full_operator_evidence_attempt": full_evidence_attempt,
+        "final": final,
+        "final_category": _category_from_snapshot(final),
+        "final_verdict": final["verdict"] if _is_certified(final) else None,
+        "support_recovery_attempted": bool(support_attempts),
+        "full_operator_evidence_attempted": full_evidence_attempt is not None,
+    }
+
+
+def _recover_one_v121_record(
+    checkpoint_dir: Path,
+    study: str,
+    audit_base_revision: str,
+    key: str,
+) -> None:
+    """Recover one eligible v1.2.1 record and atomically checkpoint it."""
+    result_path, report = _load_base_report(study)
+    records = {_record_key(study, record): record for record in report["records"]}
+    try:
+        record = records[key]
+    except KeyError as error:
+        raise RuntimeError(f"Unknown {study} v1.2.1 recovery key: {key}") from error
+    if not _v121_recovery_required(record):
+        raise RuntimeError(f"Record does not need v1.2.1 recovery: {key}")
+    checkpoint = _load_v121_recovery_checkpoint(
+        checkpoint_dir, study, result_path, audit_base_revision
+    )
+    if key in checkpoint["recovered"]:
+        print(f"v1.2.1 recovery checkpoint exists: {key}")
+        return
+    started_at = perf_counter()
+    recovery = _recover_v121_record(checkpoint_dir, study, record)
+    recovery["wall_seconds"] = perf_counter() - started_at
+    checkpoint["recovered"][key] = recovery
+    path = _v121_recovery_checkpoint_path(checkpoint_dir, study)
+    _atomic_write(path, checkpoint)
+    print(
+        f"v1.2.1 recovered {key}: category={recovery['final_category']} "
+        f"support_attempts={len(recovery['support_escalation_attempts'])} "
+        f"full_evidence={recovery['full_operator_evidence_attempted']} checkpoint={path}"
+    )
+
+
+def _list_pending_v121_recovery(
+    checkpoint_dir: Path,
+    study: str,
+    audit_base_revision: str,
+) -> None:
+    """List only records eligible for the bounded v1.2.1 recovery operations."""
+    result_path, report = _load_base_report(study)
+    checkpoint = _load_v121_recovery_checkpoint(
+        checkpoint_dir, study, result_path, audit_base_revision
+    )
+    pending = [
+        _record_key(study, record)
+        for record in report["records"]
+        if _v121_recovery_required(record)
+        and _record_key(study, record) not in checkpoint["recovered"]
+    ]
+    print(json.dumps(pending, indent=2))
+
+
+def _v121_resolution(record: dict[str, Any], recovery: dict[str, Any] | None) -> dict[str, Any]:
+    """Retain the geometry ladder while appending v1.2.1 evidence recovery."""
+    resolution = deepcopy(record["geometry_resolution"])
+    if recovery is None:
+        return resolution
+    final = dict(recovery["final"])
+    resolution.update(
+        {
+            "status": "CERTIFIED" if _is_certified(final) else "UNCERTIFIED_AT_CAP",
+            "source": "v1_2_1_evidence_recovery",
+            "final": final,
+            "final_category": recovery["final_category"],
+            "final_verdict": recovery["final_verdict"],
+            "v1_2_1_recovery": recovery,
+        }
+    )
+    return resolution
+
+
+def _assemble_v121_recovery(
+    checkpoint_dir: Path,
+    study: str,
+    audit_base_revision: str,
+    output_path: Path,
+) -> None:
+    """Write final v1.2.1 results after bounded evidence-only recovery."""
+    result_path, report = _load_base_report(study)
+    checkpoint = _load_v121_recovery_checkpoint(
+        checkpoint_dir, study, result_path, audit_base_revision
+    )
+    required = {
+        _record_key(study, record)
+        for record in report["records"]
+        if _v121_recovery_required(record)
+    }
+    missing = required.difference(checkpoint["recovered"])
+    if missing:
+        raise RuntimeError(
+            f"Cannot assemble v1.2.1 recovery; {len(missing)} records remain: {sorted(missing)[:3]}"
+        )
+
+    records: list[dict[str, Any]] = []
+    categories: dict[str, int] = {}
+    budget_counts: dict[str, int] = {}
+    at_cap_support_failures = 0
+    at_cap_corroboration_failures = 0
+    support_cleared = 0
+    full_evidence_attempts = 0
+    full_evidence_seconds: list[float] = []
+    changed_keys: list[str] = []
+    for record in report["records"]:
+        key = _record_key(study, record)
+        recovery = checkpoint["recovered"].get(key)
+        resolution = _v121_resolution(record, recovery)
+        final = resolution["final"]
+        updated = dict(record)
+        _replace_geometry_fields(updated, final)
+        updated["geometry_budget"] = {
+            "n_angles": final["n_angles"],
+            "fov_max_iters": final["fov_max_iters"],
+            "fov_n_restarts": final["fov_n_restarts"],
+        }
+        if study == "pme":
+            updated["predicted_iterations_from_envelope"] = (
+                pme_breakdown.predicted_iterations_from_envelope(
+                    float(final["disk_rate"]),
+                    tol=float(report["config"]["krylov_tol"]),
+                )
+            )
+        updated["geometry_resolution"] = resolution
+        updated["final_category"] = str(resolution["final_category"])
+        updated["final_verdict"] = resolution["final_verdict"]
+        category = str(resolution["final_category"])
+        categories[category] = categories.get(category, 0) + 1
+        if resolution["status"] == "CERTIFIED":
+            budget = f"{final['n_angles']}/{final['fov_max_iters']}/{final['fov_n_restarts']}"
+            budget_counts[budget] = budget_counts.get(budget, 0) + 1
+        else:
+            at_cap_support_failures += not bool(final["supports_converged"])
+            at_cap_corroboration_failures += bool(final["supports_converged"]) and not bool(
+                final["supports_corroborated"]
+            )
+        if recovery is not None:
+            if recovery["category_before"] != category:
+                changed_keys.append(key)
+            if recovery["support_recovery_attempted"] and _is_certified(final):
+                support_cleared += 1
+            if recovery["full_operator_evidence_attempted"]:
+                full_evidence_attempts += 1
+                seconds = final.get("full_operator_epsilon_zero_seconds")
+                if seconds is not None:
+                    full_evidence_seconds.append(float(seconds))
+        records.append(updated)
+
+    final_report = dict(report)
+    final_report["records"] = records
+    final_report["conditioning_audit_base_revision"] = audit_base_revision
+    final_report["geometry_resolution"] = {
+        **dict(report["geometry_resolution"]),
+        "description": (
+            "v1.2.1 final categories use persisted, SHA256-verified converged source states; "
+            "the normal 16/60/2-to-96/240/2 geometry ladder; full-operator epsilon-zero only "
+            "for certified provisional records; and 240/480 support-iteration recovery only "
+            "for support-convergence at-cap records. Restart-corroboration failures remain "
+            "UNCERTIFIED_AT_CAP."
+        ),
+        "source_schema": V121_RECOVERY_SCHEMA,
+        "reference_result": str(result_path),
+        "reference_sha256": _base_digest(result_path),
+        "audit_base_revision": audit_base_revision,
+        "final_category_counts": categories,
+        "certifying_budget_counts": budget_counts,
+        "at_cap_failures": {
+            "support_not_converged": at_cap_support_failures,
+            "restart_corroboration_failed": at_cap_corroboration_failures,
+        },
+        "support_escalation": {
+            "max_iters_ladder": list(SUPPORT_ITERATION_LADDER),
+            "certified_after_escalation": support_cleared,
+        },
+        "full_operator_epsilon_zero": {
+            "method": "dense materialization via full_operator_epsilon_zero",
+            "attempted_records": full_evidence_attempts,
+            "total_seconds": float(sum(full_evidence_seconds)),
+            "median_seconds": (
+                None
+                if not full_evidence_seconds
+                else float(np.median(np.asarray(full_evidence_seconds)))
+            ),
+        },
+        "changed_record_keys": changed_keys,
+    }
+    if study == "pme":
+        final_report["regime_claim"] = pme_breakdown._regime_claim(records)
+        final_report["rank_claim"] = pme_breakdown._rank_claim(records)
+        final_report["predictor_quality"] = pme_breakdown._predictor_quality(records)
+        final_report["correlation"] = pme_breakdown._correlation_pairs(records)
+        final_report["regime_map"] = pme_breakdown._regime_map(records)
+        final_report["verdict_on_decision_procedure"] = (
+            pme_breakdown._verdict_on_decision_procedure(records)
+        )
+    else:
+        final_report["regime_claim"] = porous_fisher_conditioning._regime_claim(records)
+        final_report["verdict_on_decision_procedure"] = (
+            porous_fisher_conditioning._verdict_on_decision_procedure(records)
+        )
+        final_report["reaction_effect"] = porous_fisher_conditioning._reaction_effect(records)
+    _atomic_write(output_path, final_report)
+    print(f"assembled v1.2.1 recovery: study={study} records={len(records)} output={output_path}")
+
+
 def _list_pending_resolution(checkpoint_dir: Path, study: str) -> None:
     """Print deterministic keys for uncertified records not resolved by a prior probe."""
     base_path, report = _load_base_report(study)
@@ -1987,6 +2332,20 @@ def main() -> None:
         help="Assemble every re-audited current-main reading into the result report",
     )
     parser.add_argument(
+        "--list-pending-v121-recovery",
+        action="store_true",
+        help="List provisional and support-at-cap records eligible for v1.2.1 recovery",
+    )
+    parser.add_argument(
+        "--recover-v121-record",
+        help="Recover one provisional or support-at-cap record on the v1.2.1 base",
+    )
+    parser.add_argument(
+        "--assemble-v121-recovery",
+        action="store_true",
+        help="Assemble v1.2.1 full-evidence and support-iteration recovery",
+    )
+    parser.add_argument(
         "--reference-result",
         type=Path,
         help="Immutable prior final result JSON used only for record keys and budgets",
@@ -2015,6 +2374,9 @@ def main() -> None:
             args.list_pending_current_main_audit,
             args.audit_current_main_record,
             args.assemble_current_main_audit,
+            args.list_pending_v121_recovery,
+            args.recover_v121_record,
+            args.assemble_v121_recovery,
         )
     )
     if actions != 1:
@@ -2082,6 +2444,31 @@ def main() -> None:
             args.study,
             args.reference_result,
             args.audit_base_revision,
+        )
+        return
+    if args.list_pending_v121_recovery:
+        if args.audit_base_revision is None:
+            parser.error("--list-pending-v121-recovery requires --audit-base-revision")
+        _list_pending_v121_recovery(args.checkpoint_dir, args.study, args.audit_base_revision)
+        return
+    if args.recover_v121_record:
+        if args.audit_base_revision is None:
+            parser.error("--recover-v121-record requires --audit-base-revision")
+        _recover_one_v121_record(
+            args.checkpoint_dir,
+            args.study,
+            args.audit_base_revision,
+            args.recover_v121_record,
+        )
+        return
+    if args.assemble_v121_recovery:
+        if args.audit_base_revision is None:
+            parser.error("--assemble-v121-recovery requires --audit-base-revision")
+        _assemble_v121_recovery(
+            args.checkpoint_dir,
+            args.study,
+            args.audit_base_revision,
+            args.output or _base_output_path(args.study),
         )
         return
     if args.audit_current_main_record:

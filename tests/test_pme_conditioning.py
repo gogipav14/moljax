@@ -185,6 +185,30 @@ def test_assess_pme_state_has_a_valid_adjoint_gate_and_verdict() -> None:
 
 
 @pytest.mark.slow
+def test_assess_pme_state_can_attach_full_operator_epsilon_evidence() -> None:
+    """The optional recovery path uses the full dense epsilon-zero helper."""
+    grid = NodeCenteredDirichletGrid.uniform(32, -4.0, 4.0)
+    result = assess_pme_state(
+        _barenblatt_state(grid),
+        grid,
+        2.0,
+        0.02,
+        1.0e-5,
+        "frozen_mean",
+        n_angles=3,
+        fov_max_iters=4,
+        fov_n_restarts=2,
+        arnoldi_steps=6,
+        full_operator_epsilon_evidence=True,
+    )
+
+    assert result["epsilon_zero_full_operator_evidence"] is True
+    assert result["full_operator_epsilon_zero"] is not None
+    assert result["full_operator_epsilon_zero_seconds"] is not None
+    assert result["epsilon_zero"] == pytest.approx(result["full_operator_epsilon_zero"])
+
+
+@pytest.mark.slow
 def test_frozen_mean_preconditioning_tightens_the_m2_numerical_range() -> None:
     """The frozen-D0 variant improves the disk-rate diagnostic over identity."""
     grid = NodeCenteredDirichletGrid.uniform(64, -4.0, 4.0)

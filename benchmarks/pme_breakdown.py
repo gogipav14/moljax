@@ -61,7 +61,6 @@ class BreakdownConfig(NamedTuple):
     arnoldi_steps: int = 6
     const_d0: float = 1.0
     max_newton_iters: int = 13
-    max_backtrack: int = 6
     max_krylov_iters: int = 400
     newton_tol: float = 1.0e-8
     krylov_tol: float = 1.0e-8
@@ -148,19 +147,19 @@ def _solve_one_step(
         d0_kind,
         const_value=config.const_d0,
     )
+    nk_params = NKParams(
+        max_newton_iters=config.max_newton_iters,
+        max_krylov_iters=config.max_krylov_iters,
+        newton_tol=config.newton_tol,
+        krylov_tol=config.krylov_tol,
+    )
     result = newton_krylov_solve(
         residual,
         interior,
         grid,
         params={},
         preconditioner=preconditioner,
-        nk_params=NKParams(
-            max_newton_iters=config.max_newton_iters,
-            max_krylov_iters=config.max_krylov_iters,
-            newton_tol=config.newton_tol,
-            krylov_tol=config.krylov_tol,
-            max_backtrack=config.max_backtrack,
-        ),
+        nk_params=nk_params,
         dt=config.state_dt,
     )
     solution = jax.block_until_ready(result.solution)
@@ -174,7 +173,7 @@ def _solve_one_step(
         "final_residual_l2": float(result.stats.final_res_norm),
         "newton_tolerance": config.newton_tol,
         "max_newton_iters": config.max_newton_iters,
-        "max_backtrack": config.max_backtrack,
+        "max_backtrack": nk_params.max_backtrack,
         "source_state_identity": _source_state_identity(solution),
         "repository_head": _git_revision("rev-parse", "HEAD"),
         "base_revision": _git_revision("merge-base", "HEAD", "upstream/main"),

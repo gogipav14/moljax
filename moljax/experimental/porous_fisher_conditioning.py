@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from time import perf_counter
 from typing import Any, NamedTuple
 
 import jax
@@ -15,6 +16,7 @@ from moljax.conditioning import (
     assess_preconditioner,
     epsilon_zero,
     estimate_rates,
+    full_operator_epsilon_zero,
     linearized_operator,
     numerical_range,
     ritz_values,
@@ -176,6 +178,7 @@ def assess_porous_fisher_state(
     fov_n_restarts: int = 2,
     arnoldi_steps: int = 8,
     seed: int = 20260821,
+    full_operator_epsilon_evidence: bool = False,
 ) -> dict[str, Any]:
     """Assess a Porous--Fisher state with the shared conditioning toolbox."""
     linearization = build_porous_fisher_linearization(
@@ -195,7 +198,7 @@ def assess_porous_fisher_state(
     arnoldi_result = arnoldi(operator.matvec, start, min(arnoldi_steps, operator.n))
     hessenberg = arnoldi_result.hessenberg
     ritz = ritz_values(hessenberg)
-    epsilon_at_zero = epsilon_zero(hessenberg)
+    reduced_epsilon_at_zero = epsilon_zero(hessenberg)
     field_of_values = numerical_range(
         operator.matvec,
         operator.matvec_adjoint,
@@ -206,11 +209,22 @@ def assess_porous_fisher_state(
         n_restarts=fov_n_restarts,
     )
     rates = estimate_rates(field_of_values, ritz)
+    full_epsilon_seconds = None
+    if full_operator_epsilon_evidence:
+        full_epsilon_started_at = perf_counter()
+        full_epsilon_at_zero = full_operator_epsilon_zero(operator.matvec, operator.n)
+        full_epsilon_seconds = perf_counter() - full_epsilon_started_at
+    else:
+        full_epsilon_at_zero = None
+    epsilon_at_zero = (
+        full_epsilon_at_zero if full_epsilon_at_zero is not None else reduced_epsilon_at_zero
+    )
     assessment = assess_preconditioner(
         field_of_values,
         ritz,
         epsilon_at_zero,
         coverage=arnoldi_result,
+        full_operator_lower_bound=full_operator_epsilon_evidence,
     )
 
     return {
@@ -222,6 +236,11 @@ def assess_porous_fisher_state(
         "verdict": assessment.verdict,
         "disk_rate": float(assessment.disk_rate),
         "epsilon_zero": float(assessment.epsilon_zero),
+        "epsilon_zero_reduced_arnoldi": float(reduced_epsilon_at_zero),
+        "full_operator_epsilon_zero": (
+            None if full_epsilon_at_zero is None else float(full_epsilon_at_zero)
+        ),
+        "full_operator_epsilon_zero_seconds": full_epsilon_seconds,
         "epsilon_zero_full_operator_evidence": bool(assessment.epsilon_zero_full_operator_evidence),
         "verdict_reason": assessment.verdict_reason,
         "arnoldi_k_requested": int(arnoldi_result.k_requested),
