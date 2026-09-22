@@ -42,12 +42,19 @@ def regularized_porous_medium_potential(
     preserves the intended linearization ``L_h @ diag(D_epsilon(u))`` without
     numerical quadrature in the operator hot path.  The ``epsilon=0`` path is
     retained for the unregularized linear-control tests.
+
+    ``m = 1`` returns the values themselves, which is the exact potential at
+    every ``epsilon``.  Writing it as ``sign(u) * abs(u)`` agrees in value but
+    has a zero derivative at ``u = 0`` under JAX autodiff, so every node whose
+    state is exactly zero would lose its Jacobian column.
     """
     exponent = int(round(m))
     if exponent < 1 or not isclose(m, float(exponent), rel_tol=0.0, abs_tol=1.0e-12):
         raise ValueError("The staged regularized PME potential requires integer m >= 1")
 
     values = jnp.asarray(u)
+    if exponent == 1:
+        return values
     if epsilon == 0.0:
         return jnp.sign(values) * jnp.abs(values) ** exponent
 
