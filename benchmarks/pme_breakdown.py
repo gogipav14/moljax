@@ -101,6 +101,13 @@ def _provenance_revisions() -> dict[str, str]:
             "base_revision": base_revision,
             "base_revision_source": "merge-base-upstream",
         }
+    tag_revision = _git_revision("describe", "--tags", "--abbrev=0")
+    if tag_revision is not None:
+        return {
+            "repository_head": repository_head or "unavailable",
+            "base_revision": tag_revision,
+            "base_revision_source": "describe-tags",
+        }
     if repository_head is not None:
         return {
             "repository_head": repository_head,
