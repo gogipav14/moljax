@@ -3,7 +3,7 @@
 ## Method and valid-state provenance
 
 This study evaluates fixed backward-Euler Newton systems for one-dimensional,
-node-centered Dirichlet nonlinear diffusion. The final audit is bound to the
+node-centered Dirichlet nonlinear diffusion. The final v4 audit is bound to the
 immutable `v1.2.1` conditioning base
 `54852e477ed2d32ac13c1c7e711b28c81f320f13`. Each reading combines the
 matrix-free field-of-values procedure, an enclosing-disk decision bound, two
@@ -32,6 +32,13 @@ valid measurements. Each converged float64 source array was saved once with
 its shape, dtype, and SHA256, then loaded and hash-verified for every
 diagnostic; a non-converged source state would fail closed instead of being
 diagnosed.
+
+The v4 batch contract records a configuration fingerprint with each persisted
+source-state artifact and rejects an artifact from another state-generation
+configuration. Its counted GMRES result distinguishes a breakdown from
+convergence; no final record reports a GMRES breakdown. Provenance prefers the
+merge base when available, then the nearest release tag, before using the
+checked-out commit only as an explicit fallback.
 
 The base geometry budget is 16 angles, 60 field-of-values iterations, and two
 restarts. Uncertified base records use the 32/120/2, 64/180/2, and 96/240/2
@@ -92,6 +99,11 @@ support-solve records, and the frozen-base regeneration measures the C1-fixed
 operator on valid wide-front source states. The remaining differences are
 therefore reported from the final v1.2.1 record set rather than attributed to
 an unsupported single cause.
+
+The complete v4 rerun reproduces this final v1.2.1 tally exactly. Thus the
+fingerprint and operator-scale breakdown hardening changes the audit contract,
+not the observed category counts: all 315 final `actual_gmres` records carry
+`breakdown=false`.
 
 ## Reaction axis
 
