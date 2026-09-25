@@ -977,3 +977,20 @@ def test_small_nonzero_final_pivot_is_solved_not_called_singular() -> None:
     reference = _scipy_gmres(matrix, rhs, tol=1.0e-8)
     assert reference["converged"] is True
     assert reference["iterations"] == 2
+
+
+def test_rotated_estimate_alone_never_certifies_convergence() -> None:
+    """Convergence requires the candidate's measured residual to meet tol.
+
+    ``A = diag(1, 1e-12, 2e-12, 3e-12)``, ``b = (1, 1, 1, 1e-9)``: at the third
+    column the rotated estimate reads about ``5.8e-10``, below ``tol = 1e-8``,
+    but the candidate it describes measures about ``4.9e-5``.  SciPy's GMRES
+    does not converge either.
+    """
+    diagonal = np.asarray((1.0, 1.0e-12, 2.0e-12, 3.0e-12))
+    rhs = np.asarray((1.0, 1.0, 1.0, 1.0e-9))
+    stats = _counted_gmres(_diagonal_matvec(diagonal), jnp.asarray(rhs), tol=1.0e-8, max_iters=8)
+
+    assert stats["converged"] is False
+    reference = _scipy_gmres(np.diag(diagonal), rhs, tol=1.0e-8)
+    assert reference["converged"] is False

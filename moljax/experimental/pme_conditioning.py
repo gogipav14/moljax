@@ -371,7 +371,22 @@ def _counted_gmres(
                 "final_relative_residual": measured,
                 "breakdown": True,
             }
-        if final_relative_residual <= tol:
+        # The rotated estimate is only an estimate: on an ill-conditioned
+        # reduced system the candidate it describes can be far worse.  Claim
+        # convergence only when the candidate's measured residual also meets
+        # tol; otherwise keep growing the Krylov space.
+        if final_relative_residual <= tol and (
+            _candidate_relative_residual(
+                matvec,
+                vector_rhs,
+                norm_rhs,
+                basis,
+                triangular,
+                rotated_rhs,
+                column + 1,
+            )
+            <= tol
+        ):
             return {
                 "converged": True,
                 "iterations": column + 1,
