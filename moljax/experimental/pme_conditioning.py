@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from math import hypot, log, sqrt
+from math import hypot, isfinite, log, sqrt
 from time import perf_counter
 from typing import Any, NamedTuple
 
@@ -224,7 +224,9 @@ def _candidate_relative_residual(
     for weight, basis_vector in zip(weights, basis[:n_columns], strict=True):
         candidate = candidate + weight * basis_vector
     residual = vector_rhs - jnp.real(matvec(candidate))
-    return float(jnp.linalg.norm(residual)) / norm_rhs
+    measured = float(jnp.linalg.norm(residual)) / norm_rhs
+    # A back substitution that overflowed is not a solution.
+    return measured if isfinite(measured) else float("inf")
 
 
 def _counted_gmres(
@@ -242,23 +244,30 @@ def _counted_gmres(
     step.  It intentionally trades JIT fusion for an explicit, trustworthy
     iteration count; the operator itself remains matrix-free and JIT-compatible.
 
-    A rotated column whose pivot vanishes is an Arnoldi breakdown, not
-    convergence.  Zeroing the Givens sine there would make the rotated
-    right-hand-side entry vanish whatever the right-hand side is, so such a
-    column stops the iteration, sets ``breakdown`` in the returned stats, and
-    the reported residual becomes the explicitly measured
-    ``||b - A x|| / ||b||`` of the best candidate that the accumulated Krylov
-    space supports.  Convergence is claimed only if that measured residual
-    meets ``tol``.
+    The Krylov space stops growing only when the Arnoldi subdiagonal
+    ``h[k+1, k] = ||w||`` left after orthogonalizing ``w = A v_k`` vanishes
+    relative to that column's own scale ``||A v_k||``; the cutoff is
+    ``h[k+1, k] <= 64 eps ||A v_k||``, the same scale-relative factor the
+    Arnoldi factorization in ``moljax.conditioning.pseudospectra`` uses.  A
+    small rotated pivot is never a reason to stop on its own: the pivot
+    ``hypot(a, h[k+1, k])`` is nonzero whenever the subdiagonal is, and a
+    pivot that is small relative to a global historical scale says nothing
+    about whether the Krylov space can still grow.
 
-    A pivot is small only relative to the operator, so the cutoff is
-    ``sqrt(eps)`` times the largest absolute Hessenberg entry seen so far.
-    An absolute cutoff would report ``A = [1e-9]``, ``b = [1]`` as a
-    breakdown although that system has condition number one and is solved
-    exactly by one iteration.  A pivot that is small but nonzero is also not
-    read as a breakdown on its own: the candidate it defines is constructed
-    and evaluated, and breakdown is declared only when the measured
-    ``||b - A x|| / ||b||`` does not meet ``tol``.
+    At such an invariant-subspace ("happy") breakdown the space cannot grow
+    further.  If the rotated diagonal of that column also vanishes relative to
+    ``||A v_k||``, the operator restricted to the Krylov space is singular:
+    zeroing the Givens sine there would make the rotated right-hand-side entry
+    vanish whatever the right-hand side is, so the stats instead report
+    ``breakdown`` with ``converged`` False and the measured
+    ``||b - A x|| / ||b||`` of the best candidate the previous columns
+    support.  Otherwise the upper-triangular system is solved and convergence
+    is decided by the measured ``||b - A x|| / ||b||`` of its candidate, not
+    by the rotated estimate, whose last factor is a roundoff-level sine.  A
+    candidate that meets ``tol`` is convergence, reported with the rotated
+    GMRES residual like every other converged return; one that misses it is a
+    breakdown, reported with the measured residual.  Exhausting ``max_iters``
+    without meeting ``tol`` is non-convergence, not breakdown.
     """
     if tol <= 0.0:
         raise ValueError("tol must be positive")
@@ -280,13 +289,12 @@ def _counted_gmres(
     sines: list[float] = []
     triangular: list[list[float]] = []
     rotated_rhs = [norm_rhs] + [0.0] * max_iters
-    relative_threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
-    hessenberg_scale = 0.0
+    breakdown_factor = 64.0 * float(jnp.finfo(jnp.float64).eps)
     final_relative_residual = 1.0
-    breakdown = False
 
     for column in range(max_iters):
         candidate_vector = jnp.real(matvec(basis[column]))
+        column_scale = float(jnp.linalg.norm(candidate_vector))
         coefficients: list[float] = []
         for basis_vector in basis:
             coefficient = float(jnp.vdot(basis_vector, candidate_vector))
@@ -298,9 +306,8 @@ def _counted_gmres(
             candidate_vector = candidate_vector - correction * basis_vector
 
         arnoldi_subdiagonal = float(jnp.linalg.norm(candidate_vector))
+        invariant = arnoldi_subdiagonal <= breakdown_factor * column_scale
         hessenberg_column = coefficients + [arnoldi_subdiagonal]
-        hessenberg_scale = max(hessenberg_scale, max(abs(entry) for entry in hessenberg_column))
-        threshold = relative_threshold * hessenberg_scale
         for row, (cosine, sine) in enumerate(zip(cosines, sines, strict=True)):
             upper = cosine * hessenberg_column[row] + sine * hessenberg_column[row + 1]
             hessenberg_column[row + 1] = (
@@ -309,9 +316,11 @@ def _counted_gmres(
             hessenberg_column[row] = upper
 
         diagonal = hessenberg_column[column]
-        subdiagonal = hessenberg_column[column + 1]
-        normalization = hypot(diagonal, subdiagonal)
-        if normalization == 0.0:
+        # Only an exactly zero rotated column makes the reduced system
+        # singular (the Givens normalization would divide by zero).  A small
+        # but nonzero pivot still yields a candidate, judged below by its
+        # measured residual, however ill-conditioned the reduced system is.
+        if invariant and diagonal == 0.0 and arnoldi_subdiagonal == 0.0:
             measured = _candidate_relative_residual(
                 matvec,
                 vector_rhs,
@@ -322,12 +331,14 @@ def _counted_gmres(
                 column,
             )
             return {
-                "converged": measured <= tol,
-                "iterations": len(basis),
+                "converged": False,
+                "iterations": column + 1,
                 "final_relative_residual": measured,
                 "breakdown": True,
             }
-        cosine, sine = diagonal / normalization, subdiagonal / normalization
+
+        normalization = hypot(diagonal, arnoldi_subdiagonal)
+        cosine, sine = diagonal / normalization, arnoldi_subdiagonal / normalization
         cosines.append(cosine)
         sines.append(sine)
         hessenberg_column[column] = normalization
@@ -337,7 +348,7 @@ def _counted_gmres(
         rotated_rhs[column] = cosine * previous_rhs
         rotated_rhs[column + 1] = -sine * previous_rhs
         final_relative_residual = abs(rotated_rhs[column + 1]) / norm_rhs
-        if normalization <= threshold:
+        if invariant:
             measured = _candidate_relative_residual(
                 matvec,
                 vector_rhs,
@@ -347,29 +358,48 @@ def _counted_gmres(
                 rotated_rhs,
                 column + 1,
             )
+            if measured <= tol:
+                return {
+                    "converged": True,
+                    "iterations": column + 1,
+                    "final_relative_residual": final_relative_residual,
+                    "breakdown": False,
+                }
             return {
-                "converged": measured <= tol,
+                "converged": False,
                 "iterations": column + 1,
                 "final_relative_residual": measured,
-                "breakdown": measured > tol,
+                "breakdown": True,
             }
-        if final_relative_residual <= tol:
+        # The rotated estimate is only an estimate: on an ill-conditioned
+        # reduced system the candidate it describes can be far worse.  Claim
+        # convergence only when the candidate's measured residual also meets
+        # tol; otherwise keep growing the Krylov space.
+        if final_relative_residual <= tol and (
+            _candidate_relative_residual(
+                matvec,
+                vector_rhs,
+                norm_rhs,
+                basis,
+                triangular,
+                rotated_rhs,
+                column + 1,
+            )
+            <= tol
+        ):
             return {
                 "converged": True,
                 "iterations": column + 1,
                 "final_relative_residual": final_relative_residual,
                 "breakdown": False,
             }
-        if arnoldi_subdiagonal <= threshold:
-            breakdown = True
-            break
         basis.append(candidate_vector / arnoldi_subdiagonal)
 
     return {
         "converged": False,
         "iterations": len(basis),
         "final_relative_residual": final_relative_residual,
-        "breakdown": breakdown,
+        "breakdown": False,
     }
 
 
