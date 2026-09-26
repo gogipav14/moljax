@@ -90,5 +90,6 @@ figures/
 !benchmarks/results/sisc/
 !benchmarks/results/sisc/*.json
 
+
 # Logs
 *.log
