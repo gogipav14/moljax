@@ -994,3 +994,21 @@ def test_rotated_estimate_alone_never_certifies_convergence() -> None:
     assert stats["converged"] is False
     reference = _scipy_gmres(np.diag(diagonal), rhs, tol=1.0e-8)
     assert reference["converged"] is False
+
+
+def test_budget_exhaustion_reports_the_measured_residual_of_a_rejected_estimate() -> None:
+    """A budget that ends on a rejected estimate reports the measurement.
+
+    With the inputs of the previous test and ``max_iters = 3`` the third
+    column's rotated estimate (about ``5.8e-10``) passes ``tol`` but its
+    candidate measures about ``4.9e-5``; the budget then runs out.  The
+    non-convergence report must carry the measured value, not the estimate
+    already shown to be unreliable.
+    """
+    diagonal = np.asarray((1.0, 1.0e-12, 2.0e-12, 3.0e-12))
+    rhs = np.asarray((1.0, 1.0, 1.0, 1.0e-9))
+    stats = _counted_gmres(_diagonal_matvec(diagonal), jnp.asarray(rhs), tol=1.0e-8, max_iters=3)
+
+    assert stats["converged"] is False
+    assert stats["final_relative_residual"] > 1.0e-8
+    assert stats["final_relative_residual"] == pytest.approx(4.9e-5, rel=0.05)

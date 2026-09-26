@@ -291,6 +291,7 @@ def _counted_gmres(
     rotated_rhs = [norm_rhs] + [0.0] * max_iters
     breakdown_factor = 64.0 * float(jnp.finfo(jnp.float64).eps)
     final_relative_residual = 1.0
+    rejected_measured: float | None = None
 
     for column in range(max_iters):
         candidate_vector = jnp.real(matvec(basis[column]))
@@ -375,8 +376,12 @@ def _counted_gmres(
         # reduced system the candidate it describes can be far worse.  Claim
         # convergence only when the candidate's measured residual also meets
         # tol; otherwise keep growing the Krylov space.
-        if final_relative_residual <= tol and (
-            _candidate_relative_residual(
+        # A rejected estimate is kept as its measurement: if the budget runs
+        # out right after, the estimate already proven unreliable must not
+        # be what the non-convergence report publishes.
+        rejected_measured = None
+        if final_relative_residual <= tol:
+            measured = _candidate_relative_residual(
                 matvec,
                 vector_rhs,
                 norm_rhs,
@@ -385,20 +390,22 @@ def _counted_gmres(
                 rotated_rhs,
                 column + 1,
             )
-            <= tol
-        ):
-            return {
-                "converged": True,
-                "iterations": column + 1,
-                "final_relative_residual": final_relative_residual,
-                "breakdown": False,
-            }
+            if measured <= tol:
+                return {
+                    "converged": True,
+                    "iterations": column + 1,
+                    "final_relative_residual": final_relative_residual,
+                    "breakdown": False,
+                }
+            rejected_measured = measured
         basis.append(candidate_vector / arnoldi_subdiagonal)
 
     return {
         "converged": False,
         "iterations": len(basis),
-        "final_relative_residual": final_relative_residual,
+        "final_relative_residual": (
+            final_relative_residual if rejected_measured is None else rejected_measured
+        ),
         "breakdown": False,
     }
 
