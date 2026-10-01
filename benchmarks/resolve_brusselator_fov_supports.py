@@ -25,11 +25,13 @@ from benchmarks.brusselator_conditioning import (
     HOPF_REGIME,
     PRESETS,
     TURING_REGIME,
+    _cache_relative_source_artifact,
     _fixed_transition,
     _records_for,
     _summary,
     reassess_brusselator_record,
 )
+from moljax.conditioning.non_normality import _reading_defect
 
 STUDIES = (
     "screen_64",
@@ -157,15 +159,48 @@ def _weak_bound_override_eligible(assessment: dict[str, Any]) -> bool:
     )
 
 
+def _unrecoverable_reading(assessment: dict[str, Any]) -> str | None:
+    """Return why a stored non-abstaining verdict lacks a usable reading, or ``None``.
+
+    ``assess_preconditioner`` measures the right-real outlier count only when
+    the Ritz spectrum has enough finite values and the disk rate and
+    epsilon_zero are usable readings; otherwise it abstains.  The pre-cce8089
+    weak-bound override promoted such abstentions to ``provisional``.  A
+    stored verdict resting on such a reading cannot be recovered from the
+    checkpoint, so it is not trusted.
+    """
+    if str(assessment.get("verdict")) not in {"adequate", "provisional", "investigate"}:
+        return None
+    if assessment.get("n_right_real_outliers") is None:
+        return (
+            "stored reading has no measured right-real outlier count (too few or "
+            "non-finite Ritz values, or an unusable disk_rate/epsilon_zero), so its "
+            "stored verdict cannot be recovered"
+        )
+    try:
+        defect = _reading_defect(assessment["disk_rate"], assessment["epsilon_zero"])
+    except (KeyError, TypeError, ValueError):
+        defect = "disk_rate or epsilon_zero is missing or not a number"
+    if defect is not None:
+        return f"stored reading is unusable ({defect}), so its stored verdict cannot be recovered"
+    return None
+
+
 def _policy_outcome(assessment: dict[str, Any]) -> tuple[str, str | None]:
     """Apply bound-evidence precedence without erasing an invalid abstention.
 
-    A weak but valid Fourier--Weyl--ghost certificate is distinct from no
-    certificate: if geometry is corroborated and the origin is outside, it
-    remains provisional only when the underlying reading was a usable
+    A stored verdict whose reading cannot be recovered (for example one
+    promoted by the pre-cce8089 override) is indeterminate.  A weak but valid
+    Fourier--Weyl--ghost certificate is distinct from no certificate: if
+    geometry is corroborated and the origin is outside, it remains
+    provisional only when the underlying reading was a usable
     investigate/provisional result.  Origin enclosure, support failure, and
-    invalid/incomplete diagnostics retain fail-closed precedence.
+    invalid/incomplete diagnostics retain fail-closed precedence.  The raw
+    stored assessment is left untouched in the attempt history.
     """
+    unrecoverable = _unrecoverable_reading(assessment)
+    if unrecoverable is not None:
+        return "indeterminate", unrecoverable
     certificate = assessment.get("fourier_weyl_ghost_lower_bound")
     if (
         isinstance(certificate, dict)
@@ -201,6 +236,7 @@ def _resolve_record(
     record: dict[str, Any],
     *,
     source_state_cache_dir: str,
+    original_source_state_cache_dir: str | None = None,
 ) -> dict[str, Any]:
     """Run the bounded ladder without ever re-solving the source trajectory."""
     attempts: list[dict[str, Any]] = []
@@ -209,6 +245,7 @@ def _resolve_record(
         assessment = reassess_brusselator_record(
             record,
             source_state_cache_dir=source_state_cache_dir,
+            original_source_state_cache_dir=original_source_state_cache_dir,
             n_angles=n_angles,
             fov_max_iters=fov_max_iters,
             fov_n_restarts=fov_n_restarts,
@@ -248,6 +285,7 @@ def _resolve_one(checkpoint_dir: Path, study: str, key: str) -> None:
     resolution = _resolve_record(
         record,
         source_state_cache_dir=str(checkpoint_dir / "source_states"),
+        original_source_state_cache_dir=_original_cache_root(report),
     )
     checkpoint["resolved"][key] = resolution
     _atomic_json(_resolution_path(checkpoint_dir, study), checkpoint)
@@ -301,23 +339,31 @@ def _base_attempt(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _cache_relative_artifact(artifact: dict[str, Any], checkpoint_dir: Path) -> dict[str, Any]:
+def _original_cache_root(report: dict[str, Any]) -> str | None:
+    """Return the source-state cache root a base report was generated with."""
+    config = report.get("config", {})
+    if config.get("source_state_cache_dir") is not None:
+        return str(config["source_state_cache_dir"])
+    if config.get("output_path") is not None:
+        return str(Path(config["output_path"]).parent / "brusselator_source_states")
+    return None
+
+
+def _cache_relative_artifact(
+    artifact: dict[str, Any], original_cache_root: str | None
+) -> dict[str, Any]:
     """Normalize one legacy artifact path to a safe cache-root-relative path."""
-    updated = deepcopy(artifact)
     try:
-        recorded = Path(updated["relative_path"])
+        fingerprint = artifact["generation_fingerprint"]
+        regime_name = fingerprint["regime"]["name"]
     except (KeyError, TypeError) as error:
-        raise RuntimeError("record source-state artifact lacks a valid path") from error
-    cache_root = (checkpoint_dir / "source_states").resolve()
-    if recorded.is_absolute():
-        try:
-            recorded = recorded.resolve().relative_to(cache_root)
-        except ValueError as error:
-            raise RuntimeError("record source-state artifact is outside the cache root") from error
-    if not recorded.parts or ".." in recorded.parts:
-        raise RuntimeError("record source-state artifact path must be cache-root-relative")
-    updated["relative_path"] = str(recorded)
-    return updated
+        raise RuntimeError("record source-state artifact lacks its generation contract") from error
+    return _cache_relative_source_artifact(
+        deepcopy(artifact),
+        str(regime_name),
+        fingerprint,
+        original_cache_root=original_cache_root,
+    )
 
 
 def _hopf_vs_turing(
@@ -463,7 +509,7 @@ def _attach_resolution(
         final_config.update(final_attempt["budget"])
         updated["record_config"] = final_config
         updated["source_state_artifact"] = _cache_relative_artifact(
-            updated["source_state_artifact"], checkpoint_dir
+            updated["source_state_artifact"], _original_cache_root(report)
         )
         updated["geometry_resolution"] = resolution
         updated["final_category"] = resolution["final_category"]

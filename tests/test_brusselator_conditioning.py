@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import shutil
 from dataclasses import replace
@@ -272,9 +273,9 @@ def test_v4_source_cache_rejects_a_foreign_generation_fingerprint(tmp_path):
     assert benchmark._load_cached_states(config, TURING_REGIME, foreign) is None
 
 
-def _replay_fixture(tmp_path):
+def _replay_fixture(tmp_path, cache_root=None):
     """Persist one minimal source artifact and return its exact replay record."""
-    cache_root = tmp_path / "original-cache"
+    cache_root = tmp_path / "original-cache" if cache_root is None else cache_root
     config = benchmark._config(
         "screen_64",
         nx=4,
@@ -349,6 +350,256 @@ def test_v4_source_cache_replay_rejects_nonrelative_artifact_paths(tmp_path, bad
         benchmark.reassess_brusselator_record(record, source_state_cache_dir=str(cache_root))
 
 
+def _legacy_path(cache_root, record):
+    """Return the 8be9ef8 artifact path form: the cache-prefixed array path."""
+    return str(cache_root / record["source_state_artifact"]["relative_path"])
+
+
+def _loaded_identity(monkeypatch):
+    monkeypatch.setattr(
+        benchmark,
+        "assess_brusselator_state",
+        lambda state, *_args, **_kwargs: {
+            "loaded_source_identity": benchmark._source_state_identity(state)
+        },
+    )
+
+
+@pytest.mark.parametrize("record_original_root", [False, True])
+def test_legacy_cache_prefixed_artifact_replays_from_relocated_cache(
+    tmp_path, monkeypatch, record_original_root
+):
+    """An 8be9ef8 absolute artifact path migrates when the relocated artifact is intact."""
+    cache_root, record, original_state = _replay_fixture(tmp_path)
+    record["source_state_artifact"]["relative_path"] = _legacy_path(cache_root, record)
+    assert Path(record["source_state_artifact"]["relative_path"]).is_absolute()
+    relocated = tmp_path / "relocated-cache"
+    shutil.move(str(cache_root), relocated)
+    _loaded_identity(monkeypatch)
+
+    replayed = benchmark.reassess_brusselator_record(
+        record,
+        source_state_cache_dir=str(relocated),
+        original_source_state_cache_dir=str(cache_root) if record_original_root else None,
+    )
+
+    assert replayed["loaded_source_identity"] == benchmark._source_state_identity(
+        original_state
+    )
+
+
+@pytest.mark.parametrize("tamper", ["sha256", "fingerprint"])
+def test_legacy_cache_prefixed_artifact_fails_closed_on_a_tampered_artifact(
+    tmp_path, monkeypatch, tamper
+):
+    """Migrating a legacy path never weakens the fingerprint or SHA256 checks."""
+    cache_root, record, _ = _replay_fixture(tmp_path)
+    record["source_state_artifact"]["relative_path"] = _legacy_path(cache_root, record)
+    relocated = tmp_path / "relocated-cache"
+    shutil.move(str(cache_root), relocated)
+    array_name = Path(record["source_state_artifact"]["relative_path"]).name
+    if tamper == "sha256":
+        np.savez_compressed(
+            relocated / array_name, u_0=np.full((6, 6), 1.5), v_0=np.full((6, 6), 1.8)
+        )
+        message = "SHA256 mismatch"
+    else:
+        manifest_path = (relocated / array_name).with_suffix(".json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["generation_fingerprint"]["seed"] += 1
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        message = "fingerprint mismatch"
+    _loaded_identity(monkeypatch)
+
+    with pytest.raises(RuntimeError, match=message):
+        benchmark.reassess_brusselator_record(record, source_state_cache_dir=str(relocated))
+
+
+@pytest.mark.parametrize("variant", ["foreign_root", "foreign_name", "traversal"])
+def test_legacy_artifact_path_outside_its_cache_root_is_rejected(tmp_path, variant):
+    """A legacy path migrates only from its recorded cache root, never by traversal."""
+    cache_root, record, _ = _replay_fixture(tmp_path)
+    name = Path(record["source_state_artifact"]["relative_path"]).name
+    recorded = {
+        "foreign_root": str(tmp_path / "elsewhere" / name),
+        "foreign_name": str(cache_root / "turing-0000000000000000.npz"),
+        "traversal": str(cache_root / ".." / "original-cache" / name),
+    }[variant]
+    record["source_state_artifact"]["relative_path"] = recorded
+
+    with pytest.raises(RuntimeError, match="cache root|cache-root-relative"):
+        benchmark.reassess_brusselator_record(
+            record,
+            source_state_cache_dir=str(cache_root),
+            original_source_state_cache_dir=str(cache_root),
+        )
+
+
+def _tiny_regeneration_config(root):
+    return benchmark._config(
+        "screen_64",
+        nx=4,
+        ny=4,
+        n_states=1,
+        regimes=("turing",),
+        compute_lobpcg_upper_estimate=False,
+        output_path=str(root / "results" / "brusselator_conditioning.json"),
+        source_state_cache_dir=str(root / "source_states"),
+        record_checkpoint_path=str(root / "record_checkpoints" / "screen_64.json"),
+    )
+
+
+@pytest.mark.parametrize("relocate", [False, True])
+def test_partial_regeneration_resumes_from_a_base_revision_checkpoint(
+    tmp_path, monkeypatch, relocate
+):
+    """An 8be9ef8 record checkpoint resumes; its artifacts migrate to relative paths."""
+    calls = []
+
+    def fake_assessment(*_args, preconditioner_kind, **_kwargs):
+        calls.append(preconditioner_kind)
+        return {"status": "skipped", "verdict": "skipped"}
+
+    monkeypatch.setattr(benchmark, "assess_brusselator_state", fake_assessment)
+    config = _tiny_regeneration_config(tmp_path / "run")
+    benchmark._records(config)
+    checkpoint_path = Path(config.record_checkpoint_path)
+    payload = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    for row in payload["records"].values():
+        row["source_state_artifact"]["relative_path"] = str(
+            Path(config.source_state_cache_dir) / row["source_state_artifact"]["relative_path"]
+        )
+    del payload["records"]["turing:0:fft_diffusion"]
+    checkpoint_path.write_text(json.dumps(payload), encoding="utf-8")
+    if relocate:
+        relocated = tmp_path / "relocated" / "source_states"
+        shutil.copytree(config.source_state_cache_dir, relocated)
+        shutil.rmtree(config.source_state_cache_dir)
+        config = config._replace(source_state_cache_dir=str(relocated))
+    calls.clear()
+
+    records = benchmark._records(config)
+
+    assert calls == ["fft_diffusion"]
+    assert len(records) == 2
+    persisted = json.loads(checkpoint_path.read_text(encoding="utf-8"))["records"]
+    for row in [*records, *persisted.values()]:
+        path = Path(row["source_state_artifact"]["relative_path"])
+        assert not path.is_absolute() and len(path.parts) == 1
+
+
+def test_partial_regeneration_rejects_a_legacy_checkpoint_for_another_artifact(
+    tmp_path, monkeypatch
+):
+    """A legacy path naming a different artifact still fails the checkpoint contract."""
+    monkeypatch.setattr(
+        benchmark,
+        "assess_brusselator_state",
+        lambda *_args, **_kwargs: {"status": "skipped", "verdict": "skipped"},
+    )
+    config = _tiny_regeneration_config(tmp_path / "run")
+    benchmark._records(config)
+    checkpoint_path = Path(config.record_checkpoint_path)
+    payload = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    payload["records"]["turing:0:identity"]["source_state_artifact"]["relative_path"] = str(
+        Path(config.source_state_cache_dir) / "turing-0000000000000000.npz"
+    )
+    checkpoint_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="does not match its source/operator contract"):
+        benchmark._records(config)
+
+
+def _fake_resolved_assessment(*_args, **_kwargs):
+    return {
+        "status": "completed",
+        "verdict": "investigate",
+        "verdict_reason": None,
+        "disk_rate": 0.95,
+        "epsilon_zero": 0.2,
+        "n_right_real_outliers": 0,
+        "supports_consistent": True,
+        "supports_converged": True,
+        "supports_corroborated": True,
+        "corroboration_attempted": True,
+        "origin_enclosed": False,
+        "fov_imaginary_extent": 0.1,
+        "fourier_weyl_ghost_lower_bound": {"status": "clears_adequacy_gate"},
+    }
+
+
+def test_unresolved_fov_checkpoint_in_the_base_format_resumes(tmp_path, monkeypatch):
+    """A base report and partial FOV checkpoint written by 8be9ef8 resume and assemble."""
+    checkpoint_dir = tmp_path / "checkpoint"
+    cache_root = checkpoint_dir / "source_states"
+    _, base_record, _ = _replay_fixture(tmp_path, cache_root)
+    base_record["source_state_artifact"]["relative_path"] = _legacy_path(cache_root, base_record)
+    records = []
+    for kind in ("identity", "fft_diffusion"):
+        record = json.loads(json.dumps(base_record))
+        record["record_config"]["preconditioner_kind"] = kind
+        record.update(
+            {
+                "regime": "turing",
+                "preconditioner": kind,
+                "state_index": 0,
+                "status": "completed",
+                "verdict": "indeterminate",
+                "verdict_reason": None,
+                "disk_rate": 0.5,
+                "epsilon_zero": 0.2,
+                "n_right_real_outliers": 0,
+                "supports_consistent": False,
+                "corroboration_attempted": True,
+                "origin_enclosed": False,
+                "fov_imaginary_extent": 0.1,
+                "actual_gmres": None,
+            }
+        )
+        records.append(record)
+    report = {
+        "status": "completed",
+        "config": {"source_state_cache_dir": str(cache_root)},
+        "records": records,
+    }
+    monkeypatch.setitem(resolver.EXPECTED_RECORDS, "screen_64", len(records))
+    base_path = resolver._base_path(checkpoint_dir, "screen_64")
+    resolver._atomic_json(base_path, report)
+    identity_key, fft_key = (resolver._record_key(record) for record in records)
+    attempt = resolver._attempt(_fake_resolved_assessment(), resolver.FOV_SUPPORT_LADDER[0])
+    resolver._atomic_json(
+        resolver._resolution_path(checkpoint_dir, "screen_64"),
+        {
+            "schema": resolver.RESOLUTION_SCHEMA,
+            "base_result_path": str(base_path),
+            "base_result_sha256": resolver._result_hash(base_path),
+            "resolved": {
+                identity_key: {
+                    "status": "RESOLVED",
+                    "source": "fov_support_escalation",
+                    "attempts": [attempt],
+                    "final": attempt,
+                    "final_category": "investigate",
+                    "final_verdict": "investigate",
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(benchmark, "assess_brusselator_state", _fake_resolved_assessment)
+
+    resolver._resolve_one(checkpoint_dir, "screen_64", fft_key)
+    final = resolver._attach_resolution(checkpoint_dir, "screen_64")
+
+    assert [record["final_category"] for record in final["records"]] == [
+        "investigate",
+        "investigate",
+    ]
+    for record in final["records"]:
+        assert record["source_state_artifact"]["relative_path"] == Path(
+            base_record["source_state_artifact"]["relative_path"]
+        ).name
+
+
 def _short_arnoldi_counterexample():
     """Return Pavlov's deterministic incomplete-reading counterexample."""
     rng = np.random.default_rng(0)
@@ -415,6 +666,94 @@ def test_weak_bound_never_overrides_a_nonfinite_reading():
     from moljax.experimental import brusselator_conditioning as conditioning
 
     assert conditioning._weak_bound_override_eligible(module_assessment) is False
+
+
+def _promoted_by_old_override(assessment):
+    """Apply the pre-cce8089 weak-bound override to a stored assessment."""
+    promoted = dict(assessment)
+    promoted["verdict"] = "provisional"
+    promoted["verdict_reason"] = "certification not established by the methods attempted"
+    return promoted
+
+
+def _stored_resolution(assessment):
+    attempt = resolver._attempt(assessment, resolver.FOV_SUPPORT_LADDER[0])
+    return {
+        "status": "RESOLVED",
+        "source": "fov_support_escalation",
+        "attempts": [attempt],
+        "final": attempt,
+        "final_category": assessment["verdict"],
+        "final_verdict": assessment["verdict"],
+    }
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        {"n_right_real_outliers": None},
+        {"disk_rate": float("nan")},
+        {"epsilon_zero": float("inf")},
+    ],
+)
+def test_reclassification_demotes_a_legacy_provisional_without_a_valid_reading(defect):
+    """A stored verdict promoted from an unusable reading reclassifies to indeterminate."""
+    stored = _promoted_by_old_override(
+        {
+            "status": "completed",
+            "verdict": "indeterminate",
+            "verdict_reason": None,
+            "disk_rate": 1.25,
+            "epsilon_zero": 1.04,
+            "n_right_real_outliers": 0,
+            "supports_consistent": True,
+            "origin_enclosed": False,
+            "fourier_weyl_ghost_lower_bound": {"status": "valid_but_below_adequacy_gate"},
+            **defect,
+        }
+    )
+    resolution = _stored_resolution(stored)
+
+    normalised = resolver._normalise_resolution(json.loads(json.dumps(resolution)))
+
+    assert normalised["final_category"] == normalised["final_verdict"] == "indeterminate"
+    assert "cannot be recovered" in normalised["final_verdict_reason"]
+    assert normalised["attempts"] == json.loads(json.dumps(resolution["attempts"]))
+    assert normalised["final"]["assessment"]["verdict"] == "provisional"
+
+
+def test_reclassification_keeps_a_legacy_provisional_with_a_valid_reading():
+    """A provisional verdict backed by a measured reading is unchanged."""
+    stored = _promoted_by_old_override(
+        {
+            "status": "completed",
+            "verdict": "investigate",
+            "verdict_reason": None,
+            "disk_rate": 0.95,
+            "epsilon_zero": 0.02,
+            "n_right_real_outliers": 0,
+            "supports_consistent": True,
+            "origin_enclosed": False,
+            "fourier_weyl_ghost_lower_bound": {"status": "valid_but_below_adequacy_gate"},
+        }
+    )
+
+    normalised = resolver._normalise_resolution(_stored_resolution(stored))
+
+    assert normalised["final_category"] == normalised["final_verdict"] == "provisional"
+    assert normalised["final_verdict_reason"] == stored["verdict_reason"]
+
+
+@pytest.mark.slow
+def test_reclassification_demotes_the_promoted_short_arnoldi_counterexample():
+    """The counterexample, promoted by the old override and stored, reclassifies."""
+    stored = _promoted_by_old_override(_short_arnoldi_counterexample())
+    assert stored["n_right_real_outliers"] is None
+
+    normalised = resolver._normalise_resolution(_stored_resolution(stored))
+
+    assert normalised["final_category"] == "indeterminate"
+    assert normalised["attempts"][0]["assessment"]["verdict"] == "provisional"
 
 
 def _resolved_reports() -> dict[str, dict]:

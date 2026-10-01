@@ -241,6 +241,58 @@ def _cache_paths(
     return root / f"{stem}.npz", root / f"{stem}.json"
 
 
+def _cache_relative_source_path(
+    recorded: Any,
+    expected_name: str,
+    *,
+    original_cache_root: str | None = None,
+) -> str:
+    """Return a recorded source-artifact path in cache-root-relative form.
+
+    Revisions up to 8be9ef8 recorded the cache-prefixed path
+    ``<cache root>/<regime>-<fingerprint key>.npz``, often absolute.  Such a
+    legacy path is migrated to its cache-relative file name only when it has
+    exactly that content-addressed name and, when the original cache root is
+    known, lies directly under it.  The legacy location is never read: the
+    caller loads the artifact from its own cache root, where the generation
+    fingerprint and SHA256 identities are checked as for any other record.
+    Traversal is always rejected.
+    """
+    if not isinstance(recorded, str) or not recorded:
+        raise RuntimeError("record source-state artifact path is invalid")
+    path = Path(recorded)
+    if not path.parts or ".." in path.parts:
+        raise RuntimeError("record source-state artifact path must be cache-root-relative")
+    if not path.is_absolute() and len(path.parts) == 1:
+        return str(path)
+    if path.name != expected_name:
+        raise RuntimeError("record source-state artifact path must be cache-root-relative")
+    if original_cache_root is not None and path.parent != Path(original_cache_root):
+        raise RuntimeError(
+            "legacy source-state artifact path is outside its recorded cache root"
+        )
+    return path.name
+
+
+def _cache_relative_source_artifact(
+    artifact: dict[str, Any],
+    regime_name: str,
+    fingerprint: dict[str, Any],
+    *,
+    original_cache_root: str | None = None,
+) -> dict[str, Any]:
+    """Return a copy of one source artifact with a migrated cache-relative path."""
+    expected_name = f"{regime_name}-{_source_fingerprint_key(fingerprint)}.npz"
+    return {
+        **artifact,
+        "relative_path": _cache_relative_source_path(
+            artifact.get("relative_path"),
+            expected_name,
+            original_cache_root=original_cache_root,
+        ),
+    }
+
+
 def _diagnostic_contract(config: BrusselatorConditioningConfig) -> dict[str, Any]:
     """Return the complete, JSON-stable contract for diagnostic checkpoints."""
     return {
@@ -478,6 +530,19 @@ def _records(config: BrusselatorConditioningConfig) -> list[dict[str, Any]]:
                 record_key = f"{regime.name}:{sample_position}:{kind}"
                 completed = checkpoint_records.get(record_key)
                 if completed is not None:
+                    # Base-revision checkpoints carry cache-prefixed paths.  A
+                    # path that cannot be migrated is left as recorded, so it
+                    # fails the contract comparison below.
+                    if isinstance(completed.get("source_state_artifact"), dict):
+                        try:
+                            completed = {
+                                **completed,
+                                "source_state_artifact": _cache_relative_source_artifact(
+                                    completed["source_state_artifact"], regime.name, fingerprint
+                                ),
+                            }
+                        except RuntimeError:
+                            pass
                     if (
                         completed.get("source_state_artifact") != source_artifact
                         or completed.get("record_config", {}).get("preconditioner_kind") != kind
@@ -487,6 +552,7 @@ def _records(config: BrusselatorConditioningConfig) -> list[dict[str, Any]]:
                             f"record checkpoint does not match its source/operator contract: {record_key}"
                         )
                     records.append(completed)
+                    checkpoint_records[record_key] = completed
                     continue
                 assessment = assess_brusselator_state(
                     state,
@@ -816,6 +882,7 @@ def reassess_brusselator_record(
     record: dict[str, Any],
     *,
     source_state_cache_dir: str,
+    original_source_state_cache_dir: str | None = None,
     n_angles: int | None = None,
     fov_max_iters: int | None = None,
     fov_n_restarts: int | None = None,
@@ -827,7 +894,10 @@ def reassess_brusselator_record(
     serialized record, then reloads the exact v4 source artifact after
     checking its fingerprint and SHA256 identity.  Optional FOV controls are
     an explicit diagnostic-resolution override only; they never affect the
-    persisted state-generation contract.
+    persisted state-generation contract.  A base-revision cache-prefixed
+    artifact path is migrated to cache-relative form first; when
+    ``original_source_state_cache_dir`` is given, it must lie directly under
+    that recorded root.
     """
     try:
         stored = record["record_config"]
@@ -878,12 +948,13 @@ def reassess_brusselator_record(
         source_state_cache_dir=source_state_cache_dir,
     )
     expected_path, _ = _cache_paths(replay, regime, fingerprint)
-    try:
-        relative_path = Path(artifact["relative_path"])
-    except TypeError as error:
-        raise RuntimeError("record source-state artifact path is invalid") from error
-    if relative_path.is_absolute() or ".." in relative_path.parts:
-        raise RuntimeError("record source-state artifact path must be cache-root-relative")
+    relative_path = Path(
+        _cache_relative_source_path(
+            artifact.get("relative_path"),
+            expected_path.name,
+            original_cache_root=original_source_state_cache_dir,
+        )
+    )
     if _cache_directory(replay) / relative_path != expected_path:
         raise RuntimeError("record source-state artifact path does not match the replay cache")
     loaded = _load_cached_states(replay, regime, fingerprint)
