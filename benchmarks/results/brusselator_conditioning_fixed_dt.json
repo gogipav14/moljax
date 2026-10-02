@@ -167,7 +167,7 @@
             "origin_enclosed": false,
             "time": 199.9999999999972,
             "trajectory_step": 1000,
-            "verdict": "provisional"
+            "verdict": "investigate"
           },
           "early": {
             "actual_gmres_converged": false,
@@ -226,8 +226,8 @@
     "final_category_counts": {
       "adequate": 3,
       "indeterminate": 1,
-      "investigate": 3,
-      "provisional": 1,
+      "investigate": 4,
+      "provisional": 0,
       "uncertified_at_cap": 0
     },
     "uncertified_at_cap_reason_counts": {}
@@ -2508,8 +2508,8 @@
       "disk_rate": 0.9980383386572995,
       "epsilon_zero": 11.676879012052913,
       "epsilon_zero_full_operator_evidence": false,
-      "final_category": "provisional",
-      "final_verdict": "provisional",
+      "final_category": "investigate",
+      "final_verdict": "investigate",
       "fourier_weyl_ghost_lower_bound": {
         "b0": 0.8607562697382659,
         "c": 3.0444146576700906,
@@ -2763,9 +2763,9 @@
           "supports_converged": true,
           "supports_corroborated": true
         },
-        "final_category": "provisional",
-        "final_verdict": "provisional",
-        "final_verdict_reason": "certification not established by the methods attempted",
+        "final_category": "investigate",
+        "final_verdict": "investigate",
+        "final_verdict_reason": null,
         "source": "fov_support_escalation",
         "status": "RESOLVED"
       },
@@ -2928,8 +2928,8 @@
       "supports_corroborated": true,
       "time": 199.9999999999972,
       "trajectory_step": 1000,
-      "verdict": "provisional",
-      "verdict_reason": "certification not established by the methods attempted"
+      "verdict": "investigate",
+      "verdict_reason": null
     },
     {
       "actual_gmres": {

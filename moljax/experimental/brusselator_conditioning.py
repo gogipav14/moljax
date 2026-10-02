@@ -403,11 +403,21 @@ def _weak_bound_override_eligible(assessment: Any) -> bool:
     diagnostics (including a short or non-finite Ritz spectrum).  A valid but
     sub-threshold full-operator bound cannot erase that abstention.  It only
     refines an ordinary investigate/provisional reading whose outlier count was
-    actually measured.
+    actually measured, and only when epsilon zero is the sole failed gate:
+    supports consistent, disk rate at most the assessment's rate threshold, and
+    right-real outliers at most its allowed number.  A disk-rate or outlier
+    ``investigate`` is a measured caution that a weak bound cannot remove.
+    The thresholds are the ones ``assess_preconditioner`` applied, read back
+    from the assessment.  The caller checks origin enclosure.
     """
+    if assessment.verdict not in {"investigate", "provisional"}:
+        return False
+    if assessment.n_right_real_outliers is None:
+        return False
     return (
-        assessment.verdict in {"investigate", "provisional"}
-        and assessment.n_right_real_outliers is not None
+        bool(assessment.supports_consistent)
+        and float(assessment.disk_rate) <= float(assessment.rate_threshold)
+        and int(assessment.n_right_real_outliers) <= int(assessment.max_right_real_outliers)
     )
 
 
@@ -879,11 +889,11 @@ def assess_brusselator_state(
         and not field_of_values.origin_enclosed
     ):
         # A valid full-operator lower bound below the adequacy threshold is
-        # evidence of neither adequacy nor inadequacy.  In particular, a
-        # zero-valued valid bound must not fall through to the disk-rate
-        # ``investigate`` outcome of the reduced-Arnoldi assessment.  The
-        # origin-enclosure and support-consistency gates above retain their
-        # normal fail-closed precedence.
+        # evidence of neither adequacy nor inadequacy.  When epsilon zero is
+        # the only failed gate, the reading stays provisional.  A disk-rate or
+        # outlier ``investigate`` is not eligible and keeps its verdict.  The
+        # origin-enclosure and support-consistency gates retain their normal
+        # fail-closed precedence.
         verdict = "provisional"
         verdict_reason = "certification not established by the methods attempted"
     lobpcg_upper_estimate = (

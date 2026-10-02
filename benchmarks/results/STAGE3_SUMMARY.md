@@ -38,22 +38,25 @@ certify `adequate`; without the bound these records would stop at provisional.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | screen_64 | 8 | 0 | 0 | 0 | 0 |
 | developed_64 | 0 | 0 | 0 | 11 | 1 |
-| fixed_dt_256 | 3 | 1 | 3 | 1 | 0 |
+| fixed_dt_256 | 3 | 0 | 4 | 1 | 0 |
 | hopf_continuation_256 | 2 | 0 | 2 | 0 | 0 |
-| **All 32 records** | **13** | **1** | **5** | **12** | **1** |
+| **All 32 records** | **13** | **0** | **6** | **12** | **1** |
 
 All 13 adequate records clear the 0.1 bound gate, corroborate support geometry, and leave the
 origin outside. Categories are fail closed:
 
 - `adequate`: all gates, including the full-operator lower bound, pass.
-- `provisional`: a valid lower bound is below 0.1, supports corroborate, and the origin is outside.
+- `provisional`: a valid lower bound is below 0.1, supports corroborate, the origin is outside,
+  and every other gate passes, so epsilon zero is the only failed gate.
 - `investigate`: supports corroborate and the origin is outside, but a disk-rate caution remains.
 - `indeterminate`: the corroborated FOV encloses the origin; this dominates other categories.
 - `uncertified_at_cap`: support geometry did not converge at the escalation cap.
 
-The one provisional is late fixed-dt 256 by 256 Turing with identity preconditioning: its valid
-bound is 0.0, its origin is outside, and supports corroborate at `64/180/2`. The five investigate
-records all clear the bound gate but have disk rates from 0.9252 through 0.9958. The one at-cap
+No record is provisional. The six investigate records have disk rates from 0.9252 through
+0.9980. Five of them clear the bound gate. The sixth is late fixed-dt 256 by 256 Turing with
+identity preconditioning: its valid bound is 0.0, its origin is outside, supports corroborate at
+`64/180/2`, and its disk rate of 0.9980 fails the 0.9 gate, a caution that a bound below the
+adequacy gate cannot remove. The one at-cap
 record is developed-64 Turing step 120 with identity preconditioning; its support solve remains
 unconverged through `96/240/2`.
 
@@ -62,7 +65,7 @@ unconverged through `96/240/2`.
 Origin enclosure is an empirical property of timestep, visited state/regime, and preconditioner;
 it is not an unconditional property of developed Turing states. On the same late 256 by 256,
 dt=0.2 Turing state, identity has an origin-outside FOV (disk rate 0.9980, 84 GMRES iterations,
-provisional because its bound is 0.0), while FFT diffusion encloses the origin (disk rate 1.5918,
+investigate, with a bound of 0.0), while FFT diffusion encloses the origin (disk rate 1.5918,
 9 GMRES iterations, indeterminate). The same state therefore has opposite enclosure outcomes
 under the two preconditioners.
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import os
 import subprocess
@@ -32,7 +33,7 @@ from benchmarks.brusselator_conditioning import (
     _summary,
     reassess_brusselator_record,
 )
-from moljax.conditioning.non_normality import _reading_defect
+from moljax.conditioning.non_normality import _reading_defect, assess_preconditioner
 
 STUDIES = (
     "screen_64",
@@ -59,6 +60,12 @@ FOV_SUPPORT_LADDER = (
     (96, 240, 2),
 )
 RESOLUTION_SCHEMA = "brusselator_fov_support_resolution_v1"
+_ASSESSMENT_PARAMETERS = inspect.signature(assess_preconditioner).parameters
+# Stored assessments do not carry their thresholds.  Every record was assessed
+# by assess_brusselator_state, which calls assess_preconditioner with its
+# default thresholds, so the policy reads those defaults from the signature.
+RATE_THRESHOLD = float(_ASSESSMENT_PARAMETERS["rate_threshold"].default)
+MAX_RIGHT_REAL_OUTLIERS = int(_ASSESSMENT_PARAMETERS["max_right_real_outliers"].default)
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
@@ -160,6 +167,25 @@ def _weak_bound_override_eligible(assessment: dict[str, Any]) -> bool:
     )
 
 
+def _failed_threshold_gate(assessment: dict[str, Any]) -> str | None:
+    """Return the failed disk-rate or outlier gate of a stored reading, or ``None``.
+
+    These are the gates of ``assess_preconditioner`` other than epsilon zero,
+    with its default thresholds.  The caller has already rejected an
+    unrecoverable reading, so both values are measured numbers here.
+    """
+    disk_rate = float(assessment["disk_rate"])
+    outliers = int(assessment["n_right_real_outliers"])
+    if disk_rate > RATE_THRESHOLD:
+        return f"disk_rate {disk_rate:.10g} exceeds the rate threshold {RATE_THRESHOLD:g}"
+    if outliers > MAX_RIGHT_REAL_OUTLIERS:
+        return (
+            f"{outliers} right-real outliers exceed the allowed "
+            f"{MAX_RIGHT_REAL_OUTLIERS}"
+        )
+    return None
+
+
 def _unrecoverable_reading(assessment: dict[str, Any]) -> str | None:
     """Return why a stored non-abstaining verdict lacks a usable reading, or ``None``.
 
@@ -195,9 +221,14 @@ def _policy_outcome(assessment: dict[str, Any]) -> tuple[str, str | None]:
     Fourier--Weyl--ghost certificate is distinct from no certificate: if
     geometry is corroborated and the origin is outside, it remains
     provisional only when the underlying reading was a usable
-    investigate/provisional result.  Origin enclosure, support failure, and
-    invalid/incomplete diagnostics retain fail-closed precedence.  The raw
-    stored assessment is left untouched in the attempt history.
+    investigate/provisional result whose only failed gate is epsilon zero.
+    A failed disk-rate or outlier gate keeps (or, for a stored verdict that
+    an earlier override promoted to provisional, restores) ``investigate``:
+    with consistent supports and the origin outside, that is the verdict
+    ``assess_preconditioner`` gives a usable reading with a failed threshold
+    gate.  Origin enclosure, support failure, and invalid/incomplete
+    diagnostics retain fail-closed precedence.  The raw stored assessment is
+    left untouched in the attempt history.
     """
     unrecoverable = _unrecoverable_reading(assessment)
     if unrecoverable is not None:
@@ -210,7 +241,15 @@ def _policy_outcome(assessment: dict[str, Any]) -> tuple[str, str | None]:
         and bool(assessment.get("supports_consistent"))
         and not bool(assessment.get("origin_enclosed"))
     ):
-        return "provisional", "certification not established by the methods attempted"
+        failed_gate = _failed_threshold_gate(assessment)
+        if failed_gate is None:
+            return "provisional", "certification not established by the methods attempted"
+        if str(assessment["verdict"]) == "provisional":
+            return (
+                "investigate",
+                f"stored provisional was promoted past a failed threshold gate "
+                f"({failed_gate}); the underlying verdict is investigate",
+            )
     return str(assessment["verdict"]), assessment.get("verdict_reason")
 
 

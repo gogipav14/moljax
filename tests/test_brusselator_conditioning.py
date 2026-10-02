@@ -733,13 +733,13 @@ def test_reclassification_demotes_a_legacy_provisional_without_a_valid_reading(d
 
 
 def test_reclassification_keeps_a_legacy_provisional_with_a_valid_reading():
-    """A provisional verdict backed by a measured reading is unchanged."""
+    """A provisional verdict whose only failed gate is epsilon zero is unchanged."""
     stored = _promoted_by_old_override(
         {
             "status": "completed",
             "verdict": "investigate",
             "verdict_reason": None,
-            "disk_rate": 0.95,
+            "disk_rate": 0.5,
             "epsilon_zero": 0.02,
             "n_right_real_outliers": 0,
             "supports_consistent": True,
@@ -752,6 +752,152 @@ def test_reclassification_keeps_a_legacy_provisional_with_a_valid_reading():
 
     assert normalised["final_category"] == normalised["final_verdict"] == "provisional"
     assert normalised["final_verdict_reason"] == stored["verdict_reason"]
+
+
+def _weak_bound_reading(**overrides):
+    reading = {
+        "status": "completed",
+        "verdict": "investigate",
+        "verdict_reason": None,
+        "disk_rate": 0.5,
+        "epsilon_zero": 0.02,
+        "n_right_real_outliers": 0,
+        "supports_consistent": True,
+        "origin_enclosed": False,
+        "fourier_weyl_ghost_lower_bound": {"status": "valid_but_below_adequacy_gate"},
+    }
+    reading.update(overrides)
+    return reading
+
+
+def test_weak_bound_promotes_investigate_only_when_epsilon_zero_is_the_failed_gate():
+    """Synthetic investigate readings: only an epsilon-zero failure becomes provisional."""
+    assert resolver.RATE_THRESHOLD == 0.9
+    assert resolver.MAX_RIGHT_REAL_OUTLIERS == 0
+    assert resolver._policy_outcome(_weak_bound_reading()) == (
+        "provisional",
+        "certification not established by the methods attempted",
+    )
+    # A failed disk-rate or outlier gate keeps investigate and its reason.
+    for failed in ({"disk_rate": 0.95}, {"n_right_real_outliers": 2}):
+        reading = _weak_bound_reading(verdict_reason="measured caution", **failed)
+        assert resolver._policy_outcome(reading) == ("investigate", "measured caution")
+    # Exactly at the rate threshold the disk gate passes.
+    assert resolver._policy_category(_weak_bound_reading(disk_rate=0.9)) == "provisional"
+    # Fail-closed gates keep their precedence.
+    enclosed = _weak_bound_reading(verdict="indeterminate", origin_enclosed=True)
+    assert resolver._policy_category(enclosed) == "indeterminate"
+
+
+@pytest.mark.parametrize("failed", [{"disk_rate": 0.95}, {"n_right_real_outliers": 1}])
+def test_reclassification_restores_investigate_for_a_legacy_promotion_past_a_gate(failed):
+    """A stored provisional promoted past a failed threshold gate is investigate."""
+    stored = _promoted_by_old_override(_weak_bound_reading(**failed))
+
+    normalised = resolver._normalise_resolution(_stored_resolution(stored))
+
+    assert normalised["final_category"] == normalised["final_verdict"] == "investigate"
+    assert "failed threshold gate" in normalised["final_verdict_reason"]
+    assert normalised["final"]["assessment"]["verdict"] == "provisional"
+
+
+def test_committed_late_turing_identity_record_is_investigate():
+    """The review reproduction: bound 0, disk_rate 0.998 above the 0.9 gate."""
+    report = _resolved_reports()["fixed_dt_256"]
+    (record,) = [
+        record
+        for record in report["records"]
+        if record["regime"] == "turing"
+        and record["preconditioner"] == "identity"
+        and record["trajectory_step"] == 1000
+    ]
+    assessment = record["geometry_resolution"]["final"]["assessment"]
+    assert assessment["verdict"] == "investigate"
+    assert assessment["fourier_weyl_ghost_lower_bound"]["status"] == (
+        "valid_but_below_adequacy_gate"
+    )
+    assert assessment["fourier_weyl_ghost_lower_bound"]["full_lower_bound"] == 0.0
+    assert assessment["disk_rate"] == pytest.approx(0.9980383387, abs=1.0e-10)
+    assert resolver._policy_category(assessment) == "investigate"
+    assert record["verdict"] == record["final_verdict"] == "investigate"
+
+
+def test_module_weak_bound_eligibility_reads_the_assessment_gates():
+    """The module policy uses the thresholds the assessment applied."""
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    def assessment(**overrides):
+        values = {
+            "verdict": "investigate",
+            "n_right_real_outliers": 0,
+            "supports_consistent": True,
+            "disk_rate": 0.5,
+            "rate_threshold": 0.9,
+            "max_right_real_outliers": 0,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    assert conditioning._weak_bound_override_eligible(assessment()) is True
+    assert conditioning._weak_bound_override_eligible(assessment(verdict="provisional"))
+    assert conditioning._weak_bound_override_eligible(assessment(disk_rate=0.95)) is False
+    assert (
+        conditioning._weak_bound_override_eligible(assessment(disk_rate=0.95, rate_threshold=1.0))
+        is True
+    )
+    assert (
+        conditioning._weak_bound_override_eligible(assessment(n_right_real_outliers=1)) is False
+    )
+    assert (
+        conditioning._weak_bound_override_eligible(assessment(supports_consistent=False))
+        is False
+    )
+
+
+@pytest.mark.slow
+def test_weak_bound_keeps_a_disk_rate_investigate_in_the_module():
+    """Module reproduction: 8x8 identity at dt=0.4 has disk rate 0.958 > 0.9."""
+    import moljax.experimental.brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(8, 8, 0.0, 5.0, 0.0, 5.0)
+    state, model, fft_cache, diffusivities = _homogeneous_state(TURING_REGIME, grid)
+    linearization = conditioning.build_brusselator_linearization(
+        state, model, fft_cache, diffusivities, 0.4, preconditioner_kind="identity"
+    )
+    genuine = conditioning._fourier_weyl_bound(
+        state,
+        model,
+        TURING_REGIME,
+        0.4,
+        preconditioner=linearization.preconditioner,
+        context=linearization.context,
+    )
+    weak = replace(genuine, selected=replace(genuine.selected, full_lower_bound=0.0))
+    original = conditioning._fourier_weyl_bound
+    conditioning._fourier_weyl_bound = lambda *_args, **_kwargs: weak
+    try:
+        assessment = assess_brusselator_state(
+            state,
+            model,
+            fft_cache,
+            diffusivities,
+            0.4,
+            TURING_REGIME,
+            preconditioner_kind="identity",
+            n_angles=8,
+            fov_max_iters=60,
+            arnoldi_steps=6,
+            seed=20260821,
+        )
+    finally:
+        conditioning._fourier_weyl_bound = original
+    assert assessment["fourier_weyl_ghost_lower_bound"]["status"] == (
+        "valid_but_below_adequacy_gate"
+    )
+    assert assessment["disk_rate"] > 0.9
+    assert assessment["origin_enclosed"] is False
+    assert assessment["verdict"] == "investigate"
+    assert resolver._policy_category(assessment) == "investigate"
 
 
 @pytest.mark.slow
@@ -798,8 +944,8 @@ def test_promoted_resolved_reports_match_final_policy_and_tally():
             tally[record["verdict"]] += 1
     assert tally == {
         "adequate": 13,
-        "provisional": 1,
-        "investigate": 5,
+        "provisional": 0,
+        "investigate": 6,
         "indeterminate": 12,
         "uncertified_at_cap": 1,
     }
