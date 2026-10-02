@@ -10,7 +10,8 @@ same left-preconditioned Newton system.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+import types
+from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
 import jax
@@ -30,11 +31,20 @@ from moljax.conditioning import (
     numerical_range,
     ritz_values,
 )
-from moljax.core.bc import BCType
-from moljax.core.fft_solvers import laplacian_symbol_2d, laplacian_symbol_2d_rfft
+from moljax.core.bc import BCType, FieldBCSpec
+from moljax.core.fft_solvers import (
+    FFTCache2D,
+    laplacian_symbol_2d,
+    laplacian_symbol_2d_rfft,
+)
 from moljax.core.grid import Grid2D
-from moljax.core.model import MOLModel, create_brusselator_periodic_fft
+from moljax.core.model import (
+    MOLModel,
+    create_brusselator_model,
+    create_brusselator_periodic_fft,
+)
 from moljax.core.newton_krylov import NKParams, create_implicit_residual
+from moljax.core.operators import LinearOp, NonlinearOp, brusselator_reaction_op
 from moljax.core.preconditioners import (
     FFTDiffusionPreconditioner,
     IdentityPreconditioner,
@@ -140,6 +150,134 @@ def _same_value(first: Any, second: float) -> bool:
     )
 
 
+_SYMBOL_RTOL = 1.0e-12
+"""Per-entry relative tolerance for the FFT preconditioner symbol checks."""
+
+
+def _same_function(candidate: Callable[..., Any], shipped: Callable[..., Any]) -> bool:
+    """Return whether ``candidate`` runs exactly the shipped function's code.
+
+    The shipped Brusselator actions are nested functions, so every factory
+    call creates a new function object.  All of them share one code object,
+    one globals dictionary, and no closure, defaults, or keyword defaults.  A
+    replacement callable cannot satisfy this comparison by name or signature
+    alone: it needs the identical code object.
+    """
+    if type(candidate) is not types.FunctionType or type(shipped) is not types.FunctionType:
+        return False
+    if candidate.__code__ is not shipped.__code__:
+        return False
+    if candidate.__globals__ is not shipped.__globals__:
+        return False
+    if candidate.__defaults__ != shipped.__defaults__:
+        return False
+    if candidate.__kwdefaults__ != shipped.__kwdefaults__:
+        return False
+    candidate_cells = candidate.__closure__ or ()
+    shipped_cells = shipped.__closure__ or ()
+    return len(candidate_cells) == len(shipped_cells) and all(
+        first.cell_contents is second.cell_contents
+        for first, second in zip(candidate_cells, shipped_cells, strict=True)
+    )
+
+
+def _validate_shipped_brusselator_actions(model: MOLModel, grid: Grid2D) -> None:
+    """Refuse any model whose operator actions are not the shipped Brusselator code.
+
+    Names are labels only: a replacement action with the shipped name and
+    parameters changes the Jacobian that the bound describes.  The model, the
+    operator wrappers, and the boundary specifications must also be the exact
+    shipped classes, because a subclass can override the action they apply.
+    """
+    if type(model) is not MOLModel:
+        raise CertificateNotApplicable(
+            f"the bound covers only the shipped MOLModel class, got {type(model).__name__}"
+        )
+    if any(type(spec) is not FieldBCSpec for spec in model.bc_spec.values()):
+        raise CertificateNotApplicable(
+            "the bound requires the shipped FieldBCSpec boundary specification"
+        )
+    linear_ops = tuple(model.linear_ops)
+    nonlinear_ops = tuple(model.nonlinear_ops)
+    if (
+        len(linear_ops) != 1
+        or len(nonlinear_ops) != 1
+        or type(linear_ops[0]) is not LinearOp
+        or type(nonlinear_ops[0]) is not NonlinearOp
+        or linear_ops[0].name != "brusselator_diffusion"
+        or nonlinear_ops[0].name != "brusselator_reaction"
+    ):
+        raise CertificateNotApplicable(
+            "the bound covers only the shipped Brusselator diffusion and reaction operators"
+        )
+    shipped_diffusion = create_brusselator_model(grid).linear_ops[0].apply
+    shipped_reaction = brusselator_reaction_op().apply
+    if not _same_function(linear_ops[0].apply, shipped_diffusion):
+        raise CertificateNotApplicable(
+            "the diffusion action is not the shipped Brusselator diffusion implementation"
+        )
+    if not _same_function(nonlinear_ops[0].apply, shipped_reaction):
+        raise CertificateNotApplicable(
+            "the reaction action is not the shipped Brusselator reaction implementation"
+        )
+
+
+def _validate_fft_symbol(
+    cache: Any,
+    grid: Grid2D,
+    dt: float,
+    diffusivities: tuple[float, float],
+) -> None:
+    """Check the FFT preconditioner symbol entry by entry, or refuse.
+
+    The bound assumes ``P_k = diag(1 - dt D_u l_k, 1 - dt D_v l_k)`` on the
+    grid's own finite-difference symbol ``l_k``, with ``l_0 = 0`` exactly
+    (so that ``||P^-1||_2 = 1``).  A tolerance scaled by the largest symbol
+    entry admits large errors in the small entries, the zero mode included.
+    Each entry of ``l`` and of ``1 - dt D l`` is therefore compared with a
+    tolerance relative to that entry's own expected value.
+    """
+    if type(cache) is not FFTCache2D:
+        raise CertificateNotApplicable(
+            f"the bound covers only the shipped FFTCache2D, got {type(cache).__name__}"
+        )
+    use_rfft = cache.use_rfft
+    if type(use_rfft) is not bool:
+        raise CertificateNotApplicable("the FFT cache use_rfft flag is not a bool")
+    symbol_builder = laplacian_symbol_2d_rfft if use_rfft else laplacian_symbol_2d
+    expected_symbol = np.asarray(
+        symbol_builder(grid.ny, grid.nx, grid.dy, grid.dx, jnp.float64), dtype=np.float64
+    )
+    actual_symbol = np.asarray(jax.device_get(cache.laplacian_symbol))
+    if actual_symbol.shape != expected_symbol.shape:
+        raise CertificateNotApplicable(
+            "the FFT preconditioner symbol shape does not match the grid"
+        )
+    if not np.all(np.isfinite(actual_symbol)) or np.iscomplexobj(actual_symbol):
+        raise CertificateNotApplicable("the FFT preconditioner symbol is not finite and real")
+    actual_symbol = actual_symbol.astype(np.float64)
+    if actual_symbol[0, 0] != 0.0:
+        raise CertificateNotApplicable(
+            "the FFT preconditioner symbol zero mode is not exactly zero"
+        )
+    if not np.all(
+        np.abs(actual_symbol - expected_symbol) <= _SYMBOL_RTOL * np.abs(expected_symbol)
+    ):
+        raise CertificateNotApplicable(
+            "the FFT preconditioner symbol is not the grid's finite-difference Laplacian symbol"
+        )
+    for diffusivity in diffusivities:
+        expected_denominator = 1.0 - dt * diffusivity * expected_symbol
+        actual_denominator = 1.0 - dt * diffusivity * actual_symbol
+        if not np.all(
+            np.abs(actual_denominator - expected_denominator)
+            <= _SYMBOL_RTOL * np.abs(expected_denominator)
+        ):
+            raise CertificateNotApplicable(
+                "the FFT preconditioner denominator 1 - dt D l differs from the grid's"
+            )
+
+
 def _validate_certificate_operator(
     model: MOLModel,
     regime: BrusselatorRegime,
@@ -162,7 +300,7 @@ def _validate_certificate_operator(
     the same for both.  Anything else is refused rather than certified.
     """
     grid = model.grid
-    if not isinstance(grid, Grid2D):
+    if type(grid) is not Grid2D:
         raise CertificateNotApplicable("the bound requires a two-dimensional Grid2D")
     if grid.n_ghost != 1:
         raise CertificateNotApplicable(
@@ -176,12 +314,7 @@ def _validate_certificate_operator(
         raise CertificateNotApplicable(
             "the bound requires periodic boundary conditions on exactly the fields u and v"
         )
-    if tuple(op.name for op in model.linear_ops) != ("brusselator_diffusion",) or tuple(
-        op.name for op in model.nonlinear_ops
-    ) != ("brusselator_reaction",):
-        raise CertificateNotApplicable(
-            "the bound covers only the shipped Brusselator diffusion and reaction operators"
-        )
+    _validate_shipped_brusselator_actions(model, grid)
     params = model.params
     for key, expected in (
         ("Du", regime.du),
@@ -205,34 +338,27 @@ def _validate_certificate_operator(
             raise CertificateNotApplicable(
                 f"the preconditioner context {key} does not match the model"
             )
-    if isinstance(preconditioner, IdentityPreconditioner):
-        return grid
-    if not isinstance(preconditioner, FFTDiffusionPreconditioner):
+    # Exact classes only: a subclass can override ``apply`` (for example a
+    # scaled identity), and then ``||P^-1||_2 = 1`` no longer holds.  The
+    # same holds for an instance attribute that shadows the class method.
+    if type(preconditioner) not in (IdentityPreconditioner, FFTDiffusionPreconditioner) or (
+        "apply" in getattr(preconditioner, "__dict__", {})
+    ):
         raise CertificateNotApplicable(
             f"the bound does not cover the {type(preconditioner).__name__} preconditioner"
         )
+    if type(preconditioner) is IdentityPreconditioner:
+        return grid
     if dict(preconditioner.field_diffusivity_keys or {}) != {"u": "Du", "v": "Dv"}:
         raise CertificateNotApplicable(
             "the FFT preconditioner must map u to Du and v to Dv"
         )
-    cache = preconditioner.fft_cache
-    symbol = getattr(cache, "laplacian_symbol", None)
-    if symbol is None:
-        raise CertificateNotApplicable("the FFT preconditioner has no Laplacian symbol")
-    symbol_builder = (
-        laplacian_symbol_2d_rfft if bool(getattr(cache, "use_rfft", False)) else laplacian_symbol_2d
+    _validate_fft_symbol(
+        preconditioner.fft_cache,
+        grid,
+        float(dt),
+        (float(params["Du"]), float(params["Dv"])),
     )
-    expected_symbol = np.asarray(
-        symbol_builder(grid.ny, grid.nx, grid.dy, grid.dx, jnp.float64), dtype=np.float64
-    )
-    actual_symbol = np.asarray(jax.device_get(symbol), dtype=np.float64)
-    scale = float(np.max(np.abs(expected_symbol)))
-    if actual_symbol.shape != expected_symbol.shape or not np.allclose(
-        actual_symbol, expected_symbol, rtol=1.0e-12, atol=1.0e-12 * scale
-    ):
-        raise CertificateNotApplicable(
-            "the FFT preconditioner symbol is not the grid's finite-difference Laplacian symbol"
-        )
     return grid
 
 

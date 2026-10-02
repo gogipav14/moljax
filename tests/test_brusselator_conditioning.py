@@ -1094,6 +1094,211 @@ def test_certificate_guard_accepts_every_committed_adequate_record():
         assert record["fourier_weyl_ghost_lower_bound"]["status"] == "clears_adequacy_gate"
 
 
+def _with_reaction(model, apply):
+    """Return ``model`` with its reaction action replaced, name and params kept."""
+    from moljax.core.model import MOLModel
+
+    reaction = replace(model.nonlinear_ops[0], apply=apply)
+    return MOLModel(
+        grid=model.grid,
+        bc_spec=model.bc_spec,
+        params=model.params,
+        linear_ops=model.linear_ops,
+        nonlinear_ops=(reaction,),
+        metadata=model.metadata,
+    )
+
+
+def _guard_bound_and_dense(model, dt, preconditioner):
+    """Return (guard outcome, dense sigma_min) for a homogeneous Turing state."""
+    from moljax.conditioning import linearized_operator
+    from moljax.core.newton_krylov import create_implicit_residual
+    from moljax.core.preconditioners import PrecondContext
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = model.grid
+    shape = (grid.ny_total, grid.nx_total)
+    state = model.apply_bcs(
+        {
+            "u": jax.numpy.full(shape, TURING_REGIME.a),
+            "v": jax.numpy.full(shape, TURING_REGIME.b / TURING_REGIME.a),
+        },
+        0.0,
+    )
+    context = PrecondContext(grid=grid, dt=dt, params=model.params)
+    residual = create_implicit_residual(model, state, dt, dt, method="be")
+    operator = linearized_operator(
+        residual, state, preconditioner=preconditioner, context=context
+    )
+    basis = jax.numpy.eye(operator.n, dtype=jax.numpy.float64)
+    matrix = np.column_stack(
+        [np.asarray(operator.matvec(basis[:, column])) for column in range(operator.n)]
+    )
+    dense = float(np.linalg.svd(matrix, compute_uv=False)[-1])
+    try:
+        outcome = conditioning._fourier_weyl_bound(
+            state,
+            model,
+            TURING_REGIME,
+            dt,
+            preconditioner=preconditioner,
+            context=context,
+        ).selected.full_lower_bound
+    except conditioning.CertificateNotApplicable as refusal:
+        outcome = refusal
+    return outcome, dense
+
+
+def test_certificate_refuses_replaced_actions_with_shipped_names():
+    """Review reproductions: same-name replacement actions are refused, not certified."""
+    from moljax.core.preconditioners import IdentityPreconditioner
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    class ScaledIdentity(IdentityPreconditioner):
+        def apply(self, r, context):
+            return {name: 0.01 * value for name, value in r.items()}
+
+    # (a) the original reaction plus 5 times each field, 4x4, L=5, dt=0.2.
+    grid = Grid2D.uniform(4, 4, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, fft_cache, _ = build_brusselator_system(TURING_REGIME, grid)
+    original = model.nonlinear_ops[0].apply
+
+    def plus_five(state, grid, t, params):
+        image = original(state, grid, t, params)
+        return {name: image[name] + 5.0 * state[name] for name in image}
+
+    fft = conditioning._preconditioner("fft_diffusion", fft_cache)
+    outcome, dense = _guard_bound_and_dense(_with_reaction(model, plus_five), 0.2, fft)
+    assert dense == pytest.approx(0.026493382, abs=5.0e-10)
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "reaction action" in str(outcome)
+
+    # (b) the reaction replaced by 5 * state, 3x3, L=5, dt=0.2.
+    grid3 = Grid2D.uniform(3, 3, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model3, fft_cache3, _ = build_brusselator_system(TURING_REGIME, grid3)
+    scaled = _with_reaction(
+        model3, lambda state, grid, t, params: {name: 5.0 * state[name] for name in state}
+    )
+    fft3 = conditioning._preconditioner("fft_diffusion", fft_cache3)
+    outcome, dense = _guard_bound_and_dense(scaled, 0.2, fft3)
+    assert dense < 1.0e-12
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "reaction action" in str(outcome)
+
+    # (c) an IdentityPreconditioner subclass that applies 0.01 * r, 3x3.
+    outcome, dense = _guard_bound_and_dense(model3, 0.2, ScaledIdentity())
+    assert dense == pytest.approx(0.0067272274, abs=5.0e-11)
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "ScaledIdentity" in str(outcome)
+
+    # A replaced diffusion action and an instance-level apply are refused too.
+    diffusion = replace(
+        model.linear_ops[0], apply=lambda state, grid, t, params: dict(state)
+    )
+    swapped = replace(model, linear_ops=(diffusion,))
+    outcome, _ = _guard_bound_and_dense(swapped, 0.2, fft)
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "diffusion action" in str(outcome)
+    shadowed = IdentityPreconditioner()
+    object.__setattr__(shadowed, "apply", ScaledIdentity().apply)
+    _refused(model, TURING_REGIME, 0.2, shadowed, _guard_inputs(grid)[2], "Identity")
+
+    # The shipped operators on the same grids are accepted, below dense.
+    for shipped_model, shipped_cache in ((model, fft_cache), (model3, fft_cache3)):
+        for kind in ("fft_diffusion", "identity"):
+            preconditioner = conditioning._preconditioner(kind, shipped_cache)
+            outcome, dense = _guard_bound_and_dense(shipped_model, 0.2, preconditioner)
+            assert not isinstance(outcome, Exception)
+            assert outcome <= dense + 5.0e-13
+
+
+@pytest.mark.parametrize(
+    ("n", "zero_mode", "dense_expected"),
+    [(4, -100.0, 0.379943963), (4, 40.0, None), (3, -50.0, 0.5268245086)],
+)
+def test_certificate_refuses_a_wrong_zero_mode_under_a_large_symbol(
+    n, zero_mode, dense_expected
+):
+    """Review reproductions: L=1e-6 makes a global tolerance admit a wrong zero mode."""
+    from moljax.core.preconditioners import create_fft_preconditioner
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(n, n, 0.0, 1.0e-6, 0.0, 1.0e-6, n_ghost=1)
+    model, fft_cache, _ = build_brusselator_system(TURING_REGIME, grid)
+    bad = fft_cache._replace(
+        laplacian_symbol=fft_cache.laplacian_symbol.at[0, 0].set(zero_mode)
+    )
+    preconditioner = create_fft_preconditioner({"u": "Du", "v": "Dv"}, bad)
+    outcome, dense = _guard_bound_and_dense(model, 0.2, preconditioner)
+    if dense_expected is not None:
+        assert dense == pytest.approx(dense_expected, abs=5.0e-10)
+        assert dense < 0.5986968893
+    else:
+        # The +40 zero mode gives |1 - dt Dv l_0|^-1 = 1 / |1 - 0.8| = 5.
+        assert 1.0 / abs(1.0 - 0.2 * TURING_REGIME.dv * zero_mode) == pytest.approx(5.0)
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "zero mode" in str(outcome)
+
+
+def test_certificate_refuses_a_small_symbol_entry_error_and_accepts_shipped_caches():
+    """Every symbol entry has its own tolerance; shipped caches pass on several grids."""
+    from moljax.core.fft_solvers import create_fft_cache_2d_rfft
+    from moljax.core.preconditioners import PrecondContext, create_fft_preconditioner
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(64, 64, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, fft_cache, _ = build_brusselator_system(TURING_REGIME, grid)
+    context = PrecondContext(grid=grid, dt=0.2, params=model.params)
+    symbol = np.asarray(fft_cache.laplacian_symbol)
+    # An absolute error of half the old global tolerance (1e-12 times the
+    # largest entry) in the smallest nonzero entry is a relative error of
+    # about 4e-10 there: the old check admitted it, the per-entry check
+    # refuses it.
+    smallest = np.where(symbol == 0.0, -np.inf, symbol)
+    row, column = np.unravel_index(np.argmax(smallest), symbol.shape)
+    scale = float(np.max(np.abs(symbol)))
+    wrong = symbol.copy()
+    wrong[row, column] += 0.5e-12 * scale
+    assert np.allclose(wrong, symbol, rtol=1.0e-12, atol=1.0e-12 * scale)
+    assert abs(wrong[row, column] - symbol[row, column]) > 1.0e-10 * abs(symbol[row, column])
+    perturbed = fft_cache._replace(laplacian_symbol=jax.numpy.asarray(wrong))
+    _refused(
+        model,
+        TURING_REGIME,
+        0.2,
+        create_fft_preconditioner({"u": "Du", "v": "Dv"}, perturbed),
+        context,
+        "finite-difference Laplacian symbol",
+    )
+
+    shipped_grids = (
+        (3, 3, 5.0),
+        (4, 6, 1.0e-6),
+        (16, 16, 1.0),
+        (64, 64, 5.0),
+        (256, 256, 5.0),
+    )
+    for nx, ny, length in shipped_grids:
+        shipped_grid = Grid2D.uniform(nx, ny, 0.0, length, 0.0, length, n_ghost=1)
+        for dt in (0.01, 0.2, 1.0):
+            shipped_model, preconditioner, shipped_context = _guard_inputs(shipped_grid, dt=dt)
+            assert (
+                conditioning._validate_certificate_operator(
+                    shipped_model, TURING_REGIME, dt, preconditioner, shipped_context
+                )
+                == shipped_grid
+            )
+        rfft = create_fft_preconditioner(
+            {"u": "Du", "v": "Dv"}, create_fft_cache_2d_rfft(shipped_grid)
+        )
+        assert (
+            conditioning._validate_certificate_operator(
+                shipped_model, TURING_REGIME, dt, rfft, shipped_context
+            )
+            == shipped_grid
+        )
+
+
 # --- Base-report Hopf/Turing conclusion ----------------------------------------
 
 
