@@ -27,6 +27,7 @@ from benchmarks.brusselator_conditioning import (
     TURING_REGIME,
     _cache_relative_source_artifact,
     _fixed_transition,
+    _hopf_vs_turing,
     _records_for,
     _summary,
     reassess_brusselator_record,
@@ -364,85 +365,6 @@ def _cache_relative_artifact(
         fingerprint,
         original_cache_root=original_cache_root,
     )
-
-
-def _hopf_vs_turing(
-    records: list[dict[str, Any]], study: str, *, scope_caveat: str | None = None
-) -> dict[str, Any]:
-    """Derive the mode-specific Hopf/Turing summary from final policy records."""
-    by_regime = {
-        regime: [
-            record
-            for record in records
-            if record["regime"] == regime and record["preconditioner"] == "fft_diffusion"
-        ]
-        for regime in ("hopf", "turing")
-    }
-    if study == "screen_64":
-        adequate = {
-            regime: sum(record["verdict"] == "adequate" for record in rows)
-            for regime, rows in by_regime.items()
-        }
-        both = all(adequate[regime] == len(rows) for regime, rows in by_regime.items())
-        return {
-            "outcome": "both_adequate_under_fft" if both else "fft_regime_assessments_mixed",
-            "statement": (
-                "The FFT diffusion preconditioner is assessed adequate for both visited-state "
-                "regimes."
-                if both
-                else "The FFT diffusion preconditioner has mixed final-policy outcomes across "
-                "the visited-state regimes."
-            ),
-            "hopf_adequate_fft_records": adequate["hopf"],
-            "turing_adequate_fft_records": adequate["turing"],
-        }
-    if study != "developed_64":
-        raise ValueError(f"Hopf/Turing comparison is not defined for {study}")
-    all_indeterminate = {
-        regime: bool(rows) and all(record["verdict"] == "indeterminate" for record in rows)
-        for regime, rows in by_regime.items()
-    }
-    both = all(all_indeterminate.values())
-    hopf_imaginary = sorted(by_regime["hopf"], key=lambda record: record["trajectory_step"])
-    summary = {
-        "outcome": (
-            "both_regimes_indeterminate_on_developed_states"
-            if both
-            else "developed_fft_regime_assessments_mixed"
-        ),
-        "statement": (
-            "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state "
-            "because their numerical ranges enclose the origin; Hopf still has the larger, "
-            "growing imaginary extent."
-            if both
-            else "The developed FFT-preconditioned regimes have mixed final-policy outcomes; "
-            "see the per-regime summaries."
-        ),
-        "hopf_nonadequate_fft_records": sum(
-            record["verdict"] != "adequate" for record in by_regime["hopf"]
-        ),
-        "turing_nonadequate_fft_records": sum(
-            record["verdict"] != "adequate" for record in by_regime["turing"]
-        ),
-        "hopf_origin_enclosed_any": any(
-            bool(record["origin_enclosed"]) for record in by_regime["hopf"]
-        ),
-        "turing_origin_enclosed_any": any(
-            bool(record["origin_enclosed"]) for record in by_regime["turing"]
-        ),
-        "both_regimes_indeterminate": both,
-        "hopf_fov_imaginary_extent_grows_over_samples": (
-            hopf_imaginary[-1]["fov_imaginary_extent"]
-            > hopf_imaginary[0]["fov_imaginary_extent"]
-        ),
-        "hopf_fov_imaginary_extent_by_time": [
-            {"time": record["time"], "fov_imaginary_extent": record["fov_imaginary_extent"]}
-            for record in hopf_imaginary
-        ],
-    }
-    if scope_caveat is not None:
-        summary["scope_caveat"] = scope_caveat
-    return summary
 
 
 def _recompute_derived_summaries(

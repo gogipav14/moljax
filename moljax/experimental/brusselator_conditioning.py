@@ -30,6 +30,8 @@ from moljax.conditioning import (
     numerical_range,
     ritz_values,
 )
+from moljax.core.bc import BCType
+from moljax.core.fft_solvers import laplacian_symbol_2d, laplacian_symbol_2d_rfft
 from moljax.core.grid import Grid2D
 from moljax.core.model import MOLModel, create_brusselator_periodic_fft
 from moljax.core.newton_krylov import NKParams, create_implicit_residual
@@ -123,18 +125,138 @@ def _state_identifier(state: StateDict, grid: Grid2D) -> dict[str, Any]:
     return {"sha256": digest.hexdigest(), "interior_shapes": shapes, "dtype": "<f8"}
 
 
+class CertificateNotApplicable(ValueError):
+    """The analyzed operator lies outside the Fourier--Weyl--ghost assumptions."""
+
+
+def _same_value(first: Any, second: float) -> bool:
+    """Return whether a model parameter equals a certificate input (finite, close)."""
+    try:
+        value = float(first)
+    except (TypeError, ValueError):
+        return False
+    return bool(np.isfinite(value)) and bool(
+        np.isclose(value, float(second), rtol=1.0e-12, atol=0.0)
+    )
+
+
+def _validate_certificate_operator(
+    model: MOLModel,
+    regime: BrusselatorRegime,
+    dt: float,
+    preconditioner: Preconditioner,
+    context: PrecondContext,
+) -> Grid2D:
+    """Check every operator assumption of the bound, or raise ``CertificateNotApplicable``.
+
+    The Fourier--Weyl--ghost bound is derived for one operator family only:
+    the shipped two-field Brusselator (5-point periodic Laplacian diffusion
+    plus Brusselator kinetics) on a ``Grid2D`` that is periodic in both axes
+    with exactly one ghost layer (the ghost multiplicities in {0, 1, 3}),
+    linearized for backward Euler at ``dt``, and left-preconditioned either by
+    the identity or by the FFT diffusion preconditioner with symbol
+    ``P_k = diag(1 - dt D_u l_k, 1 - dt D_v l_k)`` on the grid's own
+    finite-difference Laplacian symbol ``l_k``.  The identity is covered
+    because every ``P_k >= I`` (``l_k <= 0``), so the interior bound for
+    ``P^-1 J`` is also a lower bound for ``J``; the ghost block ``[C, I]`` is
+    the same for both.  Anything else is refused rather than certified.
+    """
+    grid = model.grid
+    if not isinstance(grid, Grid2D):
+        raise CertificateNotApplicable("the bound requires a two-dimensional Grid2D")
+    if grid.n_ghost != 1:
+        raise CertificateNotApplicable(
+            f"the bound's ghost multiplicities assume n_ghost == 1, got {grid.n_ghost}"
+        )
+    if grid.nx < 2 or grid.ny < 2 or not (grid.dx > 0.0 and grid.dy > 0.0):
+        raise CertificateNotApplicable("the bound requires nx, ny >= 2 and positive spacings")
+    if set(model.bc_spec) != {"u", "v"} or any(
+        spec.kind != BCType.PERIODIC for spec in model.bc_spec.values()
+    ):
+        raise CertificateNotApplicable(
+            "the bound requires periodic boundary conditions on exactly the fields u and v"
+        )
+    if tuple(op.name for op in model.linear_ops) != ("brusselator_diffusion",) or tuple(
+        op.name for op in model.nonlinear_ops
+    ) != ("brusselator_reaction",):
+        raise CertificateNotApplicable(
+            "the bound covers only the shipped Brusselator diffusion and reaction operators"
+        )
+    params = model.params
+    for key, expected in (
+        ("Du", regime.du),
+        ("Dv", regime.dv),
+        ("a", regime.a),
+        ("b", regime.b),
+    ):
+        if not _same_value(params.get(key), expected):
+            raise CertificateNotApplicable(
+                f"model parameter {key}={params.get(key)!r} does not match the "
+                f"certificate input {expected!r}"
+            )
+    if not (np.isfinite(dt) and dt > 0.0) or not _same_value(context.dt, dt):
+        raise CertificateNotApplicable(
+            f"the linearization dt={context.dt!r} does not match the certificate dt={dt!r}"
+        )
+    if context.grid != grid:
+        raise CertificateNotApplicable("the preconditioner context grid is not the model grid")
+    for key in ("Du", "Dv"):
+        if not _same_value(context.params.get(key), float(params[key])):
+            raise CertificateNotApplicable(
+                f"the preconditioner context {key} does not match the model"
+            )
+    if isinstance(preconditioner, IdentityPreconditioner):
+        return grid
+    if not isinstance(preconditioner, FFTDiffusionPreconditioner):
+        raise CertificateNotApplicable(
+            f"the bound does not cover the {type(preconditioner).__name__} preconditioner"
+        )
+    if dict(preconditioner.field_diffusivity_keys or {}) != {"u": "Du", "v": "Dv"}:
+        raise CertificateNotApplicable(
+            "the FFT preconditioner must map u to Du and v to Dv"
+        )
+    cache = preconditioner.fft_cache
+    symbol = getattr(cache, "laplacian_symbol", None)
+    if symbol is None:
+        raise CertificateNotApplicable("the FFT preconditioner has no Laplacian symbol")
+    symbol_builder = (
+        laplacian_symbol_2d_rfft if bool(getattr(cache, "use_rfft", False)) else laplacian_symbol_2d
+    )
+    expected_symbol = np.asarray(
+        symbol_builder(grid.ny, grid.nx, grid.dy, grid.dx, jnp.float64), dtype=np.float64
+    )
+    actual_symbol = np.asarray(jax.device_get(symbol), dtype=np.float64)
+    scale = float(np.max(np.abs(expected_symbol)))
+    if actual_symbol.shape != expected_symbol.shape or not np.allclose(
+        actual_symbol, expected_symbol, rtol=1.0e-12, atol=1.0e-12 * scale
+    ):
+        raise CertificateNotApplicable(
+            "the FFT preconditioner symbol is not the grid's finite-difference Laplacian symbol"
+        )
+    return grid
+
+
 def _fourier_weyl_bound(
     state: StateDict,
     model: MOLModel,
     regime: BrusselatorRegime,
     dt: float,
+    *,
+    preconditioner: Preconditioner,
+    context: PrecondContext,
 ) -> FourierWeylGhostLowerBound:
-    """Evaluate the closed-form padded-operator lower bound on one state."""
-    if not isinstance(model.grid, Grid2D):
-        raise TypeError("The Fourier--Weyl--ghost bound requires a two-dimensional grid")
-    interior_y, interior_x = model.grid.interior_slice
+    """Evaluate the closed-form padded-operator lower bound on one state.
+
+    Raises ``CertificateNotApplicable`` when the operator is outside the
+    bound's assumptions.  Grid sizes and domain lengths come from the model's
+    grid, never from the regime.
+    """
+    grid = _validate_certificate_operator(model, regime, dt, preconditioner, context)
+    interior_y, interior_x = grid.interior_slice
     u = np.asarray(jax.device_get(state["u"][interior_y, interior_x]), dtype=np.float64)
     v = np.asarray(jax.device_get(state["v"][interior_y, interior_x]), dtype=np.float64)
+    if u.shape != (grid.ny, grid.nx) or v.shape != (grid.ny, grid.nx):
+        raise CertificateNotApplicable("the state interior does not match the model grid")
     return fourier_weyl_ghost_lower_bound(
         u,
         v,
@@ -143,8 +265,8 @@ def _fourier_weyl_bound(
         a=regime.a,
         beta=regime.b,
         dt=dt,
-        domain_length_x=regime.domain_length,
-        domain_length_y=regime.domain_length,
+        domain_length_x=grid.x_max - grid.x_min,
+        domain_length_y=grid.y_max - grid.y_min,
     )
 
 
@@ -572,15 +694,38 @@ def assess_brusselator_state(
         n_restarts=fov_n_restarts,
     )
     rates = estimate_rates(field_of_values, ritz)
-    lower_bound = _fourier_weyl_bound(state, model, selected, dt)
-    selected_bound = lower_bound.selected
+    try:
+        lower_bound = _fourier_weyl_bound(
+            state,
+            model,
+            selected,
+            dt,
+            preconditioner=linearization.preconditioner,
+            context=linearization.context,
+        )
+        refusal_reason = None
+    except CertificateNotApplicable as refusal:
+        lower_bound = None
+        refusal_reason = str(refusal)
+    selected_bound = None if lower_bound is None else lower_bound.selected
     # A valid lower bound below the 0.1 adequacy gate cannot be allowed to
     # turn a reduced-Arnoldi provisional reading into ``investigate``.  In
     # that case retain the original, coverage-qualified assessment and record
     # that the attempted certificate was insufficient.  A bound that clears
     # the gate is full-operator evidence and unlocks adequate when every other
-    # fail-closed gate passes.
-    if selected_bound.full_lower_bound >= 0.1:
+    # fail-closed gate passes.  An operator outside the bound's assumptions
+    # gets no certificate at all: the reduced-Arnoldi assessment stands
+    # unrefined, exactly as if no bound had been attempted.
+    if selected_bound is None:
+        epsilon_for_assessment = reduced_epsilon_at_zero
+        assessment = assess_preconditioner(
+            field_of_values,
+            ritz,
+            epsilon_for_assessment,
+            coverage=arnoldi_result,
+        )
+        bound_status = "not_applicable"
+    elif selected_bound.full_lower_bound >= 0.1:
         epsilon_for_assessment = selected_bound.full_lower_bound
         assessment = assess_preconditioner(
             field_of_values,
@@ -621,6 +766,36 @@ def assess_brusselator_state(
         else None
     )
     jax.block_until_ready(field_of_values.boundary)
+    if selected_bound is None:
+        certificate = {
+            "evidence": "fourier_weyl_ghost_lower_bound",
+            "status": bound_status,
+            "reason": refusal_reason,
+            "selected_k0": None,
+            "k0_feature_center": None,
+            "b0": None,
+            "perturbation_norm": None,
+            "interior_lower_bound": None,
+            "c": None,
+            "full_lower_bound": None,
+            "padding": None,
+            "floating_point_standard": None,
+        }
+    else:
+        certificate = {
+            "evidence": "fourier_weyl_ghost_lower_bound",
+            "status": bound_status,
+            "selected_k0": selected_bound.name,
+            "k0_feature_center": list(selected_bound.center),
+            "b0": selected_bound.b0,
+            "perturbation_norm": selected_bound.perturbation_norm,
+            "interior_lower_bound": selected_bound.interior_lower_bound,
+            "c": selected_bound.ghost_norm_bound,
+            "full_lower_bound": selected_bound.full_lower_bound,
+            "padding": lower_bound.padding,
+            "floating_point_standard": lower_bound.floating_point_standard,
+        }
+    certificate["state_identifier"] = _state_identifier(state, model.grid)
 
     return {
         **common,
@@ -651,20 +826,7 @@ def assess_brusselator_state(
         "fov_imaginary_extent": float(jnp.max(jnp.abs(jnp.imag(field_of_values.boundary)))),
         "rates": rates._asdict(),
         "lobpcg_sigma_min_upper_estimate": lobpcg_upper_estimate,
-        "fourier_weyl_ghost_lower_bound": {
-            "evidence": "fourier_weyl_ghost_lower_bound",
-            "status": bound_status,
-            "selected_k0": selected_bound.name,
-            "k0_feature_center": list(selected_bound.center),
-            "b0": selected_bound.b0,
-            "perturbation_norm": selected_bound.perturbation_norm,
-            "interior_lower_bound": selected_bound.interior_lower_bound,
-            "c": selected_bound.ghost_norm_bound,
-            "full_lower_bound": selected_bound.full_lower_bound,
-            "padding": lower_bound.padding,
-            "floating_point_standard": lower_bound.floating_point_standard,
-            "state_identifier": _state_identifier(state, model.grid),
-        },
+        "fourier_weyl_ghost_lower_bound": certificate,
     }
 
 
@@ -714,6 +876,7 @@ def measure_brusselator_gmres(
 __all__ = [
     "BrusselatorLinearization",
     "BrusselatorRegime",
+    "CertificateNotApplicable",
     "HOPF_REGIME",
     "REGIMES",
     "TURING_REGIME",

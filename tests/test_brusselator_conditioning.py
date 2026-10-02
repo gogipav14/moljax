@@ -197,7 +197,17 @@ def test_valid_weak_fourier_weyl_bound_preserves_provisional(monkeypatch, weak_b
 
     grid = Grid2D.uniform(8, 8, 0.0, 5.0, 0.0, 5.0)
     state, model, fft_cache, diffusivities = _homogeneous_state(TURING_REGIME, grid)
-    genuine = conditioning._fourier_weyl_bound(state, model, TURING_REGIME, 0.01)
+    linearization = conditioning.build_brusselator_linearization(
+        state, model, fft_cache, diffusivities, 0.01
+    )
+    genuine = conditioning._fourier_weyl_bound(
+        state,
+        model,
+        TURING_REGIME,
+        0.01,
+        preconditioner=linearization.preconditioner,
+        context=linearization.context,
+    )
     weak_selected = replace(genuine.selected, full_lower_bound=weak_bound)
     monkeypatch.setattr(
         conditioning,
@@ -828,3 +838,350 @@ def test_promoted_resolved_report_aggregates_match_final_records():
             transition = fixed["fixed_dt_transition"]["by_regime"][regime][kind]
             assert transition["early"]["verdict"] == rows[0]["verdict"]
             assert transition["developed"]["verdict"] == rows[-1]["verdict"]
+
+
+# --- Fourier--Weyl--ghost certificate operator guards -------------------------
+
+
+def _patterned_state(model, grid, alpha):
+    """Return a padded state: steady state plus a smooth periodic pattern."""
+    regime = TURING_REGIME
+    rows, columns = np.meshgrid(
+        np.arange(grid.ny_total), np.arange(grid.nx_total), indexing="ij"
+    )
+    phi = np.cos(2.0 * np.pi * columns / grid.nx) * np.cos(2.0 * np.pi * rows / grid.ny)
+    return model.apply_bcs(
+        {
+            "u": jax.numpy.asarray(regime.a + alpha * phi),
+            "v": jax.numpy.asarray(regime.b / regime.a - 0.35 * alpha * phi),
+        },
+        0.0,
+    )
+
+
+def _certificate_and_dense(grid, dt, *, alpha=0.0, kind="fft_diffusion"):
+    """Return the helper's certificate and the actual padded operator's sigma_min."""
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    model, fft_cache, diffusivities = build_brusselator_system(TURING_REGIME, grid)
+    state = _patterned_state(model, grid, alpha)
+    linearization = conditioning.build_brusselator_linearization(
+        state, model, fft_cache, diffusivities, dt, preconditioner_kind=kind
+    )
+    operator = linearization.operator
+    basis = jax.numpy.eye(operator.n, dtype=jax.numpy.float64)
+    matrix = np.column_stack(
+        [np.asarray(operator.matvec(basis[:, column])) for column in range(operator.n)]
+    )
+    dense = float(np.linalg.svd(matrix, compute_uv=False)[-1])
+
+    def certificate():
+        return conditioning._fourier_weyl_bound(
+            state,
+            model,
+            TURING_REGIME,
+            dt,
+            preconditioner=linearization.preconditioner,
+            context=linearization.context,
+        )
+
+    return certificate, dense, state, model, fft_cache, diffusivities
+
+
+def test_certificate_refuses_three_ghost_layers_instead_of_certifying():
+    """The n_ghost=3 counterexample: the one-layer formula would overstate sigma_min."""
+    from moljax.experimental.brusselator_conditioning import CertificateNotApplicable
+    from moljax.experimental.brusselator_fourier_weyl_ghost_bound import (
+        fourier_weyl_ghost_lower_bound,
+    )
+
+    grid = Grid2D.uniform(4, 4, 0.0, 5.0, 0.0, 5.0, n_ghost=3)
+    certificate, dense, state, model, fft_cache, diffusivities = _certificate_and_dense(
+        grid, 0.2
+    )
+    interior_y, interior_x = grid.interior_slice
+    one_layer = fourier_weyl_ghost_lower_bound(
+        np.asarray(state["u"])[interior_y, interior_x],
+        np.asarray(state["v"])[interior_y, interior_x],
+        du=TURING_REGIME.du,
+        dv=TURING_REGIME.dv,
+        a=TURING_REGIME.a,
+        beta=TURING_REGIME.b,
+        dt=0.2,
+    ).selected.full_lower_bound
+    assert dense == pytest.approx(0.540558, abs=5.0e-7)
+    assert one_layer == pytest.approx(0.598697, abs=5.0e-7)
+    assert one_layer > dense
+    with pytest.raises(CertificateNotApplicable, match="n_ghost == 1"):
+        certificate()
+
+    assessment = assess_brusselator_state(
+        state, model, fft_cache, diffusivities, 0.2, TURING_REGIME, seed=20260821
+    )
+    record = assessment["fourier_weyl_ghost_lower_bound"]
+    assert record["status"] == "not_applicable"
+    assert "n_ghost" in record["reason"]
+    assert record["full_lower_bound"] is None
+    assert assessment["epsilon_zero_full_operator_evidence"] is False
+    assert assessment["epsilon_zero"] == assessment["reduced_arnoldi_epsilon_zero"]
+    assert assessment["verdict"] != "adequate"
+    assert resolver._policy_outcome(assessment)[0] == assessment["verdict"]
+
+
+@pytest.mark.parametrize("kind", ["fft_diffusion", "identity"])
+def test_certificate_on_a_nonsquare_grid_uses_its_dimensions(kind):
+    """A 4x6 grid with dx != dy gets a bound from its own geometry, below dense."""
+    from moljax.experimental.brusselator_fourier_weyl_ghost_bound import (
+        fourier_weyl_ghost_lower_bound,
+    )
+
+    grid = Grid2D.uniform(4, 6, 0.0, 5.0, 0.0, 3.0, n_ghost=1)
+    assert grid.dx != grid.dy
+    certificate, dense, state, _, _, _ = _certificate_and_dense(
+        grid, 0.2, alpha=0.3, kind=kind
+    )
+    bound = certificate()
+    expected = fourier_weyl_ghost_lower_bound(
+        np.asarray(state["u"])[1:-1, 1:-1],
+        np.asarray(state["v"])[1:-1, 1:-1],
+        du=TURING_REGIME.du,
+        dv=TURING_REGIME.dv,
+        a=TURING_REGIME.a,
+        beta=TURING_REGIME.b,
+        dt=0.2,
+        domain_length_x=5.0,
+        domain_length_y=3.0,
+    )
+    assert bound.selected.full_lower_bound == expected.selected.full_lower_bound
+    for candidate in bound.candidates:
+        assert candidate.full_lower_bound <= dense + 5.0e-13
+
+
+def test_certificate_uses_the_grid_length_not_the_regime_length():
+    """At L=1 the regime's L=5 symbol would certify above the true sigma_min."""
+    from moljax.experimental.brusselator_fourier_weyl_ghost_bound import (
+        fourier_weyl_ghost_lower_bound,
+    )
+
+    grid = Grid2D.uniform(4, 4, 0.0, 1.0, 0.0, 1.0, n_ghost=1)
+    certificate, dense, state, _, _, _ = _certificate_and_dense(grid, 1.0)
+    regime_length = fourier_weyl_ghost_lower_bound(
+        np.asarray(state["u"])[1:-1, 1:-1],
+        np.asarray(state["v"])[1:-1, 1:-1],
+        du=TURING_REGIME.du,
+        dv=TURING_REGIME.dv,
+        a=TURING_REGIME.a,
+        beta=TURING_REGIME.b,
+        dt=1.0,
+        domain_length_x=TURING_REGIME.domain_length,
+    ).selected.full_lower_bound
+    bound = certificate().selected.full_lower_bound
+    assert regime_length > dense
+    assert bound <= dense + 5.0e-13
+    assert bound == pytest.approx(0.129543, abs=5.0e-7)
+
+
+def _guard_inputs(grid, *, regime=TURING_REGIME, dt=0.2, kind="fft_diffusion"):
+    from moljax.core.preconditioners import PrecondContext
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    model, fft_cache, _ = build_brusselator_system(regime, grid)
+    preconditioner = conditioning._preconditioner(kind, fft_cache)
+    context = PrecondContext(grid=model.grid, dt=dt, params=model.params)
+    return model, preconditioner, context
+
+
+def _refused(model, regime, dt, preconditioner, context, match):
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    with pytest.raises(conditioning.CertificateNotApplicable, match=match):
+        conditioning._validate_certificate_operator(model, regime, dt, preconditioner, context)
+
+
+def test_certificate_refuses_operators_outside_its_assumptions():
+    """Parameter, dt, boundary, and preconditioner mismatches are all refused."""
+    from moljax.core.bc import BCType
+    from moljax.core.fft_solvers import create_fft_cache
+    from moljax.core.model import MOLModel, create_brusselator_model
+    from moljax.core.preconditioners import (
+        BlockJacobiPreconditioner,
+        PrecondContext,
+        create_fft_preconditioner,
+    )
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(4, 4, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, preconditioner, context = _guard_inputs(grid)
+    assert conditioning._validate_certificate_operator(
+        model, TURING_REGIME, 0.2, preconditioner, context
+    ) == grid
+
+    # Reaction parameters and diffusivities must be the certificate inputs.
+    _refused(model, HOPF_REGIME, 0.2, preconditioner, context, "model parameter")
+    _refused(model, TURING_REGIME._replace(du=0.02), 0.2, preconditioner, context, "Du")
+    # dt must be the linearization's dt.
+    _refused(model, TURING_REGIME, 0.1, preconditioner, context, "dt")
+    # The context must carry the model's diffusivities and grid.
+    foreign_params = PrecondContext(grid=grid, dt=0.2, params={**model.params, "Dv": 0.5})
+    _refused(model, TURING_REGIME, 0.2, preconditioner, foreign_params, "context Dv")
+    # Non-periodic boundaries are outside the bound.
+    neumann = create_brusselator_model(
+        grid, Du=0.01, Dv=0.1, a=1.0, b=1.8, bc_type=BCType.NEUMANN
+    )
+    _refused(neumann, TURING_REGIME, 0.2, preconditioner, context, "periodic")
+    # Extra operators change the Jacobian.
+    extra = MOLModel(
+        grid=model.grid,
+        bc_spec=model.bc_spec,
+        params=model.params,
+        linear_ops=model.linear_ops + model.linear_ops,
+        nonlinear_ops=model.nonlinear_ops,
+        metadata=model.metadata,
+    )
+    _refused(extra, TURING_REGIME, 0.2, preconditioner, context, "shipped Brusselator")
+    # Preconditioners other than identity and the matching FFT symbol are refused.
+    _refused(
+        model,
+        TURING_REGIME,
+        0.2,
+        BlockJacobiPreconditioner(),
+        context,
+        "BlockJacobiPreconditioner",
+    )
+    swapped = create_fft_preconditioner({"u": "Dv", "v": "Du"}, preconditioner.fft_cache)
+    _refused(model, TURING_REGIME, 0.2, swapped, context, "map u to Du")
+    other_grid = Grid2D.uniform(4, 4, 0.0, 2.0, 0.0, 2.0, n_ghost=1)
+    foreign_cache = create_fft_preconditioner(
+        {"u": "Du", "v": "Dv"}, create_fft_cache(other_grid)
+    )
+    _refused(model, TURING_REGIME, 0.2, foreign_cache, context, "symbol")
+
+
+def test_certificate_guard_accepts_every_committed_adequate_record():
+    """All 13 adequate published records have an operator the bound covers."""
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    adequate = [
+        record
+        for report in _resolved_reports().values()
+        for record in report["records"]
+        if record["verdict"] == "adequate"
+    ]
+    assert len(adequate) == 13
+    for record in adequate:
+        stored = record["record_config"]
+        regime = conditioning.BrusselatorRegime(**stored["regime"])
+        length = float(stored["domain_length"])
+        grid = Grid2D.uniform(
+            int(stored["grid"]["nx"]),
+            int(stored["grid"]["ny"]),
+            0.0,
+            length,
+            0.0,
+            length,
+            n_ghost=int(stored["grid"]["n_ghost"]),
+        )
+        dt = float(stored["analysis_dt"])
+        model, preconditioner, context = _guard_inputs(
+            grid, regime=regime, dt=dt, kind=stored["preconditioner_kind"]
+        )
+        assert (
+            conditioning._validate_certificate_operator(
+                model, regime, dt, preconditioner, context
+            )
+            == grid
+        )
+        assert record["fourier_weyl_ghost_lower_bound"]["status"] == "clears_adequacy_gate"
+
+
+# --- Base-report Hopf/Turing conclusion ----------------------------------------
+
+
+def _synthetic_screen_record(regime, state_index, kind, verdict, supports_consistent):
+    return {
+        "regime": regime,
+        "state_index": state_index,
+        "preconditioner": kind,
+        "status": "completed",
+        "verdict": verdict,
+        "supports_consistent": supports_consistent,
+        "disk_rate": 0.5,
+        "fov_imaginary_extent": 0.1,
+        "origin_enclosed": False,
+        "time": 0.1 * (state_index + 1),
+        "actual_gmres": {"iterations": 5, "converged": True},
+    }
+
+
+def _screen_records(verdicts):
+    """Build screen_64-shaped records from ``{regime: (verdict, supports_consistent)}``."""
+    return [
+        _synthetic_screen_record(regime, index, kind, *verdicts[regime])
+        for regime in ("hopf", "turing")
+        for index in range(2)
+        for kind in ("identity", "fft_diffusion")
+    ]
+
+
+def test_base_screen_report_declares_adequacy_only_when_records_are_adequate():
+    report = benchmark._result(
+        benchmark.SCREEN_64,
+        _screen_records({"hopf": ("adequate", True), "turing": ("adequate", True)}),
+    )
+    assert report["hopf_vs_turing"]["outcome"] == "both_adequate_under_fft"
+    assert report["hopf_vs_turing"]["hopf_adequate_fft_records"] == 2
+    assert report["hopf_vs_turing"]["turing_adequate_fft_records"] == 2
+
+
+def test_base_screen_report_does_not_declare_adequacy_for_unresolved_records():
+    """The screen_64 reproduction: indeterminate with inconsistent supports."""
+    records = _screen_records(
+        {"hopf": ("indeterminate", False), "turing": ("indeterminate", False)}
+    )
+    summary = benchmark._result(benchmark.SCREEN_64, records)["hopf_vs_turing"]
+    assert summary["outcome"] == "fft_regime_assessments_unresolved"
+    assert "adequate" not in summary["outcome"]
+    assert summary["fft_status_by_regime"] == {"hopf": "unresolved", "turing": "unresolved"}
+    assert summary["unresolved_fft_records_by_regime"] == {"hopf": 2, "turing": 2}
+    assert summary["hopf_adequate_fft_records"] == summary["turing_adequate_fft_records"] == 0
+
+
+@pytest.mark.parametrize(
+    "verdicts",
+    [
+        {"hopf": ("adequate", True), "turing": ("indeterminate", False)},
+        {"hopf": ("investigate", True), "turing": ("adequate", True)},
+    ],
+)
+def test_base_screen_report_reports_mixed_outcomes_per_regime(verdicts):
+    summary = benchmark._result(benchmark.SCREEN_64, _screen_records(verdicts))[
+        "hopf_vs_turing"
+    ]
+    assert summary["outcome"] == "fft_regime_assessments_mixed"
+    statuses = summary["fft_status_by_regime"]
+    for regime, (verdict, _) in verdicts.items():
+        expected = {
+            "adequate": "adequate",
+            "indeterminate": "unresolved",
+            "investigate": "not_adequate",
+        }[verdict]
+        assert statuses[regime] == expected
+
+
+def test_base_developed_report_derives_its_conclusion_from_records():
+    """The developed_64 base conclusion is no longer hard-coded either."""
+    records = []
+    for regime, verdict in (("hopf", "indeterminate"), ("turing", "adequate")):
+        for step in (1, 2):
+            for kind in ("identity", "fft_diffusion"):
+                record = _synthetic_screen_record(regime, 0, kind, verdict, True)
+                del record["state_index"]
+                record["trajectory_step"] = step
+                record["developedness"] = {"max_abs_u_minus_steady": 0.1}
+                record["origin_enclosed"] = verdict == "indeterminate"
+                records.append(record)
+    summary = benchmark._result(benchmark.DEVELOPED_64, records)["hopf_vs_turing"]
+    assert summary["outcome"] == "developed_fft_regime_assessments_mixed"
+    assert summary["both_regimes_indeterminate"] is False
+    assert summary["turing_nonadequate_fft_records"] == 0
+    assert summary["turing_origin_enclosed_any"] is False

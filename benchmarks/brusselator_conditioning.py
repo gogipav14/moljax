@@ -682,6 +682,133 @@ def _records_for(records: list[dict[str, Any]], regime: str) -> list[dict[str, A
     return [r for r in records if r["regime"] == regime]
 
 
+_ABSTAINING_VERDICTS = frozenset({"indeterminate", "uncertified_at_cap", "skipped"})
+
+
+def _unresolved_record(record: dict[str, Any]) -> bool:
+    """Return whether a record abstains or rests on inconsistent FOV supports."""
+    return str(record["verdict"]) in _ABSTAINING_VERDICTS or not bool(
+        record.get("supports_consistent")
+    )
+
+
+def _fft_regime_status(rows: list[dict[str, Any]]) -> str:
+    """Classify one regime's FFT records as adequate, unresolved, or not_adequate."""
+    if rows and all(record["verdict"] == "adequate" for record in rows):
+        return "adequate"
+    if not rows or any(_unresolved_record(record) for record in rows):
+        return "unresolved"
+    return "not_adequate"
+
+
+def _hopf_vs_turing(
+    records: list[dict[str, Any]], study: str, *, scope_caveat: str | None = None
+) -> dict[str, Any]:
+    """Derive the mode-specific Hopf/Turing summary from the records' verdicts.
+
+    This is the single source of the ``hopf_vs_turing`` conclusion: the base
+    study report derives it from its raw records and the FOV-support resolver
+    rebuilds it from final-policy records, so neither can assert an outcome
+    the records do not support.
+    """
+    by_regime = {
+        regime: [
+            record
+            for record in records
+            if record["regime"] == regime and record["preconditioner"] == "fft_diffusion"
+        ]
+        for regime in ("hopf", "turing")
+    }
+    if study == "screen_64":
+        adequate = {
+            regime: sum(record["verdict"] == "adequate" for record in rows)
+            for regime, rows in by_regime.items()
+        }
+        status = {regime: _fft_regime_status(rows) for regime, rows in by_regime.items()}
+        both = all(value == "adequate" for value in status.values())
+        if both:
+            return {
+                "outcome": "both_adequate_under_fft",
+                "statement": (
+                    "The FFT diffusion preconditioner is assessed adequate for both "
+                    "visited-state regimes."
+                ),
+                "hopf_adequate_fft_records": adequate["hopf"],
+                "turing_adequate_fft_records": adequate["turing"],
+            }
+        unresolved = all(value == "unresolved" for value in status.values())
+        return {
+            "outcome": (
+                "fft_regime_assessments_unresolved"
+                if unresolved
+                else "fft_regime_assessments_mixed"
+            ),
+            "statement": (
+                "No visited-state regime is assessed adequate under the FFT diffusion "
+                "preconditioner: each regime has at least one unresolved FFT record "
+                "(abstaining verdict or inconsistent FOV supports). No adequacy "
+                "conclusion is drawn; see the per-regime statuses."
+                if unresolved
+                else "The FFT diffusion preconditioner has mixed outcomes across the "
+                "visited-state regimes; see the per-regime statuses."
+            ),
+            "hopf_adequate_fft_records": adequate["hopf"],
+            "turing_adequate_fft_records": adequate["turing"],
+            "fft_status_by_regime": status,
+            "unresolved_fft_records_by_regime": {
+                regime: sum(_unresolved_record(record) for record in rows)
+                for regime, rows in by_regime.items()
+            },
+        }
+    if study != "developed_64":
+        raise ValueError(f"Hopf/Turing comparison is not defined for {study}")
+    all_indeterminate = {
+        regime: bool(rows) and all(record["verdict"] == "indeterminate" for record in rows)
+        for regime, rows in by_regime.items()
+    }
+    both = all(all_indeterminate.values())
+    hopf_imaginary = sorted(by_regime["hopf"], key=lambda record: record["trajectory_step"])
+    summary = {
+        "outcome": (
+            "both_regimes_indeterminate_on_developed_states"
+            if both
+            else "developed_fft_regime_assessments_mixed"
+        ),
+        "statement": (
+            "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state "
+            "because their numerical ranges enclose the origin; Hopf still has the larger, "
+            "growing imaginary extent."
+            if both
+            else "The developed FFT-preconditioned regimes have mixed outcomes; "
+            "see the per-regime summaries."
+        ),
+        "hopf_nonadequate_fft_records": sum(
+            record["verdict"] != "adequate" for record in by_regime["hopf"]
+        ),
+        "turing_nonadequate_fft_records": sum(
+            record["verdict"] != "adequate" for record in by_regime["turing"]
+        ),
+        "hopf_origin_enclosed_any": any(
+            bool(record["origin_enclosed"]) for record in by_regime["hopf"]
+        ),
+        "turing_origin_enclosed_any": any(
+            bool(record["origin_enclosed"]) for record in by_regime["turing"]
+        ),
+        "both_regimes_indeterminate": both,
+        "hopf_fov_imaginary_extent_grows_over_samples": (
+            hopf_imaginary[-1]["fov_imaginary_extent"]
+            > hopf_imaginary[0]["fov_imaginary_extent"]
+        ),
+        "hopf_fov_imaginary_extent_by_time": [
+            {"time": record["time"], "fov_imaginary_extent": record["fov_imaginary_extent"]}
+            for record in hopf_imaginary
+        ],
+    }
+    if scope_caveat is not None:
+        summary["scope_caveat"] = scope_caveat
+    return summary
+
+
 def _fixed_row(record: dict[str, Any]) -> dict[str, Any]:
     gmres = record["actual_gmres"]
     return {
@@ -799,15 +926,9 @@ def _result(config: BrusselatorConditioningConfig, records: list[dict[str, Any]]
             "provenance": provenance,
             "records": records,
             "regime_comparison": comparison,
-            "hopf_vs_turing": {
-                "outcome": "both_adequate_under_fft",
-                "statement": "The FFT diffusion preconditioner is assessed adequate for both visited-state regimes; the larger Hopf imaginary extent is recorded, but it does not change the decision verdict.",
-            },
+            "hopf_vs_turing": _hopf_vs_turing(records, config.mode),
         }
     if config.mode == "developed_64":
-        hopf = comparison["hopf"]
-        turing = comparison["turing"]
-        hopf_imaginary = hopf["fov_imaginary_extent_by_time"]
         config_json.pop("n_states", None)
         return {
             "schema_version": "brusselator_conditioning_developed_v1",
@@ -817,21 +938,11 @@ def _result(config: BrusselatorConditioningConfig, records: list[dict[str, Any]]
             "provenance": provenance,
             "records": records,
             "regime_comparison": comparison,
-            "hopf_vs_turing": {
-                "outcome": "both_regimes_indeterminate_on_developed_states",
-                "statement": "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state because their numerical ranges enclose the origin; Hopf still has the larger, growing imaginary extent.",
-                "hopf_nonadequate_fft_records": hopf["fft_records"],
-                "turing_nonadequate_fft_records": turing["fft_records"],
-                "hopf_origin_enclosed_any": True,
-                "turing_origin_enclosed_any": True,
-                "both_regimes_indeterminate": True,
-                "hopf_fov_imaginary_extent_grows_over_samples": hopf_imaginary[-1][
-                    "fov_imaginary_extent"
-                ]
-                > hopf_imaginary[0]["fov_imaginary_extent"],
-                "hopf_fov_imaginary_extent_by_time": hopf_imaginary,
-                "scope_caveat": "This is a 64x64 screen with BE dt=1; Hopf reaches t=20 and Turing reaches t=200, below the 256x256 target scale. The FOV values use the dt=1 BE operator.",
-            },
+            "hopf_vs_turing": _hopf_vs_turing(
+                records,
+                config.mode,
+                scope_caveat="This is a 64x64 screen with BE dt=1; Hopf reaches t=20 and Turing reaches t=200, below the 256x256 target scale. The FOV values use the dt=1 BE operator.",
+            ),
         }
     model["domain_length"] = 5.0
     model["spatial_operator"] = "moljax shipped periodic pseudo-spectral FFT path"
