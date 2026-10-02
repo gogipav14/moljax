@@ -69,6 +69,7 @@
   },
   "hopf_vs_turing": {
     "both_regimes_indeterminate": true,
+    "fft_origin_enclosure_corroborated": true,
     "hopf_fov_imaginary_extent_by_time": [
       {
         "fov_imaginary_extent": 3.8731383854560058,
@@ -83,12 +84,27 @@
         "time": 20.0
       }
     ],
+    "hopf_fov_imaginary_extent_exceeds_turing_at_every_sample": false,
     "hopf_fov_imaginary_extent_grows_over_samples": true,
     "hopf_nonadequate_fft_records": 3,
     "hopf_origin_enclosed_any": true,
     "outcome": "both_regimes_indeterminate_on_developed_states",
     "scope_caveat": "This is a 64x64 screen with BE dt=1; Hopf reaches t=20 and Turing reaches t=200, below the 256x256 target scale. The FOV values use the dt=1 BE operator.",
-    "statement": "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state in this screen. The corroborated FOV diagnostics enclose the origin, while Hopf still has the larger, growing imaginary extent.",
+    "statement": "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state in this screen. The corroborated FOV diagnostics enclose the origin at every sampled FFT-preconditioned state. The Hopf imaginary extent grows over the samples, but it is not larger than the Turing extent at every sample.",
+    "turing_fov_imaginary_extent_by_time": [
+      {
+        "fov_imaginary_extent": 2.074772083768136,
+        "time": 80.0
+      },
+      {
+        "fov_imaginary_extent": 1.8793038523878514,
+        "time": 120.0
+      },
+      {
+        "fov_imaginary_extent": 7.118225889076039,
+        "time": 200.0
+      }
+    ],
     "turing_nonadequate_fft_records": 3,
     "turing_origin_enclosed_any": true
   },

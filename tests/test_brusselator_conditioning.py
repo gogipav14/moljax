@@ -1536,3 +1536,143 @@ def test_base_developed_report_derives_its_conclusion_from_records():
     assert summary["both_regimes_indeterminate"] is False
     assert summary["turing_nonadequate_fft_records"] == 0
     assert summary["turing_origin_enclosed_any"] is False
+
+
+def _developed_fft_records(enclosed, consistent, extents):
+    """Indeterminate developed_64 FFT records with the given geometry and extents."""
+    return [
+        {
+            "regime": regime,
+            "preconditioner": "fft_diffusion",
+            "verdict": "indeterminate",
+            "supports_consistent": consistent[regime],
+            "origin_enclosed": enclosed[regime],
+            "n_right_real_outliers": None,
+            "trajectory_step": step,
+            "time": float(step),
+            "fov_imaginary_extent": extent,
+        }
+        for regime in ("hopf", "turing")
+        for step, extent in enumerate(extents[regime], start=1)
+    ]
+
+
+def test_developed_report_does_not_claim_enclosure_or_extent_without_evidence():
+    """Review reproduction: unresolved geometry and equal constant extents."""
+    records = _developed_fft_records(
+        {"hopf": False, "turing": False},
+        {"hopf": False, "turing": False},
+        {"hopf": (1.0, 1.0, 1.0), "turing": (1.0, 1.0, 1.0)},
+    )
+    summary = benchmark._hopf_vs_turing(records, "developed_64")
+    assert summary["both_regimes_indeterminate"] is True
+    assert summary["fft_origin_enclosure_corroborated"] is False
+    assert summary["hopf_fov_imaginary_extent_exceeds_turing_at_every_sample"] is False
+    assert summary["hopf_fov_imaginary_extent_grows_over_samples"] is False
+    assert "corroborated FOV diagnostics enclose" not in summary["statement"]
+    assert "unresolved" in summary["statement"]
+    assert "larger" not in summary["statement"]
+    assert "neither exceeds" in summary["statement"]
+
+
+@pytest.mark.parametrize(
+    ("enclosed", "consistent"),
+    [
+        ({"hopf": True, "turing": False}, {"hopf": True, "turing": True}),
+        ({"hopf": True, "turing": True}, {"hopf": True, "turing": False}),
+    ],
+)
+def test_developed_report_needs_every_record_for_the_enclosure_claim(enclosed, consistent):
+    records = _developed_fft_records(
+        enclosed, consistent, {"hopf": (3.0, 4.0, 5.0), "turing": (1.0, 2.0, 2.5)}
+    )
+    summary = benchmark._hopf_vs_turing(records, "developed_64")
+    assert summary["fft_origin_enclosure_corroborated"] is False
+    assert "corroborated FOV diagnostics enclose" not in summary["statement"]
+    assert summary["statement"].endswith(
+        "Hopf has the larger imaginary extent at every sample, and its extent grows "
+        "over the samples."
+    )
+
+
+@pytest.mark.parametrize(
+    ("extents", "larger", "grows", "ending"),
+    [
+        ({"hopf": (3.0, 4.0, 5.0), "turing": (1.0, 2.0, 2.5)}, True, True, "grows over the samples."),
+        ({"hopf": (5.0, 4.0, 3.0), "turing": (1.0, 2.0, 2.5)}, True, False, "does not grow over the samples."),
+        ({"hopf": (3.0, 4.0, 5.0), "turing": (1.0, 2.0, 7.0)}, False, True, "not larger than the Turing extent at every sample."),
+        ({"hopf": (3.0, 3.0, 3.0), "turing": (3.0, 3.0, 3.0)}, False, False, "nor grows over the samples."),
+    ],
+)
+def test_developed_report_derives_each_extent_claim(extents, larger, grows, ending):
+    both = {"hopf": True, "turing": True}
+    summary = benchmark._hopf_vs_turing(
+        _developed_fft_records(both, both, extents), "developed_64"
+    )
+    assert summary["fft_origin_enclosure_corroborated"] is True
+    assert "The corroborated FOV diagnostics enclose the origin" in summary["statement"]
+    assert summary["hopf_fov_imaginary_extent_exceeds_turing_at_every_sample"] is larger
+    assert summary["hopf_fov_imaginary_extent_grows_over_samples"] is grows
+    assert summary["statement"].endswith(ending)
+
+
+def test_committed_developed_report_states_only_supported_claims():
+    """All 6 FFT records enclose with consistent supports; Turing t=200 has the max extent."""
+    summary = _resolved_reports()["developed_64"]["hopf_vs_turing"]
+    assert summary["fft_origin_enclosure_corroborated"] is True
+    assert summary["hopf_fov_imaginary_extent_grows_over_samples"] is True
+    assert summary["hopf_fov_imaginary_extent_exceeds_turing_at_every_sample"] is False
+    assert "not larger than the Turing extent" in summary["statement"]
+
+
+def _fixed_dt_records(verdicts):
+    """Two-regime fixed_dt records from ``{regime: (early, developed)}`` verdicts."""
+    return [
+        {
+            "regime": regime,
+            "preconditioner": kind,
+            "trajectory_step": step,
+            "time": float(step),
+            "developedness": {},
+            "verdict": verdict,
+            "disk_rate": 0.5,
+            "epsilon_zero": 0.5,
+            "origin_enclosed": False,
+            "fov_imaginary_extent": 0.1,
+            "n_right_real_outliers": 0,
+            "adjoint_error": 0.0,
+            "actual_gmres": None,
+        }
+        for regime, (early, developed) in verdicts.items()
+        for kind in ("identity", "fft_diffusion")
+        for step, verdict in ((1, early), (2, developed))
+    ]
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "outcome", "phrase"),
+    [
+        (
+            {"hopf": ("indeterminate",) * 2, "turing": ("indeterminate",) * 2},
+            "no_fft_adequate_to_indeterminate_transition_at_fixed_dt",
+            "no FFT-preconditioned regime changes",
+        ),
+        (
+            {"hopf": ("adequate", "adequate"), "turing": ("adequate", "indeterminate")},
+            "fft_adequate_to_indeterminate_in_one_regime_at_fixed_dt",
+            "at least one FFT-preconditioned regime changes",
+        ),
+        (
+            {"hopf": ("adequate", "indeterminate"), "turing": ("adequate", "indeterminate")},
+            "fft_adequate_to_indeterminate_in_both_regimes_at_fixed_dt",
+            "in both regimes",
+        ),
+    ],
+)
+def test_fixed_dt_summary_counts_its_transitions(verdicts, outcome, phrase):
+    """Review reproduction: zero transitions were reported as one."""
+    summary = benchmark._fixed_transition(
+        _fixed_dt_records(verdicts), benchmark.PRESETS["fixed_dt_256"]
+    )
+    assert summary["outcome"] == outcome
+    assert phrase in summary["statement"]

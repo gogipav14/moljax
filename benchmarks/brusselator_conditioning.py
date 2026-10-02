@@ -768,6 +768,56 @@ def _hopf_vs_turing(
     }
     both = all(all_indeterminate.values())
     hopf_imaginary = sorted(by_regime["hopf"], key=lambda record: record["trajectory_step"])
+    turing_imaginary = sorted(
+        by_regime["turing"], key=lambda record: record["trajectory_step"]
+    )
+    hopf_extents = [float(record["fov_imaginary_extent"]) for record in hopf_imaginary]
+    turing_extents = [float(record["fov_imaginary_extent"]) for record in turing_imaginary]
+    # Each statement needs its own evidence.  Enclosure is corroborated only
+    # when every FFT record of both regimes has consistent supports and an
+    # origin-enclosing FOV; an indeterminate verdict alone can also mean an
+    # invalid reading or failed supports.  The sample times differ between
+    # the regimes, so "larger" means larger than every Turing sample, and
+    # "grows" means strictly increasing over the Hopf samples.
+    enclosure_corroborated = bool(hopf_imaginary) and bool(turing_imaginary) and all(
+        record.get("supports_consistent") is True and record.get("origin_enclosed") is True
+        for record in hopf_imaginary + turing_imaginary
+    )
+    hopf_extent_larger = (
+        bool(hopf_extents)
+        and bool(turing_extents)
+        and min(hopf_extents) > max(turing_extents)
+    )
+    hopf_extent_grows = len(hopf_extents) >= 2 and all(
+        later > earlier for earlier, later in zip(hopf_extents[:-1], hopf_extents[1:], strict=True)
+    )
+    if hopf_extent_larger and hopf_extent_grows:
+        extent_statement = (
+            "Hopf has the larger imaginary extent at every sample, and its extent grows "
+            "over the samples."
+        )
+    elif hopf_extent_larger:
+        extent_statement = (
+            "Hopf has the larger imaginary extent at every sample, but its extent does not "
+            "grow over the samples."
+        )
+    elif hopf_extent_grows:
+        extent_statement = (
+            "The Hopf imaginary extent grows over the samples, but it is not larger than "
+            "the Turing extent at every sample."
+        )
+    else:
+        extent_statement = (
+            "The Hopf imaginary extent neither exceeds the Turing extent at every sample "
+            "nor grows over the samples."
+        )
+    enclosure_statement = (
+        "The corroborated FOV diagnostics enclose the origin at every sampled "
+        "FFT-preconditioned state."
+        if enclosure_corroborated
+        else "The FOV diagnostics do not show a corroborated origin enclosure at every "
+        "sampled state, so the cause of the abstention is unresolved."
+    )
     summary = {
         "outcome": (
             "both_regimes_indeterminate_on_developed_states"
@@ -776,12 +826,12 @@ def _hopf_vs_turing(
         ),
         "statement": (
             "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state "
-            "in this screen. The corroborated FOV diagnostics enclose the origin, while "
-            "Hopf still has the larger, growing imaginary extent."
+            f"in this screen. {enclosure_statement} {extent_statement}"
             if both
             else "The developed FFT-preconditioned regimes have mixed outcomes; "
             "see the per-regime summaries."
         ),
+        "fft_origin_enclosure_corroborated": enclosure_corroborated,
         "hopf_nonadequate_fft_records": sum(
             record["verdict"] != "adequate" for record in by_regime["hopf"]
         ),
@@ -795,13 +845,15 @@ def _hopf_vs_turing(
             bool(record["origin_enclosed"]) for record in by_regime["turing"]
         ),
         "both_regimes_indeterminate": both,
-        "hopf_fov_imaginary_extent_grows_over_samples": (
-            hopf_imaginary[-1]["fov_imaginary_extent"]
-            > hopf_imaginary[0]["fov_imaginary_extent"]
-        ),
+        "hopf_fov_imaginary_extent_grows_over_samples": hopf_extent_grows,
+        "hopf_fov_imaginary_extent_exceeds_turing_at_every_sample": hopf_extent_larger,
         "hopf_fov_imaginary_extent_by_time": [
             {"time": record["time"], "fov_imaginary_extent": record["fov_imaginary_extent"]}
             for record in hopf_imaginary
+        ],
+        "turing_fov_imaginary_extent_by_time": [
+            {"time": record["time"], "fov_imaginary_extent": record["fov_imaginary_extent"]}
+            for record in turing_imaginary
         ],
     }
     if scope_caveat is not None:
@@ -855,7 +907,7 @@ def _fixed_transition(
                 and developed["verdict"] == "indeterminate",
             }
     transitions = [result[name]["fft_diffusion"]["adequate_to_indeterminate"] for name in result]
-    both = all(transitions)
+    n_transitions = sum(bool(value) for value in transitions)
     if len(transitions) == 1:
         transitioned = transitions[0]
         return {
@@ -873,17 +925,25 @@ def _fixed_transition(
             "same_discretized_operator_family": "Every early/developed pair uses the same periodic grid, shipped FFT preconditioner, and backward-Euler timestep. The state-dependent Jacobian changes between visited states by design; no comparison changes dt.",
             "by_regime": result,
         }
+    # Two regimes: select the claim from the number of adequate-to-
+    # indeterminate transitions (0, 1, or 2), never from "not both".
+    outcome, statement = {
+        2: (
+            "fft_adequate_to_indeterminate_in_both_regimes_at_fixed_dt",
+            "At fixed backward-Euler dt, the FFT-preconditioned verdict changes from adequate at the early state to indeterminate at the developed state in both regimes.",
+        ),
+        1: (
+            "fft_adequate_to_indeterminate_in_one_regime_at_fixed_dt",
+            "At fixed backward-Euler dt, at least one FFT-preconditioned regime changes from adequate early to indeterminate after its state develops; see the per-regime rows.",
+        ),
+        0: (
+            "no_fft_adequate_to_indeterminate_transition_at_fixed_dt",
+            "At fixed backward-Euler dt, no FFT-preconditioned regime changes from adequate at the early state to indeterminate at the developed state; see the per-regime rows.",
+        ),
+    }[n_transitions]
     return {
-        "outcome": (
-            "fft_adequate_to_indeterminate_in_both_regimes_at_fixed_dt"
-            if both
-            else "fft_adequate_to_indeterminate_in_one_regime_at_fixed_dt"
-        ),
-        "statement": (
-            "At fixed backward-Euler dt, the FFT-preconditioned verdict changes from adequate at the early state to indeterminate at the developed state in both regimes."
-            if both
-            else "At fixed backward-Euler dt, at least one FFT-preconditioned regime changes from adequate early to indeterminate after its state develops; see the per-regime rows."
-        ),
+        "outcome": outcome,
+        "statement": statement,
         "fixed_dt": config.dt,
         "same_discretized_operator_family": "Every early/developed pair uses the same periodic grid, shipped FFT preconditioner, and backward-Euler timestep. The state-dependent Jacobian changes between visited states by design; no comparison changes dt.",
         "by_regime": result,
