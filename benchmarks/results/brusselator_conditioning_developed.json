@@ -1,0 +1,4912 @@
+{
+  "config": {
+    "arnoldi_steps": 6,
+    "compute_lobpcg_upper_estimate": true,
+    "dt": 1.0,
+    "fov_max_iters": 8,
+    "fov_n_restarts": 2,
+    "fov_residual_tolerance": 0.001,
+    "hopf_sample_steps": [
+      1,
+      10,
+      20
+    ],
+    "krylov_tol": 1e-08,
+    "max_krylov_iters": 100,
+    "max_newton_iters": 15,
+    "n_angles": 4,
+    "newton_tol": 1e-08,
+    "nx": 64,
+    "ny": 64,
+    "output_path": "benchmarks/results/brusselator_conditioning_developed.json",
+    "perturbation": 0.001,
+    "record_checkpoint_path": "/tmp/moljax-brusselator-stage2-d4047f3-v4-r1/record_checkpoints/developed_64.json",
+    "seed": 20260822,
+    "source_state_cache_dir": "/tmp/moljax-brusselator-stage2-d4047f3-v4-r1/source_states",
+    "turing_sample_steps": [
+      80,
+      120,
+      200
+    ]
+  },
+  "geometry_resolution": {
+    "base_budget": {
+      "fov_max_iters": 8,
+      "fov_n_restarts": 2,
+      "n_angles": 4
+    },
+    "certifying_budget_counts": {
+      "32/120/2": 11
+    },
+    "description": "Each initially unresolved FOV geometry was reassessed from its persisted, SHA256-validated v4 source state.  A final category requires consistent supports; records unresolved at 96/240/2 are UNCERTIFIED_AT_CAP rather than interpreted as origin-enclosure evidence.",
+    "escalation_ladder": [
+      {
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "n_angles": 32
+      },
+      {
+        "fov_max_iters": 180,
+        "fov_n_restarts": 2,
+        "n_angles": 64
+      },
+      {
+        "fov_max_iters": 240,
+        "fov_n_restarts": 2,
+        "n_angles": 96
+      }
+    ],
+    "final_category_counts": {
+      "adequate": 0,
+      "indeterminate": 11,
+      "investigate": 0,
+      "provisional": 0,
+      "uncertified_at_cap": 1
+    },
+    "uncertified_at_cap_reason_counts": {
+      "support_not_converged": 1
+    }
+  },
+  "hopf_vs_turing": {
+    "both_regimes_indeterminate": true,
+    "fft_origin_enclosure_corroborated": true,
+    "hopf_fov_imaginary_extent_by_time": [
+      {
+        "fov_imaginary_extent": 3.8731383854560058,
+        "time": 1.0
+      },
+      {
+        "fov_imaginary_extent": 4.410777209956099,
+        "time": 10.0
+      },
+      {
+        "fov_imaginary_extent": 4.8080482794863695,
+        "time": 20.0
+      }
+    ],
+    "hopf_fov_imaginary_extent_exceeds_turing_at_every_sample": false,
+    "hopf_fov_imaginary_extent_grows_over_samples": true,
+    "hopf_nonadequate_fft_records": 3,
+    "hopf_origin_enclosed_any": true,
+    "outcome": "both_regimes_indeterminate_on_developed_states",
+    "scope_caveat": "This is a 64x64 screen with BE dt=1; Hopf reaches t=20 and Turing reaches t=200, below the 256x256 target scale. The FOV values use the dt=1 BE operator.",
+    "statement": "Both evolved regimes are indeterminate at every sampled FFT-preconditioned state in this screen. The corroborated FOV diagnostics enclose the origin at every sampled FFT-preconditioned state. The Hopf imaginary extent grows over the samples, but it is not larger than the Turing extent at every sample.",
+    "turing_fov_imaginary_extent_by_time": [
+      {
+        "fov_imaginary_extent": 2.074772083768136,
+        "time": 80.0
+      },
+      {
+        "fov_imaginary_extent": 1.8793038523878514,
+        "time": 120.0
+      },
+      {
+        "fov_imaginary_extent": 7.118225889076039,
+        "time": 200.0
+      }
+    ],
+    "turing_nonadequate_fft_records": 3,
+    "turing_origin_enclosed_any": true
+  },
+  "model": {
+    "boundary": "periodic",
+    "diagnostic_preconditioners": [
+      "identity",
+      "fft_diffusion"
+    ],
+    "exact_solution_error": "not applicable: conditioning study",
+    "grid": [
+      64,
+      64
+    ],
+    "name": "brusselator",
+    "spatial_operator": "moljax shipped periodic FFT-preconditioned path",
+    "state_generation": "backward_euler_newton_krylov"
+  },
+  "provenance": {
+    "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+    "base_revision_source": "merge-base-upstream",
+    "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3"
+  },
+  "records": [
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": false,
+        "final_relative_residual": 9.398489645994211e-07,
+        "iterations": 101,
+        "operator_dimension": 8712,
+        "preconditioner": "identity",
+        "regime": "hopf"
+      },
+      "adjoint_error": 3.1031676915590914e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.003968178253266341,
+        "max_abs_v_minus_steady": 0.004632581893806886
+      },
+      "disk_rate": 1.2311506144772506,
+      "epsilon_zero": 0.3484979505661231,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.08911031809647282,
+        "c": 7.610308465641512,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.008115508556702919,
+        "interior_lower_bound": 0.06229445003326583,
+        "k0_feature_center": [
+          6.800278437179671,
+          1.0004239928334304
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 0.026815868063206995,
+        "selected_k0": "minimax",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "daffd30a5eda0617a332ed17f36c43d51f3403bd6756d91cb99e1cbc06b226d1"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 4.397486556873549,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 3.1031676915590914e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.2311506144772506,
+              "epsilon_zero": 0.3484979505661231,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.08911031809647282,
+                "c": 7.610308465641512,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.008115508556702919,
+                "interior_lower_bound": 0.06229445003326583,
+                "k0_feature_center": [
+                  6.800278437179671,
+                  1.0004239928334304
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 0.026815868063206995,
+                "selected_k0": "minimax",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "daffd30a5eda0617a332ed17f36c43d51f3403bd6756d91cb99e1cbc06b226d1"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 4.397486556873549,
+              "lobpcg_sigma_min_upper_estimate": 0.999993319679718,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.2311506144772506,
+                "r2": 1.0,
+                "r3": 0.9715458912241178,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.3484979505661231,
+              "regime": "hopf",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 3.1031676915590914e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 1.2311506144772506,
+            "epsilon_zero": 0.3484979505661231,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.08911031809647282,
+              "c": 7.610308465641512,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.008115508556702919,
+              "interior_lower_bound": 0.06229445003326583,
+              "k0_feature_center": [
+                6.800278437179671,
+                1.0004239928334304
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 0.026815868063206995,
+              "selected_k0": "minimax",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "daffd30a5eda0617a332ed17f36c43d51f3403bd6756d91cb99e1cbc06b226d1"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 4.397486556873549,
+            "lobpcg_sigma_min_upper_estimate": 0.999993319679718,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "identity",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.2311506144772506,
+              "r2": 1.0,
+              "r3": 0.9715458912241178,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.3484979505661231,
+            "regime": "hopf",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.999993319679718,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "identity",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 1.2311506144772506,
+        "r2": 1.0,
+        "r3": 0.9715458912241178,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20260832,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "identity",
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.3484979505661231,
+      "regime": "hopf",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "sample_position": 0,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "1618afdf56ffd65a28965e2849377f263fbce12ddd8aeffb3ac4c248ba968eda"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 1.0,
+      "trajectory_step": 1,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 9.646338312773008e-09,
+        "iterations": 37,
+        "operator_dimension": 8712,
+        "preconditioner": "fft_diffusion",
+        "regime": "hopf"
+      },
+      "adjoint_error": 9.540979117872439e-18,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.003968178253266341,
+        "max_abs_v_minus_steady": 0.004632581893806886
+      },
+      "disk_rate": 5.239955963089339,
+      "epsilon_zero": 0.19074940563307538,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.08911031809647282,
+        "c": 7.610308465641512,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.008115508556702919,
+        "interior_lower_bound": 0.06229445003326583,
+        "k0_feature_center": [
+          6.800278437179671,
+          1.0004239928334304
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 0.026815868063206995,
+        "selected_k0": "minimax",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "daffd30a5eda0617a332ed17f36c43d51f3403bd6756d91cb99e1cbc06b226d1"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 3.8731383854560058,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 9.540979117872439e-18,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 5.239955963089339,
+              "epsilon_zero": 0.19074940563307538,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.08911031809647282,
+                "c": 7.610308465641512,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.008115508556702919,
+                "interior_lower_bound": 0.06229445003326583,
+                "k0_feature_center": [
+                  6.800278437179671,
+                  1.0004239928334304
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 0.026815868063206995,
+                "selected_k0": "minimax",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "daffd30a5eda0617a332ed17f36c43d51f3403bd6756d91cb99e1cbc06b226d1"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 3.8731383854560058,
+              "lobpcg_sigma_min_upper_estimate": 0.7148556039174988,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "fft_diffusion",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 5.239955963089339,
+                "r2": 1.0,
+                "r3": 1.9211141288962843,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.19074940563307538,
+              "regime": "hopf",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 9.540979117872439e-18,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 5.239955963089339,
+            "epsilon_zero": 0.19074940563307538,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.08911031809647282,
+              "c": 7.610308465641512,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.008115508556702919,
+              "interior_lower_bound": 0.06229445003326583,
+              "k0_feature_center": [
+                6.800278437179671,
+                1.0004239928334304
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 0.026815868063206995,
+              "selected_k0": "minimax",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "daffd30a5eda0617a332ed17f36c43d51f3403bd6756d91cb99e1cbc06b226d1"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 3.8731383854560058,
+            "lobpcg_sigma_min_upper_estimate": 0.7148556039174988,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "fft_diffusion",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 5.239955963089339,
+              "r2": 1.0,
+              "r3": 1.9211141288962843,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.19074940563307538,
+            "regime": "hopf",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.7148556039174988,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "fft_diffusion",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 5.239955963089339,
+        "r2": 1.0,
+        "r3": 1.9211141288962843,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20260832,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "fft_diffusion",
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.19074940563307538,
+      "regime": "hopf",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "sample_position": 0,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "1618afdf56ffd65a28965e2849377f263fbce12ddd8aeffb3ac4c248ba968eda"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 1.0,
+      "trajectory_step": 1,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": false,
+        "final_relative_residual": 3.4599532333880204e-07,
+        "iterations": 101,
+        "operator_dimension": 8712,
+        "preconditioner": "identity",
+        "regime": "hopf"
+      },
+      "adjoint_error": 3.1031676915590914e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.933191843903727,
+        "max_abs_v_minus_steady": 1.2354257644796283
+      },
+      "disk_rate": 1.311144223892017,
+      "epsilon_zero": 0.5203312332982524,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.08903701188138323,
+        "c": 8.361308744317835,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          6.8,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 4.577886830546621,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "1e4880034e31500eb40155d75de8b51ef043b7477de2926ffee41f285a77da4a"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 6.047098747064084,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 3.1031676915590914e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.311144223892017,
+              "epsilon_zero": 0.5203312332982524,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.08903701188138323,
+                "c": 8.361308744317835,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  6.8,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 4.577886830546621,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "1e4880034e31500eb40155d75de8b51ef043b7477de2926ffee41f285a77da4a"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 6.047098747064084,
+              "lobpcg_sigma_min_upper_estimate": 0.9650794170851109,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.311144223892017,
+                "r2": 1.0,
+                "r3": 0.9576294919219085,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.5203312332982524,
+              "regime": "hopf",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 3.1031676915590914e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 1.311144223892017,
+            "epsilon_zero": 0.5203312332982524,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.08903701188138323,
+              "c": 8.361308744317835,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                6.8,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 4.577886830546621,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "1e4880034e31500eb40155d75de8b51ef043b7477de2926ffee41f285a77da4a"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 6.047098747064084,
+            "lobpcg_sigma_min_upper_estimate": 0.9650794170851109,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "identity",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.311144223892017,
+              "r2": 1.0,
+              "r3": 0.9576294919219085,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.5203312332982524,
+            "regime": "hopf",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.9650794170851109,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "identity",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 1.311144223892017,
+        "r2": 1.0,
+        "r3": 0.9576294919219085,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20260922,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "identity",
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.5203312332982524,
+      "regime": "hopf",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "sample_position": 1,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "9d8fd152c4c339f78c522a4a0951149f04488bac9036bda96a369d22ac2b9a1d"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 10.0,
+      "trajectory_step": 10,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 7.722843839869908e-09,
+        "iterations": 50,
+        "operator_dimension": 8712,
+        "preconditioner": "fft_diffusion",
+        "regime": "hopf"
+      },
+      "adjoint_error": 5.553824967135427e-18,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.933191843903727,
+        "max_abs_v_minus_steady": 1.2354257644796283
+      },
+      "disk_rate": 7.028184191977266,
+      "epsilon_zero": 0.3821214809042213,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.08903701188138323,
+        "c": 8.361308744317835,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          6.8,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 4.577886830546621,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "1e4880034e31500eb40155d75de8b51ef043b7477de2926ffee41f285a77da4a"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 4.410777209956099,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 5.553824967135427e-18,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 7.028184191977266,
+              "epsilon_zero": 0.3821214809042213,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.08903701188138323,
+                "c": 8.361308744317835,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  6.8,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 4.577886830546621,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "1e4880034e31500eb40155d75de8b51ef043b7477de2926ffee41f285a77da4a"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 4.410777209956099,
+              "lobpcg_sigma_min_upper_estimate": 0.6857103298300997,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "fft_diffusion",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 7.028184191977266,
+                "r2": 1.0,
+                "r3": 2.356629192572637,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.3821214809042213,
+              "regime": "hopf",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 5.553824967135427e-18,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 7.028184191977266,
+            "epsilon_zero": 0.3821214809042213,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.08903701188138323,
+              "c": 8.361308744317835,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                6.8,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 4.577886830546621,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "1e4880034e31500eb40155d75de8b51ef043b7477de2926ffee41f285a77da4a"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 4.410777209956099,
+            "lobpcg_sigma_min_upper_estimate": 0.6857103298300997,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "fft_diffusion",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 7.028184191977266,
+              "r2": 1.0,
+              "r3": 2.356629192572637,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.3821214809042213,
+            "regime": "hopf",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.6857103298300997,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "fft_diffusion",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 7.028184191977266,
+        "r2": 1.0,
+        "r3": 2.356629192572637,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20260922,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "fft_diffusion",
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.3821214809042213,
+      "regime": "hopf",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "sample_position": 1,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "9d8fd152c4c339f78c522a4a0951149f04488bac9036bda96a369d22ac2b9a1d"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 10.0,
+      "trajectory_step": 10,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 8.799319231989338e-09,
+        "iterations": 91,
+        "operator_dimension": 8712,
+        "preconditioner": "identity",
+        "regime": "hopf"
+      },
+      "adjoint_error": 1.3877787807814457e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 1.201920009674804,
+        "max_abs_v_minus_steady": 1.4275218999892763
+      },
+      "disk_rate": 1.3205866981981649,
+      "epsilon_zero": 0.5998486667910601,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.08903701188138323,
+        "c": 9.060467631909978,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          6.8,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 6.16077534001694,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "61416d5093b53fcef78ade7fcfcef984bffeb1f2c780b559e44c6b6a36eda693"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 6.562856236221809,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 1.3877787807814457e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.3205866981981649,
+              "epsilon_zero": 0.5998486667910601,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.08903701188138323,
+                "c": 9.060467631909978,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  6.8,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 6.16077534001694,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "61416d5093b53fcef78ade7fcfcef984bffeb1f2c780b559e44c6b6a36eda693"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 6.562856236221809,
+              "lobpcg_sigma_min_upper_estimate": 0.9596020742715481,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.3205866981981649,
+                "r2": 1.0,
+                "r3": 0.9512361586853173,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.5998486667910601,
+              "regime": "hopf",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 1.3877787807814457e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 1.3205866981981649,
+            "epsilon_zero": 0.5998486667910601,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.08903701188138323,
+              "c": 9.060467631909978,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                6.8,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 6.16077534001694,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "61416d5093b53fcef78ade7fcfcef984bffeb1f2c780b559e44c6b6a36eda693"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 6.562856236221809,
+            "lobpcg_sigma_min_upper_estimate": 0.9596020742715481,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "identity",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.3205866981981649,
+              "r2": 1.0,
+              "r3": 0.9512361586853173,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.5998486667910601,
+            "regime": "hopf",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.9596020742715481,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "identity",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 1.3205866981981649,
+        "r2": 1.0,
+        "r3": 0.9512361586853173,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20261022,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "identity",
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.5998486667910601,
+      "regime": "hopf",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "sample_position": 2,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "d1990975ef82a2523bde340d3a584dc053c1221c1ba368a80ce5a10962ee9936"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 20.0,
+      "trajectory_step": 20,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 7.800349721916454e-09,
+        "iterations": 39,
+        "operator_dimension": 8712,
+        "preconditioner": "fft_diffusion",
+        "regime": "hopf"
+      },
+      "adjoint_error": 1.2212564154686428e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 1.201920009674804,
+        "max_abs_v_minus_steady": 1.4275218999892763
+      },
+      "disk_rate": 7.128944628328338,
+      "epsilon_zero": 0.4219316439060522,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.08903701188138323,
+        "c": 9.060467631909978,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          6.8,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 6.16077534001694,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "61416d5093b53fcef78ade7fcfcef984bffeb1f2c780b559e44c6b6a36eda693"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 4.8080482794863695,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 1.2212564154686428e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 7.128944628328338,
+              "epsilon_zero": 0.4219316439060522,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.08903701188138323,
+                "c": 9.060467631909978,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  6.8,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 6.16077534001694,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "61416d5093b53fcef78ade7fcfcef984bffeb1f2c780b559e44c6b6a36eda693"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 4.8080482794863695,
+              "lobpcg_sigma_min_upper_estimate": 0.33871815259711147,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "fft_diffusion",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 7.128944628328338,
+                "r2": 1.0,
+                "r3": 2.0238250551436816,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.4219316439060522,
+              "regime": "hopf",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 1.2212564154686428e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 7.128944628328338,
+            "epsilon_zero": 0.4219316439060522,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.08903701188138323,
+              "c": 9.060467631909978,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                6.8,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 6.16077534001694,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "61416d5093b53fcef78ade7fcfcef984bffeb1f2c780b559e44c6b6a36eda693"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 4.8080482794863695,
+            "lobpcg_sigma_min_upper_estimate": 0.33871815259711147,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "fft_diffusion",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 7.128944628328338,
+              "r2": 1.0,
+              "r3": 2.0238250551436816,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.4219316439060522,
+            "regime": "hopf",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.33871815259711147,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "fft_diffusion",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 7.128944628328338,
+        "r2": 1.0,
+        "r3": 2.0238250551436816,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20261022,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "fft_diffusion",
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.4219316439060522,
+      "regime": "hopf",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 3.4,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.02,
+            "name": "hopf",
+            "reference_final_time": 50.0
+          },
+          "sample_steps": [
+            1,
+            10,
+            20
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260822,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "sample_position": 2,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "d1990975ef82a2523bde340d3a584dc053c1221c1ba368a80ce5a10962ee9936"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 20.0,
+      "trajectory_step": 20,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 8.900800256917988e-09,
+        "iterations": 80,
+        "operator_dimension": 8712,
+        "preconditioner": "identity",
+        "regime": "turing"
+      },
+      "adjoint_error": 2.0014830212433607e-16,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.01777610331316659,
+        "max_abs_v_minus_steady": 0.007574502172529751
+      },
+      "disk_rate": 1.0063239731346114,
+      "epsilon_zero": 0.10983041979217503,
+      "epsilon_zero_full_operator_evidence": true,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.5517071968653876,
+        "c": 4.114317652374206,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.10983041979217503,
+        "interior_lower_bound": 0.46770605613546623,
+        "k0_feature_center": [
+          3.598667182826175,
+          0.999770273999077
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 0.08400114072992139,
+        "selected_k0": "minimax",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "f0931ea3f0545f69fa0874d1e2b2602228cd7c49154c9ed6426e4700e31a589d"
+        },
+        "status": "clears_adequacy_gate"
+      },
+      "fov_imaginary_extent": 2.493030258262886,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 2.0014830212433607e-16,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.0063239731346114,
+              "epsilon_zero": 0.10983041979217503,
+              "epsilon_zero_full_operator_evidence": true,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5517071968653876,
+                "c": 4.114317652374206,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.10983041979217503,
+                "interior_lower_bound": 0.46770605613546623,
+                "k0_feature_center": [
+                  3.598667182826175,
+                  0.999770273999077
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 0.08400114072992139,
+                "selected_k0": "minimax",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "f0931ea3f0545f69fa0874d1e2b2602228cd7c49154c9ed6426e4700e31a589d"
+                },
+                "status": "clears_adequacy_gate"
+              },
+              "fov_imaginary_extent": 2.493030258262886,
+              "lobpcg_sigma_min_upper_estimate": 0.9988727827437228,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.0063239731346114,
+                "r2": 1.0,
+                "r3": 0.9507587766724649,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 3.2245210865824907,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 2.0014830212433607e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 1.0063239731346114,
+            "epsilon_zero": 0.10983041979217503,
+            "epsilon_zero_full_operator_evidence": true,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.5517071968653876,
+              "c": 4.114317652374206,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.10983041979217503,
+              "interior_lower_bound": 0.46770605613546623,
+              "k0_feature_center": [
+                3.598667182826175,
+                0.999770273999077
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 0.08400114072992139,
+              "selected_k0": "minimax",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "f0931ea3f0545f69fa0874d1e2b2602228cd7c49154c9ed6426e4700e31a589d"
+              },
+              "status": "clears_adequacy_gate"
+            },
+            "fov_imaginary_extent": 2.493030258262886,
+            "lobpcg_sigma_min_upper_estimate": 0.9988727827437228,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "identity",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.0063239731346114,
+              "r2": 1.0,
+              "r3": 0.9507587766724649,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 3.2245210865824907,
+            "regime": "turing",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.9988727827437228,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "identity",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 1.0063239731346114,
+        "r2": 1.0,
+        "r3": 0.9507587766724649,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20261722,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "identity",
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 3.2245210865824907,
+      "regime": "turing",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "sample_position": 0,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "8e57337527efbb55189667e61f3bc359ddbac1a2eeeaf916a7839eb54cd10ef2"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 80.0,
+      "trajectory_step": 80,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 4.582921263010545e-09,
+        "iterations": 18,
+        "operator_dimension": 8712,
+        "preconditioner": "fft_diffusion",
+        "regime": "turing"
+      },
+      "adjoint_error": 1.761086112377678e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.01777610331316659,
+        "max_abs_v_minus_steady": 0.007574502172529751
+      },
+      "disk_rate": 2.309943070833846,
+      "epsilon_zero": 0.10983041979217503,
+      "epsilon_zero_full_operator_evidence": true,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.5517071968653876,
+        "c": 4.114317652374206,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.10983041979217503,
+        "interior_lower_bound": 0.46770605613546623,
+        "k0_feature_center": [
+          3.598667182826175,
+          0.999770273999077
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 0.08400114072992139,
+        "selected_k0": "minimax",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "f0931ea3f0545f69fa0874d1e2b2602228cd7c49154c9ed6426e4700e31a589d"
+        },
+        "status": "clears_adequacy_gate"
+      },
+      "fov_imaginary_extent": 2.074772083768136,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 1.761086112377678e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 2.309943070833846,
+              "epsilon_zero": 0.10983041979217503,
+              "epsilon_zero_full_operator_evidence": true,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5517071968653876,
+                "c": 4.114317652374206,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.10983041979217503,
+                "interior_lower_bound": 0.46770605613546623,
+                "k0_feature_center": [
+                  3.598667182826175,
+                  0.999770273999077
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 0.08400114072992139,
+                "selected_k0": "minimax",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "f0931ea3f0545f69fa0874d1e2b2602228cd7c49154c9ed6426e4700e31a589d"
+                },
+                "status": "clears_adequacy_gate"
+              },
+              "fov_imaginary_extent": 2.074772083768136,
+              "lobpcg_sigma_min_upper_estimate": 0.49405221353278245,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "fft_diffusion",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 2.309943070833846,
+                "r2": 1.0,
+                "r3": 0.8561000406005921,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.7103781199188933,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 1.761086112377678e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 2.309943070833846,
+            "epsilon_zero": 0.10983041979217503,
+            "epsilon_zero_full_operator_evidence": true,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.5517071968653876,
+              "c": 4.114317652374206,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.10983041979217503,
+              "interior_lower_bound": 0.46770605613546623,
+              "k0_feature_center": [
+                3.598667182826175,
+                0.999770273999077
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 0.08400114072992139,
+              "selected_k0": "minimax",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "f0931ea3f0545f69fa0874d1e2b2602228cd7c49154c9ed6426e4700e31a589d"
+              },
+              "status": "clears_adequacy_gate"
+            },
+            "fov_imaginary_extent": 2.074772083768136,
+            "lobpcg_sigma_min_upper_estimate": 0.49405221353278245,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "fft_diffusion",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 2.309943070833846,
+              "r2": 1.0,
+              "r3": 0.8561000406005921,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.7103781199188933,
+            "regime": "turing",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.49405221353278245,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "fft_diffusion",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 2.309943070833846,
+        "r2": 1.0,
+        "r3": 0.8561000406005921,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20261722,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "fft_diffusion",
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.7103781199188933,
+      "regime": "turing",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "sample_position": 0,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "8e57337527efbb55189667e61f3bc359ddbac1a2eeeaf916a7839eb54cd10ef2"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 80.0,
+      "trajectory_step": 80,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": false,
+        "final_relative_residual": 1.967310628263093e-07,
+        "iterations": 101,
+        "operator_dimension": 8712,
+        "preconditioner": "identity",
+        "regime": "turing"
+      },
+      "adjoint_error": 1.3472894910096233e-16,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.5405406871107665,
+        "max_abs_v_minus_steady": 0.232864005039497
+      },
+      "disk_rate": 1.0064271571483838,
+      "epsilon_zero": 3.15097059682481,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "uncertified_at_cap",
+      "final_verdict": "uncertified_at_cap",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.5510162262121782,
+        "c": 3.737605008342853,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          3.6,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 2.60576500604879,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 2.700869566794328,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 1.3472894910096233e-16,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.0048580820162931,
+              "epsilon_zero": 3.15097059682481,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5510162262121782,
+                "c": 3.737605008342853,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  3.6,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 2.60576500604879,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 2.7008695667943248,
+              "lobpcg_sigma_min_upper_estimate": 0.9979365628896802,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.0048580820162931,
+                "r2": 1.0,
+                "r3": 0.9520483853576495,
+                "supports_consistent": false
+              },
+              "reduced_arnoldi_epsilon_zero": 3.15097059682481,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": false,
+              "supports_converged": false,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true
+          },
+          {
+            "assessment": {
+              "adjoint_error": 1.3472894910096233e-16,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.004858954561083,
+              "epsilon_zero": 3.15097059682481,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5510162262121782,
+                "c": 3.737605008342853,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  3.6,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 2.60576500604879,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 2.700869566794328,
+              "lobpcg_sigma_min_upper_estimate": 0.9979365628896802,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.004858954561083,
+                "r2": 1.0,
+                "r3": 0.9520483853576495,
+                "supports_consistent": false
+              },
+              "reduced_arnoldi_epsilon_zero": 3.15097059682481,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": false,
+              "supports_converged": false,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 180,
+              "fov_n_restarts": 2,
+              "n_angles": 64
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true
+          },
+          {
+            "assessment": {
+              "adjoint_error": 1.3472894910096233e-16,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.0064271571483838,
+              "epsilon_zero": 3.15097059682481,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5510162262121782,
+                "c": 3.737605008342853,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  3.6,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 2.60576500604879,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 2.700869566794328,
+              "lobpcg_sigma_min_upper_estimate": 0.9979365628896802,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.0064271571483838,
+                "r2": 1.0,
+                "r3": 0.9520483853576495,
+                "supports_consistent": false
+              },
+              "reduced_arnoldi_epsilon_zero": 3.15097059682481,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": false,
+              "supports_converged": false,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 240,
+              "fov_n_restarts": 2,
+              "n_angles": 96
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 1.3472894910096233e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 1.0064271571483838,
+            "epsilon_zero": 3.15097059682481,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.5510162262121782,
+              "c": 3.737605008342853,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                3.6,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 2.60576500604879,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 2.700869566794328,
+            "lobpcg_sigma_min_upper_estimate": 0.9979365628896802,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "identity",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.0064271571483838,
+              "r2": 1.0,
+              "r3": 0.9520483853576495,
+              "supports_consistent": false
+            },
+            "reduced_arnoldi_epsilon_zero": 3.15097059682481,
+            "regime": "turing",
+            "status": "completed",
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 240,
+            "fov_n_restarts": 2,
+            "n_angles": 96
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": false,
+          "supports_converged": false,
+          "supports_corroborated": true
+        },
+        "final_category": "uncertified_at_cap",
+        "final_verdict": "uncertified_at_cap",
+        "final_verdict_reason": "support_not_converged",
+        "source": "fov_support_escalation",
+        "status": "UNCERTIFIED_AT_CAP",
+        "uncertified_reason": "support_not_converged"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.9979365628896802,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "identity",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 1.0064271571483838,
+        "r2": 1.0,
+        "r3": 0.9520483853576495,
+        "supports_consistent": false
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20262122,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 240,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 96,
+        "preconditioner_kind": "identity",
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 3.15097059682481,
+      "regime": "turing",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "sample_position": 1,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "aa4467cf30d25c6c6ea760292ee652ee4ae5f5918e0a5814fc1da744ad7102fa"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": false,
+      "supports_converged": false,
+      "supports_corroborated": true,
+      "time": 120.0,
+      "trajectory_step": 120,
+      "verdict": "uncertified_at_cap",
+      "verdict_reason": "support_not_converged"
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 5.216244867297664e-09,
+        "iterations": 23,
+        "operator_dimension": 8712,
+        "preconditioner": "fft_diffusion",
+        "regime": "turing"
+      },
+      "adjoint_error": 1.6100310998341953e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 0.5405406871107665,
+        "max_abs_v_minus_steady": 0.232864005039497
+      },
+      "disk_rate": 2.0352254869775654,
+      "epsilon_zero": 0.7191170701275209,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.5510162262121782,
+        "c": 3.737605008342853,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          3.6,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 2.60576500604879,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 1.8793038523878514,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 1.6100310998341953e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 2.0352254869775654,
+              "epsilon_zero": 0.7191170701275209,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5510162262121782,
+                "c": 3.737605008342853,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  3.6,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 2.60576500604879,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 1.8793038523878514,
+              "lobpcg_sigma_min_upper_estimate": 0.45551476114034106,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "fft_diffusion",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 2.0352254869775654,
+                "r2": 1.0,
+                "r3": 0.9028548954482122,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.7191170701275209,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 1.6100310998341953e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 2.0352254869775654,
+            "epsilon_zero": 0.7191170701275209,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.5510162262121782,
+              "c": 3.737605008342853,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                3.6,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 2.60576500604879,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "5b8bdd50f9b45f5c68ba94caaa2c4afc966af8404e1f3fa4914c75b8b174dbff"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 1.8793038523878514,
+            "lobpcg_sigma_min_upper_estimate": 0.45551476114034106,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "fft_diffusion",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 2.0352254869775654,
+              "r2": 1.0,
+              "r3": 0.9028548954482122,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.7191170701275209,
+            "regime": "turing",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.45551476114034106,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "fft_diffusion",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 2.0352254869775654,
+        "r2": 1.0,
+        "r3": 0.9028548954482122,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20262122,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "fft_diffusion",
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.7191170701275209,
+      "regime": "turing",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "sample_position": 1,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "aa4467cf30d25c6c6ea760292ee652ee4ae5f5918e0a5814fc1da744ad7102fa"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 120.0,
+      "trajectory_step": 120,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 8.43825545169937e-09,
+        "iterations": 73,
+        "operator_dimension": 8712,
+        "preconditioner": "identity",
+        "regime": "turing"
+      },
+      "adjoint_error": 2.0206364052201328e-16,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 2.3339615282841346,
+        "max_abs_v_minus_steady": 0.9181925210137237
+      },
+      "disk_rate": 1.0457745303884707,
+      "epsilon_zero": 3.3327100897776383,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.5510162262121782,
+        "c": 13.966347612282767,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          3.6,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 14.679919786612617,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "c83a5ca5efed2343f7480d80d3d3393712283fcd3dae0ede2a2c7a0e32e6b5d1"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 9.632865958647244,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 2.0206364052201328e-16,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 1.0457745303884707,
+              "epsilon_zero": 3.3327100897776383,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5510162262121782,
+                "c": 13.966347612282767,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  3.6,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 14.679919786612617,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "c83a5ca5efed2343f7480d80d3d3393712283fcd3dae0ede2a2c7a0e32e6b5d1"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 9.632865958647244,
+              "lobpcg_sigma_min_upper_estimate": 0.993936784436951,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "identity",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 1.0457745303884707,
+                "r2": 1.0,
+                "r3": 0.9498063921609037,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 3.3327100897776383,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 2.0206364052201328e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 1.0457745303884707,
+            "epsilon_zero": 3.3327100897776383,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.5510162262121782,
+              "c": 13.966347612282767,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                3.6,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 14.679919786612617,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "c83a5ca5efed2343f7480d80d3d3393712283fcd3dae0ede2a2c7a0e32e6b5d1"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 9.632865958647244,
+            "lobpcg_sigma_min_upper_estimate": 0.993936784436951,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "identity",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.0457745303884707,
+              "r2": 1.0,
+              "r3": 0.9498063921609037,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 3.3327100897776383,
+            "regime": "turing",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.993936784436951,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "identity",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 1.0457745303884707,
+        "r2": 1.0,
+        "r3": 0.9498063921609037,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20262922,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "identity",
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 3.3327100897776383,
+      "regime": "turing",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "sample_position": 2,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "baf60b3333d7ad311d147ca9250553679de4bad6e2b12a7173cccc4c7d9e4194"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 200.0,
+      "trajectory_step": 200,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    },
+    {
+      "actual_gmres": {
+        "breakdown": false,
+        "converged": true,
+        "final_relative_residual": 5.397393410946027e-09,
+        "iterations": 20,
+        "operator_dimension": 8712,
+        "preconditioner": "fft_diffusion",
+        "regime": "turing"
+      },
+      "adjoint_error": 1.2266347333466993e-17,
+      "adjoint_tolerance": 1e-08,
+      "base_revision": "d4047f3eb674a4d581ac81cea427286801687af1",
+      "base_revision_source": "merge-base-upstream",
+      "corroboration_attempted": true,
+      "developedness": {
+        "max_abs_u_minus_steady": 2.3339615282841346,
+        "max_abs_v_minus_steady": 0.9181925210137237
+      },
+      "disk_rate": 8.828763495853,
+      "epsilon_zero": 0.5634577265125439,
+      "epsilon_zero_full_operator_evidence": false,
+      "final_category": "indeterminate",
+      "final_verdict": "indeterminate",
+      "fourier_weyl_ghost_lower_bound": {
+        "b0": 0.5510162262121782,
+        "c": 13.966347612282767,
+        "evidence": "fourier_weyl_ghost_lower_bound",
+        "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+        "full_lower_bound": 0.0,
+        "interior_lower_bound": 0.0,
+        "k0_feature_center": [
+          3.6,
+          1.0
+        ],
+        "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+        "perturbation_norm": 14.679919786612617,
+        "selected_k0": "homogeneous",
+        "state_identifier": {
+          "dtype": "<f8",
+          "interior_shapes": {
+            "u": [
+              64,
+              64
+            ],
+            "v": [
+              64,
+              64
+            ]
+          },
+          "sha256": "c83a5ca5efed2343f7480d80d3d3393712283fcd3dae0ede2a2c7a0e32e6b5d1"
+        },
+        "status": "valid_but_below_adequacy_gate"
+      },
+      "fov_imaginary_extent": 7.118225889076039,
+      "geometry_resolution": {
+        "attempts": [
+          {
+            "assessment": {
+              "adjoint_error": 1.2266347333466993e-17,
+              "adjoint_tolerance": 1e-08,
+              "corroboration_attempted": true,
+              "disk_rate": 8.828763495853,
+              "epsilon_zero": 0.5634577265125439,
+              "epsilon_zero_full_operator_evidence": false,
+              "fourier_weyl_ghost_lower_bound": {
+                "b0": 0.5510162262121782,
+                "c": 13.966347612282767,
+                "evidence": "fourier_weyl_ghost_lower_bound",
+                "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+                "full_lower_bound": 0.0,
+                "interior_lower_bound": 0.0,
+                "k0_feature_center": [
+                  3.6,
+                  1.0
+                ],
+                "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+                "perturbation_norm": 14.679919786612617,
+                "selected_k0": "homogeneous",
+                "state_identifier": {
+                  "dtype": "<f8",
+                  "interior_shapes": {
+                    "u": [
+                      64,
+                      64
+                    ],
+                    "v": [
+                      64,
+                      64
+                    ]
+                  },
+                  "sha256": "c83a5ca5efed2343f7480d80d3d3393712283fcd3dae0ede2a2c7a0e32e6b5d1"
+                },
+                "status": "valid_but_below_adequacy_gate"
+              },
+              "fov_imaginary_extent": 7.118225889076039,
+              "lobpcg_sigma_min_upper_estimate": 0.8066380870896112,
+              "n_right_real_outliers": 0,
+              "operator_dimension": 8712,
+              "origin_enclosed": true,
+              "preconditioner": "fft_diffusion",
+              "predicted_gmres_factor": null,
+              "rates": {
+                "agree": false,
+                "corroboration_attempted": true,
+                "predicted_gmres_factor": null,
+                "r1": 8.828763495853,
+                "r2": 1.0,
+                "r3": 1.1542880846806856,
+                "supports_consistent": true
+              },
+              "reduced_arnoldi_epsilon_zero": 0.5634577265125439,
+              "regime": "turing",
+              "status": "completed",
+              "supports_consistent": true,
+              "supports_converged": true,
+              "supports_corroborated": true,
+              "verdict": "indeterminate",
+              "verdict_reason": null
+            },
+            "budget": {
+              "fov_max_iters": 120,
+              "fov_n_restarts": 2,
+              "n_angles": 32
+            },
+            "corroboration_attempted": true,
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true
+          }
+        ],
+        "final": {
+          "assessment": {
+            "adjoint_error": 1.2266347333466993e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": true,
+            "disk_rate": 8.828763495853,
+            "epsilon_zero": 0.5634577265125439,
+            "epsilon_zero_full_operator_evidence": false,
+            "fourier_weyl_ghost_lower_bound": {
+              "b0": 0.5510162262121782,
+              "c": 13.966347612282767,
+              "evidence": "fourier_weyl_ghost_lower_bound",
+              "floating_point_standard": "float64 formulas; no directed-rounding enclosure",
+              "full_lower_bound": 0.0,
+              "interior_lower_bound": 0.0,
+              "k0_feature_center": [
+                3.6,
+                1.0
+              ],
+              "padding": "periodic n_ghost=1; ghost multiplicities in {0, 1, 3}",
+              "perturbation_norm": 14.679919786612617,
+              "selected_k0": "homogeneous",
+              "state_identifier": {
+                "dtype": "<f8",
+                "interior_shapes": {
+                  "u": [
+                    64,
+                    64
+                  ],
+                  "v": [
+                    64,
+                    64
+                  ]
+                },
+                "sha256": "c83a5ca5efed2343f7480d80d3d3393712283fcd3dae0ede2a2c7a0e32e6b5d1"
+              },
+              "status": "valid_but_below_adequacy_gate"
+            },
+            "fov_imaginary_extent": 7.118225889076039,
+            "lobpcg_sigma_min_upper_estimate": 0.8066380870896112,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 8712,
+            "origin_enclosed": true,
+            "preconditioner": "fft_diffusion",
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 8.828763495853,
+              "r2": 1.0,
+              "r3": 1.1542880846806856,
+              "supports_consistent": true
+            },
+            "reduced_arnoldi_epsilon_zero": 0.5634577265125439,
+            "regime": "turing",
+            "status": "completed",
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "budget": {
+            "fov_max_iters": 120,
+            "fov_n_restarts": 2,
+            "n_angles": 32
+          },
+          "corroboration_attempted": true,
+          "supports_consistent": true,
+          "supports_converged": true,
+          "supports_corroborated": true
+        },
+        "final_category": "indeterminate",
+        "final_verdict": "indeterminate",
+        "final_verdict_reason": null,
+        "source": "fov_support_escalation",
+        "status": "RESOLVED"
+      },
+      "lobpcg_sigma_min_upper_estimate": 0.8066380870896112,
+      "n_right_real_outliers": 0,
+      "operator_dimension": 8712,
+      "origin_enclosed": true,
+      "preconditioner": "fft_diffusion",
+      "predicted_gmres_factor": null,
+      "rates": {
+        "agree": false,
+        "corroboration_attempted": true,
+        "predicted_gmres_factor": null,
+        "r1": 8.828763495853,
+        "r2": 1.0,
+        "r3": 1.1542880846806856,
+        "supports_consistent": true
+      },
+      "record_config": {
+        "analysis_dt": 1.0,
+        "arnoldi_steps": 6,
+        "assessment_seed": 20262922,
+        "compute_lobpcg_upper_estimate": true,
+        "domain_length": 5.0,
+        "fov_max_iters": 120,
+        "fov_n_restarts": 2,
+        "fov_residual_tolerance": 0.001,
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "n_angles": 32,
+        "preconditioner_kind": "fft_diffusion",
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "source_state_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        }
+      },
+      "reduced_arnoldi_epsilon_zero": 0.5634577265125439,
+      "regime": "turing",
+      "repository_head": "1cade4caea5ec9aecbf457af8948be4329091cd3",
+      "source_state_artifact": {
+        "converged": true,
+        "generation_fingerprint": {
+          "domain": {
+            "x": [
+              0.0,
+              5.0
+            ],
+            "y": [
+              0.0,
+              5.0
+            ]
+          },
+          "grid": {
+            "n_ghost": 1,
+            "nx": 64,
+            "ny": 64
+          },
+          "model_version": "brusselator_periodic_fft_be_v1",
+          "perturbation": 0.001,
+          "regime": {
+            "a": 1.0,
+            "b": 1.8,
+            "domain_length": 5.0,
+            "du": 0.01,
+            "dv": 0.1,
+            "name": "turing",
+            "reference_final_time": 200.0
+          },
+          "sample_steps": [
+            80,
+            120,
+            200
+          ],
+          "schema": "brusselator_conditioning_source_state_v4",
+          "seed": 20260823,
+          "solver": {
+            "krylov_tol": 1e-08,
+            "max_backtrack": "NKParams-default-8",
+            "max_krylov_iters": 100,
+            "max_newton_iters": 15,
+            "newton_tol": 1e-08
+          },
+          "state_dt": 1.0
+        },
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "sample_position": 2,
+        "schema": "brusselator_conditioning_source_state_v4",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "baf60b3333d7ad311d147ca9250553679de4bad6e2b12a7173cccc4c7d9e4194"
+        }
+      },
+      "status": "completed",
+      "supports_consistent": true,
+      "supports_converged": true,
+      "supports_corroborated": true,
+      "time": 200.0,
+      "trajectory_step": 200,
+      "verdict": "indeterminate",
+      "verdict_reason": null
+    }
+  ],
+  "regime_comparison": {
+    "hopf": {
+      "developedness_by_time": [
+        {
+          "max_abs_u_minus_steady": 0.003968178253266341,
+          "max_abs_v_minus_steady": 0.004632581893806886,
+          "time": 1.0
+        },
+        {
+          "max_abs_u_minus_steady": 0.933191843903727,
+          "max_abs_v_minus_steady": 1.2354257644796283,
+          "time": 10.0
+        },
+        {
+          "max_abs_u_minus_steady": 1.201920009674804,
+          "max_abs_v_minus_steady": 1.4275218999892763,
+          "time": 20.0
+        }
+      ],
+      "fft_gmres_iterations_by_time": [
+        {
+          "converged": true,
+          "iterations": 37,
+          "time": 1.0
+        },
+        {
+          "converged": true,
+          "iterations": 50,
+          "time": 10.0
+        },
+        {
+          "converged": true,
+          "iterations": 39,
+          "time": 20.0
+        }
+      ],
+      "fft_records": 3,
+      "fov_imaginary_extent_by_time": [
+        {
+          "fov_imaginary_extent": 3.8731383854560058,
+          "time": 1.0
+        },
+        {
+          "fov_imaginary_extent": 4.410777209956099,
+          "time": 10.0
+        },
+        {
+          "fov_imaginary_extent": 4.8080482794863695,
+          "time": 20.0
+        }
+      ],
+      "median_actual_fft_gmres_iterations": 39.0,
+      "median_disk_rate": 7.028184191977266,
+      "median_fov_imaginary_extent": 4.410777209956099,
+      "origin_enclosed_fraction": 1.0,
+      "parameters": {
+        "a": 1.0,
+        "b": 3.4,
+        "domain_length": 5.0,
+        "du": 0.01,
+        "dv": 0.02,
+        "name": "hopf",
+        "reference_final_time": 50.0
+      },
+      "verdict_distribution": {
+        "adequate": 0,
+        "indeterminate": 3,
+        "investigate": 0,
+        "skipped": 0
+      }
+    },
+    "turing": {
+      "developedness_by_time": [
+        {
+          "max_abs_u_minus_steady": 0.01777610331316659,
+          "max_abs_v_minus_steady": 0.007574502172529751,
+          "time": 80.0
+        },
+        {
+          "max_abs_u_minus_steady": 0.5405406871107665,
+          "max_abs_v_minus_steady": 0.232864005039497,
+          "time": 120.0
+        },
+        {
+          "max_abs_u_minus_steady": 2.3339615282841346,
+          "max_abs_v_minus_steady": 0.9181925210137237,
+          "time": 200.0
+        }
+      ],
+      "fft_gmres_iterations_by_time": [
+        {
+          "converged": true,
+          "iterations": 18,
+          "time": 80.0
+        },
+        {
+          "converged": true,
+          "iterations": 23,
+          "time": 120.0
+        },
+        {
+          "converged": true,
+          "iterations": 20,
+          "time": 200.0
+        }
+      ],
+      "fft_records": 3,
+      "fov_imaginary_extent_by_time": [
+        {
+          "fov_imaginary_extent": 2.074772083768136,
+          "time": 80.0
+        },
+        {
+          "fov_imaginary_extent": 1.8793038523878514,
+          "time": 120.0
+        },
+        {
+          "fov_imaginary_extent": 7.118225889076039,
+          "time": 200.0
+        }
+      ],
+      "median_actual_fft_gmres_iterations": 20.0,
+      "median_disk_rate": 2.309943070833846,
+      "median_fov_imaginary_extent": 2.074772083768136,
+      "origin_enclosed_fraction": 1.0,
+      "parameters": {
+        "a": 1.0,
+        "b": 1.8,
+        "domain_length": 5.0,
+        "du": 0.01,
+        "dv": 0.1,
+        "name": "turing",
+        "reference_final_time": 200.0
+      },
+      "verdict_distribution": {
+        "adequate": 0,
+        "indeterminate": 3,
+        "investigate": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "schema_version": "brusselator_conditioning_developed_v1",
+  "status": "completed"
+}
