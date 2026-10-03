@@ -1255,22 +1255,23 @@ def _with_reaction(model, apply):
     )
 
 
-def _guard_bound_and_dense(model, dt, preconditioner):
-    """Return (guard outcome, dense sigma_min) for a homogeneous Turing state."""
+def _guard_bound_and_dense(model, dt, preconditioner, state=None):
+    """Return (guard outcome, dense sigma_min), by default for a homogeneous Turing state."""
     from moljax.conditioning import linearized_operator
     from moljax.core.newton_krylov import create_implicit_residual
     from moljax.core.preconditioners import PrecondContext
     from moljax.experimental import brusselator_conditioning as conditioning
 
     grid = model.grid
-    shape = (grid.ny_total, grid.nx_total)
-    state = model.apply_bcs(
-        {
-            "u": jax.numpy.full(shape, TURING_REGIME.a),
-            "v": jax.numpy.full(shape, TURING_REGIME.b / TURING_REGIME.a),
-        },
-        0.0,
-    )
+    if state is None:
+        shape = (grid.ny_total, grid.nx_total)
+        state = model.apply_bcs(
+            {
+                "u": jax.numpy.full(shape, TURING_REGIME.a),
+                "v": jax.numpy.full(shape, TURING_REGIME.b / TURING_REGIME.a),
+            },
+            0.0,
+        )
     context = PrecondContext(grid=grid, dt=dt, params=model.params)
     residual = create_implicit_residual(model, state, dt, dt, method="be")
     operator = linearized_operator(
@@ -1359,6 +1360,137 @@ def test_certificate_refuses_replaced_actions_with_shipped_names():
             outcome, dense = _guard_bound_and_dense(shipped_model, 0.2, preconditioner)
             assert not isinstance(outcome, Exception)
             assert outcome <= dense + 5.0e-13
+
+
+def _plus_five_state(original):
+    """Return a replacement for a model method: its image plus 5 times each field."""
+
+    def replaced(state, t=0.0):
+        image = original(state, t)
+        return {name: image[name] + 5.0 * state[name] for name in image}
+
+    return replaced
+
+
+def test_certificate_refuses_an_instance_level_rhs_replacement():
+    """Review reproduction: model.rhs + 5 * state on 4x4, L=5, dt=0.2 was certified."""
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(4, 4, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, fft_cache, _ = build_brusselator_system(TURING_REGIME, grid)
+    fft = conditioning._preconditioner("fft_diffusion", fft_cache)
+    shipped_bound, shipped_dense = _guard_bound_and_dense(model, 0.2, fft)
+    assert not isinstance(shipped_bound, Exception)
+    assert shipped_bound <= shipped_dense + 5.0e-13
+
+    object.__setattr__(model, "rhs", _plus_five_state(model.rhs))
+    outcome, dense = _guard_bound_and_dense(model, 0.2, fft)
+    # The old guard returned the shipped bound (about 0.599) for this operator,
+    # whose dense sigma_min is numerically zero.
+    assert 0.0 <= dense < 1.0e-8
+    assert dense < shipped_bound
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "instance-level replacement of MOLModel.rhs" in str(outcome)
+
+
+@pytest.mark.parametrize("name", ["rhs", "apply_bcs", "linear_rhs", "nonlinear_rhs"])
+def test_certificate_refuses_replaced_model_methods(name, monkeypatch):
+    """Instance attributes, rebound methods, and class patches are all refused."""
+    from moljax.core.model import MOLModel
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(4, 4, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, preconditioner, context = _guard_inputs(grid)
+    object.__setattr__(model, name, _plus_five_state(getattr(model, name)))
+    _refused(model, TURING_REGIME, 0.2, preconditioner, context, "instance-level")
+
+    # The shipped function bound to another model is still an instance attribute.
+    model, preconditioner, context = _guard_inputs(grid)
+    other, _, _ = _guard_inputs(grid)
+    object.__setattr__(model, name, getattr(other, name))
+    _refused(model, TURING_REGIME, 0.2, preconditioner, context, "instance-level")
+
+    # A replacement on the class itself is refused for every model.
+    model, preconditioner, context = _guard_inputs(grid)
+    monkeypatch.setattr(MOLModel, name, _plus_five_state(conditioning._SHIPPED_MODEL_ACTIONS[name]))
+    _refused(model, TURING_REGIME, 0.2, preconditioner, context, "shipped class function")
+    monkeypatch.undo()
+    assert (
+        conditioning._validate_certificate_operator(
+            model, TURING_REGIME, 0.2, preconditioner, context
+        )
+        == grid
+    )
+
+
+def _constant_state(shape, dtype=None):
+    """Return the constant fields u=1, v=1.8 with the given full array shape."""
+    dtype = jax.numpy.float64 if dtype is None else dtype
+    return {
+        "u": jax.numpy.full(shape, TURING_REGIME.a, dtype=dtype),
+        "v": jax.numpy.full(shape, TURING_REGIME.b / TURING_REGIME.a, dtype=dtype),
+    }
+
+
+def test_certificate_refuses_oversized_state_arrays():
+    """Review reproduction: 6x6 arrays on a 2x2 grid passed the interior-slice check."""
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(2, 2, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, fft_cache, diffusivities = build_brusselator_system(TURING_REGIME, grid)
+    fft = conditioning._preconditioner("fft_diffusion", fft_cache)
+
+    # Correctly sized control: (ny + 2, nx + 2) = (4, 4) still certifies below dense.
+    bound, dense = _guard_bound_and_dense(
+        model, 0.2, fft, state=_constant_state((grid.ny_total, grid.nx_total))
+    )
+    assert not isinstance(bound, Exception)
+    assert 0.0 < bound <= dense + 5.0e-13
+
+    # Oversized arrays: the old guard returned the same bound (about 0.599), above
+    # the dense sigma_min of the actual 72-component operator.
+    outcome, oversized_dense = _guard_bound_and_dense(
+        model, 0.2, fft, state=_constant_state((6, 6))
+    )
+    assert 0.0 < oversized_dense < bound
+    assert isinstance(outcome, conditioning.CertificateNotApplicable)
+    assert "shape (6, 6)" in str(outcome)
+
+    # The study entry points refuse the state before any linearization.
+    with pytest.raises(ValueError, match="requires \\(4, 4\\)"):
+        conditioning.build_brusselator_linearization(
+            _constant_state((6, 6)), model, fft_cache, diffusivities, 0.2
+        )
+    with pytest.raises(ValueError, match="shape"):
+        assess_brusselator_state(
+            _constant_state((6, 6)), model, fft_cache, diffusivities, 0.2, TURING_REGIME
+        )
+
+
+def test_certificate_and_linearization_refuse_a_wrong_state_layout():
+    """Field names, undersized arrays, and a non-float64 dtype are refused."""
+    from moljax.core.preconditioners import PrecondContext
+    from moljax.experimental import brusselator_conditioning as conditioning
+
+    grid = Grid2D.uniform(2, 2, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+    model, fft_cache, diffusivities = build_brusselator_system(TURING_REGIME, grid)
+    fft = conditioning._preconditioner("fft_diffusion", fft_cache)
+    context = PrecondContext(grid=grid, dt=0.2, params=model.params)
+    correct = _constant_state((4, 4))
+    cases = (
+        ({**correct, "w": correct["u"]}, "exactly the fields u and v"),
+        ({"u": correct["u"], "v": correct["v"][:, :3]}, "field v has shape"),
+        (_constant_state((4, 4), jax.numpy.float32), "float64 is required"),
+    )
+    for state, match in cases:
+        with pytest.raises(conditioning.CertificateNotApplicable, match=match):
+            conditioning._fourier_weyl_bound(
+                state, model, TURING_REGIME, 0.2, preconditioner=fft, context=context
+            )
+        with pytest.raises(ValueError, match=match):
+            conditioning.build_brusselator_linearization(
+                state, model, fft_cache, diffusivities, 0.2
+            )
 
 
 @pytest.mark.parametrize("n, zero_mode", [(4, -100.0), (4, 40.0), (3, -50.0)])
@@ -1676,3 +1808,50 @@ def test_fixed_dt_summary_counts_its_transitions(verdicts, outcome, phrase):
     )
     assert summary["outcome"] == outcome
     assert phrase in summary["statement"]
+
+
+@pytest.mark.parametrize(
+    ("early", "developed", "outcome"),
+    [
+        ("adequate", "adequate", "fft_verdict_stable_at_fixed_dt"),
+        ("investigate", "investigate", "fft_verdict_stable_at_fixed_dt"),
+        ("adequate", "investigate", "fft_verdict_changed_at_fixed_dt"),
+        ("adequate", "indeterminate", "fft_adequate_to_indeterminate_at_fixed_dt"),
+        ("investigate", "adequate", "fft_verdict_changed_at_fixed_dt"),
+    ],
+)
+def test_single_regime_fixed_dt_summary_compares_both_verdicts(early, developed, outcome):
+    """Review reproduction: adequate to investigate was reported as unchanged."""
+    config = benchmark.PRESETS["hopf_continuation_256"]
+    assert config.regimes == ("hopf",)
+    summary = benchmark._fixed_transition(
+        _fixed_dt_records({"hopf": (early, developed)}), config
+    )
+    rows = summary["by_regime"]["hopf"]["fft_diffusion"]
+    assert (rows["early"]["verdict"], rows["developed"]["verdict"]) == (early, developed)
+    assert summary["outcome"] == outcome
+    if early == developed:
+        assert "is unchanged between the early and developed states" in summary["statement"]
+    else:
+        assert "unchanged" not in summary["statement"]
+        assert (
+            f"changes from {early} at the early state to {developed} at the developed state"
+            in summary["statement"]
+        )
+
+
+def test_committed_hopf_continuation_transition_is_unchanged():
+    """The committed adequate-to-adequate Hopf continuation keeps its stable statement."""
+    report = _resolved_reports()["hopf_continuation_256"]
+    stored = report["fixed_dt_transition"]
+    rebuilt = benchmark._fixed_transition(
+        report["records"], benchmark.PRESETS["hopf_continuation_256"]
+    )
+    assert rebuilt == stored
+    rows = stored["by_regime"]["hopf"]["fft_diffusion"]
+    assert (rows["early"]["verdict"], rows["developed"]["verdict"]) == ("adequate", "adequate")
+    assert stored["outcome"] == "fft_verdict_stable_at_fixed_dt"
+    assert stored["statement"] == (
+        "At fixed backward-Euler dt, the FFT-preconditioned verdict is unchanged "
+        "between the early and developed states."
+    )

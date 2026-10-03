@@ -909,18 +909,23 @@ def _fixed_transition(
     transitions = [result[name]["fft_diffusion"]["adequate_to_indeterminate"] for name in result]
     n_transitions = sum(bool(value) for value in transitions)
     if len(transitions) == 1:
-        transitioned = transitions[0]
+        # One regime: compare its early and developed FFT verdicts directly.
+        # Only equal verdicts are stable; every other pair is a change.
+        (only,) = result.values()
+        early_verdict = only["fft_diffusion"]["early"]["verdict"]
+        developed_verdict = only["fft_diffusion"]["developed"]["verdict"]
+        if transitions[0]:
+            outcome = "fft_adequate_to_indeterminate_at_fixed_dt"
+            statement = "At fixed backward-Euler dt, the FFT-preconditioned verdict changes from adequate at the early state to indeterminate at the developed state."
+        elif early_verdict == developed_verdict:
+            outcome = "fft_verdict_stable_at_fixed_dt"
+            statement = "At fixed backward-Euler dt, the FFT-preconditioned verdict is unchanged between the early and developed states."
+        else:
+            outcome = "fft_verdict_changed_at_fixed_dt"
+            statement = f"At fixed backward-Euler dt, the FFT-preconditioned verdict changes from {early_verdict} at the early state to {developed_verdict} at the developed state."
         return {
-            "outcome": (
-                "fft_adequate_to_indeterminate_at_fixed_dt"
-                if transitioned
-                else "fft_verdict_stable_at_fixed_dt"
-            ),
-            "statement": (
-                "At fixed backward-Euler dt, the FFT-preconditioned verdict changes from adequate at the early state to indeterminate at the developed state."
-                if transitioned
-                else "At fixed backward-Euler dt, the FFT-preconditioned verdict is unchanged between the early and developed states."
-            ),
+            "outcome": outcome,
+            "statement": statement,
             "fixed_dt": config.dt,
             "same_discretized_operator_family": "Every early/developed pair uses the same periodic grid, shipped FFT preconditioner, and backward-Euler timestep. The state-dependent Jacobian changes between visited states by design; no comparison changes dt.",
             "by_regime": result,

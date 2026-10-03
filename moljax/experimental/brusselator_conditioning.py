@@ -135,6 +135,32 @@ def _state_identifier(state: StateDict, grid: Grid2D) -> dict[str, Any]:
     return {"sha256": digest.hexdigest(), "interior_shapes": shapes, "dtype": "<f8"}
 
 
+def _state_layout_error(state: Any, grid: Grid2D) -> str | None:
+    """Return why ``state`` is not a padded two-field float64 state, or ``None``.
+
+    The linearization differentiates the residual at the full padded arrays,
+    so the operator has one component for each array entry.  The bound's
+    ghost multiplicities {0, 1, 3} hold only when each field has exactly one
+    ghost layer around the grid interior.  A larger array passes an interior
+    slice check, but the boundary copies then reach more entries.
+    """
+    if not isinstance(state, Mapping) or set(state) != {"u", "v"}:
+        return "the state must contain exactly the fields u and v"
+    expected = (grid.ny + 2 * grid.n_ghost, grid.nx + 2 * grid.n_ghost)
+    for field in ("u", "v"):
+        values = state[field]
+        shape = tuple(getattr(values, "shape", ()))
+        if shape != expected:
+            return (
+                f"the state field {field} has shape {shape}, but the grid requires "
+                f"{expected} (interior plus {grid.n_ghost} ghost layer(s))"
+            )
+        dtype = getattr(values, "dtype", None)
+        if dtype is None or np.dtype(dtype) != np.dtype(np.float64):
+            return f"the state field {field} has dtype {dtype}, but float64 is required"
+    return None
+
+
 class CertificateNotApplicable(ValueError):
     """The analyzed operator lies outside the Fourier--Weyl--ghost assumptions."""
 
@@ -181,6 +207,49 @@ def _same_function(candidate: Callable[..., Any], shipped: Callable[..., Any]) -
     )
 
 
+_MODEL_ACTIONS = ("rhs", "apply_bcs", "linear_rhs", "nonlinear_rhs")
+"""The ``MOLModel`` methods that the backward-Euler residual calls.
+
+``create_implicit_residual`` calls ``model.rhs``, which calls ``apply_bcs``,
+``linear_rhs``, and ``nonlinear_rhs``.  The linearization differentiates that
+residual, so a replacement of any of these methods changes the operator.
+"""
+
+_SHIPPED_MODEL_ACTIONS = {name: MOLModel.__dict__[name] for name in _MODEL_ACTIONS}
+"""The class functions of ``MOLModel`` as defined when this module was imported."""
+
+
+def _validate_shipped_model_methods(model: MOLModel) -> None:
+    """Refuse a model whose residual methods are not the shipped ``MOLModel`` code.
+
+    The class check alone does not cover an instance attribute that shadows a
+    method (``object.__setattr__`` writes through the frozen dataclass), nor a
+    replacement of the method on the class itself.  Each method that the
+    residual calls must resolve to a bound method of this model whose function
+    is the shipped class function.
+    """
+    instance_attributes = getattr(model, "__dict__", {})
+    for name in _MODEL_ACTIONS:
+        shipped = _SHIPPED_MODEL_ACTIONS[name]
+        if name in instance_attributes:
+            raise CertificateNotApplicable(
+                f"the model has an instance-level replacement of MOLModel.{name}"
+            )
+        if MOLModel.__dict__.get(name) is not shipped:
+            raise CertificateNotApplicable(
+                f"MOLModel.{name} is not the shipped class function"
+            )
+        bound = getattr(model, name)
+        if (
+            type(bound) is not types.MethodType
+            or bound.__func__ is not shipped
+            or bound.__self__ is not model
+        ):
+            raise CertificateNotApplicable(
+                f"model.{name} does not resolve to the shipped MOLModel.{name}"
+            )
+
+
 def _validate_shipped_brusselator_actions(model: MOLModel, grid: Grid2D) -> None:
     """Refuse any model whose operator actions are not the shipped Brusselator code.
 
@@ -193,6 +262,7 @@ def _validate_shipped_brusselator_actions(model: MOLModel, grid: Grid2D) -> None
         raise CertificateNotApplicable(
             f"the bound covers only the shipped MOLModel class, got {type(model).__name__}"
         )
+    _validate_shipped_model_methods(model)
     if any(type(spec) is not FieldBCSpec for spec in model.bc_spec.values()):
         raise CertificateNotApplicable(
             "the bound requires the shipped FieldBCSpec boundary specification"
@@ -378,6 +448,9 @@ def _fourier_weyl_bound(
     grid, never from the regime.
     """
     grid = _validate_certificate_operator(model, regime, dt, preconditioner, context)
+    layout_error = _state_layout_error(state, grid)
+    if layout_error is not None:
+        raise CertificateNotApplicable(layout_error)
     interior_y, interior_x = grid.interior_slice
     u = np.asarray(jax.device_get(state["u"][interior_y, interior_x]), dtype=np.float64)
     v = np.asarray(jax.device_get(state["v"][interior_y, interior_x]), dtype=np.float64)
@@ -733,6 +806,11 @@ def build_brusselator_linearization(
         raise ValueError("Brusselator FFT diffusivities must contain exactly 'u' and 'v'")
     if dt <= 0.0:
         raise ValueError("dt must be positive")
+    if not isinstance(model.grid, Grid2D):
+        raise TypeError("The Brusselator conditioning study requires a two-dimensional grid")
+    layout_error = _state_layout_error(state, model.grid)
+    if layout_error is not None:
+        raise ValueError(layout_error)
     residual = create_implicit_residual(model, state, time_value + dt, dt, method="be")
     preconditioner = _preconditioner(preconditioner_kind, fft_cache)
     context = PrecondContext(grid=model.grid, dt=dt, params=model.params)
