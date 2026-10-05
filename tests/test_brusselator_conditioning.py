@@ -1855,3 +1855,92 @@ def test_committed_hopf_continuation_transition_is_unchanged():
         "At fixed backward-Euler dt, the FFT-preconditioned verdict is unchanged "
         "between the early and developed states."
     )
+
+
+_PRE_IMPORT_REPLACEMENT_SCRIPT = """
+import jax
+jax.config.update("jax_enable_x64", True)
+import numpy as np
+
+from moljax.core.model import MOLModel
+
+_original_rhs = MOLModel.rhs
+
+
+def _plus_five_state(self, state, t):
+    image = _original_rhs(self, state, t)
+    return {name: image[name] + 5.0 * state[name] for name in image}
+
+
+MOLModel.rhs = _plus_five_state
+
+from moljax.conditioning import linearized_operator
+from moljax.core.grid import Grid2D
+from moljax.core.newton_krylov import create_implicit_residual
+from moljax.core.preconditioners import PrecondContext
+from moljax.experimental import brusselator_conditioning as conditioning
+
+regime = conditioning.TURING_REGIME
+dt = 0.2
+grid = Grid2D.uniform(4, 4, 0.0, 5.0, 0.0, 5.0, n_ghost=1)
+model, fft_cache, _ = conditioning.build_brusselator_system(regime, grid)
+preconditioner = conditioning._preconditioner("fft_diffusion", fft_cache)
+shape = (grid.ny_total, grid.nx_total)
+state = model.apply_bcs(
+    {
+        "u": jax.numpy.full(shape, regime.a),
+        "v": jax.numpy.full(shape, regime.b / regime.a),
+    },
+    0.0,
+)
+context = PrecondContext(grid=grid, dt=dt, params=model.params)
+residual = create_implicit_residual(model, state, dt, dt, method="be")
+operator = linearized_operator(
+    residual, state, preconditioner=preconditioner, context=context
+)
+basis = jax.numpy.eye(operator.n, dtype=jax.numpy.float64)
+matrix = np.column_stack(
+    [np.asarray(operator.matvec(basis[:, column])) for column in range(operator.n)]
+)
+print("dense", float(np.linalg.svd(matrix, compute_uv=False)[-1]))
+try:
+    conditioning._fourier_weyl_bound(
+        state, model, regime, dt, preconditioner=preconditioner, context=context
+    )
+except conditioning.CertificateNotApplicable as refusal:
+    print("refused", refusal)
+else:
+    print("certified")
+"""
+
+
+def test_certificate_refuses_a_rhs_replacement_made_before_the_module_import():
+    """Review reproduction: a class replacement before the import was the reference.
+
+    The experimental module used to snapshot ``MOLModel.rhs`` when imported, so
+    a ``rhs + 5 * state`` replacement installed first was trusted and the
+    certificate returned 0.5987 for an operator with dense sigma_min near 3e-18.
+    This runs in a fresh process because the replacement must precede the import.
+    """
+    import os
+    import subprocess
+    import sys
+
+    root = str(Path(__file__).resolve().parent.parent)
+    env = dict(os.environ, JAX_PLATFORMS="cpu", PYTHONPATH=root)
+    result = subprocess.run(
+        [sys.executable, "-c", _PRE_IMPORT_REPLACEMENT_SCRIPT],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=root,
+        check=True,
+    )
+    lines = {
+        line.split(" ", 1)[0]: line for line in result.stdout.strip().splitlines()
+    }
+    assert "refused" in lines, result.stdout + result.stderr
+    assert "certified" not in lines, result.stdout
+    assert "MOLModel.rhs is not the shipped class function" in lines["refused"]
+    dense = float(lines["dense"].split()[1])
+    assert 0.0 <= dense < 1.0e-8

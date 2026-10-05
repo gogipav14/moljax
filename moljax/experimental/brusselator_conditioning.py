@@ -39,6 +39,7 @@ from moljax.core.fft_solvers import (
 )
 from moljax.core.grid import Grid2D
 from moljax.core.model import (
+    _ORIGINAL_MOLMODEL_METHODS,
     MOLModel,
     create_brusselator_model,
     create_brusselator_periodic_fft,
@@ -215,8 +216,12 @@ _MODEL_ACTIONS = ("rhs", "apply_bcs", "linear_rhs", "nonlinear_rhs")
 residual, so a replacement of any of these methods changes the operator.
 """
 
-_SHIPPED_MODEL_ACTIONS = {name: MOLModel.__dict__[name] for name in _MODEL_ACTIONS}
-"""The class functions of ``MOLModel`` as defined when this module was imported."""
+_SHIPPED_MODEL_ACTIONS = _ORIGINAL_MOLMODEL_METHODS
+"""The class functions that ``moljax.core.model`` recorded when it was defined.
+
+They are not read from ``MOLModel`` here, so a replacement made before this
+module is imported does not become the reference.
+"""
 
 
 def _validate_shipped_model_methods(model: MOLModel) -> None:
@@ -227,6 +232,11 @@ def _validate_shipped_model_methods(model: MOLModel) -> None:
     replacement of the method on the class itself.  Each method that the
     residual calls must resolve to a bound method of this model whose function
     is the shipped class function.
+
+    Threat model: the guard detects replacements of these methods made after
+    ``moljax.core.model`` is imported, whether before or after this module is
+    imported.  It does not defend against code that edits ``moljax.core.model``
+    or its recorded references, which an in-process check cannot establish.
     """
     instance_attributes = getattr(model, "__dict__", {})
     for name in _MODEL_ACTIONS:

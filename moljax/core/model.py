@@ -14,6 +14,7 @@ Design decisions:
 - Periodic models can optionally include precomputed FFT symbols
 """
 
+import types
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any
@@ -387,6 +388,16 @@ class MOLModel:
                     dt_min = jnp.minimum(dt_min, dt_op)
 
         return dt_min
+
+
+_ORIGINAL_MOLMODEL_METHODS = types.MappingProxyType(
+    {name: MOLModel.__dict__[name] for name in ("rhs", "apply_bcs", "linear_rhs", "nonlinear_rhs")}
+)
+"""The ``MOLModel`` class functions as defined here, before any caller can replace them.
+
+Code that must know whether a model runs the shipped residual methods compares
+against these functions instead of snapshotting ``MOLModel`` at its own import.
+"""
 
 
 # =============================================================================
