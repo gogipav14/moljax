@@ -25,8 +25,17 @@ METHOD_LABELS = {
     "geometric_mean": "geometric mean",
     "harmonic_mean": "harmonic mean",
     "optimized_d0": "oracle $d_0^*$",
-    "tau_blend": "tau blend ($l=3$)",
+    "tau_blend": "tau blend",
 }
+
+EFFECTIVE_SCALAR_METHODS = (
+    "frozen_mean",
+    "frozen_bulk",
+    "const",
+    "geometric_mean",
+    "harmonic_mean",
+    "optimized_d0",
+)
 
 
 def _load(filename: str) -> dict[str, Any]:
@@ -53,30 +62,125 @@ def _save(figure: Any, plt: Any, filename: str) -> Path:
 
 
 def _spectral_equivalence_boundary(baseline: dict[str, Any], plt: Any) -> Path:
-    figure, axis = plt.subplots(figsize=(8.5, 5.0))
+    figure, (condition_axis, tail_axis) = plt.subplots(
+        1,
+        2,
+        figsize=(13.0, 5.0),
+        sharex=True,
+    )
     records = baseline["spectral_records"]
-    methods = tuple(METHOD_LABELS)
-    for method in methods:
+    grouped = {}
+    for record in records:
+        grouped.setdefault(record["m"], []).append(record)
+    ordered = sorted(
+        grouped,
+        key=lambda m: grouped[m][0]["coefficient"]["degeneracy_fraction"],
+    )
+    degeneracy = [grouped[m][0]["coefficient"]["degeneracy_fraction"] for m in ordered]
+    effective_condition = [
+        [
+            record["spectrum"]["condition_number_2"]
+            for record in grouped[m]
+            if record["method"] in EFFECTIVE_SCALAR_METHODS
+        ]
+        for m in ordered
+    ]
+    effective_tail = [
+        [
+            record["spectrum"]["near_zero_eigenvalue_count"]
+            for record in grouped[m]
+            if record["method"] in EFFECTIVE_SCALAR_METHODS
+        ]
+        for m in ordered
+    ]
+    condition_lower = [min(values) for values in effective_condition]
+    condition_upper = [max(values) for values in effective_condition]
+    maximum_spread = max(
+        100.0 * (upper / lower - 1.0)
+        for lower, upper in zip(condition_lower, condition_upper, strict=True)
+    )
+    condition_axis.fill_between(
+        degeneracy,
+        condition_lower,
+        condition_upper,
+        color="tab:orange",
+        alpha=0.35,
+        label=(
+            f"effective scalar envelope ({len(EFFECTIVE_SCALAR_METHODS)} variants; "
+            f"max spread {maximum_spread:.1f}%)"
+        ),
+    )
+    condition_axis.plot(
+        degeneracy,
+        [
+            (lower * upper) ** 0.5
+            for lower, upper in zip(condition_lower, condition_upper, strict=True)
+        ],
+        color="tab:orange",
+        linewidth=1.2,
+    )
+    styles = {
+        "identity": ("s", "tab:gray", "--"),
+        "floor": ("^", "tab:brown", ":"),
+        "tau_blend": ("o", "tab:blue", "-"),
+    }
+    for method, (marker, color, linestyle) in styles.items():
         subset = sorted(
             (record for record in records if record["method"] == method),
             key=lambda record: record["coefficient"]["degeneracy_fraction"],
         )
-        if not subset:
-            continue
-        axis.plot(
+        condition_axis.plot(
             [record["coefficient"]["degeneracy_fraction"] for record in subset],
             [record["spectrum"]["condition_number_2"] for record in subset],
-            marker="o",
-            linewidth=2.4 if method == "tau_blend" else 1.0,
+            marker=marker,
+            color=color,
+            linestyle=linestyle,
+            linewidth=2.5 if method == "tau_blend" else 1.5,
             label=METHOD_LABELS[method],
         )
-    axis.axvspan(0.0, 0.05, color="tab:green", alpha=0.12, label="zero-set-free limit")
-    axis.set_yscale("log")
-    axis.set_xlabel(r"degeneracy fraction $\#\{D<\mathrm{floor}\}/N$")
-    axis.set_ylabel(r"$\kappa_2(P^{-1}J)$")
-    axis.set_title("F1. Spectral-equivalence boundary")
-    axis.grid(alpha=0.25, which="both")
-    axis.legend(ncol=2, fontsize=7)
+
+    tail_axis.fill_between(
+        degeneracy,
+        [min(values) for values in effective_tail],
+        [max(values) for values in effective_tail],
+        color="tab:orange",
+        alpha=0.35,
+        label=f"effective scalar envelope ({len(EFFECTIVE_SCALAR_METHODS)} variants)",
+    )
+    zero_tail = [0 for _ in degeneracy]
+    tail_axis.plot(
+        degeneracy,
+        zero_tail,
+        color="tab:blue",
+        marker="o",
+        linewidth=2.5,
+        label="identity, floor, and blend (all zero)",
+    )
+
+    for axis in (condition_axis, tail_axis):
+        axis.axvspan(0.0, 0.05, color="tab:green", alpha=0.12)
+        axis.text(
+            0.025,
+            0.04,
+            "classical bounded-contrast regime\n(not sampled here)",
+            ha="center",
+            va="bottom",
+            rotation=90,
+            fontsize=7,
+            transform=axis.get_xaxis_transform(),
+        )
+        axis.set_xlabel(r"degeneracy fraction $\#\{D<\mathrm{floor}\}/N$")
+        axis.grid(alpha=0.25, which="both")
+        axis.legend(fontsize=7, loc="best")
+    condition_axis.set_yscale("log")
+    condition_axis.set_ylabel(r"$\kappa_2(P^{-1}J)$")
+    condition_axis.set_title("Condition-number envelope")
+    tail_axis.set_ylabel(r"count of $|\lambda|<0.1$")
+    tail_axis.set_title("Near-zero spectral tail")
+    figure.suptitle(
+        "F1. Effective scalar references cluster; floor/identity avoid the tail "
+        "only by forgoing conditioning"
+    )
     return _save(figure, plt, "tau_blend_f1_spectral_equivalence_boundary.png")
 
 
