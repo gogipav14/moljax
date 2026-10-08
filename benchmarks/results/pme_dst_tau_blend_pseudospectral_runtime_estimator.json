@@ -1,0 +1,654 @@
+{
+  "bound": {
+    "crouzeix_constant_used": false,
+    "rate_available_in_sparse_estimator": false,
+    "rate_prefactor": "L(Gamma_epsilon)/(2*pi*epsilon)",
+    "reason": "the proven bound requires a closed contour and its arc length; targeted connectivity paths alone do not supply either"
+  },
+  "complete": true,
+  "config": {
+    "analysis_dt": 0.02,
+    "bisection_iterations": 10,
+    "dense_criterion_results_path": "benchmarks/results/pme_dst_tau_blend_pseudospectral_criterion.json",
+    "epsilon": 1e-05,
+    "gmres_tolerance": 1e-08,
+    "halfwidth": 3.0,
+    "m_values": [
+      2,
+      4,
+      8
+    ],
+    "maximum_sigma_min_evaluations": 48,
+    "nx": 512,
+    "output_path": "benchmarks/results/pme_dst_tau_blend_pseudospectral_runtime_estimator.json",
+    "power_steps": 12,
+    "reference_count": 3,
+    "sigma_arnoldi_steps": 40,
+    "spectral_results_path": "benchmarks/results/pme_dst_tau_blend_spectral_analysis.json",
+    "spectrum_arnoldi_steps": 12,
+    "t0": 0.1,
+    "work_precision_results_path": "benchmarks/results/pme_dst_tau_blend_stage1_validation.json",
+    "x_max": 4.0,
+    "x_min": -4.0
+  },
+  "provenance": {
+    "base_revision": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b",
+    "base_revision_source": "merge-base-upstream",
+    "repository_head": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b"
+  },
+  "records": [
+    {
+      "actual_gmres": {
+        "all_converged": true,
+        "iqr_seconds": 0.014825303107500076,
+        "iterations": [
+          14
+        ],
+        "median_seconds": 0.1617673970758915
+      },
+      "cost": {
+        "exact_spectrum_sparse_path_time_over_gmres": 148.6102255532958,
+        "exact_spectrum_sparse_path_total_seconds": 24.0402893666178,
+        "old_dense_time_over_gmres": 540.1067817978056,
+        "runtime_estimate_time_over_gmres": 73.88235507674827,
+        "runtime_estimate_total_seconds": 11.951756270602345
+      },
+      "dense_grid_reference": {
+        "actual_iterations": 14,
+        "certified": true,
+        "eps_connect_upper": 0.03344194882933271,
+        "epsilon_zero": 0.3837670318977742,
+        "predicted_iterations": 56,
+        "sigma_min_evaluations": 1892,
+        "sigma_min_seconds": 87.3716682344675
+      },
+      "exact_spectrum_sparse_paths": {
+        "anchor_count": 512,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": true,
+        "elapsed_seconds": 23.553891448304057,
+        "eps_connect_path_upper": 0.046846561510958604,
+        "epsilon_zero_estimate": 0.38376703189777434,
+        "epsilon_zero_lower_bound": 0.3837670318977742,
+        "evaluation_budget_exhausted": true,
+        "forward_adjoint_pairs": 2441,
+        "lipschitz_path_upper": 0.046786066972775736,
+        "operator_applications": 4884,
+        "provisional": false,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "tested spectrum-spanning paths lie below a trusted origin-exclusion level",
+        "sampled_path_maximum": 0.035491226848993467,
+        "sigma_min_evaluations": 48,
+        "spectrum_complete": true,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 512,
+        "spectrum_source": "stored exact dense eigendecomposition",
+        "tree_edge_count": 511,
+        "verdict": "certified",
+        "window_nonempty": true
+      },
+      "fully_matrix_free_runtime_estimate": {
+        "anchor_count": 12,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": false,
+        "elapsed_seconds": 9.99974325299263,
+        "eps_connect_path_upper": 0.09369312302191724,
+        "epsilon_zero_estimate": 0.38376703189777434,
+        "epsilon_zero_lower_bound": null,
+        "evaluation_budget_exhausted": true,
+        "forward_adjoint_pairs": 2441,
+        "lipschitz_path_upper": 0.09336670426468241,
+        "operator_applications": 4884,
+        "provisional": true,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "a sparse path window was found, but reduced spectrum and/or matrix-free origin estimates do not prove full-spectrum origin exclusion",
+        "ritz_arnoldi_steps": 12,
+        "ritz_operator_applications": 12,
+        "ritz_seconds": 1.4656150992959738,
+        "sampled_path_maximum": 0.03190196975075207,
+        "sigma_min_evaluations": 48,
+        "spectrum_complete": false,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 12,
+        "spectrum_source": "12-step matrix-free Arnoldi Ritz values",
+        "tree_edge_count": 11,
+        "verdict": "provisional_window",
+        "window_nonempty": true
+      },
+      "m": 2,
+      "method": "tau_blend",
+      "operator_dimension": 512,
+      "operator_norm_scale": {
+        "dense_operator_norm": 4.26237390924125,
+        "matrix_free_estimate_with_safety_factor": 6.393560863496407,
+        "operator_applications": 48,
+        "seconds": 0.4863979183137417
+      },
+      "sigma_min_validation": {
+        "maximum_relative_error": 6.806171382808148e-14,
+        "median_dense_svd_seconds": 0.04077173490077257,
+        "median_matrix_free_seconds": 0.6709815440699458,
+        "points": [
+          {
+            "absolute_error": 5.551115123125783e-17,
+            "dense_sigma_min": 0.3837670318977742,
+            "dense_svd_seconds": 0.036194220185279846,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.6407274305820465,
+              "estimate": 0.3837670318977743,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 516,
+              "normal_residual_norm": 8.782230985835932e-11,
+              "operator_applications": 1030,
+              "point": [
+                0.0,
+                0.0
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 0.14727713477162732
+            },
+            "matrix_free_time_over_dense_svd": 17.702479216353712,
+            "point": [
+              0.0,
+              0.0
+            ],
+            "relative_error": 1.4464804586456656e-16
+          },
+          {
+            "absolute_error": 1.0842021724855044e-16,
+            "dense_sigma_min": 0.0015929692502661826,
+            "dense_svd_seconds": 0.0453492496162653,
+            "matrix_free": {
+              "adjoint_applications": 515,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.7012356575578451,
+              "estimate": 0.001592969250266291,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 514,
+              "normal_residual_norm": 2.283355498113367e-09,
+              "operator_applications": 1029,
+              "point": [
+                1.005542251311157,
+                0.18510305660169082
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 2.537551032293949e-06
+            },
+            "matrix_free_time_over_dense_svd": 15.463004647078764,
+            "point": [
+              1.005542251311157,
+              0.18510305660169082
+            ],
+            "relative_error": 6.806171382808148e-14
+          }
+        ]
+      }
+    },
+    {
+      "actual_gmres": {
+        "all_converged": true,
+        "iqr_seconds": 0.019398048520088196,
+        "iterations": [
+          15
+        ],
+        "median_seconds": 0.1657562553882599
+      },
+      "cost": {
+        "exact_spectrum_sparse_path_time_over_gmres": 64.29103508054953,
+        "exact_spectrum_sparse_path_total_seconds": 10.656641229987144,
+        "old_dense_time_over_gmres": 386.30962848829085,
+        "runtime_estimate_time_over_gmres": 64.2902260993945,
+        "runtime_estimate_total_seconds": 10.656507136300206
+      },
+      "dense_grid_reference": {
+        "actual_iterations": 15,
+        "certified": true,
+        "eps_connect_upper": 0.04646878128905967,
+        "epsilon_zero": 0.21191450149640623,
+        "predicted_iterations": 120,
+        "sigma_min_evaluations": 1892,
+        "sigma_min_seconds": 64.03323743864894
+      },
+      "exact_spectrum_sparse_paths": {
+        "anchor_count": 512,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": true,
+        "elapsed_seconds": 10.490288013592362,
+        "eps_connect_path_upper": 0.0651885429407888,
+        "epsilon_zero_estimate": 0.211914501496406,
+        "epsilon_zero_lower_bound": 0.21191450149640623,
+        "evaluation_budget_exhausted": true,
+        "forward_adjoint_pairs": 2450,
+        "lipschitz_path_upper": 0.06512355789791645,
+        "operator_applications": 5063,
+        "provisional": false,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "tested spectrum-spanning paths lie below a trusted origin-exclusion level",
+        "sampled_path_maximum": 0.057984617742908265,
+        "sigma_min_evaluations": 48,
+        "spectrum_complete": true,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 512,
+        "spectrum_source": "stored exact dense eigendecomposition",
+        "tree_edge_count": 511,
+        "verdict": "certified",
+        "window_nonempty": true
+      },
+      "fully_matrix_free_runtime_estimate": {
+        "anchor_count": 12,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": false,
+        "elapsed_seconds": 10.33459315635264,
+        "eps_connect_path_upper": 0.10347387768379167,
+        "epsilon_zero_estimate": 0.21191450149640606,
+        "epsilon_zero_lower_bound": null,
+        "evaluation_budget_exhausted": true,
+        "forward_adjoint_pairs": 2441,
+        "lipschitz_path_upper": 0.10341668110606976,
+        "operator_applications": 5069,
+        "provisional": true,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "a sparse path window was found, but reduced spectrum and/or matrix-free origin estimates do not prove full-spectrum origin exclusion",
+        "ritz_arnoldi_steps": 12,
+        "ritz_operator_applications": 12,
+        "ritz_seconds": 0.15556076355278492,
+        "sampled_path_maximum": 0.04155055887258581,
+        "sigma_min_evaluations": 48,
+        "spectrum_complete": false,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 12,
+        "spectrum_source": "12-step matrix-free Arnoldi Ritz values",
+        "tree_edge_count": 11,
+        "verdict": "provisional_window",
+        "window_nonempty": true
+      },
+      "m": 4,
+      "method": "tau_blend",
+      "operator_dimension": 512,
+      "operator_norm_scale": {
+        "dense_operator_norm": 11.60806449162286,
+        "matrix_free_estimate_with_safety_factor": 17.41209667621319,
+        "operator_applications": 48,
+        "seconds": 0.16635321639478207
+      },
+      "sigma_min_validation": {
+        "maximum_relative_error": 7.784707244138015e-14,
+        "median_dense_svd_seconds": 0.03395691141486168,
+        "median_matrix_free_seconds": 0.9146564714610577,
+        "points": [
+          {
+            "absolute_error": 1.1102230246251565e-16,
+            "dense_sigma_min": 0.21191450149640623,
+            "dense_svd_seconds": 0.03613285534083843,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.8301428873091936,
+              "estimate": 0.21191450149640612,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 698,
+              "normal_residual_norm": 9.445887566547103e-09,
+              "operator_applications": 1212,
+              "point": [
+                0.0,
+                0.0
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 0.044907755944470315
+            },
+            "matrix_free_time_over_dense_svd": 22.97473807365955,
+            "point": [
+              0.0,
+              0.0
+            ],
+            "relative_error": 5.239013926774541e-16
+          },
+          {
+            "absolute_error": 1.1709383462843448e-16,
+            "dense_sigma_min": 0.0015041520632212296,
+            "dense_svd_seconds": 0.031780967488884926,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.9991700556129217,
+              "estimate": 0.0015041520632213467,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 768,
+              "normal_residual_norm": 6.386699562674262e-09,
+              "operator_applications": 1282,
+              "point": [
+                1.0000000000013025,
+                0.22394108857975165
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 2.262473429293034e-06
+            },
+            "matrix_free_time_over_dense_svd": 31.439258605401847,
+            "point": [
+              1.0000000000013025,
+              0.22394108857975165
+            ],
+            "relative_error": 7.784707244138015e-14
+          }
+        ]
+      }
+    },
+    {
+      "actual_gmres": {
+        "all_converged": true,
+        "iqr_seconds": 0.016035839915275574,
+        "iterations": [
+          17
+        ],
+        "median_seconds": 0.18195215612649918
+      },
+      "cost": {
+        "exact_spectrum_sparse_path_time_over_gmres": 58.880804499614165,
+        "exact_spectrum_sparse_path_total_seconds": 10.713489333167672,
+        "old_dense_time_over_gmres": 370.29099111816964,
+        "runtime_estimate_time_over_gmres": 57.980443204993364,
+        "runtime_estimate_total_seconds": 10.549666654318571
+      },
+      "dense_grid_reference": {
+        "actual_iterations": 17,
+        "certified": true,
+        "eps_connect_upper": 0.08458645053410069,
+        "epsilon_zero": 0.18266195071232527,
+        "predicted_iterations": 800,
+        "sigma_min_evaluations": 1892,
+        "sigma_min_seconds": 67.37524422816932
+      },
+      "exact_spectrum_sparse_paths": {
+        "anchor_count": 371,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": true,
+        "elapsed_seconds": 10.49081402644515,
+        "eps_connect_path_upper": 0.08936878643249477,
+        "epsilon_zero_estimate": 0.1826619507123256,
+        "epsilon_zero_lower_bound": 0.18266195071232527,
+        "evaluation_budget_exhausted": true,
+        "forward_adjoint_pairs": 2441,
+        "lipschitz_path_upper": 0.08934535054411485,
+        "operator_applications": 5071,
+        "provisional": false,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "tested spectrum-spanning paths lie below a trusted origin-exclusion level",
+        "sampled_path_maximum": 0.06719874115197258,
+        "sigma_min_evaluations": 48,
+        "spectrum_complete": true,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 512,
+        "spectrum_source": "stored exact dense eigendecomposition",
+        "tree_edge_count": 370,
+        "verdict": "certified",
+        "window_nonempty": true
+      },
+      "fully_matrix_free_runtime_estimate": {
+        "anchor_count": 12,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": false,
+        "elapsed_seconds": 10.155119024217129,
+        "eps_connect_path_upper": 0.18069976178865738,
+        "epsilon_zero_estimate": 0.18266195071232558,
+        "epsilon_zero_lower_bound": null,
+        "evaluation_budget_exhausted": true,
+        "forward_adjoint_pairs": 2441,
+        "lipschitz_path_upper": 0.18069837990373774,
+        "operator_applications": 5071,
+        "provisional": true,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "a sparse path window was found, but reduced spectrum and/or matrix-free origin estimates do not prove full-spectrum origin exclusion",
+        "ritz_arnoldi_steps": 12,
+        "ritz_operator_applications": 12,
+        "ritz_seconds": 0.17187232337892056,
+        "sampled_path_maximum": 0.07103680359967908,
+        "sigma_min_evaluations": 48,
+        "spectrum_complete": false,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 12,
+        "spectrum_source": "12-step matrix-free Arnoldi Ritz values",
+        "tree_edge_count": 11,
+        "verdict": "provisional_window",
+        "window_nonempty": true
+      },
+      "m": 8,
+      "method": "tau_blend",
+      "operator_dimension": 512,
+      "operator_norm_scale": {
+        "dense_operator_norm": 9.396683815720984,
+        "matrix_free_estimate_with_safety_factor": 14.09502541624939,
+        "operator_applications": 48,
+        "seconds": 0.22267530672252178
+      },
+      "sigma_min_validation": {
+        "maximum_relative_error": 2.082084875590784e-14,
+        "median_dense_svd_seconds": 0.043738256208598614,
+        "median_matrix_free_seconds": 0.9135866044089198,
+        "points": [
+          {
+            "absolute_error": 3.608224830031759e-16,
+            "dense_sigma_min": 0.18266195071232527,
+            "dense_svd_seconds": 0.030717747285962105,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.9194364286959171,
+              "estimate": 0.18266195071232563,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 703,
+              "normal_residual_norm": 2.4373363902558164e-09,
+              "operator_applications": 1217,
+              "point": [
+                0.0,
+                0.0
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 0.03336538823803208
+            },
+            "matrix_free_time_over_dense_svd": 29.93176615904045,
+            "point": [
+              0.0,
+              0.0
+            ],
+            "relative_error": 1.9753565621963387e-15
+          },
+          {
+            "absolute_error": 4.7271214720367993e-17,
+            "dense_sigma_min": 0.002270378853165386,
+            "dense_svd_seconds": 0.05675876513123512,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.9077367801219225,
+              "estimate": 0.0022703788531654332,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 702,
+              "normal_residual_norm": 1.0376988826287854e-09,
+              "operator_applications": 1216,
+              "point": [
+                2.0739567862398878,
+                0.40352832100631925
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 5.154620136900787e-06
+            },
+            "matrix_free_time_over_dense_svd": 15.99289163573403,
+            "point": [
+              2.0739567862398878,
+              0.40352832100631925
+            ],
+            "relative_error": 2.082084875590784e-14
+          }
+        ]
+      }
+    },
+    {
+      "actual_gmres": {
+        "all_converged": true,
+        "iqr_seconds": 0.12094501778483391,
+        "iterations": [
+          334
+        ],
+        "median_seconds": 10.735568391159177
+      },
+      "cost": {
+        "exact_spectrum_sparse_path_time_over_gmres": 0.11610262803367248,
+        "exact_spectrum_sparse_path_total_seconds": 1.2464277036488056,
+        "runtime_estimate_time_over_gmres": 0.3171201082119305,
+        "runtime_estimate_total_seconds": 3.4044646099209785
+      },
+      "exact_spectrum_sparse_paths": {
+        "anchor_count": 512,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": false,
+        "elapsed_seconds": 1.0796314645558596,
+        "eps_connect_path_upper": null,
+        "epsilon_zero_estimate": 0.011177481349111153,
+        "epsilon_zero_lower_bound": 0.011177481349113514,
+        "evaluation_budget_exhausted": false,
+        "forward_adjoint_pairs": 555,
+        "lipschitz_path_upper": 1.2975164127999994,
+        "operator_applications": 1112,
+        "provisional": true,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "no tested spectrum-spanning path was established below the origin threshold",
+        "sampled_path_maximum": 1.2975164127999994,
+        "sigma_min_evaluations": 2,
+        "spectrum_complete": true,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 512,
+        "spectrum_source": "stored exact dense eigendecomposition",
+        "tree_edge_count": 511,
+        "verdict": "not_certified",
+        "window_nonempty": false
+      },
+      "fully_matrix_free_runtime_estimate": {
+        "anchor_count": 12,
+        "arnoldi_steps_per_evaluation": 40,
+        "bisection_iterations": 10,
+        "certified": false,
+        "elapsed_seconds": 3.02317014336586,
+        "eps_connect_path_upper": null,
+        "epsilon_zero_estimate": 0.011177481349112079,
+        "epsilon_zero_lower_bound": null,
+        "evaluation_budget_exhausted": false,
+        "forward_adjoint_pairs": 1006,
+        "lipschitz_path_upper": 6.402244586551548,
+        "operator_applications": 2014,
+        "provisional": true,
+        "rate_bound_available": false,
+        "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
+        "reason": "no tested spectrum-spanning path was established below the origin threshold",
+        "ritz_arnoldi_steps": 12,
+        "ritz_operator_applications": 12,
+        "ritz_seconds": 0.2144982274621725,
+        "sampled_path_maximum": 1.8230426696449018,
+        "sigma_min_evaluations": 13,
+        "spectrum_complete": false,
+        "spectrum_coverage_upper": 0.0,
+        "spectrum_point_count": 12,
+        "spectrum_source": "12-step matrix-free Arnoldi Ritz values",
+        "tree_edge_count": 11,
+        "verdict": "not_certified",
+        "window_nonempty": false
+      },
+      "m": 8,
+      "method": "frozen_mean",
+      "operator_dimension": 512,
+      "operator_norm_scale": {
+        "dense_operator_norm": 77.11702238346294,
+        "matrix_free_estimate_with_safety_factor": 113.8697746960647,
+        "operator_applications": 48,
+        "seconds": 0.16679623909294605
+      },
+      "sigma_min_validation": {
+        "maximum_relative_error": 4.713365231392489e-13,
+        "median_dense_svd_seconds": 0.034388924948871136,
+        "median_matrix_free_seconds": 0.6226395647972822,
+        "points": [
+          {
+            "absolute_error": 5.268355196541563e-15,
+            "dense_sigma_min": 0.011177481349106297,
+            "dense_svd_seconds": 0.030868757516145706,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.6134335640817881,
+              "estimate": 0.011177481349111566,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 516,
+              "normal_residual_norm": 2.4160322963402794e-07,
+              "operator_applications": 1030,
+              "point": [
+                0.0,
+                0.0
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 0.0001249360893097369
+            },
+            "matrix_free_time_over_dense_svd": 19.872311470940662,
+            "point": [
+              0.0,
+              0.0
+            ],
+            "relative_error": 4.713365231392489e-13
+          },
+          {
+            "absolute_error": 7.105427357601002e-15,
+            "dense_sigma_min": 10.895694642049135,
+            "dense_svd_seconds": 0.037909092381596565,
+            "matrix_free": {
+              "adjoint_applications": 514,
+              "arnoldi_steps": 0,
+              "converged": true,
+              "elapsed_seconds": 0.6318455655127764,
+              "estimate": 10.895694642049142,
+              "forward_adjoint_pairs": 514,
+              "forward_applications": 516,
+              "normal_residual_norm": 7.147891193246778e-08,
+              "operator_applications": 1030,
+              "point": [
+                14.348005468819377,
+                11.565876735027329
+              ],
+              "solver": "propack",
+              "squared_rayleigh_quotient": 118.71616173277837
+            },
+            "matrix_free_time_over_dense_svd": 16.667388370910025,
+            "point": [
+              14.348005468819377,
+              11.565876735027329
+            ],
+            "relative_error": 6.521316530090179e-16
+          }
+        ]
+      }
+    }
+  ],
+  "runtime_seconds": 93.82543422281742,
+  "schema": "pme_dst_tau_blend_pseudospectral_runtime_estimator_v1",
+  "scope": "Experimental sparse-path pseudospectral connectivity estimate. Exact-spectrum mode is a sufficient qualitative certificate; the fully matrix-free reduced-spectrum mode is provisional. Sparse paths do not provide a closed-contour arc length, so no residual-rate certificate is claimed."
+}

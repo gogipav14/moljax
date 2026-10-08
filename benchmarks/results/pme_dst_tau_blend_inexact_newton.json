@@ -1,0 +1,2136 @@
+{
+  "complete": true,
+  "config": {
+    "dt": 0.02,
+    "epsilon": 1e-05,
+    "eta_initial": 0.5,
+    "eta_max": 0.5,
+    "eta_min": 1e-10,
+    "halfwidth": 3.0,
+    "m_values": [
+      2,
+      4,
+      8
+    ],
+    "max_gmres_iters": 400,
+    "max_newton_iters": 20,
+    "nonlinear_tolerance": 1e-08,
+    "nx": 512,
+    "output_path": "benchmarks/results/pme_dst_tau_blend_inexact_newton.json",
+    "reference_count": 3,
+    "t0": 0.1,
+    "timing_repetitions": 5,
+    "timing_warmups": 1,
+    "x_max": 4.0,
+    "x_min": -4.0
+  },
+  "device": {
+    "default_backend": "gpu",
+    "devices": [
+      {
+        "device_kind": "NVIDIA GeForce RTX 3090 Ti",
+        "platform": "gpu"
+      }
+    ]
+  },
+  "forcing_schedule": "Eisenstat-Walker choice 1: eta_0=0.5; after accepted step s_k, raw eta is abs(||F(x_{k+1})||-||F(x_k)+J_k s_k||)/||F(x_k)||. If eta_k**phi>0.1 (phi=(1+sqrt(5))/2), the next eta is at least eta_k**phi; the result is clamped to [1e-10,0.5]. Each linear solve is accepted only when the true residual ||J_k s_k+F(x_k)||/||F(x_k)|| is at most eta_k.",
+  "provenance": {
+    "base_revision": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b",
+    "base_revision_source": "merge-base-upstream",
+    "repository_head": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b"
+  },
+  "records": [
+    {
+      "dt": 0.02,
+      "m": 2,
+      "matched_solution": {
+        "all_converged_to_tolerance": true,
+        "comparisons": {
+          "frozen_bulk": {
+            "final_residual_norm": 9.531012446185657e-13,
+            "max_abs_vs_tau_blend": 4.420630528301217e-12,
+            "relative_l2_vs_tau_blend": 1.3262367547573731e-12
+          },
+          "frozen_mean": {
+            "final_residual_norm": 6.014768746376564e-13,
+            "max_abs_vs_tau_blend": 4.420241950242598e-12,
+            "relative_l2_vs_tau_blend": 1.319975317970853e-12
+          },
+          "identity": {
+            "final_residual_norm": 6.267750774258379e-11,
+            "max_abs_vs_tau_blend": 1.1944001204608956e-11,
+            "relative_l2_vs_tau_blend": 3.033482818514688e-12
+          },
+          "tau_blend": {
+            "final_residual_norm": 2.390991695205377e-10,
+            "max_abs_vs_tau_blend": 0.0,
+            "relative_l2_vs_tau_blend": 0.0
+          }
+        },
+        "nonlinear_tolerance": 1e-08
+      },
+      "methods": {
+        "frozen_bulk": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 9.531012446185657e-13,
+            "initial_residual_norm": 1.2789945787134653,
+            "nonlinear_iterations": 9,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.4628271526106142,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 25,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.1995116739597704,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.2505917396502726,
+                "residual_norm_before": 1.2789945787134653,
+                "step_length": 0.0625
+              },
+              {
+                "achieved_linear_relative_residual": 0.2607788979072179,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 15,
+                "iteration": 1,
+                "linear_model_residual_norm": 0.9550861055278336,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 0.9241528398415422,
+                "residual_norm_before": 1.2505917396502726,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.14785056521943343,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 9,
+                "iteration": 2,
+                "linear_model_residual_norm": 0.13663651971971655,
+                "next_eta": 0.2932447406740508,
+                "residual_norm_after": 0.4076394795822372,
+                "residual_norm_before": 0.9241528398415422,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.2212822051687078,
+                "eta": 0.2932447406740508,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 3,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.09020336295578188,
+                "next_eta": 0.137391671413515,
+                "residual_norm_after": 0.10054377452783217,
+                "residual_norm_before": 0.4076394795822372,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.12675089456259722,
+                "eta": 0.137391671413515,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 7,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.012744013364102804,
+                "next_eta": 0.01077360402652119,
+                "residual_norm_after": 0.011660794550008112,
+                "residual_norm_before": 0.10054377452783217,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.009762434495373295,
+                "eta": 0.01077360402652119,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 41,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.00011383774295846011,
+                "next_eta": 0.014031257073056809,
+                "residual_norm_after": 0.0002774533489657237,
+                "residual_norm_before": 0.011660794550008112,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.013932890961577642,
+                "eta": 0.014031257073056809,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 65,
+                "iteration": 6,
+                "linear_model_residual_norm": 3.8657272580639795e-06,
+                "next_eta": 0.004310413246154991,
+                "residual_norm_after": 5.061665848635898e-06,
+                "residual_norm_before": 0.0002774533489657237,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.0036158022715198027,
+                "eta": 0.004310413246154991,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 83,
+                "iteration": 7,
+                "linear_model_residual_norm": 1.830198287317189e-08,
+                "next_eta": 4.905878256680542e-05,
+                "residual_norm_after": 1.8053663708877836e-08,
+                "residual_norm_before": 5.061665848635898e-06,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 4.633102908811677e-05,
+                "eta": 4.905878256680542e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 136,
+                "iteration": 8,
+                "linear_model_residual_norm": 8.364448184430971e-13,
+                "next_eta": 6.46164834222004e-06,
+                "residual_norm_after": 9.531012446185657e-13,
+                "residual_norm_before": 1.8053663708877836e-08,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 384
+          },
+          "timing": {
+            "iqr_seconds": 0.11818677932024002,
+            "median_seconds": 3.2973184436559677,
+            "q1_seconds": 3.246171500533819,
+            "q3_seconds": 3.364358279854059,
+            "repetitions": 5,
+            "samples_seconds": [
+              3.2973184436559677,
+              3.237700928002596,
+              3.2546420730650425,
+              3.4167848229408264,
+              3.311931736767292
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "frozen_mean": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 6.014768746376564e-13,
+            "initial_residual_norm": 1.2789945787134653,
+            "nonlinear_iterations": 9,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.46048416860258407,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 21,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.199535965341837,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.2507959631235532,
+                "residual_norm_before": 1.2789945787134653,
+                "step_length": 0.0625
+              },
+              {
+                "achieved_linear_relative_residual": 0.2952748602240644,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 12,
+                "iteration": 1,
+                "linear_model_residual_norm": 0.9591310938882839,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 0.9190403198064736,
+                "residual_norm_before": 1.2507959631235532,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.14543021084280686,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 7,
+                "iteration": 2,
+                "linear_model_residual_norm": 0.1336562274824961,
+                "next_eta": 0.2924500214983611,
+                "residual_norm_after": 0.4024295887677599,
+                "residual_norm_before": 0.9190403198064736,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.2795672677882474,
+                "eta": 0.2924500214983611,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 2,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.11250614060895062,
+                "next_eta": 0.13678971156574588,
+                "residual_norm_after": 0.11910181050753296,
+                "residual_norm_before": 0.4024295887677599,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.1240166990877013,
+                "eta": 0.13678971156574588,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 7,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.014770613394513136,
+                "next_eta": 0.01256623230560513,
+                "residual_norm_after": 0.013273952375657315,
+                "residual_norm_before": 0.11910181050753296,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.011176268479109804,
+                "eta": 0.01256623230560513,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 40,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.00014835325552926354,
+                "next_eta": 0.01065105766738537,
+                "residual_norm_after": 0.0002897348877565166,
+                "residual_norm_before": 0.013273952375657315,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.010031883351410274,
+                "eta": 0.01065105766738537,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 68,
+                "iteration": 6,
+                "linear_model_residual_norm": 2.9065865968073235e-06,
+                "next_eta": 0.0050788451231396975,
+                "residual_norm_after": 4.378105218492936e-06,
+                "residual_norm_before": 0.0002897348877565166,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.004570903671028984,
+                "eta": 0.0050788451231396975,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 79,
+                "iteration": 7,
+                "linear_model_residual_norm": 2.0011897215360513e-08,
+                "next_eta": 3.95476987101916e-06,
+                "residual_norm_after": 1.9994582816750266e-08,
+                "residual_norm_before": 4.378105218492936e-06,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 3.576767002131717e-06,
+                "eta": 3.95476987101916e-06,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 174,
+                "iteration": 8,
+                "linear_model_residual_norm": 7.15159640403422e-14,
+                "next_eta": 2.6505224712832947e-05,
+                "residual_norm_after": 6.014768746376564e-13,
+                "residual_norm_before": 1.9994582816750266e-08,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 410
+          },
+          "timing": {
+            "iqr_seconds": 0.14404394198209047,
+            "median_seconds": 4.310517866164446,
+            "q1_seconds": 4.280199979431927,
+            "q3_seconds": 4.424243921414018,
+            "repetitions": 5,
+            "samples_seconds": [
+              4.310517866164446,
+              4.366592878475785,
+              4.26428328640759,
+              4.48189496435225,
+              4.2961166724562645
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "identity": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 6.267750774258379e-11,
+            "initial_residual_norm": 1.2789945787134653,
+            "nonlinear_iterations": 16,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.3537374969284428,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 5,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.2440975616147196,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.2540518884634857,
+                "residual_norm_before": 1.2789945787134653,
+                "step_length": 0.03125
+              },
+              {
+                "achieved_linear_relative_residual": 0.314771107044289,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 28,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.1138120601952473,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.1414019699735982,
+                "residual_norm_before": 1.2540518884634857,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.15301281843510034,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 43,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.002299381325928,
+                "next_eta": 0.08041452467118243,
+                "residual_norm_after": 1.0940846782001061,
+                "residual_norm_before": 1.1414019699735982,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.07149433401104621,
+                "eta": 0.08041452467118243,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 52,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.9580727758425205,
+                "next_eta": 0.04765580549219881,
+                "residual_norm_after": 0.9059332892262213,
+                "residual_norm_before": 1.0940846782001061,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.04314011740478388,
+                "eta": 0.04765580549219881,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 57,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.7929174001650486,
+                "next_eta": 0.027623294542951624,
+                "residual_norm_after": 0.7678925380804877,
+                "residual_norm_before": 0.9059332892262213,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.024295300195448413,
+                "eta": 0.027623294542951624,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 62,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.576051588491224,
+                "next_eta": 0.16464064145077492,
+                "residual_norm_after": 0.7024779085260591,
+                "residual_norm_before": 0.7678925380804877,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.16014415513166658,
+                "eta": 0.16464064145077492,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 30,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.11249773115956588,
+                "next_eta": 0.26915791323683763,
+                "residual_norm_after": 0.30157521911341806,
+                "residual_norm_before": 0.7024779085260591,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.26499434523635,
+                "eta": 0.26915791323683763,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 16,
+                "iteration": 7,
+                "linear_model_residual_norm": 0.07991572772846901,
+                "next_eta": 0.1196002808670876,
+                "residual_norm_after": 0.08350491591602752,
+                "residual_norm_before": 0.30157521911341806,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.11801181641880329,
+                "eta": 0.1196002808670876,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 43,
+                "iteration": 8,
+                "linear_model_residual_norm": 0.06296696864625835,
+                "next_eta": 0.005118230590848248,
+                "residual_norm_after": 0.06339436606138597,
+                "residual_norm_before": 0.08350491591602752,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.004782159395817358,
+                "eta": 0.005118230590848248,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 86,
+                "iteration": 9,
+                "linear_model_residual_norm": 0.03169827033866631,
+                "next_eta": 0.09176756953118773,
+                "residual_norm_after": 0.037515817234090115,
+                "residual_norm_before": 0.06339436606138597,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.08834480966876385,
+                "eta": 0.09176756953118773,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 51,
+                "iteration": 10,
+                "linear_model_residual_norm": 0.0033143277331138215,
+                "next_eta": 0.2984407636156145,
+                "residual_norm_after": 0.014510576876119508,
+                "residual_norm_before": 0.037515817234090115,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.27320588052241646,
+                "eta": 0.2984407636156145,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 9,
+                "iteration": 11,
+                "linear_model_residual_norm": 0.003964374932328445,
+                "next_eta": 0.1413522174118006,
+                "residual_norm_after": 0.0039868791753049125,
+                "residual_norm_before": 0.014510576876119508,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.13606361520765528,
+                "eta": 0.1413522174118006,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 33,
+                "iteration": 12,
+                "linear_model_residual_norm": 0.0005424691939881017,
+                "next_eta": 0.06001554519567317,
+                "residual_norm_after": 0.0007817439213233018,
+                "residual_norm_before": 0.0039868791753049125,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.055993908922367046,
+                "eta": 0.06001554519567317,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 46,
+                "iteration": 13,
+                "linear_model_residual_norm": 4.377289793119103e-05,
+                "next_eta": 0.010526629476130998,
+                "residual_norm_after": 5.200202653617913e-05,
+                "residual_norm_before": 0.0007817439213233018,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.010446447729513838,
+                "eta": 0.010526629476130998,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 62,
+                "iteration": 14,
+                "linear_model_residual_norm": 5.432364520389868e-07,
+                "next_eta": 0.00011860267992302378,
+                "residual_norm_after": 5.370688723303678e-07,
+                "residual_norm_before": 5.200202653617913e-05,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.0001172905305812036,
+                "eta": 0.00011860267992302378,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 119,
+                "iteration": 15,
+                "linear_model_residual_norm": 6.299309299427754e-11,
+                "next_eta": 5.876066701173925e-07,
+                "residual_norm_after": 6.267750774258379e-11,
+                "residual_norm_before": 5.370688723303678e-07,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 742
+          },
+          "timing": {
+            "iqr_seconds": 0.1515259239822626,
+            "median_seconds": 4.648387096822262,
+            "q1_seconds": 4.522853779606521,
+            "q3_seconds": 4.674379703588784,
+            "repetitions": 5,
+            "samples_seconds": [
+              4.692066991701722,
+              4.541061131283641,
+              4.504646427929401,
+              4.656692415475845,
+              4.648387096822262
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "tau_blend": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 2.390991695205377e-10,
+            "initial_residual_norm": 1.2789945787134653,
+            "nonlinear_iterations": 13,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.21556470455458382,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 3,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.2392315908287,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.2600338565010403,
+                "residual_norm_before": 1.2789945787134653,
+                "step_length": 0.03125
+              },
+              {
+                "achieved_linear_relative_residual": 0.25781067926308515,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 3,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.1794286591594025,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.1796151296876514,
+                "residual_norm_before": 1.2600338565010403,
+                "step_length": 0.0625
+              },
+              {
+                "achieved_linear_relative_residual": 0.1364321802153919,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 6,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.030350806676027,
+                "next_eta": 0.050115124581757486,
+                "residual_norm_after": 1.0894673658588496,
+                "residual_norm_before": 1.1796151296876514,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.0473143128398118,
+                "eta": 0.050115124581757486,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 13,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.8172644520933946,
+                "next_eta": 0.028810236634088975,
+                "residual_norm_after": 0.7858766394778836,
+                "residual_norm_before": 1.0894673658588496,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.02220648716233451,
+                "eta": 0.028810236634088975,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 18,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.5893315805742941,
+                "next_eta": 0.02578950866857467,
+                "residual_norm_after": 0.6095989529805393,
+                "residual_norm_before": 0.7858766394778836,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.02025066067337471,
+                "eta": 0.02578950866857467,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 16,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.30398495838561923,
+                "next_eta": 0.07337754397336069,
+                "residual_norm_after": 0.3487158323640634,
+                "residual_norm_before": 0.6095989529805393,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.057377343864312445,
+                "eta": 0.07337754397336069,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 11,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.0200083882244828,
+                "next_eta": 0.5,
+                "residual_norm_after": 0.3022483900353207,
+                "residual_norm_before": 0.3487158323640634,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.33398030999973255,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 3,
+                "iteration": 7,
+                "linear_model_residual_norm": 0.10094501100091649,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 0.12097447934204637,
+                "residual_norm_before": 0.3022483900353207,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.1813850966160916,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 1,
+                "iteration": 8,
+                "linear_model_residual_norm": 0.021942967623538458,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 0.02514215185566369,
+                "residual_norm_before": 0.12097447934204637,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.10899778220083729,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 3,
+                "iteration": 9,
+                "linear_model_residual_norm": 0.002740438792024008,
+                "next_eta": 0.06482072281075797,
+                "residual_norm_after": 0.004370171248325968,
+                "residual_norm_before": 0.02514215185566369,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.02741731205267345,
+                "eta": 0.06482072281075797,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 11,
+                "iteration": 10,
+                "linear_model_residual_norm": 0.00011981834883897455,
+                "next_eta": 0.012843062191874671,
+                "residual_norm_after": 0.00017594472997036753,
+                "residual_norm_before": 0.004370171248325968,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.010919861227869065,
+                "eta": 0.012843062191874671,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 18,
+                "iteration": 11,
+                "linear_model_residual_norm": 1.9212920350513087e-06,
+                "next_eta": 0.0001609105518451525,
+                "residual_norm_after": 1.949603398645087e-06,
+                "residual_norm_before": 0.00017594472997036753,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.00012265380191899922,
+                "eta": 0.0001609105518451525,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 28,
+                "iteration": 12,
+                "linear_model_residual_norm": 2.3912626907802217e-10,
+                "next_eta": 1.3900036029542478e-08,
+                "residual_norm_after": 2.390991695205377e-10,
+                "residual_norm_before": 1.949603398645087e-06,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 134
+          },
+          "timing": {
+            "iqr_seconds": 0.027155812829732895,
+            "median_seconds": 0.42867389507591724,
+            "q1_seconds": 0.41418904066085815,
+            "q3_seconds": 0.44134485349059105,
+            "repetitions": 5,
+            "samples_seconds": [
+              0.42867389507591724,
+              0.44121211022138596,
+              0.4282555151730776,
+              0.44147759675979614,
+              0.4001225661486387
+            ],
+            "warmups_excluded": 1
+          }
+        }
+      },
+      "nx": 512
+    },
+    {
+      "dt": 0.02,
+      "m": 4,
+      "matched_solution": {
+        "all_converged_to_tolerance": true,
+        "comparisons": {
+          "frozen_bulk": {
+            "final_residual_norm": 3.5628928634731327e-10,
+            "max_abs_vs_tau_blend": 8.343443789547666e-11,
+            "relative_l2_vs_tau_blend": 1.7112352586821172e-11
+          },
+          "frozen_mean": {
+            "final_residual_norm": 4.91853346301942e-10,
+            "max_abs_vs_tau_blend": 1.22716057290395e-10,
+            "relative_l2_vs_tau_blend": 2.550124669376543e-11
+          },
+          "identity": {
+            "final_residual_norm": 1.3692718055710384e-09,
+            "max_abs_vs_tau_blend": 4.6289583277570046e-10,
+            "relative_l2_vs_tau_blend": 4.889892522264405e-11
+          },
+          "tau_blend": {
+            "final_residual_norm": 1.868761105699975e-12,
+            "max_abs_vs_tau_blend": 0.0,
+            "relative_l2_vs_tau_blend": 0.0
+          }
+        },
+        "nonlinear_tolerance": 1e-08
+      },
+      "methods": {
+        "frozen_bulk": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 3.5628928634731327e-10,
+            "initial_residual_norm": 2.1539593014009126,
+            "nonlinear_iterations": 11,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.4912849267696429,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 63,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.9368954386279151,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 2.0132192827096,
+                "residual_norm_before": 2.1539593014009126,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.3073313529273886,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 63,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.7815911858145859,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.7043023296502826,
+                "residual_norm_before": 2.0132192827096,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.1626956265118073,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 77,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.4966573022483638,
+                "next_eta": 0.03373632512468598,
+                "residual_norm_after": 1.4391604047445221,
+                "residual_norm_before": 1.7043023296502826,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.03247297686526958,
+                "eta": 0.03373632512468598,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 108,
+                "iteration": 3,
+                "linear_model_residual_norm": 1.079626537967067,
+                "next_eta": 0.03223231983867372,
+                "residual_norm_after": 1.0332390595021865,
+                "residual_norm_before": 1.4391604047445221,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.02980412196215266,
+                "eta": 0.03223231983867372,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 106,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.5172674376794117,
+                "next_eta": 0.0007588331085495313,
+                "residual_norm_after": 0.5164833816720149,
+                "residual_norm_before": 1.0332390595021865,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.0006981324851260108,
+                "eta": 0.0007588331085495313,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 166,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.25824723993413107,
+                "next_eta": 0.07017830488855893,
+                "residual_norm_after": 0.22200131170527845,
+                "residual_norm_before": 0.5164833816720149,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.06949428238205989,
+                "eta": 0.07017830488855893,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 85,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.015427821844834317,
+                "next_eta": 0.2754529271988469,
+                "residual_norm_after": 0.0765787329960369,
+                "residual_norm_before": 0.22200131170527845,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.26330490182187416,
+                "eta": 0.2754529271988469,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 29,
+                "iteration": 7,
+                "linear_model_residual_norm": 0.02016355577316501,
+                "next_eta": 0.12415884047464439,
+                "residual_norm_after": 0.022141984392272798,
+                "residual_norm_before": 0.0765787329960369,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.10625395128202131,
+                "eta": 0.12415884047464439,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 55,
+                "iteration": 8,
+                "linear_model_residual_norm": 0.00235267333090383,
+                "next_eta": 0.005735661727252566,
+                "residual_norm_after": 0.002225674398459647,
+                "residual_norm_before": 0.022141984392272798,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.005617223081137787,
+                "eta": 0.005735661727252566,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 123,
+                "iteration": 9,
+                "linear_model_residual_norm": 1.250210960212499e-05,
+                "next_eta": 2.912086385262891e-05,
+                "residual_norm_after": 1.2566923163262815e-05,
+                "residual_norm_before": 0.002225674398459647,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 2.827678341221627e-05,
+                "eta": 2.912086385262891e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 221,
+                "iteration": 10,
+                "linear_model_residual_norm": 3.553521644455464e-10,
+                "next_eta": 7.457051257433988e-08,
+                "residual_norm_after": 3.5628928634731327e-10,
+                "residual_norm_before": 1.2566923163262815e-05,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 1096
+          },
+          "timing": {
+            "iqr_seconds": 0.1905868323519826,
+            "median_seconds": 15.329850187525153,
+            "q1_seconds": 15.234301437623799,
+            "q3_seconds": 15.424888269975781,
+            "repetitions": 5,
+            "samples_seconds": [
+              15.329850187525153,
+              15.24573258496821,
+              15.222870290279388,
+              15.515555346384645,
+              15.334221193566918
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "frozen_mean": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 4.91853346301942e-10,
+            "initial_residual_norm": 2.1539593014009126,
+            "nonlinear_iterations": 11,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.4926001367604975,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 53,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.9388311615151534,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.9891906004963806,
+                "residual_norm_before": 2.1539593014009126,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.32265282881798657,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 58,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.7603305289136506,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.6976836363330587,
+                "residual_norm_before": 1.9891906004963806,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.153961371940009,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 73,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.4896498713910722,
+                "next_eta": 0.03388251882747892,
+                "residual_norm_after": 1.4321280736199145,
+                "residual_norm_before": 1.6976836363330587,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.03091175086572001,
+                "eta": 0.03388251882747892,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 107,
+                "iteration": 3,
+                "linear_model_residual_norm": 1.0746522927442668,
+                "next_eta": 0.030917399623969007,
+                "residual_norm_after": 1.030374616779455,
+                "residual_norm_before": 1.4321280736199145,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.030187024138567182,
+                "eta": 0.030917399623969007,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 105,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.5162542550685897,
+                "next_eta": 0.0041782972013006,
+                "residual_norm_after": 0.5205594664461705,
+                "residual_norm_before": 1.030374616779455,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.0041110215461079395,
+                "eta": 0.0041782972013006,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 141,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.260353577150379,
+                "next_eta": 0.073438282226162,
+                "residual_norm_after": 0.22212458413800482,
+                "residual_norm_before": 0.5205594664461705,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.07215242141975736,
+                "eta": 0.073438282226162,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 79,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.016026826602413675,
+                "next_eta": 0.28463664143851797,
+                "residual_norm_after": 0.07925162221238287,
+                "residual_norm_before": 0.22212458413800482,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.27809659988242974,
+                "eta": 0.28463664143851797,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 26,
+                "iteration": 7,
+                "linear_model_residual_norm": 0.02203960667243052,
+                "next_eta": 0.13092542027065268,
+                "residual_norm_after": 0.024074748021948988,
+                "residual_norm_before": 0.07925162221238287,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.1067550083910742,
+                "eta": 0.13092542027065268,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 53,
+                "iteration": 8,
+                "linear_model_residual_norm": 0.0025700999270961613,
+                "next_eta": 0.006222032577326436,
+                "residual_norm_after": 0.0024203060606126695,
+                "residual_norm_before": 0.024074748021948988,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.006078118641646809,
+                "eta": 0.006222032577326436,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 137,
+                "iteration": 9,
+                "linear_model_residual_norm": 1.4710907385500618e-05,
+                "next_eta": 3.4606711147494266e-05,
+                "residual_norm_after": 1.479466621822877e-05,
+                "residual_norm_before": 0.0024203060606126695,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 3.316142701202882e-05,
+                "eta": 3.4606711147494266e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 241,
+                "iteration": 10,
+                "linear_model_residual_norm": 4.906122439631219e-10,
+                "next_eta": 8.388849876795047e-08,
+                "residual_norm_after": 4.91853346301942e-10,
+                "residual_norm_before": 1.479466621822877e-05,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 1073
+          },
+          "timing": {
+            "iqr_seconds": 0.2821706226095557,
+            "median_seconds": 15.020790591835976,
+            "q1_seconds": 14.803847640752792,
+            "q3_seconds": 15.086018263362348,
+            "repetitions": 5,
+            "samples_seconds": [
+              15.020790591835976,
+              14.896819977089763,
+              14.710875304415822,
+              15.077173909172416,
+              15.09486261755228
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "identity": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 1.3692718055710384e-09,
+            "initial_residual_norm": 2.1539593014009126,
+            "nonlinear_iterations": 12,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.49524871941135923,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 17,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.9541889506147239,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 2.102770743118464,
+                "residual_norm_before": 2.1539593014009126,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.31044334190252626,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 47,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.8668683667201011,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.7445086806066903,
+                "residual_norm_before": 2.102770743118464,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.15705980203337003,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 69,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.3208732164767019,
+                "next_eta": 0.14460255313177656,
+                "residual_norm_after": 1.5731336256529762,
+                "residual_norm_before": 1.7445086806066903,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.1343912312954202,
+                "eta": 0.14460255313177656,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 73,
+                "iteration": 3,
+                "linear_model_residual_norm": 1.1881082608810336,
+                "next_eta": 0.12365487495754157,
+                "residual_norm_after": 0.9935826191094108,
+                "residual_norm_before": 1.5731336256529762,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.11957132750145383,
+                "eta": 0.12365487495754157,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 84,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.5073336148620055,
+                "next_eta": 0.12653346653863018,
+                "residual_norm_after": 0.6330550679504506,
+                "residual_norm_before": 0.9935826191094108,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.12152549646430823,
+                "eta": 0.12653346653863018,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 81,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.3234634716284627,
+                "next_eta": 0.1168966858813857,
+                "residual_norm_after": 0.24946143220463957,
+                "residual_norm_before": 0.6330550679504506,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.11096363151849613,
+                "eta": 0.1168966858813857,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 99,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.02768114644123193,
+                "next_eta": 0.5,
+                "residual_norm_after": 0.1981709256026585,
+                "residual_norm_before": 0.24946143220463957,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.49102896907850874,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 7,
+                "iteration": 7,
+                "linear_model_residual_norm": 0.09730766530000726,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 0.09931179217463877,
+                "residual_norm_before": 0.1981709256026585,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.3038793503815672,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 22,
+                "iteration": 8,
+                "linear_model_residual_norm": 0.03017880289125844,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 0.030692748750560668,
+                "residual_norm_before": 0.09931179217463877,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.15589998721692672,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 47,
+                "iteration": 9,
+                "linear_model_residual_norm": 0.004784999137864752,
+                "next_eta": 0.005485178916110824,
+                "residual_norm_after": 0.004953354356188814,
+                "residual_norm_before": 0.030692748750560668,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.005337939986440367,
+                "eta": 0.005485178916110824,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 128,
+                "iteration": 10,
+                "linear_model_residual_norm": 2.6440708284908847e-05,
+                "next_eta": 2.9358118610500523e-05,
+                "residual_norm_after": 2.6586129449617677e-05,
+                "residual_norm_before": 0.004953354356188814,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 1.5908485996641772e-05,
+                "eta": 2.9358118610500523e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 195,
+                "iteration": 11,
+                "linear_model_residual_norm": 4.2294506805414827e-10,
+                "next_eta": 3.5594753997953576e-05,
+                "residual_norm_after": 1.3692718055710384e-09,
+                "residual_norm_before": 2.6586129449617677e-05,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 869
+          },
+          "timing": {
+            "iqr_seconds": 0.06131577864289284,
+            "median_seconds": 8.8156105466187,
+            "q1_seconds": 8.7633006721735,
+            "q3_seconds": 8.824616450816393,
+            "repetitions": 5,
+            "samples_seconds": [
+              8.832729747518897,
+              8.814687943086028,
+              8.711913401260972,
+              8.816503154113889,
+              8.8156105466187
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "tau_blend": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 1.868761105699975e-12,
+            "initial_residual_norm": 2.1539593014009126,
+            "nonlinear_iterations": 11,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.3018000781573144,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 3,
+                "iteration": 0,
+                "linear_model_residual_norm": 2.0127350762233416,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.9444550028234209,
+                "residual_norm_before": 2.1539593014009126,
+                "step_length": 0.0625
+              },
+              {
+                "achieved_linear_relative_residual": 0.0860056282864157,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 5,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.7035795106426932,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.6336173360127884,
+                "residual_norm_before": 1.9444550028234209,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.029064915158899012,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 6,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.226560076006762,
+                "next_eta": 0.10703489041084889,
+                "residual_norm_after": 1.4014141285401538,
+                "residual_norm_before": 1.6336173360127884,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.0883935602014626,
+                "eta": 0.10703489041084889,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 6,
+                "iteration": 3,
+                "linear_model_residual_norm": 1.045343733573991,
+                "next_eta": 0.022334763269283527,
+                "residual_norm_after": 1.0140434807708174,
+                "residual_norm_before": 1.4014141285401538,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.012099291986321058,
+                "eta": 0.022334763269283527,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 8,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.7604901919943221,
+                "next_eta": 0.04238581609608467,
+                "residual_norm_after": 0.7175091315049367,
+                "residual_norm_before": 1.0140434807708174,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.021942508554641582,
+                "eta": 0.04238581609608467,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 9,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.3602782284321698,
+                "next_eta": 0.21394021105671787,
+                "residual_norm_after": 0.5137822834614583,
+                "residual_norm_before": 0.7175091315049367,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.20483412564698358,
+                "eta": 0.21394021105671787,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 7,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.2575277798961304,
+                "next_eta": 0.13711225692864903,
+                "residual_norm_after": 0.18708193144077495,
+                "residual_norm_before": 0.5137822834614583,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.07247386348472772,
+                "eta": 0.13711225692864903,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 18,
+                "iteration": 7,
+                "linear_model_residual_norm": 0.013558550359697915,
+                "next_eta": 0.07896330361314333,
+                "residual_norm_after": 0.02833115771258909,
+                "residual_norm_before": 0.18708193144077495,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.05476867199953966,
+                "eta": 0.07896330361314333,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 11,
+                "iteration": 8,
+                "linear_model_residual_norm": 0.00155165988412802,
+                "next_eta": 0.0005782356309252048,
+                "residual_norm_after": 0.0015680419689828005,
+                "residual_norm_before": 0.02833115771258909,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.0005622001649844208,
+                "eta": 0.0005782356309252048,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 20,
+                "iteration": 9,
+                "linear_model_residual_norm": 8.815534536646264e-07,
+                "next_eta": 1.1132458674185243e-06,
+                "residual_norm_after": 8.832990699065353e-07,
+                "residual_norm_before": 0.0015680419689828005,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 9.94641948149786e-07,
+                "eta": 1.1132458674185243e-06,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 37,
+                "iteration": 10,
+                "linear_model_residual_norm": 8.785663076907303e-13,
+                "next_eta": 1.1210187259837377e-06,
+                "residual_norm_after": 1.868761105699975e-12,
+                "residual_norm_before": 8.832990699065353e-07,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 130
+          },
+          "timing": {
+            "iqr_seconds": 0.019974817521870136,
+            "median_seconds": 0.42225752025842667,
+            "q1_seconds": 0.4153285687789321,
+            "q3_seconds": 0.43530338630080223,
+            "repetitions": 5,
+            "samples_seconds": [
+              0.43709508888423443,
+              0.41070060059428215,
+              0.41995653696358204,
+              0.42225752025842667,
+              0.43351168371737003
+            ],
+            "warmups_excluded": 1
+          }
+        }
+      },
+      "nx": 512
+    },
+    {
+      "dt": 0.02,
+      "m": 8,
+      "matched_solution": {
+        "all_converged_to_tolerance": true,
+        "comparisons": {
+          "frozen_bulk": {
+            "final_residual_norm": 3.4881574831528308e-12,
+            "max_abs_vs_tau_blend": 7.033262861000367e-14,
+            "relative_l2_vs_tau_blend": 9.118899420326575e-15
+          },
+          "frozen_mean": {
+            "final_residual_norm": 4.1826391761010843e-10,
+            "max_abs_vs_tau_blend": 1.342203893309177e-10,
+            "relative_l2_vs_tau_blend": 2.2338725316417304e-11
+          },
+          "identity": {
+            "final_residual_norm": 1.804497239898824e-11,
+            "max_abs_vs_tau_blend": 5.810907310888069e-13,
+            "relative_l2_vs_tau_blend": 6.124741192040444e-14
+          },
+          "tau_blend": {
+            "final_residual_norm": 9.661595597457763e-12,
+            "max_abs_vs_tau_blend": 0.0,
+            "relative_l2_vs_tau_blend": 0.0
+          }
+        },
+        "nonlinear_tolerance": 1e-08
+      },
+      "methods": {
+        "frozen_bulk": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 3.4881574831528308e-12,
+            "initial_residual_norm": 2.155162630791175,
+            "nonlinear_iterations": 10,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.4928989319957319,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 77,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.6794699130377277,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.5352698605268107,
+                "residual_norm_before": 2.155162630791175,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.29660249015578294,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 86,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.3338096631402445,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.3162980364182129,
+                "residual_norm_before": 1.5352698605268107,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.1623608251760954,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 104,
+                "iteration": 2,
+                "linear_model_residual_norm": 0.9907358659032511,
+                "next_eta": 0.02476364983311039,
+                "residual_norm_after": 1.0233322095531225,
+                "residual_norm_before": 1.3162980364182129,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.02273745625550397,
+                "eta": 0.02476364983311039,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 129,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.5121870996470703,
+                "next_eta": 0.13124900495445424,
+                "residual_norm_after": 0.6464984338887607,
+                "residual_norm_before": 1.0233322095531225,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.12983672862107754,
+                "eta": 0.13124900495445424,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 74,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.3422112461522604,
+                "next_eta": 0.0012850577207160906,
+                "residual_norm_after": 0.34304203395616,
+                "residual_norm_before": 0.6464984338887607,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.0012835152238077495,
+                "eta": 0.0012850577207160906,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 208,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.00044029967298870633,
+                "next_eta": 0.13172067704399076,
+                "residual_norm_after": 0.04562602864024177,
+                "residual_norm_before": 0.34304203395616,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.13140525675219,
+                "eta": 0.13172067704399076,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 33,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.005995500008053744,
+                "next_eta": 0.0053298906086292576,
+                "residual_norm_after": 0.00575231826649507,
+                "residual_norm_before": 0.04562602864024177,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.005099690326285977,
+                "eta": 0.0053298906086292576,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 144,
+                "iteration": 7,
+                "linear_model_residual_norm": 2.9335041817363028e-05,
+                "next_eta": 0.0004684176000951106,
+                "residual_norm_after": 3.2029528934737915e-05,
+                "residual_norm_before": 0.00575231826649507,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.0004203089791107052,
+                "eta": 0.0004684176000951106,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 220,
+                "iteration": 8,
+                "linear_model_residual_norm": 1.3462298607956486e-08,
+                "next_eta": 2.153829324115044e-07,
+                "residual_norm_after": 1.3455399994090763e-08,
+                "residual_norm_before": 3.2029528934737915e-05,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 1.8408263418854479e-07,
+                "eta": 2.153829324115044e-07,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 306,
+                "iteration": 9,
+                "linear_model_residual_norm": 2.4769054749727578e-15,
+                "next_eta": 0.00025905440040494313,
+                "residual_norm_after": 3.4881574831528308e-12,
+                "residual_norm_before": 1.3455399994090763e-08,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 1381
+          },
+          "timing": {
+            "iqr_seconds": 0.44850133918225765,
+            "median_seconds": 26.790662690997124,
+            "q1_seconds": 26.5122522553429,
+            "q3_seconds": 26.96075359452516,
+            "repetitions": 5,
+            "samples_seconds": [
+              26.790662690997124,
+              26.404057011008263,
+              27.12232395634055,
+              26.62044749967754,
+              26.799183232709765
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "frozen_mean": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 4.1826391761010843e-10,
+            "initial_residual_norm": 2.155162630791175,
+            "nonlinear_iterations": 9,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.4733004096329555,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 60,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.6754576474221055,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.5335976211284554,
+                "residual_norm_before": 2.155162630791175,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.293996163786993,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 74,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.3339554015494302,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.3204554835583044,
+                "residual_norm_before": 1.5335976211284554,
+                "step_length": 0.125
+              },
+              {
+                "achieved_linear_relative_residual": 0.16283451334301202,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 97,
+                "iteration": 2,
+                "linear_model_residual_norm": 0.9939972274944116,
+                "next_eta": 0.02095314411665751,
+                "residual_norm_after": 1.0216649215410394,
+                "residual_norm_before": 1.3204554835583044,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.01918285070042371,
+                "eta": 0.02095314411665751,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 141,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.5112842063136465,
+                "next_eta": 0.1392387966538415,
+                "residual_norm_after": 0.6535396005724622,
+                "residual_norm_before": 1.0216649215410394,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.11560533893420591,
+                "eta": 0.1392387966538415,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 65,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.34474471588459144,
+                "next_eta": 0.017306031413732634,
+                "residual_norm_after": 0.35605489274221674,
+                "residual_norm_before": 0.6535396005724622,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.017184079044430978,
+                "eta": 0.017306031413732634,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 157,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.006118475421038647,
+                "next_eta": 0.11686147440874235,
+                "residual_norm_after": 0.04772757515734071,
+                "residual_norm_before": 0.35605489274221674,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.11425492866907007,
+                "eta": 0.11686147440874235,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 40,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.005453110695149643,
+                "next_eta": 0.001436328883350962,
+                "residual_norm_after": 0.005384558200418851,
+                "residual_norm_before": 0.04772757515734071,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.0012011616056152553,
+                "eta": 0.001436328883350962,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 223,
+                "iteration": 7,
+                "linear_model_residual_norm": 6.467724573543897e-06,
+                "next_eta": 6.486408629586788e-05,
+                "residual_norm_after": 6.816989021320988e-06,
+                "residual_norm_before": 0.005384558200418851,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 6.143513008996497e-05,
+                "eta": 6.486408629586788e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 281,
+                "iteration": 8,
+                "linear_model_residual_norm": 4.1880260734671793e-10,
+                "next_eta": 7.902165236362819e-08,
+                "residual_norm_after": 4.1826391761010843e-10,
+                "residual_norm_before": 6.816989021320988e-06,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 1138
+          },
+          "timing": {
+            "iqr_seconds": 0.25926763378083706,
+            "median_seconds": 20.59250814653933,
+            "q1_seconds": 20.46201860997826,
+            "q3_seconds": 20.721286243759096,
+            "repetitions": 5,
+            "samples_seconds": [
+              20.59250814653933,
+              20.613206811249256,
+              20.47193293273449,
+              20.452104287222028,
+              20.829365676268935
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "identity": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 1.804497239898824e-11,
+            "initial_residual_norm": 2.155162630791175,
+            "nonlinear_iterations": 9,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.45573703440362495,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 26,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.7420422401805338,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 1.7662879503123496,
+                "residual_norm_before": 2.155162630791175,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.3220315297874046,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 64,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.011233756977517,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 0.925342418443643,
+                "residual_norm_before": 1.7662879503123496,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.1525368130688075,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 82,
+                "iteration": 2,
+                "linear_model_residual_norm": 0.47854663530014885,
+                "next_eta": 0.006685560557737193,
+                "residual_norm_after": 0.4847330680752968,
+                "residual_norm_before": 0.925342418443643,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.006600834423727779,
+                "eta": 0.006685560557737193,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 168,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.2423823737537901,
+                "next_eta": 0.4011284643754354,
+                "residual_norm_after": 0.4368226049828273,
+                "residual_norm_before": 0.4847330680752968,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.3903612032709337,
+                "eta": 0.4011284643754354,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 19,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.17051859769704023,
+                "next_eta": 0.22808629374340486,
+                "residual_norm_after": 0.17538841522631207,
+                "residual_norm_before": 0.4368226049828273,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.21941014944838277,
+                "eta": 0.22808629374340486,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 83,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.03848199839632015,
+                "next_eta": 0.05645902025815115,
+                "residual_norm_after": 0.048384256484627526,
+                "residual_norm_before": 0.17538841522631207,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.05394829322915308,
+                "eta": 0.05645902025815115,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 109,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.002610248056507237,
+                "next_eta": 0.00015862047541079428,
+                "residual_norm_after": 0.0026025733227412477,
+                "residual_norm_before": 0.048384256484627526,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.00011856257682421014,
+                "eta": 0.00015862047541079428,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 217,
+                "iteration": 7,
+                "linear_model_residual_norm": 3.0856779951814903e-07,
+                "next_eta": 5.4587476443865545e-05,
+                "residual_norm_after": 4.506357094667198e-07,
+                "residual_norm_before": 0.0026025733227412477,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 3.9235147795962534e-05,
+                "eta": 5.4587476443865545e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 240,
+                "iteration": 8,
+                "linear_model_residual_norm": 1.7680758663065183e-11,
+                "next_eta": 8.082220921951916e-07,
+                "residual_norm_after": 1.804497239898824e-11,
+                "residual_norm_before": 4.506357094667198e-07,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 1008
+          },
+          "timing": {
+            "iqr_seconds": 0.21397308632731438,
+            "median_seconds": 15.612949315458536,
+            "q1_seconds": 15.495722086168826,
+            "q3_seconds": 15.70969517249614,
+            "repetitions": 5,
+            "samples_seconds": [
+              15.454715510830283,
+              15.612949315458536,
+              15.780914820730686,
+              15.638475524261594,
+              15.536728661507368
+            ],
+            "warmups_excluded": 1
+          }
+        },
+        "tau_blend": {
+          "representative": {
+            "converged": true,
+            "final_residual_norm": 9.661595597457763e-12,
+            "initial_residual_norm": 2.155162630791175,
+            "nonlinear_iterations": 9,
+            "steps": [
+              {
+                "achieved_linear_relative_residual": 0.1451709757169971,
+                "eta": 0.5,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 5,
+                "iteration": 0,
+                "linear_model_residual_norm": 1.6114301153208375,
+                "next_eta": 0.32577911215314725,
+                "residual_norm_after": 2.0351928500230496,
+                "residual_norm_before": 2.155162630791175,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.15274613784760602,
+                "eta": 0.32577911215314725,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 5,
+                "iteration": 1,
+                "linear_model_residual_norm": 1.5733354858467974,
+                "next_eta": 0.16288955607657363,
+                "residual_norm_after": 1.4238333624238861,
+                "residual_norm_before": 2.0351928500230496,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.1475394927998437,
+                "eta": 0.16288955607657363,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 8,
+                "iteration": 2,
+                "linear_model_residual_norm": 1.068101365163303,
+                "next_eta": 0.1531290641731342,
+                "residual_norm_after": 1.2861316354897596,
+                "residual_norm_before": 1.4238333624238861,
+                "step_length": 0.25
+              },
+              {
+                "achieved_linear_relative_residual": 0.05723373201801858,
+                "eta": 0.1531290641731342,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 6,
+                "iteration": 3,
+                "linear_model_residual_norm": 0.6472593945201442,
+                "next_eta": 0.1591456876436546,
+                "residual_norm_after": 0.4425770909898683,
+                "residual_norm_before": 1.2861316354897596,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.054934253167164375,
+                "eta": 0.1591456876436546,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 8,
+                "iteration": 4,
+                "linear_model_residual_norm": 0.22363670598638727,
+                "next_eta": 0.025664355017015555,
+                "residual_norm_after": 0.23499516157194925,
+                "residual_norm_before": 0.4425770909898683,
+                "step_length": 0.5
+              },
+              {
+                "achieved_linear_relative_residual": 0.012172384958571482,
+                "eta": 0.025664355017015555,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 8,
+                "iteration": 5,
+                "linear_model_residual_norm": 0.0028604515700554702,
+                "next_eta": 0.07807232429644369,
+                "residual_norm_after": 0.021207070032395876,
+                "residual_norm_before": 0.23499516157194925,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.07346514086992946,
+                "eta": 0.07807232429644369,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 12,
+                "iteration": 6,
+                "linear_model_residual_norm": 0.0015579803873684225,
+                "next_eta": 0.0005429203516193152,
+                "residual_norm_after": 0.0015694941372872263,
+                "residual_norm_before": 0.021207070032395876,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 0.0004791093761706319,
+                "eta": 0.0005429203516193152,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 43,
+                "iteration": 7,
+                "linear_model_residual_norm": 7.519593570191471e-07,
+                "next_eta": 1.4524242667258143e-05,
+                "residual_norm_after": 7.747550707339457e-07,
+                "residual_norm_before": 0.0015694941372872263,
+                "step_length": 1.0
+              },
+              {
+                "achieved_linear_relative_residual": 1.1315987853452233e-05,
+                "eta": 1.4524242667258143e-05,
+                "forcing_target_met": true,
+                "gmres_info": 0,
+                "gmres_iterations": 61,
+                "iteration": 8,
+                "linear_model_residual_norm": 8.767118969825855e-12,
+                "next_eta": 1.1545282650225786e-06,
+                "residual_norm_after": 9.661595597457763e-12,
+                "residual_norm_before": 7.747550707339457e-07,
+                "step_length": 1.0
+              }
+            ],
+            "total_gmres_iterations": 156
+          },
+          "timing": {
+            "iqr_seconds": 0.025199529714882374,
+            "median_seconds": 0.7643263507634401,
+            "q1_seconds": 0.7623323164880276,
+            "q3_seconds": 0.78753184620291,
+            "repetitions": 5,
+            "samples_seconds": [
+              0.762332484126091,
+              0.7623321488499641,
+              0.7643263507634401,
+              0.7766354382038116,
+              0.7984282542020082
+            ],
+            "warmups_excluded": 1
+          }
+        }
+      },
+      "nx": 512
+    }
+  ],
+  "runtime_seconds": 704.8170764762908,
+  "schema": "pme_dst_tau_blend_inexact_newton_v1",
+  "scope": "Experimental one-dimensional full backward-Euler nonlinear-solve measurement. All methods solve the same nonlinear equation to the same residual tolerance.",
+  "timing_protocol": "One complete nonlinear-solve warmup per method is excluded. Timed methods are rotated by repetition; each solve is synchronized; medians and IQRs include preconditioner rebuilding at every Newton iterate and all GMRES work."
+}

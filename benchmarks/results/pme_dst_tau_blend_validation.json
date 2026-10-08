@@ -1,0 +1,1810 @@
+{
+  "complete": true,
+  "config": {
+    "analysis_dt": 0.02,
+    "epsilon": 1e-05,
+    "halfwidth": 3.0,
+    "krylov_tol": 1e-08,
+    "large_n_threshold": 1024,
+    "large_n_timing_repetitions": 7,
+    "m_values": [
+      2,
+      4,
+      8
+    ],
+    "max_krylov_iters": 400,
+    "nx_values": [
+      256,
+      512,
+      1024
+    ],
+    "output_path": "benchmarks/results/pme_dst_tau_blend_validation.json",
+    "reference_count": 3,
+    "stress_dt": 2.0,
+    "stress_m": 8,
+    "t0": 0.1,
+    "timing_repetitions": 31,
+    "timing_warmups": 2,
+    "trajectory_max_newton_iters": 12,
+    "trajectory_nx": 512,
+    "trajectory_sample_steps": [
+      0,
+      2,
+      5,
+      8
+    ],
+    "trajectory_solver_preconditioner": "frozen_bulk",
+    "trajectory_state_dt": 0.01,
+    "trajectory_steps": 8,
+    "x_max": 4.0,
+    "x_min": -4.0
+  },
+  "device": {
+    "default_backend": "gpu",
+    "devices": [
+      {
+        "device_kind": "NVIDIA GeForce RTX 3090 Ti",
+        "platform": "gpu"
+      }
+    ]
+  },
+  "provenance": {
+    "base_revision": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b",
+    "base_revision_source": "merge-base-upstream",
+    "repository_head": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b"
+  },
+  "runtime_seconds": 4986.06726517342,
+  "scaling_records": [
+    {
+      "analysis_dt": 0.02,
+      "case": "m2_wide",
+      "coefficient": {
+        "active_d95_over_d05": 10.239334006238044,
+        "active_node_count": 90,
+        "literal_contrast": "infinite",
+        "maximum": 3.231248294390636,
+        "minimum": 0.0
+      },
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 2.958319610198576,
+            "final_relative_residual": 8.787261125404118e-09,
+            "iterations": 80
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.033394573256373405,
+            "iteration_values": [
+              80
+            ],
+            "max_final_relative_residual": 8.787261125404118e-09,
+            "median_seconds": 0.7436661757528782,
+            "q1_seconds": 0.7220582999289036,
+            "q3_seconds": 0.755452873185277,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.7529367802544088,
+            "final_relative_residual": 7.515615770548503e-09,
+            "iterations": 92
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.02676180563867092,
+            "iteration_values": [
+              92
+            ],
+            "max_final_relative_residual": 7.515615770548503e-09,
+            "median_seconds": 0.9397393949329853,
+            "q1_seconds": 0.9257441461086273,
+            "q3_seconds": 0.9525059517472982,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 4.0986738969675214e-09,
+            "iterations": 57
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.02912655472755432,
+            "iteration_values": [
+              57
+            ],
+            "max_final_relative_residual": 4.0986738969675214e-09,
+            "median_seconds": 0.39733837731182575,
+            "q1_seconds": 0.38567042350769043,
+            "q3_seconds": 0.41479697823524475,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 1.7892376752201765e-09,
+            "iterations": 13
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.011250501498579979,
+            "iteration_values": [
+              13
+            ],
+            "max_final_relative_residual": 1.7892376752201765e-09,
+            "median_seconds": 0.1543472558259964,
+            "q1_seconds": 0.14952180907130241,
+            "q3_seconds": 0.1607723105698824,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 256,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m2_wide",
+      "coefficient": {
+        "active_d95_over_d05": 9.54832000353584,
+        "active_node_count": 178,
+        "literal_contrast": "infinite",
+        "maximum": 3.231550705990578,
+        "minimum": 0.0
+      },
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 2.965987512824764,
+            "final_relative_residual": 9.401806004991017e-09,
+            "iterations": 166
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.06777156889438629,
+            "iteration_values": [
+              166
+            ],
+            "max_final_relative_residual": 9.401806004991017e-09,
+            "median_seconds": 2.747796995565295,
+            "q1_seconds": 2.732299016788602,
+            "q3_seconds": 2.800070585682988,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.7514644989772038,
+            "final_relative_residual": 9.991575730337737e-09,
+            "iterations": 182
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.11787163279950619,
+            "iteration_values": [
+              182
+            ],
+            "max_final_relative_residual": 9.991575730337737e-09,
+            "median_seconds": 3.290903314948082,
+            "q1_seconds": 3.2349936049431562,
+            "q3_seconds": 3.3528652377426624,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 5.754886329051683e-09,
+            "iterations": 121
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.05635337717831135,
+            "iteration_values": [
+              121
+            ],
+            "max_final_relative_residual": 5.754886329051683e-09,
+            "median_seconds": 1.5084685999900103,
+            "q1_seconds": 1.4774778001010418,
+            "q3_seconds": 1.5338311772793531,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 3.749945926860183e-09,
+            "iterations": 14
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.01307850331068039,
+            "iteration_values": [
+              14
+            ],
+            "max_final_relative_residual": 3.749945926860183e-09,
+            "median_seconds": 0.15981070697307587,
+            "q1_seconds": 0.15475917421281338,
+            "q3_seconds": 0.16783767752349377,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 512,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m2_wide",
+      "coefficient": {
+        "active_d95_over_d05": 9.465423425209847,
+        "active_node_count": 356,
+        "literal_contrast": "infinite",
+        "maximum": 3.231626653330593,
+        "minimum": 0.0
+      },
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 2.9623773970031033,
+            "final_relative_residual": 9.06340640659392e-09,
+            "iterations": 318
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.11786173097789288,
+            "iteration_values": [
+              318
+            ],
+            "max_final_relative_residual": 9.06340640659392e-09,
+            "median_seconds": 9.97626530751586,
+            "q1_seconds": 9.88178082741797,
+            "q3_seconds": 9.999642558395863,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.7507293899637684,
+            "final_relative_residual": 9.632031725157391e-09,
+            "iterations": 352
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.1886594071984291,
+            "iteration_values": [
+              352
+            ],
+            "max_final_relative_residual": 9.632031725157391e-09,
+            "median_seconds": 12.252068230882287,
+            "q1_seconds": 12.09871355816722,
+            "q3_seconds": 12.287372965365648,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 8.70105358029632e-09,
+            "iterations": 253
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.06734404526650906,
+            "iteration_values": [
+              253
+            ],
+            "max_final_relative_residual": 8.70105358029632e-09,
+            "median_seconds": 6.339200720191002,
+            "q1_seconds": 6.3091394901275635,
+            "q3_seconds": 6.3764835353940725,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 7.577264343341745e-09,
+            "iterations": 17
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.021233132109045982,
+            "iteration_values": [
+              17
+            ],
+            "max_final_relative_residual": 7.577264343341745e-09,
+            "median_seconds": 0.178449597209692,
+            "q1_seconds": 0.16250374726951122,
+            "q3_seconds": 0.1837368793785572,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 1024,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m4_wide",
+      "coefficient": {
+        "active_d95_over_d05": 9.415396994277733,
+        "active_node_count": 122,
+        "literal_contrast": "infinite",
+        "maximum": 10.74816687231759,
+        "minimum": 0.0
+      },
+      "m": 4,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 10.256848829905016,
+            "final_relative_residual": 9.913923229538146e-09,
+            "iterations": 133
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.06898624077439308,
+            "iteration_values": [
+              133
+            ],
+            "max_final_relative_residual": 9.913923229538146e-09,
+            "median_seconds": 1.8300171662122011,
+            "q1_seconds": 1.8032933864742517,
+            "q3_seconds": 1.8722796272486448,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.6878968100992594,
+            "final_relative_residual": 9.988979584849497e-09,
+            "iterations": 150
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.0698521863669157,
+            "iteration_values": [
+              150
+            ],
+            "max_final_relative_residual": 9.988979584849497e-09,
+            "median_seconds": 2.303088268265128,
+            "q1_seconds": 2.251220202073455,
+            "q3_seconds": 2.3210723884403706,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 7.00137992761611e-09,
+            "iterations": 76
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.0256167184561491,
+            "iteration_values": [
+              76
+            ],
+            "max_final_relative_residual": 7.00137992761611e-09,
+            "median_seconds": 0.6570552159100771,
+            "q1_seconds": 0.6410504821687937,
+            "q3_seconds": 0.6666672006249428,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 2.0039217294939887e-09,
+            "iterations": 14
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.01143115758895874,
+            "iteration_values": [
+              14
+            ],
+            "max_final_relative_residual": 2.0039217294939887e-09,
+            "median_seconds": 0.166880015283823,
+            "q1_seconds": 0.16287576034665108,
+            "q3_seconds": 0.17430691793560982,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 256,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m4_wide",
+      "coefficient": {
+        "active_d95_over_d05": 9.051973544725788,
+        "active_node_count": 242,
+        "literal_contrast": "infinite",
+        "maximum": 10.74871121319749,
+        "minimum": 0.0
+      },
+      "m": 4,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 10.27069325474311,
+            "final_relative_residual": 9.544591000688605e-09,
+            "iterations": 245
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.10216625221073627,
+            "iteration_values": [
+              245
+            ],
+            "max_final_relative_residual": 9.544591000688605e-09,
+            "median_seconds": 5.844073953106999,
+            "q1_seconds": 5.783155333250761,
+            "q3_seconds": 5.885321585461497,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.6813363387189464,
+            "final_relative_residual": 9.898573875785048e-09,
+            "iterations": 284
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.16810503974556923,
+            "iteration_values": [
+              284
+            ],
+            "max_final_relative_residual": 9.898573875785048e-09,
+            "median_seconds": 7.766941970214248,
+            "q1_seconds": 7.682599246501923,
+            "q3_seconds": 7.850704286247492,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 7.679394237860115e-09,
+            "iterations": 156
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.07972095720469952,
+            "iteration_values": [
+              156
+            ],
+            "max_final_relative_residual": 7.679394237860115e-09,
+            "median_seconds": 2.441135672852397,
+            "q1_seconds": 2.402093453332782,
+            "q3_seconds": 2.4818144105374813,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 1.8401723389438547e-09,
+            "iterations": 15
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.013133024796843529,
+            "iteration_values": [
+              15
+            ],
+            "max_final_relative_residual": 1.8401723389438547e-09,
+            "median_seconds": 0.16894196718931198,
+            "q1_seconds": 0.16319271735846996,
+            "q3_seconds": 0.1763257421553135,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 512,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m4_wide",
+      "coefficient": {
+        "active_d95_over_d05": 10.313697563430384,
+        "active_node_count": 486,
+        "literal_contrast": "infinite",
+        "maximum": 10.748847918409522,
+        "minimum": 0.0
+      },
+      "m": 4,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 10.264199257163844,
+            "final_relative_residual": 3.05839941147187e-08,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.31647780165076256,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 3.05839941147187e-08,
+            "median_seconds": 15.734483607113361,
+            "q1_seconds": 15.48726306669414,
+            "q3_seconds": 15.803740868344903,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 0.6802619210952274,
+            "final_relative_residual": 7.11290942591162e-07,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.22186491452157497,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 7.11290942591162e-07,
+            "median_seconds": 15.69544585607946,
+            "q1_seconds": 15.649790070950985,
+            "q3_seconds": 15.87165498547256,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 5.711901325425117e-09,
+            "iterations": 330
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.2588255647569895,
+            "iteration_values": [
+              330
+            ],
+            "max_final_relative_residual": 5.711901325425117e-09,
+            "median_seconds": 10.721761180087924,
+            "q1_seconds": 10.577928168699145,
+            "q3_seconds": 10.836753733456135,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 8.743937735241809e-09,
+            "iterations": 55
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.024333177134394646,
+            "iteration_values": [
+              55
+            ],
+            "max_final_relative_residual": 8.743937735241809e-09,
+            "median_seconds": 0.46537155844271183,
+            "q1_seconds": 0.4540972802788019,
+            "q3_seconds": 0.47843045741319656,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 1024,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m8_wide",
+      "coefficient": {
+        "active_d95_over_d05": 10.682651094765202,
+        "active_node_count": 150,
+        "literal_contrast": "infinite",
+        "maximum": 20.981006704408188,
+        "minimum": 0.0
+      },
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 20.344122555230676,
+            "final_relative_residual": 9.81953400180689e-09,
+            "iterations": 152
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.06024443358182907,
+            "iteration_values": [
+              152
+            ],
+            "max_final_relative_residual": 9.81953400180689e-09,
+            "median_seconds": 2.3282350599765778,
+            "q1_seconds": 2.2931253723800182,
+            "q3_seconds": 2.3533698059618473,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.27611215750105994,
+            "final_relative_residual": 3.874800234868131e-09,
+            "iterations": 175
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.07133620791137218,
+            "iteration_values": [
+              175
+            ],
+            "max_final_relative_residual": 3.874800234868131e-09,
+            "median_seconds": 3.0837957710027695,
+            "q1_seconds": 3.0311678126454353,
+            "q3_seconds": 3.1025040205568075,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 4.788725841955422e-09,
+            "iterations": 96
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.03952551446855068,
+            "iteration_values": [
+              96
+            ],
+            "max_final_relative_residual": 4.788725841955422e-09,
+            "median_seconds": 0.9838640205562115,
+            "q1_seconds": 0.9585978724062443,
+            "q3_seconds": 0.998123386874795,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 7.981019474113767e-09,
+            "iterations": 18
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.019388262182474136,
+            "iteration_values": [
+              18
+            ],
+            "max_final_relative_residual": 7.981019474113767e-09,
+            "median_seconds": 0.19468841701745987,
+            "q1_seconds": 0.1881900168955326,
+            "q3_seconds": 0.20757827907800674,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 256,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m8_wide",
+      "coefficient": {
+        "active_d95_over_d05": 10.228362476374272,
+        "active_node_count": 298,
+        "literal_contrast": "infinite",
+        "maximum": 20.981712331474814,
+        "minimum": 0.0
+      },
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 20.362060294451606,
+            "final_relative_residual": 9.678451954064364e-09,
+            "iterations": 277
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.135050468146801,
+            "iteration_values": [
+              277
+            ],
+            "max_final_relative_residual": 9.678451954064364e-09,
+            "median_seconds": 7.44355727173388,
+            "q1_seconds": 7.394982835277915,
+            "q3_seconds": 7.530033303424716,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.26898143264111085,
+            "final_relative_residual": 8.719801754558144e-09,
+            "iterations": 334
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.17791561223566532,
+            "iteration_values": [
+              334
+            ],
+            "max_final_relative_residual": 8.719801754558144e-09,
+            "median_seconds": 10.742613859474659,
+            "q1_seconds": 10.665933359414339,
+            "q3_seconds": 10.843848971650004,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 4.4344795812931194e-09,
+            "iterations": 197
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.06901259534060955,
+            "iteration_values": [
+              197
+            ],
+            "max_final_relative_residual": 4.4344795812931194e-09,
+            "median_seconds": 3.8059661723673344,
+            "q1_seconds": 3.7741689197719097,
+            "q3_seconds": 3.8431815151125193,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 6.160490498916757e-09,
+            "iterations": 17
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.015495896339416504,
+            "iteration_values": [
+              17
+            ],
+            "max_final_relative_residual": 6.160490498916757e-09,
+            "median_seconds": 0.19071763567626476,
+            "q1_seconds": 0.18601215817034245,
+            "q3_seconds": 0.20150805450975895,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 512,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 0.02,
+      "case": "m8_wide",
+      "coefficient": {
+        "active_d95_over_d05": 10.244960612298996,
+        "active_node_count": 596,
+        "literal_contrast": "infinite",
+        "maximum": 20.981889541934915,
+        "minimum": 0.0
+      },
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 20.35364127768994,
+            "final_relative_residual": 5.538846929318157e-07,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.24145407788455486,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 5.538846929318157e-07,
+            "median_seconds": 15.767910666763783,
+            "q1_seconds": 15.534047340974212,
+            "q3_seconds": 15.775501418858767,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 0.26741166379578757,
+            "final_relative_residual": 2.6423613856405883e-05,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.29003057815134525,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 2.6423613856405883e-05,
+            "median_seconds": 15.50179530493915,
+            "q1_seconds": 15.43144758604467,
+            "q3_seconds": 15.721478164196014,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 0.0,
+            "final_relative_residual": 4.1107104717647696e-07,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.11935272812843323,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 4.1107104717647696e-07,
+            "median_seconds": 15.54584875330329,
+            "q1_seconds": 15.495977580547333,
+            "q3_seconds": 15.615330308675766,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 5.6599309519399795e-09,
+            "iterations": 33
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.00777047872543335,
+            "iteration_values": [
+              33
+            ],
+            "max_final_relative_residual": 5.6599309519399795e-09,
+            "median_seconds": 0.2780856154859066,
+            "q1_seconds": 0.27276553958654404,
+            "q3_seconds": 0.2805360183119774,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 1024,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 2.0,
+      "case": "m8_wide_stiff",
+      "coefficient": {
+        "active_d95_over_d05": 10.682651094765202,
+        "active_node_count": 150,
+        "literal_contrast": "infinite",
+        "maximum": 20.981006704408188,
+        "minimum": 0.0
+      },
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 20.344122555230676,
+            "final_relative_residual": 7.3835490774507235e-09,
+            "iterations": 178
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.05664467439055443,
+            "iteration_values": [
+              178
+            ],
+            "max_final_relative_residual": 7.3835490774507235e-09,
+            "median_seconds": 3.203369665890932,
+            "q1_seconds": 3.165896199643612,
+            "q3_seconds": 3.2225408740341663,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.27611215750105994,
+            "final_relative_residual": 4.041710088122858e-09,
+            "iterations": 181
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.08461952395737171,
+            "iteration_values": [
+              181
+            ],
+            "max_final_relative_residual": 4.041710088122858e-09,
+            "median_seconds": 3.295544248074293,
+            "q1_seconds": 3.2416506689041853,
+            "q3_seconds": 3.326270192861557,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 2.493084724207911e-09,
+            "iterations": 99
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.05008944310247898,
+            "iteration_values": [
+              99
+            ],
+            "max_final_relative_residual": 2.493084724207911e-09,
+            "median_seconds": 1.0647605564445257,
+            "q1_seconds": 1.0407810509204865,
+            "q3_seconds": 1.0908704940229654,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 3.2014006243332448e-09,
+            "iterations": 14
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.015351671725511551,
+            "iteration_values": [
+              14
+            ],
+            "max_final_relative_residual": 3.2014006243332448e-09,
+            "median_seconds": 0.17928634956479073,
+            "q1_seconds": 0.17373859137296677,
+            "q3_seconds": 0.18909026309847832,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 256,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 2.0,
+      "case": "m8_wide_stiff",
+      "coefficient": {
+        "active_d95_over_d05": 10.228362476374272,
+        "active_node_count": 298,
+        "literal_contrast": "infinite",
+        "maximum": 20.981712331474814,
+        "minimum": 0.0
+      },
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 20.362060294451606,
+            "final_relative_residual": 7.702060992183063e-09,
+            "iterations": 330
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.24818880297243595,
+            "iteration_values": [
+              330
+            ],
+            "max_final_relative_residual": 7.702060992183063e-09,
+            "median_seconds": 10.587356543168426,
+            "q1_seconds": 10.456264099106193,
+            "q3_seconds": 10.704452902078629,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.26898143264111085,
+            "final_relative_residual": 8.75504992151935e-09,
+            "iterations": 341
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.20964042469859123,
+            "iteration_values": [
+              341
+            ],
+            "max_final_relative_residual": 8.75504992151935e-09,
+            "median_seconds": 11.21283514983952,
+            "q1_seconds": 11.101233676075935,
+            "q3_seconds": 11.310874100774527,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 5.123032829142567e-09,
+            "iterations": 200
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.08170368522405624,
+            "iteration_values": [
+              200
+            ],
+            "max_final_relative_residual": 5.123032829142567e-09,
+            "median_seconds": 3.9339416101574898,
+            "q1_seconds": 3.901847030967474,
+            "q3_seconds": 3.9835507161915302,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 4.424112994402711e-09,
+            "iterations": 14
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.012733157724142075,
+            "iteration_values": [
+              14
+            ],
+            "max_final_relative_residual": 4.424112994402711e-09,
+            "median_seconds": 0.18185828998684883,
+            "q1_seconds": 0.17608808912336826,
+            "q3_seconds": 0.18882124684751034,
+            "repetitions": 31,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 512,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    },
+    {
+      "analysis_dt": 2.0,
+      "case": "m8_wide_stiff",
+      "coefficient": {
+        "active_d95_over_d05": 10.244960612298996,
+        "active_node_count": 596,
+        "literal_contrast": "infinite",
+        "maximum": 20.981889541934915,
+        "minimum": 0.0
+      },
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 20.35364127768994,
+            "final_relative_residual": 2.3153878380718564e-06,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.1777864582836628,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 2.3153878380718564e-06,
+            "median_seconds": 15.627584548667073,
+            "q1_seconds": 15.573206776753068,
+            "q3_seconds": 15.75099323503673,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 0.26741166379578757,
+            "final_relative_residual": 9.959998998617207e-06,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.23038359731435776,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 9.959998998617207e-06,
+            "median_seconds": 15.556339899078012,
+            "q1_seconds": 15.490126548334956,
+            "q3_seconds": 15.720510145649314,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": false,
+            "d0": 0.0,
+            "final_relative_residual": 2.4871187084321667e-05,
+            "iterations": 401
+          },
+          "wall_clock": {
+            "all_converged": false,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.3047031778842211,
+            "iteration_values": [
+              401
+            ],
+            "max_final_relative_residual": 2.4871187084321667e-05,
+            "median_seconds": 15.574488518759608,
+            "q1_seconds": 15.377918297424912,
+            "q3_seconds": 15.682621475309134,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        },
+        "tau_blend": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 6.125575329794587e-09,
+            "iterations": 22
+          },
+          "wall_clock": {
+            "all_converged": true,
+            "includes": "fresh linearization and preconditioner construction plus counted GMRES",
+            "iqr_seconds": 0.030172672122716904,
+            "iteration_values": [
+              22
+            ],
+            "max_final_relative_residual": 6.125575329794587e-09,
+            "median_seconds": 0.2284817025065422,
+            "q1_seconds": 0.22011126577854156,
+            "q3_seconds": 0.25028393790125847,
+            "repetitions": 7,
+            "warmups_excluded": 2
+          }
+        }
+      },
+      "nx": 1024,
+      "state_kind": "wide_front_barenblatt_initial_first_newton_system"
+    }
+  ],
+  "schema": "pme_dst_tau_blend_validation_v1",
+  "scope": "Experimental one-dimensional scaling, solve-time, and evolved-state validation; it is not a public solver component.",
+  "timing_protocol": "Two JIT warmups excluded; synchronized full linearization/preconditioner construction plus counted GMRES; median and IQR over the reported repetitions.",
+  "trajectory_records": [
+    {
+      "advance_to_state": null,
+      "coefficient": {
+        "active_d95_over_d05": 9.54832000353584,
+        "active_node_count": 178,
+        "literal_contrast": "infinite",
+        "maximum": 3.231550705990578,
+        "minimum": 0.0
+      },
+      "developedness_max_abs_from_initial": 0.0,
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 2.965987512824764,
+          "final_relative_residual": 9.401806004991017e-09,
+          "iterations": 166
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.7514644989772038,
+          "final_relative_residual": 9.991575730337737e-09,
+          "iterations": 182
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 5.754886329051683e-09,
+          "iterations": 121
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 3.749945926860183e-09,
+          "iterations": 14
+        }
+      },
+      "step": 0,
+      "time": 0.1
+    },
+    {
+      "advance_to_state": {
+        "configured_krylov_budget_total": 2000,
+        "converged": true,
+        "d0": 2.892530369820941,
+        "final_residual_l2": 2.5826719216659343e-09,
+        "newton_iters": 5
+      },
+      "coefficient": {
+        "active_d95_over_d05": 1.2809475581614278e+17,
+        "active_node_count": 368,
+        "literal_contrast": -41417229315588.98,
+        "maximum": 3.049938745809126,
+        "minimum": -7.36393717351142e-14
+      },
+      "developedness_max_abs_from_initial": 0.16330026600528158,
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 2.8256132544275787,
+          "final_relative_residual": 9.756381619941246e-09,
+          "iterations": 131
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.7514644989772038,
+          "final_relative_residual": 9.937729591105836e-09,
+          "iterations": 140
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 4.383711160943403e-09,
+          "iterations": 146
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 8.517797612950153e-09,
+          "iterations": 32
+        }
+      },
+      "step": 2,
+      "time": 0.12000000000000001
+    },
+    {
+      "advance_to_state": {
+        "configured_krylov_budget_total": 2000,
+        "converged": true,
+        "d0": 2.7078740309132434,
+        "final_residual_l2": 3.4439107963884055e-12,
+        "newton_iters": 5
+      },
+      "coefficient": {
+        "active_d95_over_d05": 1.4082410966420933e+17,
+        "active_node_count": 388,
+        "literal_contrast": -79938763703184.22,
+        "maximum": 2.837122591979563,
+        "minimum": -3.5491199269905036e-14
+      },
+      "developedness_max_abs_from_initial": 0.3184597893320245,
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 2.655683513388081,
+          "final_relative_residual": 9.321540080287978e-09,
+          "iterations": 134
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.751464498977204,
+          "final_relative_residual": 7.829133132755652e-09,
+          "iterations": 141
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 3.443806782792674e-09,
+          "iterations": 153
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 7.590742739729894e-09,
+          "iterations": 34
+        }
+      },
+      "step": 5,
+      "time": 0.15000000000000002
+    },
+    {
+      "advance_to_state": {
+        "configured_krylov_budget_total": 2000,
+        "converged": true,
+        "d0": 2.5620737108561884,
+        "final_residual_l2": 2.132671230849503e-13,
+        "newton_iters": 5
+      },
+      "coefficient": {
+        "active_d95_over_d05": 1.0496741091601957e+17,
+        "active_node_count": 382,
+        "literal_contrast": -137597229712657.08,
+        "maximum": 2.671807310325685,
+        "minimum": -1.94175952227032e-14
+      },
+      "developedness_max_abs_from_initial": 0.4149405044368821,
+      "m": 2,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 2.519858981735644,
+          "final_relative_residual": 9.448199617980197e-09,
+          "iterations": 135
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.7514644989772038,
+          "final_relative_residual": 7.4075597682659656e-09,
+          "iterations": 144
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 3.027263921646796e-09,
+          "iterations": 159
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 6.109224401908727e-09,
+          "iterations": 31
+        }
+      },
+      "step": 8,
+      "time": 0.18
+    },
+    {
+      "advance_to_state": null,
+      "coefficient": {
+        "active_d95_over_d05": 10.228362476374272,
+        "active_node_count": 298,
+        "literal_contrast": "infinite",
+        "maximum": 20.981712331474814,
+        "minimum": 0.0
+      },
+      "developedness_max_abs_from_initial": 0.0,
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 20.362060294451606,
+          "final_relative_residual": 9.678451954064364e-09,
+          "iterations": 277
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.26898143264111085,
+          "final_relative_residual": 8.719801754558144e-09,
+          "iterations": 334
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 4.4344795812931194e-09,
+          "iterations": 197
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 6.160490498916757e-09,
+          "iterations": 17
+        }
+      },
+      "step": 0,
+      "time": 0.1
+    },
+    {
+      "advance_to_state": {
+        "configured_krylov_budget_total": 2800,
+        "converged": true,
+        "d0": 18.983477522599138,
+        "final_residual_l2": 1.6606182760818356e-10,
+        "newton_iters": 7
+      },
+      "coefficient": {
+        "active_d95_over_d05": 1.3264506617472925e+43,
+        "active_node_count": 400,
+        "literal_contrast": -1.1609827005787264e+41,
+        "maximum": 18.31757043792855,
+        "minimum": -1.577764287856969e-40
+      },
+      "developedness_max_abs_from_initial": 0.6671804961206314,
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 17.79653525859031,
+          "final_relative_residual": 8.538319352806323e-09,
+          "iterations": 272
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.26898143264110436,
+          "final_relative_residual": 9.537292838442338e-09,
+          "iterations": 331
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 5.613910942598628e-09,
+          "iterations": 210
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 5.869614271107706e-09,
+          "iterations": 20
+        }
+      },
+      "step": 2,
+      "time": 0.12000000000000001
+    },
+    {
+      "advance_to_state": {
+        "configured_krylov_budget_total": 2400,
+        "converged": true,
+        "d0": 15.854185059609971,
+        "final_residual_l2": 5.111824929085753e-11,
+        "newton_iters": 6
+      },
+      "coefficient": {
+        "active_d95_over_d05": 9.70981203182807e+42,
+        "active_node_count": 402,
+        "literal_contrast": -7.230788910551448e+40,
+        "maximum": 15.468807147253482,
+        "minimum": -2.1392972936439615e-40
+      },
+      "developedness_max_abs_from_initial": 0.754555342708466,
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 15.048495624408378,
+          "final_relative_residual": 9.418301525436852e-09,
+          "iterations": 260
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.26898143264110436,
+          "final_relative_residual": 9.591415074429559e-09,
+          "iterations": 324
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 5.63191828994129e-09,
+          "iterations": 216
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 4.141717714913088e-09,
+          "iterations": 26
+        }
+      },
+      "step": 5,
+      "time": 0.15000000000000002
+    },
+    {
+      "advance_to_state": {
+        "configured_krylov_budget_total": 2400,
+        "converged": true,
+        "d0": 13.682276092385822,
+        "final_residual_l2": 1.2705110650467314e-09,
+        "newton_iters": 6
+      },
+      "coefficient": {
+        "active_d95_over_d05": 1.835200934314587e+42,
+        "active_node_count": 426,
+        "literal_contrast": -4.382985508911911e+39,
+        "maximum": 13.449304364143803,
+        "minimum": -3.068525856815491e-39
+      },
+      "developedness_max_abs_from_initial": 0.7845518964612159,
+      "m": 8,
+      "methods": {
+        "frozen_bulk": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 13.097662286869413,
+          "final_relative_residual": 9.542801045337759e-09,
+          "iterations": 259
+        },
+        "frozen_mean": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.26898143264115215,
+          "final_relative_residual": 9.688646232854267e-09,
+          "iterations": 327
+        },
+        "identity": {
+          "breakdown": false,
+          "converged": true,
+          "d0": 0.0,
+          "final_relative_residual": 5.253469181059193e-09,
+          "iterations": 219
+        },
+        "tau_blend": {
+          "breakdown": false,
+          "converged": true,
+          "final_relative_residual": 3.065469757885377e-09,
+          "iterations": 22
+        }
+      },
+      "step": 8,
+      "time": 0.18
+    }
+  ],
+  "wall_clock_crossover": {
+    "m2_wide": {
+      "first_tau_faster_than_identity_nx": 256,
+      "tau_faster_than_frozen_nx_values": {
+        "frozen_bulk": [
+          256,
+          512,
+          1024
+        ],
+        "frozen_mean": [
+          256,
+          512,
+          1024
+        ]
+      },
+      "tau_faster_than_identity_nx_values": [
+        256,
+        512,
+        1024
+      ]
+    },
+    "m4_wide": {
+      "first_tau_faster_than_identity_nx": 256,
+      "tau_faster_than_frozen_nx_values": {
+        "frozen_bulk": [
+          256,
+          512,
+          1024
+        ],
+        "frozen_mean": [
+          256,
+          512,
+          1024
+        ]
+      },
+      "tau_faster_than_identity_nx_values": [
+        256,
+        512,
+        1024
+      ]
+    },
+    "m8_wide": {
+      "first_tau_faster_than_identity_nx": 256,
+      "tau_faster_than_frozen_nx_values": {
+        "frozen_bulk": [
+          256,
+          512,
+          1024
+        ],
+        "frozen_mean": [
+          256,
+          512,
+          1024
+        ]
+      },
+      "tau_faster_than_identity_nx_values": [
+        256,
+        512,
+        1024
+      ]
+    },
+    "m8_wide_stiff": {
+      "first_tau_faster_than_identity_nx": 256,
+      "tau_faster_than_frozen_nx_values": {
+        "frozen_bulk": [
+          256,
+          512,
+          1024
+        ],
+        "frozen_mean": [
+          256,
+          512,
+          1024
+        ]
+      },
+      "tau_faster_than_identity_nx_values": [
+        256,
+        512,
+        1024
+      ]
+    }
+  }
+}

@@ -1,0 +1,377 @@
+{
+  "all_solve_iteration_sets_identical": null,
+  "apply_records": [
+    {
+      "equivalence": {
+        "maximum_absolute": {
+          "linear": 1.1102230246251565e-16,
+          "oscillatory": 2.220446049250313e-16,
+          "random": 4.440892098500626e-16
+        },
+        "maximum_absolute_difference": 4.440892098500626e-16,
+        "maximum_relative_l2": 9.008030035608549e-17,
+        "relative_l2": {
+          "linear": 8.253792686579353e-17,
+          "oscillatory": 9.008030035608549e-17,
+          "random": 8.650411585708778e-17
+        }
+      },
+      "m": 2,
+      "nx": 512,
+      "reference_count": 3,
+      "stablehlo": {
+        "batched": {
+          "batched_transform_shape_present": true,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 1,
+          "transform_invocations_per_apply": 2
+        },
+        "forced_sequential": {
+          "batched_transform_shape_present": false,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 3,
+          "transform_invocations_per_apply": 6
+        }
+      },
+      "timing": {
+        "batched": {
+          "iqr_seconds": 5.401670932769775e-07,
+          "median_seconds": 6.006285548210144e-05,
+          "q1_seconds": 5.9777870774269104e-05,
+          "q3_seconds": 6.031803786754608e-05,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "forced_sequential": {
+          "iqr_seconds": 9.73232090473175e-07,
+          "median_seconds": 6.255507469177246e-05,
+          "q1_seconds": 6.216857582330704e-05,
+          "q3_seconds": 6.314180791378021e-05,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "speedup_batched_over_forced_sequential": 1.0414935185759473
+      }
+    },
+    {
+      "equivalence": {
+        "maximum_absolute": {
+          "linear": 1.1102230246251565e-16,
+          "oscillatory": 2.220446049250313e-16,
+          "random": 4.440892098500626e-16
+        },
+        "maximum_absolute_difference": 4.440892098500626e-16,
+        "maximum_relative_l2": 1.0722203560026768e-16,
+        "relative_l2": {
+          "linear": 8.908342477366853e-17,
+          "oscillatory": 8.949809640109626e-17,
+          "random": 1.0722203560026768e-16
+        }
+      },
+      "m": 4,
+      "nx": 512,
+      "reference_count": 3,
+      "stablehlo": {
+        "batched": {
+          "batched_transform_shape_present": true,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 1,
+          "transform_invocations_per_apply": 2
+        },
+        "forced_sequential": {
+          "batched_transform_shape_present": false,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 3,
+          "transform_invocations_per_apply": 6
+        }
+      },
+      "timing": {
+        "batched": {
+          "iqr_seconds": 3.100838512182236e-05,
+          "median_seconds": 7.901713252067566e-05,
+          "q1_seconds": 6.493926048278809e-05,
+          "q3_seconds": 9.594764560461044e-05,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "forced_sequential": {
+          "iqr_seconds": 3.5190023481845856e-05,
+          "median_seconds": 8.444301784038544e-05,
+          "q1_seconds": 6.92959874868393e-05,
+          "q3_seconds": 0.00010448601096868515,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "speedup_batched_over_forced_sequential": 1.0686672009806233
+      }
+    },
+    {
+      "equivalence": {
+        "maximum_absolute": {
+          "linear": 2.220446049250313e-16,
+          "oscillatory": 2.220446049250313e-16,
+          "random": 4.440892098500626e-16
+        },
+        "maximum_absolute_difference": 4.440892098500626e-16,
+        "maximum_relative_l2": 9.864584218589413e-17,
+        "relative_l2": {
+          "linear": 8.323259326096288e-17,
+          "oscillatory": 9.864584218589413e-17,
+          "random": 9.711633469184359e-17
+        }
+      },
+      "m": 8,
+      "nx": 512,
+      "reference_count": 3,
+      "stablehlo": {
+        "batched": {
+          "batched_transform_shape_present": true,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 1,
+          "transform_invocations_per_apply": 2
+        },
+        "forced_sequential": {
+          "batched_transform_shape_present": false,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 3,
+          "transform_invocations_per_apply": 6
+        }
+      },
+      "timing": {
+        "batched": {
+          "iqr_seconds": 7.37607479095459e-07,
+          "median_seconds": 6.124749779701233e-05,
+          "q1_seconds": 6.104074418544769e-05,
+          "q3_seconds": 6.177835166454315e-05,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "forced_sequential": {
+          "iqr_seconds": 8.67992639541626e-07,
+          "median_seconds": 6.3382089138031e-05,
+          "q1_seconds": 6.309710443019867e-05,
+          "q3_seconds": 6.39650970697403e-05,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "speedup_batched_over_forced_sequential": 1.0348518946536098
+      }
+    },
+    {
+      "equivalence": {
+        "maximum_absolute": {
+          "linear": 1.1102230246251565e-16,
+          "oscillatory": 2.220446049250313e-16,
+          "random": 4.440892098500626e-16
+        },
+        "maximum_absolute_difference": 4.440892098500626e-16,
+        "maximum_relative_l2": 9.276486727486505e-17,
+        "relative_l2": {
+          "linear": 7.314238688777349e-17,
+          "oscillatory": 9.276486727486505e-17,
+          "random": 8.257206324729479e-17
+        }
+      },
+      "m": 2,
+      "nx": 1024,
+      "reference_count": 3,
+      "stablehlo": {
+        "batched": {
+          "batched_transform_shape_present": true,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 1,
+          "transform_invocations_per_apply": 2
+        },
+        "forced_sequential": {
+          "batched_transform_shape_present": false,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 3,
+          "transform_invocations_per_apply": 6
+        }
+      },
+      "timing": {
+        "batched": {
+          "iqr_seconds": 5.377456545829773e-06,
+          "median_seconds": 0.00017256848514080048,
+          "q1_seconds": 0.00016884319484233856,
+          "q3_seconds": 0.00017422065138816833,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "forced_sequential": {
+          "iqr_seconds": 5.1818788051605225e-06,
+          "median_seconds": 0.00017706863582134247,
+          "q1_seconds": 0.00017325486987829208,
+          "q3_seconds": 0.0001784367486834526,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "speedup_batched_over_forced_sequential": 1.0260774768745884
+      }
+    },
+    {
+      "equivalence": {
+        "maximum_absolute": {
+          "linear": 2.220446049250313e-16,
+          "oscillatory": 2.220446049250313e-16,
+          "random": 4.440892098500626e-16
+        },
+        "maximum_absolute_difference": 4.440892098500626e-16,
+        "maximum_relative_l2": 9.192520941501859e-17,
+        "relative_l2": {
+          "linear": 7.281633298951687e-17,
+          "oscillatory": 8.461939012978879e-17,
+          "random": 9.192520941501859e-17
+        }
+      },
+      "m": 4,
+      "nx": 1024,
+      "reference_count": 3,
+      "stablehlo": {
+        "batched": {
+          "batched_transform_shape_present": true,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 1,
+          "transform_invocations_per_apply": 2
+        },
+        "forced_sequential": {
+          "batched_transform_shape_present": false,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 3,
+          "transform_invocations_per_apply": 6
+        }
+      },
+      "timing": {
+        "batched": {
+          "iqr_seconds": 1.334119588136673e-05,
+          "median_seconds": 0.00017434358596801758,
+          "q1_seconds": 0.0001713605597615242,
+          "q3_seconds": 0.00018470175564289093,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "forced_sequential": {
+          "iqr_seconds": 2.7189962565898895e-05,
+          "median_seconds": 0.00017793849110603333,
+          "q1_seconds": 0.00017155427485704422,
+          "q3_seconds": 0.00019874423742294312,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "speedup_batched_over_forced_sequential": 1.020619658119658
+      }
+    },
+    {
+      "equivalence": {
+        "maximum_absolute": {
+          "linear": 1.1102230246251565e-16,
+          "oscillatory": 2.220446049250313e-16,
+          "random": 4.440892098500626e-16
+        },
+        "maximum_absolute_difference": 4.440892098500626e-16,
+        "maximum_relative_l2": 9.009092587362058e-17,
+        "relative_l2": {
+          "linear": 7.171191920103227e-17,
+          "oscillatory": 9.009092587362058e-17,
+          "random": 7.980944918128333e-17
+        }
+      },
+      "m": 8,
+      "nx": 1024,
+      "reference_count": 3,
+      "stablehlo": {
+        "batched": {
+          "batched_transform_shape_present": true,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 1,
+          "transform_invocations_per_apply": 2
+        },
+        "forced_sequential": {
+          "batched_transform_shape_present": false,
+          "dst_calls_per_helmholtz_solve": 2,
+          "stablehlo_map_count": 0,
+          "stablehlo_while_count": 0,
+          "top_level_helmholtz_solve_calls": 3,
+          "transform_invocations_per_apply": 6
+        }
+      },
+      "timing": {
+        "batched": {
+          "iqr_seconds": 5.809590220451355e-06,
+          "median_seconds": 0.00016900338232517242,
+          "q1_seconds": 0.00016525667160749435,
+          "q3_seconds": 0.0001710662618279457,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "forced_sequential": {
+          "iqr_seconds": 8.627772331237793e-06,
+          "median_seconds": 0.0001689773052930832,
+          "q1_seconds": 0.00016600266098976135,
+          "q3_seconds": 0.00017463043332099915,
+          "repetitions": 101,
+          "warmups_excluded": 10
+        },
+        "speedup_batched_over_forced_sequential": 0.9998457011230754
+      }
+    }
+  ],
+  "backend": "cpu",
+  "config": {
+    "apply_repetitions": 101,
+    "apply_warmups": 10,
+    "m_values": [
+      2,
+      4,
+      8
+    ],
+    "nx_values": [
+      512,
+      1024
+    ],
+    "solve_repetitions_1024": 3,
+    "solve_repetitions_512": 7,
+    "solve_warmups": 2,
+    "tolerances": [
+      0.01,
+      1e-08
+    ]
+  },
+  "devices": [
+    "TFRT_CPU_0"
+  ],
+  "maximum_relative_action_difference": 1.0722203560026768e-16,
+  "production_path": "jax.vmap over the static reference axis",
+  "provenance": {
+    "base_revision": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b",
+    "base_revision_source": "merge-base-upstream",
+    "repository_head": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b"
+  },
+  "reference_count_static_shape": 3,
+  "schema": "pme_dst_tau_blend_batching_audit_v1",
+  "solve_records": [],
+  "symbol_note": "laplacian_symbol and reference values are stored, but the (l,N) Helmholtz denominator is broadcast/recomputed inside each apply",
+  "symbols_precomputed": false
+}

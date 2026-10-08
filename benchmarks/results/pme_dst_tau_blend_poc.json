@@ -1,0 +1,1246 @@
+{
+  "config": {
+    "arnoldi_steps": 6,
+    "epsilon": 1e-05,
+    "fov_max_iters": 8,
+    "krylov_tol": 1e-08,
+    "max_krylov_iters": 400,
+    "n_angles": 3,
+    "nx": 512,
+    "output_path": "benchmarks/results/pme_dst_tau_blend_poc.json",
+    "reference_counts": [
+      3,
+      5
+    ],
+    "t0": 0.1,
+    "x_max": 4.0,
+    "x_min": -4.0
+  },
+  "design": {
+    "cost": "reference_count DST-I Helmholtz solves plus O(reference_count * N) work",
+    "operator": "I - dt * L_D * diag(D(u))",
+    "ordering": "input weights approximate the right diagonal coefficient ordering",
+    "zero_coefficient_policy": "D <= max(1e-6 * max(D), 1e-14) retains an identity source term and does not select a zero-coefficient reference inverse."
+  },
+  "provenance": {
+    "base_revision": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b",
+    "base_revision_source": "merge-base-upstream",
+    "repository_head": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b"
+  },
+  "records": [
+    {
+      "analysis_dt": 0.02,
+      "baselines": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 1.0,
+            "final_relative_residual": 2.899960761267721e-16,
+            "iterations": 1
+          },
+          "diagnostic": {
+            "adjoint_error": 6.693875100596386e-16,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": true,
+            "arnoldi_k_achieved": 1,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 5.871941643701733e-15,
+            "corroboration_attempted": true,
+            "d0": 1.0,
+            "d0_kind": "frozen_bulk",
+            "disk_rate": 1.3322676295501877e-15,
+            "epsilon_zero": 1.0,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 1.0,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 1.1405575299153646e-14,
+            "n_right_real_outliers": null,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": 0.0,
+              "r1": 1.3322676295501877e-15,
+              "r2": 1.3322676295502026e-15,
+              "r3": 0.0,
+              "supports_consistent": true
+            },
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 1.0,
+            "final_relative_residual": 2.899960761267721e-16,
+            "iterations": 1
+          },
+          "diagnostic": {
+            "adjoint_error": 4.872072101741997e-16,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": true,
+            "arnoldi_k_achieved": 1,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 5.583821799415273e-15,
+            "corroboration_attempted": true,
+            "d0": 1.0,
+            "d0_kind": "frozen_mean",
+            "disk_rate": 1.3322676295501877e-15,
+            "epsilon_zero": 0.9999999999999997,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.9999999999999997,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 1.1405575299153646e-14,
+            "n_right_real_outliers": null,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": 0.0,
+              "r1": 1.3322676295501877e-15,
+              "r2": 1.3322676295502026e-15,
+              "r3": 0.0,
+              "supports_consistent": true
+            },
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 9.378696825437096e-09,
+            "iterations": 84
+          }
+        }
+      },
+      "beats_all_baselines": {
+        "3": false,
+        "5": false
+      },
+      "beats_identity": {
+        "3": true,
+        "5": true
+      },
+      "case": "linear_control",
+      "coefficient": {
+        "active_node_count": 512,
+        "active_p95_over_p05": 1.0,
+        "literal_contrast": 1.0,
+        "maximum": 1.0,
+        "minimum": 1.0
+      },
+      "dst_tau_blends": {
+        "3": {
+          "active_nodes": 512,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 3.2392626027402893e-16,
+            "iterations": 1
+          },
+          "diagnostic": {
+            "adjoint_error": 1.3279418682041632e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 3.376928366568184e-16,
+            "epsilon_zero": 1.0,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": null,
+            "origin_enclosed": false,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": 0.0,
+              "r1": 3.376928366568184e-16,
+              "r2": 2.7646859513962783e-16,
+              "r3": 0.0,
+              "supports_consistent": true
+            },
+            "reference_count": 3,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.9999999999999998,
+            1.0,
+            1.0000000000000002
+          ]
+        },
+        "5": {
+          "active_nodes": 512,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 2.3739510667807657e-16,
+            "iterations": 1
+          },
+          "diagnostic": {
+            "adjoint_error": 1.6262049547602305e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 2.228195947695613e-16,
+            "epsilon_zero": 1.0,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": null,
+            "origin_enclosed": false,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": 0.0,
+              "r1": 2.228195947695613e-16,
+              "r2": 5.114864439731855e-16,
+              "r3": 0.0,
+              "supports_consistent": true
+            },
+            "reference_count": 5,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.9999999999999998,
+            1.0,
+            1.0,
+            1.0,
+            1.0000000000000002
+          ]
+        }
+      },
+      "m": 1,
+      "state_kind": "initial_barenblatt_first_newton_system",
+      "target_support_halfwidth": 3.0
+    },
+    {
+      "analysis_dt": 0.02,
+      "baselines": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 2e-05,
+            "final_relative_residual": 5.626508141484521e-15,
+            "iterations": 7
+          },
+          "diagnostic": {
+            "adjoint_error": 1.3877787807814457e-17,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 3.457911830188791e-15,
+            "corroboration_attempted": true,
+            "d0": 2e-05,
+            "d0_kind": "frozen_bulk",
+            "disk_rate": 0.8200957943705793,
+            "epsilon_zero": 1.000111584833145,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 1.000111584833145,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.0006500337790292008,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": 0.7734894832449051,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": 0.7734894832449051,
+              "r1": 0.8200957943705793,
+              "r2": 0.7736985846186392,
+              "r3": 0.7734894832449051,
+              "supports_consistent": true
+            },
+            "supports_consistent": true,
+            "supports_converged": true,
+            "supports_corroborated": true,
+            "verdict": "provisional",
+            "verdict_reason": "epsilon_zero rests on a reduced Arnoldi projection (k_achieved=6 of n=512); an invariant-subspace breakdown does not establish coverage of the full operator, so its smallest singular value cannot support adequate."
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.00043401369695774707,
+            "final_relative_residual": 1.4502228495447993e-09,
+            "iterations": 11
+          },
+          "diagnostic": {
+            "adjoint_error": 0.0,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 2.7654915962482576e-15,
+            "corroboration_attempted": true,
+            "d0": 0.00043401369695774707,
+            "d0_kind": "frozen_mean",
+            "disk_rate": 0.8275396694274533,
+            "epsilon_zero": 0.9232551575457476,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.9232551575457476,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.012649563380449369,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.8275396694274533,
+              "r2": 0.759636544331499,
+              "r3": 0.7632926505671999,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 2.1209731137141387e-10,
+            "iterations": 9
+          }
+        }
+      },
+      "beats_all_baselines": {
+        "3": false,
+        "5": false
+      },
+      "beats_identity": {
+        "3": true,
+        "5": true
+      },
+      "case": "m2_narrow",
+      "coefficient": {
+        "active_node_count": 14,
+        "active_p95_over_p05": 4.201419130479298,
+        "literal_contrast": "infinite",
+        "maximum": 0.022340698963918337,
+        "minimum": 0.0
+      },
+      "dst_tau_blends": {
+        "3": {
+          "active_nodes": 14,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 1.9901216195894321e-10,
+            "iterations": 7
+          },
+          "diagnostic": {
+            "adjoint_error": 7.757919228897728e-18,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 0.29312364261269896,
+            "epsilon_zero": 0.9264293248101383,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": false,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": 0.11589278992354142,
+              "r1": 0.29312364261269896,
+              "r2": 0.1509962261273534,
+              "r3": 0.11589278992354142,
+              "supports_consistent": true
+            },
+            "reference_count": 3,
+            "supports_consistent": true,
+            "verdict": "provisional",
+            "verdict_reason": "epsilon_zero rests on a reduced Arnoldi projection (k_achieved=6 of n=512); an invariant-subspace breakdown does not establish coverage of the full operator, so its smallest singular value cannot support adequate."
+          },
+          "reference_values": [
+            0.005317417346402448,
+            0.017476904216056695,
+            0.022340698963918337
+          ]
+        },
+        "5": {
+          "active_nodes": 14,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 4.869448095620394e-11,
+            "iterations": 7
+          },
+          "diagnostic": {
+            "adjoint_error": 1.4719616800160393e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 0.2766934916339455,
+            "epsilon_zero": 0.9421966302087372,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 1,
+            "origin_enclosed": false,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": 0.11004873130667428,
+              "r1": 0.2766934916339455,
+              "r2": 0.14573276237178326,
+              "r3": 0.11004873130667428,
+              "supports_consistent": true
+            },
+            "reference_count": 5,
+            "supports_consistent": true,
+            "verdict": "investigate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.005317417346402448,
+            0.01119450266673546,
+            0.017476904216056695,
+            0.021124750276952917,
+            0.022340698963918337
+          ]
+        }
+      },
+      "m": 2,
+      "state_kind": "initial_barenblatt_first_newton_system",
+      "target_support_halfwidth": 0.25
+    },
+    {
+      "analysis_dt": 0.02,
+      "baselines": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 2.965987512824764,
+            "final_relative_residual": 9.41308307353748e-09,
+            "iterations": 166
+          },
+          "diagnostic": {
+            "adjoint_error": 2.5107126067822215e-16,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 1.5455031607769743e-14,
+            "corroboration_attempted": true,
+            "d0": 2.965987512824764,
+            "d0_kind": "frozen_bulk",
+            "disk_rate": 0.9982885180012097,
+            "epsilon_zero": 0.00452578720161204,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.00452578720161204,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.020885004662182745,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9982885180012097,
+              "r2": 0.9977257973847022,
+              "r3": 0.9915787212891991,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.7514644989772038,
+            "final_relative_residual": 9.666342511498405e-09,
+            "iterations": 182
+          },
+          "diagnostic": {
+            "adjoint_error": 5.946838538569095e-16,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 2.6136644223754196e-14,
+            "corroboration_attempted": true,
+            "d0": 0.7514644989772038,
+            "d0_kind": "frozen_mean",
+            "disk_rate": 0.9982942133937664,
+            "epsilon_zero": 0.018791135539395015,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.018791135539395015,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.025845003037156995,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9982942133937664,
+              "r2": 0.9977349761478362,
+              "r3": 0.9910693983969915,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 5.7548863484573225e-09,
+            "iterations": 121
+          }
+        }
+      },
+      "beats_all_baselines": {
+        "3": true,
+        "5": true
+      },
+      "beats_identity": {
+        "3": true,
+        "5": true
+      },
+      "case": "m2_wide",
+      "coefficient": {
+        "active_node_count": 178,
+        "active_p95_over_p05": 9.54832000353584,
+        "literal_contrast": "infinite",
+        "maximum": 3.231550705990578,
+        "minimum": 0.0
+      },
+      "dst_tau_blends": {
+        "3": {
+          "active_nodes": 178,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 3.749945926860307e-09,
+            "iterations": 14
+          },
+          "diagnostic": {
+            "adjoint_error": 1.2412670766236366e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 2.9799453840055694,
+            "epsilon_zero": 0.740801339287541,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 2.9799453840055694,
+              "r2": 0.9717303957895365,
+              "r3": 0.538706476713214,
+              "supports_consistent": true
+            },
+            "reference_count": 3,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.05711400055288194,
+            2.4290245725934074,
+            3.231550705990578
+          ]
+        },
+        "5": {
+          "active_nodes": 178,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 4.587615410386549e-09,
+            "iterations": 17
+          },
+          "diagnostic": {
+            "adjoint_error": 8.355534721610419e-17,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 3.1112538843226596,
+            "epsilon_zero": 0.3316702085898992,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 3.1112538843226596,
+              "r2": 0.9700697337769216,
+              "r3": 0.7491320276740795,
+              "supports_consistent": false
+            },
+            "reference_count": 5,
+            "supports_consistent": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.05711400055288194,
+            1.4392423414035633,
+            2.4290245725934074,
+            3.0264606941224117,
+            3.231550705990578
+          ]
+        }
+      },
+      "m": 2,
+      "state_kind": "initial_barenblatt_first_newton_system",
+      "target_support_halfwidth": 3.0
+    },
+    {
+      "analysis_dt": 0.02,
+      "baselines": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 10.27069325474311,
+            "final_relative_residual": 9.63320758516338e-09,
+            "iterations": 245
+          },
+          "diagnostic": {
+            "adjoint_error": 1.156330808209806e-15,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 4.527535156667441e-14,
+            "corroboration_attempted": true,
+            "d0": 10.27069325474311,
+            "d0_kind": "frozen_bulk",
+            "disk_rate": 0.9994858161406911,
+            "epsilon_zero": 0.0028335434911690525,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.0028335434911690525,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.020461166680243517,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9994858161406911,
+              "r2": 0.999323099729703,
+              "r3": 0.9945043691329869,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.6813363387189464,
+            "final_relative_residual": 9.869502023375317e-09,
+            "iterations": 284
+          },
+          "diagnostic": {
+            "adjoint_error": 8.617648093045562e-16,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 1.0098941925191979e-13,
+            "corroboration_attempted": true,
+            "d0": 0.6813363387189464,
+            "d0_kind": "frozen_mean",
+            "disk_rate": 0.9995003045744568,
+            "epsilon_zero": 0.03927657356468096,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.03927657356468096,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.02561203598761485,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9995003045744568,
+              "r2": 0.9993449682365751,
+              "r3": 0.9948942741212959,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 7.679394652977266e-09,
+            "iterations": 156
+          }
+        }
+      },
+      "beats_all_baselines": {
+        "3": true,
+        "5": true
+      },
+      "beats_identity": {
+        "3": true,
+        "5": true
+      },
+      "case": "m4_wide",
+      "coefficient": {
+        "active_node_count": 242,
+        "active_p95_over_p05": 9.051973544725788,
+        "literal_contrast": "infinite",
+        "maximum": 10.74871121319749,
+        "minimum": 0.0
+      },
+      "dst_tau_blends": {
+        "3": {
+          "active_nodes": 242,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 1.8401723389415206e-09,
+            "iterations": 15
+          },
+          "diagnostic": {
+            "adjoint_error": 1.6920233481191198e-15,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 6.812825809664408,
+            "epsilon_zero": 0.5720879710782374,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 6.812825809664408,
+              "r2": 1.0,
+              "r3": 0.44839402217197305,
+              "supports_consistent": true
+            },
+            "reference_count": 3,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.1553662519341947,
+            8.078487896570955,
+            10.74871121319749
+          ]
+        },
+        "5": {
+          "active_nodes": 242,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 9.038111903971156e-09,
+            "iterations": 17
+          },
+          "diagnostic": {
+            "adjoint_error": 1.318846268912614e-15,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 6.848996258990582,
+            "epsilon_zero": 0.2954648354755599,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 6.848996258990582,
+              "r2": 1.0,
+              "r3": 0.7124356000937272,
+              "supports_consistent": true
+            },
+            "reference_count": 5,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.1553662519341947,
+            4.773539365317635,
+            8.078487896570955,
+            10.070211845858836,
+            10.74871121319749
+          ]
+        }
+      },
+      "m": 4,
+      "state_kind": "initial_barenblatt_first_newton_system",
+      "target_support_halfwidth": 3.0
+    },
+    {
+      "analysis_dt": 0.02,
+      "baselines": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 20.362060294451606,
+            "final_relative_residual": 9.951262212498585e-09,
+            "iterations": 277
+          },
+          "diagnostic": {
+            "adjoint_error": 2.947600967162434e-16,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 7.08091675204797e-14,
+            "corroboration_attempted": true,
+            "d0": 20.362060294451606,
+            "d0_kind": "frozen_bulk",
+            "disk_rate": 0.9997370079740852,
+            "epsilon_zero": 0.002282824360917532,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.002282824360917532,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.01987443225323406,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9997370079740852,
+              "r2": 0.9996559833026597,
+              "r3": 0.9955056268571221,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.26898143264111085,
+            "final_relative_residual": 8.790507414844341e-09,
+            "iterations": 334
+          },
+          "diagnostic": {
+            "adjoint_error": 1.1487455693124671e-14,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 2.9918373617358593e-13,
+            "corroboration_attempted": true,
+            "d0": 0.26898143264111085,
+            "d0_kind": "frozen_mean",
+            "disk_rate": 0.9997515311933469,
+            "epsilon_zero": 0.16259035955948736,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.16259035955948736,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.024921151273970203,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9997515311933469,
+              "r2": 0.9996760131960535,
+              "r3": 0.9957072301945301,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 4.434479649165167e-09,
+            "iterations": 197
+          }
+        }
+      },
+      "beats_all_baselines": {
+        "3": true,
+        "5": true
+      },
+      "beats_identity": {
+        "3": true,
+        "5": true
+      },
+      "case": "m8_wide",
+      "coefficient": {
+        "active_node_count": 298,
+        "active_p95_over_p05": 10.228362476374272,
+        "literal_contrast": "infinite",
+        "maximum": 20.981712331474814,
+        "minimum": 0.0
+      },
+      "dst_tau_blends": {
+        "3": {
+          "active_nodes": 298,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 6.1604904989258715e-09,
+            "iterations": 17
+          },
+          "diagnostic": {
+            "adjoint_error": 1.5057879410883503e-15,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 6.018600909398952,
+            "epsilon_zero": 0.8539623804210303,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 6.018600909398952,
+              "r2": 1.0,
+              "r3": 1.1688050546473914,
+              "supports_consistent": true
+            },
+            "reference_count": 3,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.12630086962793052,
+            15.732867165185885,
+            20.981712331474814
+          ]
+        },
+        "5": {
+          "active_nodes": 298,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 6.950865815698082e-09,
+            "iterations": 19
+          },
+          "diagnostic": {
+            "adjoint_error": 1.783984089923424e-16,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 7.298834280453943,
+            "epsilon_zero": 0.14483744842201585,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 7.298834280453943,
+              "r2": 1.0,
+              "r3": 1.1558132201076985,
+              "supports_consistent": false
+            },
+            "reference_count": 5,
+            "supports_consistent": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.12630086962793052,
+            9.224299158855459,
+            15.732867165185885,
+            19.65200488935498,
+            20.981712331474814
+          ]
+        }
+      },
+      "m": 8,
+      "state_kind": "initial_barenblatt_first_newton_system",
+      "target_support_halfwidth": 3.0
+    },
+    {
+      "analysis_dt": 2.0,
+      "baselines": {
+        "frozen_bulk": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 20.362060294451606,
+            "final_relative_residual": 7.707747796019482e-09,
+            "iterations": 330
+          },
+          "diagnostic": {
+            "adjoint_error": 1.3608571766605448e-14,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 1.077832532162518e-12,
+            "corroboration_attempted": true,
+            "d0": 20.362060294451606,
+            "d0_kind": "frozen_bulk",
+            "disk_rate": 0.9999972499043507,
+            "epsilon_zero": 0.0014098872476852287,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.0014098872476852287,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.01986915935194475,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": false,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": true,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 0.9999972499043507,
+              "r2": 0.9999963809591282,
+              "r3": 0.9972185895880973,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "frozen_mean": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.26898143264111085,
+            "final_relative_residual": 8.737862821340674e-09,
+            "iterations": 341
+          },
+          "diagnostic": {
+            "adjoint_error": 9.592352632333978e-14,
+            "adjoint_tolerance": 1e-08,
+            "arnoldi_breakdown": false,
+            "arnoldi_k_achieved": 6,
+            "arnoldi_k_requested": 6,
+            "arnoldi_residual_norm": 7.2287552593964536e-12,
+            "corroboration_attempted": true,
+            "d0": 0.26898143264111085,
+            "d0_kind": "frozen_mean",
+            "disk_rate": 1.091642756333445,
+            "epsilon_zero": 0.0887462219419736,
+            "epsilon_zero_full_operator_evidence": false,
+            "epsilon_zero_reduced_arnoldi": 0.0887462219419736,
+            "full_operator_epsilon_zero": null,
+            "full_operator_epsilon_zero_seconds": null,
+            "max_support_residual": 0.02148221350311836,
+            "n_right_real_outliers": 0,
+            "operator_dimension": 512,
+            "origin_enclosed": true,
+            "predicted_gmres_factor": null,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": true,
+              "predicted_gmres_factor": null,
+              "r1": 1.091642756333445,
+              "r2": 0.9689288839033418,
+              "r3": 0.9976807364362364,
+              "supports_consistent": false
+            },
+            "supports_consistent": false,
+            "supports_converged": false,
+            "supports_corroborated": false,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          }
+        },
+        "identity": {
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "d0": 0.0,
+            "final_relative_residual": 5.12303286989815e-09,
+            "iterations": 200
+          }
+        }
+      },
+      "beats_all_baselines": {
+        "3": true,
+        "5": true
+      },
+      "beats_identity": {
+        "3": true,
+        "5": true
+      },
+      "case": "m8_wide_stiff",
+      "coefficient": {
+        "active_node_count": 298,
+        "active_p95_over_p05": 10.228362476374272,
+        "literal_contrast": "infinite",
+        "maximum": 20.981712331474814,
+        "minimum": 0.0
+      },
+      "dst_tau_blends": {
+        "3": {
+          "active_nodes": 298,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 4.496335692609164e-09,
+            "iterations": 14
+          },
+          "diagnostic": {
+            "adjoint_error": 7.795315362787195e-15,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 106.72187584370926,
+            "epsilon_zero": 0.019812303633417738,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 106.72187584370926,
+              "r2": 1.0,
+              "r3": 1.6961968511799164,
+              "supports_consistent": true
+            },
+            "reference_count": 3,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.12630086962793052,
+            15.732867165185885,
+            20.981712331474814
+          ]
+        },
+        "5": {
+          "active_nodes": 298,
+          "actual_gmres": {
+            "breakdown": false,
+            "converged": true,
+            "final_relative_residual": 5.045678929374277e-09,
+            "iterations": 18
+          },
+          "diagnostic": {
+            "adjoint_error": 1.0530159589964839e-14,
+            "adjoint_tolerance": 1e-08,
+            "corroboration_attempted": false,
+            "disk_rate": 121.18352539319815,
+            "epsilon_zero": 0.005648440756231941,
+            "epsilon_zero_full_operator_evidence": false,
+            "n_right_real_outliers": 0,
+            "origin_enclosed": true,
+            "rates": {
+              "agree": false,
+              "corroboration_attempted": false,
+              "predicted_gmres_factor": null,
+              "r1": 121.18352539319815,
+              "r2": 1.0,
+              "r3": 31.29430600617666,
+              "supports_consistent": true
+            },
+            "reference_count": 5,
+            "supports_consistent": true,
+            "verdict": "indeterminate",
+            "verdict_reason": null
+          },
+          "reference_values": [
+            0.12630086962793052,
+            9.224299158855459,
+            15.732867165185885,
+            19.65200488935498,
+            20.981712331474814
+          ]
+        }
+      },
+      "m": 8,
+      "state_kind": "initial_barenblatt_first_newton_system",
+      "target_support_halfwidth": 3.0
+    }
+  ],
+  "runtime_seconds": 237.869105046615,
+  "schema": "pme_dst_tau_blend_poc_v1",
+  "scope": "Experimental input-weighted DST/tau blend for first Newton systems at Barenblatt initial states; it is not a public solver component.",
+  "success_bar": "tau GMRES iterations must be lower than identity, frozen_mean, and frozen_bulk on every wide-front target",
+  "success_by_reference_count": {
+    "3": true,
+    "5": true
+  }
+}
