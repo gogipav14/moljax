@@ -40,7 +40,10 @@ def _persist(root: Path) -> tuple[dict[str, object], dict[str, object]]:
 
     _, identities, _, _ = load_or_generate_states(root, "test-state", fingerprint, generate)
     artifact = source_state_artifact(root, "test-state", fingerprint, 0, identities[0])
-    record = {"record_config": {"m": 4}, "source_state_artifact": artifact}
+    record = {
+        "record_config": {"m": 4, "generation_fingerprint": fingerprint},
+        "source_state_artifact": artifact,
+    }
     return fingerprint, record
 
 
@@ -50,7 +53,11 @@ def test_source_state_cache_replays_after_relocation(tmp_path: Path) -> None:
     relocated = tmp_path / "relocated"
     _, record = _persist(original)
     shutil.copytree(original, relocated)
-    replayed = replay_source_state(record, cache_root=relocated, expected_record_config={"m": 4})
+    replayed = replay_source_state(
+        record,
+        cache_root=relocated,
+        expected_record_config=record["record_config"],
+    )
     assert jnp.array_equal(replayed, jnp.arange(4, dtype=jnp.float64))
 
 
@@ -75,11 +82,42 @@ def test_source_state_cache_rejects_sha256_corruption(tmp_path: Path) -> None:
     payload["source_state_identities"][0]["sha256"] = "0" * 64
     manifest.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(RuntimeError, match="SHA256 mismatch"):
-        replay_source_state(record, cache_root=tmp_path, expected_record_config={"m": 4})
+        replay_source_state(
+            record,
+            cache_root=tmp_path,
+            expected_record_config=record["record_config"],
+        )
 
 
 def test_source_state_reassessment_requires_exact_record_config(tmp_path: Path) -> None:
     """Reassessment cannot silently rebuild from a default configuration."""
     _, record = _persist(tmp_path)
     with pytest.raises(RuntimeError, match="configuration mismatch"):
-        replay_source_state(record, cache_root=tmp_path, expected_record_config={"m": 2})
+        replay_source_state(
+            record,
+            cache_root=tmp_path,
+            expected_record_config={**record["record_config"], "m": 2},
+        )
+
+
+def test_source_state_replay_rejects_a_foreign_artifact(tmp_path: Path) -> None:
+    """A valid artifact from another generation contract never replays."""
+    fingerprint, record = _persist(tmp_path)
+    foreign = {**fingerprint, "m": 8}
+
+    def generate() -> tuple[list[jax.Array], list[dict[str, object]]]:
+        return [jnp.full((4,), 8.0)], [{"step": 0}]
+
+    _, identities, _, _ = load_or_generate_states(tmp_path, "test-state", foreign, generate)
+    foreign_record = {
+        "record_config": record["record_config"],
+        "source_state_artifact": source_state_artifact(
+            tmp_path, "test-state", foreign, 0, identities[0]
+        ),
+    }
+    with pytest.raises(RuntimeError, match="fingerprint disagrees"):
+        replay_source_state(
+            foreign_record,
+            cache_root=tmp_path,
+            expected_record_config=record["record_config"],
+        )

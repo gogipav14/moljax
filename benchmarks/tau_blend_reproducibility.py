@@ -218,6 +218,13 @@ def replay_source_state(
     fingerprint = artifact.get("generation_fingerprint")
     if not isinstance(fingerprint, dict):
         raise RuntimeError("record lacks a source-state fingerprint")
+    # The artifact is internally consistent by construction; bind it to the
+    # generation contract the caller expects, or a foreign state could replay.
+    expected_fingerprint = expected_record_config.get("generation_fingerprint")
+    if not isinstance(expected_fingerprint, dict):
+        raise RuntimeError("expected record configuration lacks a generation fingerprint")
+    if fingerprint != expected_fingerprint:
+        raise RuntimeError("source-state fingerprint disagrees with the expected configuration")
     relative = Path(str(artifact.get("relative_path", "")))
     if relative.is_absolute() or ".." in relative.parts:
         raise RuntimeError("source-state artifact path is not cache-root-relative")
@@ -234,6 +241,10 @@ def replay_source_state(
         raise RuntimeError("source-state sample position is invalid")
     if identities[position] != artifact.get("source_state_identity"):
         raise RuntimeError("source-state identity mismatch during reassessment")
+    grid = fingerprint.get("grid")
+    if isinstance(grid, dict) and "nx" in grid:
+        if tuple(states[position].shape) != (int(grid["nx"]),):
+            raise RuntimeError("source-state shape disagrees with the fingerprint grid")
     return states[position]
 
 
