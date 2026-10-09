@@ -277,7 +277,7 @@ def _spectral_claims(baseline: dict[str, Any]) -> dict[str, Any]:
     return {
         "exponents": "/".join(str(value) for value in exponents),
         "condition_ranges": "/".join(condition_ranges),
-        "maximum_condition_spread_percent": max(spreads),
+        "condition_spreads_percent": "/".join(f"{spread:.2f}%" for spread in spreads),
         "near_zero_minimum": min(near_zero),
         "near_zero_maximum": max(near_zero),
         "blend_near_zero_maximum": max(
@@ -327,13 +327,28 @@ def _tight_claims(baseline: dict[str, Any]) -> tuple[str, str]:
             "reaches tolerance"
         )
         if controls:
+            control_names = list(controls)
+            control_iterations = {_iterations(values) for values in controls.values()}
+            joined_names = " and ".join(control_names)
+            if len(control_iterations) == 1:
+                control_iteration = next(iter(control_iterations))
+                control_noun = "controls do" if len(control_names) > 1 else "control does"
+                control_clause = (
+                    f"the {joined_names} {control_noun} ({control_iteration} iterations"
+                    f"{' each' if len(control_names) > 1 else ''})"
+                )
+            else:
+                details = ", ".join(
+                    f"{name} {_iterations(values)}" for name, values in controls.items()
+                )
+                control_clause = f"the {joined_names} controls do ({details} iterations)"
             fastest_name = min(controls, key=lambda name: controls[name]["median_seconds"])
             fastest = controls[fastest_name]
             capped.append(
-                f"{prefix}, while {fastest_name} does; the blend takes "
+                f"{prefix}, while {control_clause}; the blend takes "
                 f"{_iterations(blend)} iterations and about {blend['median_seconds']:.3f} s "
-                f"versus {_iterations(fastest)} iterations and about "
-                f"{fastest['median_seconds']:.2f} s for that fastest converged control."
+                f"versus about {fastest['median_seconds']:.2f} s for {fastest_name}, "
+                "the fastest control."
             )
         else:
             capped.append(
@@ -450,8 +465,8 @@ def render() -> str:
         bulk mean, constant one, geometric mean, harmonic mean, and the per-case GMRES
         oracle `d0*`--retains a large near-zero spectral tail. At
         `m={spectral['exponents']}`, their condition numbers span only
-        `{spectral['condition_ranges']}` and differ by at most
-        {spectral['maximum_condition_spread_percent']:.1f}% within an exponent, with
+        `{spectral['condition_ranges']}`, with respective within-exponent spreads of
+        {spectral['condition_spreads_percent']}, and with
         {spectral['near_zero_minimum']}--{spectral['near_zero_maximum']} eigenvalues below
         magnitude {NEAR_ZERO_THRESHOLD:g}. The oracle `d0*` is spectrally the worst of
         that group: it has the largest condition number and smallest `min|lambda|` at
@@ -522,7 +537,11 @@ def render() -> str:
         reference costs {rejection:.2f}x its solve. Sparse matrix-free Ritz/path mode
         remains provisional and records `rate_bound_available=false`, because reduced
         Ritz values do not prove full spectrum coverage and sparse paths do not provide
-        a closed-contour arc length."""
+        a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope
+        surrogate with separate real and imaginary linear constraints. The reported
+        sampled maximum modulus and effective rate are measured from the fitted
+        polynomial itself, so the surrogate can make the search suboptimal but cannot
+        make the reported rate optimistic."""
     )
     matrix_free_rate_available = all(
         not record["fully_matrix_free_runtime_estimate"]["rate_bound_available"]

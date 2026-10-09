@@ -44,16 +44,16 @@ The decisive observation is not that the arithmetic mean was chosen poorly. Ever
 effective nonzero scalar Helmholtz reference tested here--arithmetic mean, bulk mean,
 constant one, geometric mean, harmonic mean, and the per-case GMRES oracle
 `d0*`--retains a large near-zero spectral tail. At `m=2/4/8`, their condition numbers
-span only `1.06e+03--1.07e+03/3.54e+03--3.59e+03/6.9e+03--7e+03` and differ by at most
-1.5% within an exponent, with 170--322 eigenvalues below magnitude 0.1. The oracle `d0*`
-is spectrally the worst of that group: it has the largest condition number and smallest
-`min|lambda|` at every measured exponent. The near-zero `floor` reference and identity
-do not manufacture the tail, but they also provide essentially no useful conditioning
-and have still larger condition numbers. Thus "effective scalar reference" means a
-non-degenerate scalar that actually preconditions: identity and the near-zero floor are
-controls that avoid the tail only by forgoing effective conditioning. The 3-reference
-blend removes the tail: zero eigenvalues below 0.1, with `kappa_2=11.1/54.8/51.4` at
-`m=2/4/8`.
+span only `1.06e+03--1.07e+03/3.54e+03--3.59e+03/6.9e+03--7e+03`, with respective
+within-exponent spreads of 1.14%/1.50%/1.49%, and with 170--322 eigenvalues below
+magnitude 0.1. The oracle `d0*` is spectrally the worst of that group: it has the
+largest condition number and smallest `min|lambda|` at every measured exponent. The
+near-zero `floor` reference and identity do not manufacture the tail, but they also
+provide essentially no useful conditioning and have still larger condition numbers. Thus
+"effective scalar reference" means a non-degenerate scalar that actually preconditions:
+identity and the near-zero floor are controls that avoid the tail only by forgoing
+effective conditioning. The 3-reference blend removes the tail: zero eigenvalues below
+0.1, with `kappa_2=11.1/54.8/51.4` at `m=2/4/8`.
 
 | m | method | kappa_2 | count abs(lambda)<0.1 | min abs(lambda) | spectral abscissa | numerical abscissa | gap | disk rate |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|
@@ -136,10 +136,10 @@ The active-support oracle scan uses 51 logarithmically spaced values between
 candidate solves across the main and contrast studies. On the clean post-`d8d4432`
 replay, the blend is 16.0x--54.0x faster than the converged active-range oracle in the 4
 cases where that oracle reaches tolerance. At `N=1024,m=4`, no effective active-range
-scalar reaches tolerance, while floor does; the blend takes 55 iterations and about
-0.456 s versus 330 iterations and about 10.45 s for that fastest converged control. At
-`N=1024,m=8`, no effective active-range scalar reaches tolerance, nor do identity or
-floor; the blend takes 33 iterations and about 0.286 s.
+scalar reaches tolerance, while the identity and floor controls do (330 iterations
+each); the blend takes 55 iterations and about 0.456 s versus about 10.45 s for floor,
+the fastest control. At `N=1024,m=8`, no effective active-range scalar reaches
+tolerance, nor do identity or floor; the blend takes 33 iterations and about 0.286 s.
 
 These replayed values supersede the preliminary scratch timing headline:
 iteration counts for the active oracle mostly reproduce, but the merged GMRES
@@ -208,7 +208,10 @@ than an omitted batching optimization. As a rejection gate it can be cheap: reje
 the inadequate `m=8` frozen-mean reference costs 0.32x its solve. Sparse matrix-free
 Ritz/path mode remains provisional and records `rate_bound_available=false`, because
 reduced Ritz values do not prove full spectrum coverage and sparse paths do not provide
-a closed-contour arc length.
+a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope surrogate
+with separate real and imaginary linear constraints. The reported sampled maximum
+modulus and effective rate are measured from the fitted polynomial itself, so the
+surrogate can make the search suboptimal but cannot make the reported rate optimistic.
 
 ## Honest limits
 
