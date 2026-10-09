@@ -14,6 +14,9 @@ import pytest
 
 from moljax.conditioning import pseudospectrum_dense
 from moljax.experimental.pseudospectral_criterion import (
+    _contour_modulus_bound,
+    _contour_sigma_min_lower_bound,
+    _fit_polynomial,
     assess_dense_pseudospectral_criterion,
     dense_sigma_min,
     materialize_dense_operator,
@@ -55,10 +58,62 @@ def test_clustered_normal_operator_is_certified_conservatively() -> None:
     assert result.theorem_prefactor is not None
     assert result.contour_arc_length_grid is not None
     assert result.selected_epsilon is not None
+    assert result.contour_sigma_min_lower_bound is not None
+    # The resolvent floor is proven on the contour, not assumed from epsilon.
+    # Both reviews measured sigma_min = 0.2397 on this contour, below the
+    # selected level 0.2536 that the old prefactor divided by.
+    assert 0.0 < result.contour_sigma_min_lower_bound < 0.239736845
     assert result.theorem_prefactor == pytest.approx(
-        result.contour_arc_length_grid / (2.0 * pi * result.selected_epsilon)
+        result.contour_arc_length_grid / (2.0 * pi * result.contour_sigma_min_lower_bound)
     )
+    assert result.contour_modulus_bound is not None
+    assert 0.0 < result.contour_modulus_bound < 1.0
     assert result.predicted_iterations is not None
+
+
+def test_contour_sigma_floor_holds_between_samples() -> None:
+    """The edge floor never exceeds the true resolvent floor anywhere on the edge."""
+    eigenvalues = np.array([1.0, 1.2 + 0.1j, 1.4])
+    matrix = np.diag(eigenvalues)
+    real_grid = np.linspace(0.0, 2.0, 21)
+    imag_grid = np.linspace(-0.6, 0.6, 13)
+    sigma = np.min(
+        np.abs(
+            (real_grid[None, :, None] + 1j * imag_grid[:, None, None]) - eigenvalues[None, None, :]
+        ),
+        axis=-1,
+    )
+    rng = np.random.default_rng(20261009)
+    starts = rng.uniform(0.2, 1.8, 64) + 1j * rng.uniform(-0.4, 0.4, 64)
+    ends = starts + 0.05 * np.exp(2j * pi * rng.uniform(size=64))
+    floor = _contour_sigma_min_lower_bound(starts, ends, sigma, real_grid, imag_grid, 0.0)
+    fractions = np.linspace(0.0, 1.0, 401)
+    points = starts[:, None] + fractions[None, :] * (ends - starts)[:, None]
+    true_minimum = min(dense_sigma_min(matrix, complex(point)) for point in points.ravel())
+    assert floor <= true_minimum
+
+
+def test_contour_modulus_bound_covers_points_between_samples() -> None:
+    """A polynomial that vanishes at its samples still gets a nonzero bound.
+
+    The square-envelope fit on {0.9, 1.1} reports a sampled maximum of zero,
+    although the fitted polynomial has modulus 0.0101 at z = 1.
+    """
+    fitted = _fit_polynomial(np.array([0.9, 1.1], dtype=np.complex128), 2)
+    assert fitted is not None
+    sampled, _, coefficients, scale = fitted
+    assert sampled == pytest.approx(0.0, abs=1.0e-12)
+    starts = np.array([0.9 + 0.0j])
+    ends = np.array([1.1 + 0.0j])
+    bound, _ = _contour_modulus_bound(starts, ends, coefficients, scale)
+    points = np.linspace(0.9, 1.1, 20001) / scale
+    values = 1.0 + sum(
+        (real + 1j * imag) * points ** (order + 1)
+        for order, (real, imag) in enumerate(coefficients)
+    )
+    true_maximum = float(np.max(np.abs(values)))
+    assert true_maximum == pytest.approx(1.0 / 99.0, rel=1.0e-6)
+    assert bound >= true_maximum
 
 
 def test_origin_eigenvalue_fails_closed() -> None:

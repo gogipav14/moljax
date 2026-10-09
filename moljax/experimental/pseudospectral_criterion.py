@@ -13,11 +13,19 @@ connectivity threshold. If the corrected threshold lies below
 the origin remains outside it.
 
 For levels in that window, a linear program constructs a normalized
-polynomial on the sampled component. The Trefethen contour estimate uses the
-prefactor ``L(Gamma_epsilon) / (2 pi epsilon)`` and no Crouzeix spectral-set
-constant. This is a grid-resolved numerical certificate, not interval
-arithmetic. Its dense resolvent-sampling cost is exposed because a certificate
-can cost more than the Krylov solve it describes.
+polynomial on the sampled component. The bound is then evaluated on an explicit
+continuous contour: the staircase boundary ``Gamma`` of the component's grid
+cells, which encloses every eigenvalue. On each boundary edge the 1-Lipschitz
+property bounds ``sigma_min(z I - A)`` from below through the true coarse
+samples, and a Lipschitz bound on ``p`` covers the points between polynomial
+samples. The Cauchy integral then gives
+``||p(A)**k|| <= L(Gamma) / (2 pi s_Gamma) * M_Gamma**k`` with the proven
+resolvent floor ``s_Gamma`` and modulus bound ``M_Gamma``, and no Crouzeix
+spectral-set constant. Apart from floating-point rounding in the SVD samples
+(covered by an explicit backward-error margin) and in polynomial evaluation,
+this is a certificate; it is not interval arithmetic. Its dense
+resolvent-sampling cost is exposed because a certificate can cost more than
+the Krylov solve it describes.
 
 The resolvent-contour estimate follows Trefethen and Embree, *Spectra and
 Pseudospectra* (Princeton, 2005), DOI 10.1515/9780691213101.  For the GMRES
@@ -69,6 +77,10 @@ class PseudospectralCriterionResult:
     predicted_iterations: int | None
     component_grid_point_count: int | None
     contour_arc_length_grid: float | None
+    contour_sigma_min_lower_bound: float | None
+    contour_modulus_bound: float | None
+    contour_edge_count: int | None
+    polynomial_lipschitz_bound: float | None
     real_grid: tuple[float, ...]
     imag_grid: tuple[float, ...]
     sigma_min_grid: tuple[tuple[float, ...], ...]
@@ -97,6 +109,10 @@ class _PolynomialCandidate:
     predicted_iterations: int
     component_grid_point_count: int
     arc_length: float
+    contour_sigma_min_lower_bound: float
+    contour_modulus_bound: float
+    contour_edge_count: int
+    polynomial_lipschitz_bound: float
 
 
 def materialize_dense_operator(matvec: Matvec, n: int) -> np.ndarray:
@@ -271,11 +287,122 @@ def _grid_boundary_arc_length(component: np.ndarray, dx: float, dy: float) -> fl
     return float(horizontal_edges * dx + vertical_edges * dy)
 
 
+def _grid_boundary_edges(
+    component: np.ndarray,
+    real_grid: np.ndarray,
+    imag_grid: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the start and end points of the component's cell-boundary edges.
+
+    Each grid point owns the rectangle of half-spacing around it. The union of
+    the component's rectangles is a closed region whose boundary is these
+    edges; it contains every point of the component, including each
+    eigenvalue's nearest grid point and therefore the eigenvalue itself.
+    """
+    dx = float(real_grid[1] - real_grid[0])
+    dy = float(imag_grid[1] - imag_grid[0])
+    padded = np.pad(component, 1, constant_values=False)
+    horizontal_rows, horizontal_columns = np.nonzero(padded[1:, :] != padded[:-1, :])
+    horizontal_y = imag_grid[0] + (horizontal_rows - 0.5) * dy
+    horizontal_x = real_grid[0] + (horizontal_columns - 1) * dx
+    vertical_rows, vertical_columns = np.nonzero(padded[:, 1:] != padded[:, :-1])
+    vertical_x = real_grid[0] + (vertical_columns - 0.5) * dx
+    vertical_y = imag_grid[0] + (vertical_rows - 1) * dy
+    starts = np.concatenate(
+        [
+            (horizontal_x - 0.5 * dx) + 1j * horizontal_y,
+            vertical_x + 1j * (vertical_y - 0.5 * dy),
+        ]
+    )
+    ends = np.concatenate(
+        [
+            (horizontal_x + 0.5 * dx) + 1j * horizontal_y,
+            vertical_x + 1j * (vertical_y + 0.5 * dy),
+        ]
+    )
+    return starts, ends
+
+
+def _contour_sigma_min_lower_bound(
+    starts: np.ndarray,
+    ends: np.ndarray,
+    sigma_min: np.ndarray,
+    real_grid: np.ndarray,
+    imag_grid: np.ndarray,
+    sample_error: float,
+) -> float:
+    """Bound ``sigma_min(z I - A)`` from below on every point of every edge.
+
+    ``sigma_min`` is 1-Lipschitz in ``z``, and the distance to a fixed sample
+    is convex along a segment, so ``sigma(q) - max(|a - q|, |b - q|)`` bounds
+    the whole edge ``[a, b]`` for any coarse sample ``q``. The best of the
+    nearby samples is used, minus the SVD backward-error allowance.
+    """
+    middles = 0.5 * (starts + ends)
+    dx = float(real_grid[1] - real_grid[0])
+    dy = float(imag_grid[1] - imag_grid[0])
+    nearest_columns = np.rint((middles.real - real_grid[0]) / dx).astype(int)
+    nearest_rows = np.rint((middles.imag - imag_grid[0]) / dy).astype(int)
+    best = np.full(starts.shape, -np.inf)
+    for row_offset in (-1, 0, 1):
+        for column_offset in (-1, 0, 1):
+            rows = np.clip(nearest_rows + row_offset, 0, imag_grid.size - 1)
+            columns = np.clip(nearest_columns + column_offset, 0, real_grid.size - 1)
+            samples = real_grid[columns] + 1j * imag_grid[rows]
+            reach = np.maximum(np.abs(starts - samples), np.abs(ends - samples))
+            best = np.maximum(best, sigma_min[rows, columns] - reach)
+    return float(np.min(best)) - sample_error
+
+
+def _contour_modulus_bound(
+    starts: np.ndarray,
+    ends: np.ndarray,
+    coefficients: tuple[tuple[float, float], ...],
+    scale: float,
+    absolute_slack: float = 1.0e-3,
+    max_subdivisions: int = 1024,
+) -> tuple[float, float]:
+    """Bound ``max |p|`` on every point of every edge, not only at samples.
+
+    ``p(z) = 1 + sum_k c_k (z / scale)**k``. On the disk of radius ``R`` that
+    contains the contour, ``|p'| <= sum_k k |c_k| R**(k-1) / scale**k``. Each
+    edge is sampled so that every point lies within ``h / (2 K)`` of a sample,
+    and the Lipschitz term covers the gap.
+    """
+    complex_coefficients = np.array([real + 1j * imag for real, imag in coefficients])
+    orders = np.arange(1, complex_coefficients.size + 1)
+    radius = float(max(np.max(np.abs(starts)), np.max(np.abs(ends)))) / scale
+    lipschitz = float(
+        np.sum(orders * np.abs(complex_coefficients) * radius ** (orders - 1)) / scale
+    )
+    edge_length = float(np.max(np.abs(ends - starts)))
+    subdivisions = int(
+        min(
+            max(8, ceil(lipschitz * edge_length / (2.0 * absolute_slack))),
+            max_subdivisions,
+        )
+    )
+    fractions = np.linspace(0.0, 1.0, subdivisions + 1)
+    points = starts[:, None] + fractions[None, :] * (ends - starts)[:, None]
+    scaled = points / scale
+    values = np.ones_like(scaled)
+    power = np.ones_like(scaled)
+    for coefficient in complex_coefficients:
+        power = power * scaled
+        values = values + coefficient * power
+    sampled = float(np.max(np.abs(values)))
+    return sampled + lipschitz * edge_length / (2.0 * subdivisions), lipschitz
+
+
 def _fit_polynomial(
     points: np.ndarray,
     degree: int,
-) -> tuple[float, float, tuple[tuple[float, float], ...]] | None:
-    """Minimize a square-envelope surrogate and report its max modulus."""
+) -> tuple[float, float, tuple[tuple[float, float], ...], float] | None:
+    """Minimize a square-envelope surrogate and report its sampled max modulus.
+
+    The sampled maximum is only a search heuristic. It says nothing about the
+    points between samples; the certificate uses ``_contour_modulus_bound``.
+    """
     scale = max(float(np.max(np.abs(points))), 1.0)
     powers = np.column_stack([(points / scale) ** order for order in range(1, degree + 1)])
     real = powers.real
@@ -314,7 +441,7 @@ def _fit_polynomial(
     maximum = float(np.max(np.abs(polynomial)))
     effective_rate = maximum ** (1.0 / degree)
     serialized = tuple((float(value.real), float(value.imag)) for value in coefficients)
-    return maximum, effective_rate, serialized
+    return maximum, effective_rate, serialized, scale
 
 
 def _predicted_iterations(
@@ -343,6 +470,7 @@ def _search_polynomial_certificate(
     target_tolerance: float,
     polynomial_degrees: tuple[int, ...],
     epsilon_samples: int,
+    sample_error: float,
 ) -> _PolynomialCandidate | None:
     dx = float(real_grid[1] - real_grid[0])
     dy = float(imag_grid[1] - imag_grid[0])
@@ -384,18 +512,39 @@ def _search_polynomial_certificate(
             continue
         points = fine_points[envelope]
         arc_length = _grid_boundary_arc_length(component, 0.5 * dx, 0.5 * dy)
-        # Trefethen's pseudospectral contour bound is
-        # L(Gamma_epsilon) / (2 pi epsilon).  A Crouzeix constant belongs to
-        # functional calculus over W(A), not to this resolvent-contour bound.
-        prefactor = arc_length / (2.0 * pi * epsilon)
+        starts, ends = _grid_boundary_edges(component, fine_real, fine_imag)
+        contour_floor = _contour_sigma_min_lower_bound(
+            starts,
+            ends,
+            sigma_min,
+            real_grid,
+            imag_grid,
+            sample_error,
+        )
+        if contour_floor <= 0.0:
+            continue
+        # Cauchy's integral over Gamma gives the Trefethen-type bound
+        # L(Gamma) / (2 pi min_Gamma sigma_min).  The resolvent floor is
+        # proven on the whole contour, not assumed from the level epsilon.  A
+        # Crouzeix constant belongs to functional calculus over W(A), not here.
+        prefactor = arc_length / (2.0 * pi * contour_floor)
         for degree in polynomial_degrees:
             fitted = _fit_polynomial(points, degree)
             if fitted is None:
                 continue
-            maximum, effective_rate, coefficients = fitted
+            maximum, _, coefficients, scale = fitted
+            contour_maximum, lipschitz = _contour_modulus_bound(
+                starts,
+                ends,
+                coefficients,
+                scale,
+            )
+            if not contour_maximum < 1.0:
+                continue
+            effective_rate = contour_maximum ** (1.0 / degree)
             predicted = _predicted_iterations(
                 prefactor,
-                maximum,
+                contour_maximum,
                 degree,
                 target_tolerance,
             )
@@ -414,6 +563,10 @@ def _search_polynomial_certificate(
                     predicted_iterations=predicted,
                     component_grid_point_count=int(np.count_nonzero(component)),
                     arc_length=arc_length,
+                    contour_sigma_min_lower_bound=contour_floor,
+                    contour_modulus_bound=contour_maximum,
+                    contour_edge_count=int(starts.size),
+                    polynomial_lipschitz_bound=lipschitz,
                 )
             )
     if not candidates:
@@ -476,6 +629,12 @@ def assess_dense_pseudospectral_criterion(
         maximum_seed_distance,
     )
     epsilon_zero = dense_sigma_min(square, 0.0)
+    # Backward-error allowance for each sampled sigma_min(z I - A).
+    largest_shift = float(np.max(np.abs(real_grid))) + float(np.max(np.abs(imag_grid)))
+    operator_norm = float(scipy.linalg.svdvals(square, check_finite=False)[0])
+    sample_error = (
+        8.0 * square.shape[0] * float(np.finfo(np.float64).eps) * (operator_norm + largest_shift)
+    )
     search_started = perf_counter()
     candidate = _search_polynomial_certificate(
         sigma_min,
@@ -487,6 +646,7 @@ def assess_dense_pseudospectral_criterion(
         target_tolerance,
         polynomial_degrees,
         epsilon_samples,
+        sample_error,
     )
     search_seconds = perf_counter() - search_started
     if eps_connect_upper >= epsilon_zero:
@@ -494,7 +654,7 @@ def assess_dense_pseudospectral_criterion(
         reason = "spectrum connectivity reaches the origin-exclusion threshold"
     elif candidate is None:
         certified = False
-        reason = "the connected window has no decaying sampled polynomial certificate"
+        reason = "the connected window has no polynomial with a proven contour bound below one"
     else:
         certified = True
         reason = "connected pseudospectral window excludes the origin"
@@ -524,6 +684,14 @@ def assess_dense_pseudospectral_criterion(
             None if candidate is None else candidate.component_grid_point_count
         ),
         contour_arc_length_grid=None if candidate is None else candidate.arc_length,
+        contour_sigma_min_lower_bound=(
+            None if candidate is None else candidate.contour_sigma_min_lower_bound
+        ),
+        contour_modulus_bound=None if candidate is None else candidate.contour_modulus_bound,
+        contour_edge_count=None if candidate is None else candidate.contour_edge_count,
+        polynomial_lipschitz_bound=(
+            None if candidate is None else candidate.polynomial_lipschitz_bound
+        ),
         real_grid=tuple(float(value) for value in real_grid),
         imag_grid=tuple(float(value) for value in imag_grid),
         sigma_min_grid=tuple(tuple(float(value) for value in row) for row in sigma_min),
