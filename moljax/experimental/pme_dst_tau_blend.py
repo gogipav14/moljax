@@ -31,6 +31,9 @@ from moljax.conditioning import (
 from moljax.core.fft_nonperiodic import laplacian_symbol_dirichlet, solve_helmholtz_dirichlet
 from moljax.core.preconditioners import PrecondContext
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
+from moljax.experimental.nonlinear_diffusion import (
+    porous_medium_diffusivity as _library_porous_medium_diffusivity,
+)
 from moljax.experimental.pme_conditioning import (
     Residual,
     _counted_gmres,
@@ -65,9 +68,16 @@ class SingleReferenceLinearization(NamedTuple):
 
 
 def porous_medium_diffusivity(u: jax.Array, m: float, epsilon: float) -> jax.Array:
-    """Return the diagonal coefficient ``phi'(u)`` of the staged PME flux."""
+    """Return the diagonal coefficient ``D_epsilon(u)`` of the staged PME Jacobian.
+
+    The residual from :func:`make_backward_euler_residual` differentiates the
+    regularized potential, so its Jacobian is ``I - dt * L_D * diag(D)`` with
+    ``D = m * (u**2 + epsilon**2)**((m - 1) / 2)``.  This delegates to the
+    library definition so the references and active masks see exactly that
+    coefficient, including its positive floor ``m * epsilon**(m - 1)``.
+    """
     values = jnp.asarray(u, dtype=jnp.float64)
-    return m * values * (values**2 + epsilon**2) ** (m / 2.0 - 1.0)
+    return _library_porous_medium_diffusivity(values, m, epsilon=epsilon)
 
 
 def _active_reference_values(
@@ -122,7 +132,7 @@ def pme_active_single_reference_values(
         raise ValueError("PME state has no active diffusivity values")
     minimum_active = float(jnp.min(active_values))
     maximum_active = float(jnp.max(active_values))
-    geometric = float(jnp.sqrt(minimum_active * maximum_active))
+    geometric = float(jnp.exp(jnp.mean(jnp.log(active_values))))
     harmonic = float(active_values.size / jnp.sum(1.0 / active_values))
     return {
         "active_threshold": threshold,
@@ -142,13 +152,23 @@ def _log_partition_weights(
     active: jax.Array,
 ) -> jax.Array:
     """Build an input-node log-coefficient partition of unity."""
+    reference_values = jnp.asarray(references, dtype=jnp.float64)
+    span = float(jnp.ptp(jnp.log(reference_values)))
+    if reference_values.size == 1 or span == 0.0:
+        # One distinct reference: every active input selects it with unit weight.
+        weights = jnp.zeros((diffusivity.shape[0], reference_values.size), dtype=jnp.float64)
+        return jnp.where(active[:, None], weights.at[:, 0].set(1.0), 0.0).T
     values = jnp.maximum(jnp.asarray(diffusivity, dtype=jnp.float64), jnp.finfo(jnp.float64).tiny)
     log_values = jnp.log(values)[:, None]
-    log_references = jnp.log(jnp.asarray(references, dtype=jnp.float64))[None, :]
-    width = jnp.maximum(jnp.ptp(log_references) / max(references.size - 1, 1), 1.0e-12)
-    unnormalized = jnp.exp(-(((log_values - log_references) / width) ** 2))
-    normalized = unnormalized / jnp.sum(unnormalized, axis=1, keepdims=True)
-    return jnp.where(active[:, None], normalized, 0.0).T
+    log_references = jnp.log(reference_values)[None, :]
+    width = span / (reference_values.size - 1)
+    # Normalizing in log space keeps far-from-reference inputs finite.
+    exponents = -(((log_values - log_references) / width) ** 2)
+    normalized = jax.nn.softmax(exponents, axis=1)
+    weights = jnp.where(active[:, None], normalized, 0.0).T
+    if not bool(jnp.all(jnp.isfinite(weights))):
+        raise FloatingPointError("tau-blend partition weights are not finite")
+    return weights
 
 
 @dataclass(frozen=True)
