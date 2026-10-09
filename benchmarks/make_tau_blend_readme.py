@@ -396,8 +396,7 @@ def _contrast_claims(baseline: dict[str, Any]) -> tuple[str, str]:
         subset = sorted((row for row in rows if row["m"] == m), key=lambda row: row["step"])
         ratios = [row["best_single_iterations"] / row["tau_iterations"] for row in subset]
         ratio_clauses.append(
-            f"from {ratios[0]:.2f}x to {min(ratios[1:]):.2f}--{max(ratios[1:]):.2f}x "
-            f"for `m={m}`"
+            f"from {ratios[0]:.2f}x to {min(ratios[1:]):.2f}--{max(ratios[1:]):.2f}x for `m={m}`"
         )
     work = baseline["work_precision_records"]
     contrast = baseline["contrast_records"]
@@ -464,10 +463,10 @@ def render() -> str:
         Every effective nonzero scalar Helmholtz reference tested here--arithmetic mean,
         bulk mean, constant one, geometric mean, harmonic mean, and the per-case GMRES
         oracle `d0*`--retains a large near-zero spectral tail. At
-        `m={spectral['exponents']}`, their condition numbers span only
-        `{spectral['condition_ranges']}`, with respective within-exponent spreads of
-        {spectral['condition_spreads_percent']}, and with
-        {spectral['near_zero_minimum']}--{spectral['near_zero_maximum']} eigenvalues below
+        `m={spectral["exponents"]}`, their condition numbers span only
+        `{spectral["condition_ranges"]}`, with respective within-exponent spreads of
+        {spectral["condition_spreads_percent"]}, and with
+        {spectral["near_zero_minimum"]}--{spectral["near_zero_maximum"]} eigenvalues below
         magnitude {NEAR_ZERO_THRESHOLD:g}. The oracle `d0*` is spectrally the worst of
         that group: it has the largest condition number and smallest `min|lambda|` at
         every measured exponent. The near-zero `floor` reference and identity do not
@@ -477,21 +476,28 @@ def render() -> str:
         near-zero floor are controls that avoid the tail only by forgoing effective
         conditioning. The {reference_count}-reference blend removes the tail:
         {blend_tail_description} below
-        {NEAR_ZERO_THRESHOLD:g}, with `kappa_2={spectral['blend_condition_numbers']}` at
-        `m={spectral['exponents']}`."""
+        {NEAR_ZERO_THRESHOLD:g}, with `kappa_2={spectral["blend_condition_numbers"]}` at
+        `m={spectral["exponents"]}`. For a frozen reference `D0`, the identity
+        `P0^-1 J = I + K (diag(D) - D0 I)` with `K` symmetric positive definite
+        explains the tail: where `D` is negligible the operator acts approximately
+        as `I - D0 K`, whose eigenvalues `1/(1 + D0 g)`, with `g` an eigenvalue of
+        `-dt L`, approach zero at high frequency, so for fixed `D0 > 0` the tail
+        deepens under mesh refinement. The identity does not single out an optimal scalar;
+        where the oracle lands is an empirical observation below, not a consequence
+        of the identity."""
     )
     counter_paragraph = _wrap(
         f"""Each cell is `counted GMRES iterations; median +/- IQR seconds`. Timings
-        exclude {config['timing_warmups']} warmups, synchronize with
+        exclude {config["timing_warmups"]} warmups, synchronize with
         `jax.block_until_ready`, and include fresh linearization/preconditioner
         construction plus the solve. `cap` means the target was not reached within the
         configured budget. Pavlov identified that the inherited counter reports
-        {config['max_krylov_iters'] + 1} at a budget of
-        {config['max_krylov_iters']} and explicitly deferred changing that convention
+        {config["max_krylov_iters"] + 1} at a budget of
+        {config["max_krylov_iters"]} and explicitly deferred changing that convention
         because doing so would shift recorded counts; this study preserves that known
         item."""
     )
-    tight_paragraph = _wrap(f"""The active-support oracle scan uses {config['oracle_scan_points']}
+    tight_paragraph = _wrap(f"""The active-support oracle scan uses {config["oracle_scan_points"]}
         logarithmically spaced values between `D_min(active)` and `D_max(active)` for
         every case: {oracle_scan_count} independent scans and {oracle_candidate_count}
         candidate solves across the main and contrast studies. {tight_overview}
@@ -506,17 +512,17 @@ def render() -> str:
     contrast_paragraph = _wrap(
         f"""The iteration advantage shrinks as compact support fills in but does not
         vanish: the measured oracle/blend ratio falls {contrast_ratios}. It tracks the
-        zero-set/degeneracy fraction more coherently than `D95/D05`.
+        near-zero (degeneracy) fraction more coherently than `D95/D05`.
         {oracle_selection} This explains why `frozen_bulk` is generally the strongest
         shipped nontrivial scalar and `frozen_mean` the weakest in these states. It does
         not by itself justify changing moljax's default."""
     )
     batching_paragraph = _wrap(
         f"""The production `l={reference_count}` application was already batched through
-        `{batching['production_path']}`. StableHLO confirms a single Helmholtz call over
+        `{batching["production_path"]}`. StableHLO confirms a single Helmholtz call over
         the full static `{reference_count} x N` reference tensor rather than a
         per-reference Python loop. The batched and forced-sequential actions agree to
-        `{batching['maximum_relative_action_difference']:.2e}` relative error, and all
+        `{batching["maximum_relative_action_difference"]:.2e}` relative error, and all
         solve iteration sets are identical. On GPU, batching speeds up the application
         itself by {apply_min:.2f}--{apply_max:.2f}x; the end-to-end solve speedup is only
         {solve_min:.3f}--{solve_max:.3f}x because the application is not the bottleneck at
@@ -526,11 +532,17 @@ def render() -> str:
         optimization."""
     )
     criterion_paragraph = _wrap(
-        f"""The dense criterion is mathematically sound for these validation-sized
-        operators. Its Trefethen resolvent-contour prefactor is exactly
-        `L(Gamma_epsilon)/(2*pi*epsilon)`; no Crouzeix spectral-set constant belongs in
-        that bound. It certifies the tested origin-enclosed blend cases, but
-        certification is offline: the matrix-free runtime estimator costs
+        f"""The dense criterion evaluates the bound on an explicit closed contour
+        `Gamma`: the boundary of the grid cells of the selected pseudospectral
+        component, which encloses every eigenvalue. On every edge of `Gamma`, the
+        1-Lipschitz property of `sigma_min(zI - A)` and the true grid samples give a
+        proven resolvent floor `s_Gamma`, and a Lipschitz bound on the polynomial
+        covers the points between polynomial samples to give `M_Gamma`. The Cauchy
+        integral then gives `||p(A)^k|| <= L(Gamma)/(2*pi*s_Gamma) * M_Gamma^k`; no
+        Crouzeix spectral-set constant belongs in that bound. Apart from
+        floating-point rounding (an explicit SVD backward-error margin is
+        subtracted), this is a certificate, not interval arithmetic. Certification is
+        offline: the matrix-free runtime estimator costs
         {offline_min:.1f}--{offline_max:.1f}x the corresponding solve, a fundamental
         evidence floor rather than an omitted batching optimization. As a rejection
         gate it can be cheap: rejecting the inadequate `m={rejection_m}` frozen-mean
@@ -538,10 +550,11 @@ def render() -> str:
         remains provisional and records `rate_bound_available=false`, because reduced
         Ritz values do not prove full spectrum coverage and sparse paths do not provide
         a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope
-        surrogate with separate real and imaginary linear constraints. The reported
-        sampled maximum modulus and effective rate are measured from the fitted
-        polynomial itself, so the surrogate can make the search suboptimal but cannot
-        make the reported rate optimistic."""
+        surrogate with separate real and imaginary linear constraints. Its sampled
+        maximum is only a search heuristic, since a polynomial can be small at every
+        sample and larger between them; the reported effective rate is
+        `M_Gamma^(1/degree)` from the continuous contour bound, so the surrogate can
+        make the search suboptimal but cannot make the reported rate optimistic."""
     )
     matrix_free_rate_available = all(
         not record["fully_matrix_free_runtime_estimate"]["rate_bound_available"]
@@ -598,8 +611,12 @@ the multipreconditioned Krylov-space orthogonalisation growth.
 
 This is the boundary of the classical bounded-contrast argument in these data:
 effective single-reference preconditioning loses spectral equivalence when the
-coefficient has a positive-measure zero set; the partitioned blend restores a
-zero-free spectrum for the tested states.
+coefficient is negligible on a set of positive measure; the partitioned blend
+restores a zero-free spectrum for the tested states. The regularized coefficient
+`D = m (u^2 + epsilon^2)^((m-1)/2)` has no exact zero set: its floor is
+`m epsilon^(m-1)`. At `m=2` with `epsilon=1e-5` that floor (`2e-5`) lies above
+the active threshold, so every node is active; at larger `m` the floor lies below
+it and the inactive nodes are the near-zero set.
 
 ## Linear-solve measurements
 
@@ -646,13 +663,13 @@ The committed JSON is authoritative.
   are supporting evidence, not a full time-to-solution application benchmark.
 - Loose-tolerance behavior is regime-dependent, and no switching heuristic is
   proposed.
-- The advantage shrinks as the zero set fills in, although it does not vanish in
+- The advantage shrinks as the near-zero set fills in, although it does not vanish in
   the measured contrast sweep.
 - A two-dimensional extension is a major build: moljax's `Grid2D` is cell-centred,
   there is no matching 2-D DST-I path, the flux-form linearization differs, and a
   PME front is curve-shaped. It was not attempted here.
 - The dense pseudospectral certificate is intentionally offline at
-  `N={runtime['config']['nx']}`; its sparse matrix-free approximation is a
+  `N={runtime["config"]["nx"]}`; its sparse matrix-free approximation is a
   provisional diagnostic only.
 
 ## Reproduction and provenance
