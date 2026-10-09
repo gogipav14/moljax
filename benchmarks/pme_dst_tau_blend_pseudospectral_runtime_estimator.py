@@ -330,7 +330,7 @@ def run_experiment(config: RuntimeEstimatorConfig | None = None) -> dict[str, An
             "arc length, so no residual-rate certificate is claimed."
         ),
         "bound": {
-            "rate_prefactor": "L(Gamma_epsilon)/(2*pi*epsilon)",
+            "rate_prefactor": "L(Gamma)/(2*pi*s_Gamma)",
             "crouzeix_constant_used": False,
             "rate_available_in_sparse_estimator": False,
             "reason": (

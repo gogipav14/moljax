@@ -2,7 +2,7 @@
   "bound": {
     "crouzeix_constant_used": false,
     "rate_available_in_sparse_estimator": false,
-    "rate_prefactor": "L(Gamma_epsilon)/(2*pi*epsilon)",
+    "rate_prefactor": "L(Gamma)/(2*pi*s_Gamma)",
     "reason": "the proven bound requires a closed contour and its arc length; targeted connectivity paths alone do not supply either"
   },
   "complete": true,
@@ -32,55 +32,55 @@
     "x_min": -4.0
   },
   "provenance": {
-    "base_revision": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b",
-    "base_revision_source": "merge-base-upstream",
-    "repository_head": "d8d4432a4b03ede71db24e2beeb3d6812d3f9c9b"
+    "base_revision": "v1.2.1",
+    "base_revision_source": "describe-tags",
+    "repository_head": "39f40910839326d376f669d7d242d6ab9be56e08"
   },
   "records": [
     {
       "actual_gmres": {
         "all_converged": true,
-        "iqr_seconds": 0.014825303107500076,
+        "iqr_seconds": 0.010679085971787572,
         "iterations": [
-          14
+          50
         ],
-        "median_seconds": 0.1617673970758915
+        "median_seconds": 0.23094486800255254
       },
       "cost": {
-        "exact_spectrum_sparse_path_time_over_gmres": 148.6102255532958,
-        "exact_spectrum_sparse_path_total_seconds": 24.0402893666178,
-        "old_dense_time_over_gmres": 540.1067817978056,
-        "runtime_estimate_time_over_gmres": 73.88235507674827,
-        "runtime_estimate_total_seconds": 11.951756270602345
+        "exact_spectrum_sparse_path_time_over_gmres": 36.36039713564853,
+        "exact_spectrum_sparse_path_total_seconds": 8.39724711701274,
+        "old_dense_time_over_gmres": 346.42961166019455,
+        "runtime_estimate_time_over_gmres": 13.921609013374024,
+        "runtime_estimate_total_seconds": 3.2151241559768096
       },
       "dense_grid_reference": {
-        "actual_iterations": 14,
-        "certified": true,
-        "eps_connect_upper": 0.03344194882933271,
-        "epsilon_zero": 0.3837670318977742,
-        "predicted_iterations": 56,
+        "actual_iterations": 50,
+        "certified": false,
+        "eps_connect_upper": 0.8876293012427536,
+        "epsilon_zero": 0.2880792830783228,
+        "predicted_iterations": null,
         "sigma_min_evaluations": 1892,
-        "sigma_min_seconds": 87.3716682344675
+        "sigma_min_seconds": 80.00614093703916
       },
       "exact_spectrum_sparse_paths": {
         "anchor_count": 512,
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": true,
-        "elapsed_seconds": 23.553891448304057,
-        "eps_connect_path_upper": 0.046846561510958604,
-        "epsilon_zero_estimate": 0.38376703189777434,
-        "epsilon_zero_lower_bound": 0.3837670318977742,
-        "evaluation_budget_exhausted": true,
-        "forward_adjoint_pairs": 2441,
-        "lipschitz_path_upper": 0.046786066972775736,
-        "operator_applications": 4884,
+        "elapsed_seconds": 8.128506643057335,
+        "eps_connect_path_upper": 0.1339118542434387,
+        "epsilon_zero_estimate": 0.28807928307832326,
+        "epsilon_zero_lower_bound": 0.28807928307832287,
+        "evaluation_budget_exhausted": false,
+        "forward_adjoint_pairs": 719,
+        "lipschitz_path_upper": 0.1339118542434387,
+        "operator_applications": 1440,
         "provisional": false,
         "rate_bound_available": false,
         "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
         "reason": "tested spectrum-spanning paths lie below a trusted origin-exclusion level",
-        "sampled_path_maximum": 0.035491226848993467,
-        "sigma_min_evaluations": 48,
+        "sampled_path_maximum": 0.1339118542434387,
+        "sigma_min_evaluations": 6,
         "spectrum_complete": true,
         "spectrum_coverage_upper": 0.0,
         "spectrum_point_count": 512,
@@ -94,100 +94,100 @@
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": false,
-        "elapsed_seconds": 9.99974325299263,
-        "eps_connect_path_upper": 0.09369312302191724,
-        "epsilon_zero_estimate": 0.38376703189777434,
+        "elapsed_seconds": 1.8635232049855404,
+        "eps_connect_path_upper": null,
+        "epsilon_zero_estimate": 0.28807928307832315,
         "epsilon_zero_lower_bound": null,
-        "evaluation_budget_exhausted": true,
-        "forward_adjoint_pairs": 2441,
-        "lipschitz_path_upper": 0.09336670426468241,
-        "operator_applications": 4884,
+        "evaluation_budget_exhausted": false,
+        "forward_adjoint_pairs": 1006,
+        "lipschitz_path_upper": 3.0199178746068442,
+        "operator_applications": 2014,
         "provisional": true,
         "rate_bound_available": false,
         "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
-        "reason": "a sparse path window was found, but reduced spectrum and/or matrix-free origin estimates do not prove full-spectrum origin exclusion",
+        "reason": "no tested spectrum-spanning path was established below the origin threshold",
         "ritz_arnoldi_steps": 12,
         "ritz_operator_applications": 12,
-        "ritz_seconds": 1.4656150992959738,
-        "sampled_path_maximum": 0.03190196975075207,
-        "sigma_min_evaluations": 48,
+        "ritz_seconds": 1.0828604770358652,
+        "sampled_path_maximum": 0.8700104890325906,
+        "sigma_min_evaluations": 13,
         "spectrum_complete": false,
         "spectrum_coverage_upper": 0.0,
         "spectrum_point_count": 12,
         "spectrum_source": "12-step matrix-free Arnoldi Ritz values",
         "tree_edge_count": 11,
-        "verdict": "provisional_window",
-        "window_nonempty": true
+        "verdict": "not_certified",
+        "window_nonempty": false
       },
       "m": 2,
       "method": "tau_blend",
       "operator_dimension": 512,
       "operator_norm_scale": {
-        "dense_operator_norm": 4.26237390924125,
-        "matrix_free_estimate_with_safety_factor": 6.393560863496407,
+        "dense_operator_norm": 38.19063910816766,
+        "matrix_free_estimate_with_safety_factor": 56.61803285008996,
         "operator_applications": 48,
-        "seconds": 0.4863979183137417
+        "seconds": 0.268740473955404
       },
       "sigma_min_validation": {
-        "maximum_relative_error": 6.806171382808148e-14,
-        "median_dense_svd_seconds": 0.04077173490077257,
-        "median_matrix_free_seconds": 0.6709815440699458,
+        "maximum_relative_error": 1.1561640386927544e-15,
+        "median_dense_svd_seconds": 0.06210794500657357,
+        "median_matrix_free_seconds": 0.637629692995688,
         "points": [
           {
-            "absolute_error": 5.551115123125783e-17,
-            "dense_sigma_min": 0.3837670318977742,
-            "dense_svd_seconds": 0.036194220185279846,
+            "absolute_error": 3.3306690738754696e-16,
+            "dense_sigma_min": 0.2880792830783228,
+            "dense_svd_seconds": 0.05419161304598674,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.6407274305820465,
-              "estimate": 0.3837670318977743,
+              "elapsed_seconds": 0.6071455149794929,
+              "estimate": 0.28807928307832315,
               "forward_adjoint_pairs": 514,
               "forward_applications": 516,
-              "normal_residual_norm": 8.782230985835932e-11,
+              "normal_residual_norm": 7.674341940539984e-09,
               "operator_applications": 1030,
               "point": [
                 0.0,
                 0.0
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 0.14727713477162732
+              "squared_rayleigh_quotient": 0.08298967333892066
             },
-            "matrix_free_time_over_dense_svd": 17.702479216353712,
+            "matrix_free_time_over_dense_svd": 11.203680437861706,
             "point": [
               0.0,
               0.0
             ],
-            "relative_error": 1.4464804586456656e-16
+            "relative_error": 1.1561640386927544e-15
           },
           {
-            "absolute_error": 1.0842021724855044e-16,
-            "dense_sigma_min": 0.0015929692502661826,
-            "dense_svd_seconds": 0.0453492496162653,
+            "absolute_error": 4.440892098500626e-16,
+            "dense_sigma_min": 3.684721472078195,
+            "dense_svd_seconds": 0.0700242769671604,
             "matrix_free": {
-              "adjoint_applications": 515,
+              "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.7012356575578451,
-              "estimate": 0.001592969250266291,
+              "elapsed_seconds": 0.668113871011883,
+              "estimate": 3.6847214720781953,
               "forward_adjoint_pairs": 514,
-              "forward_applications": 514,
-              "normal_residual_norm": 2.283355498113367e-09,
-              "operator_applications": 1029,
+              "forward_applications": 523,
+              "normal_residual_norm": 1.0088698825999839e-08,
+              "operator_applications": 1037,
               "point": [
-                1.005542251311157,
-                0.18510305660169082
+                0.9909814154834691,
+                5.626284627032157
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 2.537551032293949e-06
+              "squared_rayleigh_quotient": 13.577172326794104
             },
-            "matrix_free_time_over_dense_svd": 15.463004647078764,
+            "matrix_free_time_over_dense_svd": 9.541174860330388,
             "point": [
-              1.005542251311157,
-              0.18510305660169082
+              0.9909814154834691,
+              5.626284627032157
             ],
-            "relative_error": 6.806171382808148e-14
+            "relative_error": 1.2052178521911315e-16
           }
         ]
       }
@@ -195,46 +195,46 @@
     {
       "actual_gmres": {
         "all_converged": true,
-        "iqr_seconds": 0.019398048520088196,
+        "iqr_seconds": 0.00476422201609239,
         "iterations": [
           15
         ],
-        "median_seconds": 0.1657562553882599
+        "median_seconds": 0.12960107601247728
       },
       "cost": {
-        "exact_spectrum_sparse_path_time_over_gmres": 64.29103508054953,
-        "exact_spectrum_sparse_path_total_seconds": 10.656641229987144,
-        "old_dense_time_over_gmres": 386.30962848829085,
-        "runtime_estimate_time_over_gmres": 64.2902260993945,
-        "runtime_estimate_total_seconds": 10.656507136300206
+        "exact_spectrum_sparse_path_time_over_gmres": 46.219071502528806,
+        "exact_spectrum_sparse_path_total_seconds": 5.990041399025358,
+        "old_dense_time_over_gmres": 596.3032845463287,
+        "runtime_estimate_time_over_gmres": 45.209631997371595,
+        "runtime_estimate_total_seconds": 5.859216952987481
       },
       "dense_grid_reference": {
         "actual_iterations": 15,
         "certified": true,
-        "eps_connect_upper": 0.04646878128905967,
-        "epsilon_zero": 0.21191450149640623,
-        "predicted_iterations": 120,
+        "eps_connect_upper": 0.04646878127907382,
+        "epsilon_zero": 0.211914501469837,
+        "predicted_iterations": 104,
         "sigma_min_evaluations": 1892,
-        "sigma_min_seconds": 64.03323743864894
+        "sigma_min_seconds": 77.28154730697861
       },
       "exact_spectrum_sparse_paths": {
         "anchor_count": 512,
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": true,
-        "elapsed_seconds": 10.490288013592362,
-        "eps_connect_path_upper": 0.0651885429407888,
-        "epsilon_zero_estimate": 0.211914501496406,
-        "epsilon_zero_lower_bound": 0.21191450149640623,
+        "elapsed_seconds": 5.859553285990842,
+        "eps_connect_path_upper": 0.06518854293261564,
+        "epsilon_zero_estimate": 0.21191450146983692,
+        "epsilon_zero_lower_bound": 0.21191450146983695,
         "evaluation_budget_exhausted": true,
-        "forward_adjoint_pairs": 2450,
-        "lipschitz_path_upper": 0.06512355789791645,
-        "operator_applications": 5063,
+        "forward_adjoint_pairs": 2444,
+        "lipschitz_path_upper": 0.0651235569557275,
+        "operator_applications": 5066,
         "provisional": false,
         "rate_bound_available": false,
         "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
         "reason": "tested spectrum-spanning paths lie below a trusted origin-exclusion level",
-        "sampled_path_maximum": 0.057984617742908265,
+        "sampled_path_maximum": 0.05798461768503543,
         "sigma_min_evaluations": 48,
         "spectrum_complete": true,
         "spectrum_coverage_upper": 0.0,
@@ -249,22 +249,22 @@
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": false,
-        "elapsed_seconds": 10.33459315635264,
-        "eps_connect_path_upper": 0.10347387768379167,
-        "epsilon_zero_estimate": 0.21191450149640606,
+        "elapsed_seconds": 5.630957735993434,
+        "eps_connect_path_upper": 0.10347387767081842,
+        "epsilon_zero_estimate": 0.21191450146983687,
         "epsilon_zero_lower_bound": null,
         "evaluation_budget_exhausted": true,
         "forward_adjoint_pairs": 2441,
-        "lipschitz_path_upper": 0.10341668110606976,
-        "operator_applications": 5069,
+        "lipschitz_path_upper": 0.1034166810147066,
+        "operator_applications": 5067,
         "provisional": true,
         "rate_bound_available": false,
         "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
         "reason": "a sparse path window was found, but reduced spectrum and/or matrix-free origin estimates do not prove full-spectrum origin exclusion",
         "ritz_arnoldi_steps": 12,
         "ritz_operator_applications": 12,
-        "ritz_seconds": 0.15556076355278492,
-        "sampled_path_maximum": 0.04155055887258581,
+        "ritz_seconds": 0.09777110395953059,
+        "sampled_path_maximum": 0.04155055886560948,
         "sigma_min_evaluations": 48,
         "spectrum_complete": false,
         "spectrum_coverage_upper": 0.0,
@@ -278,71 +278,71 @@
       "method": "tau_blend",
       "operator_dimension": 512,
       "operator_norm_scale": {
-        "dense_operator_norm": 11.60806449162286,
-        "matrix_free_estimate_with_safety_factor": 17.41209667621319,
+        "dense_operator_norm": 11.608064491799853,
+        "matrix_free_estimate_with_safety_factor": 17.412096676478658,
         "operator_applications": 48,
-        "seconds": 0.16635321639478207
+        "seconds": 0.13048811303451657
       },
       "sigma_min_validation": {
-        "maximum_relative_error": 7.784707244138015e-14,
-        "median_dense_svd_seconds": 0.03395691141486168,
-        "median_matrix_free_seconds": 0.9146564714610577,
+        "maximum_relative_error": 1.0422858049515021e-13,
+        "median_dense_svd_seconds": 0.04161186201963574,
+        "median_matrix_free_seconds": 0.7911335765093099,
         "points": [
           {
-            "absolute_error": 1.1102230246251565e-16,
-            "dense_sigma_min": 0.21191450149640623,
-            "dense_svd_seconds": 0.03613285534083843,
+            "absolute_error": 1.6653345369377348e-16,
+            "dense_sigma_min": 0.211914501469837,
+            "dense_svd_seconds": 0.04271356400568038,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.8301428873091936,
-              "estimate": 0.21191450149640612,
+              "elapsed_seconds": 0.7612318830215372,
+              "estimate": 0.21191450146983684,
               "forward_adjoint_pairs": 514,
-              "forward_applications": 698,
-              "normal_residual_norm": 9.445887566547103e-09,
-              "operator_applications": 1212,
+              "forward_applications": 700,
+              "normal_residual_norm": 6.346829418734563e-09,
+              "operator_applications": 1214,
               "point": [
                 0.0,
                 0.0
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 0.044907755944470315
+              "squared_rayleigh_quotient": 0.044907755933209476
             },
-            "matrix_free_time_over_dense_svd": 22.97473807365955,
+            "matrix_free_time_over_dense_svd": 17.82178333140973,
             "point": [
               0.0,
               0.0
             ],
-            "relative_error": 5.239013926774541e-16
+            "relative_error": 7.85852089114709e-16
           },
           {
-            "absolute_error": 1.1709383462843448e-16,
-            "dense_sigma_min": 0.0015041520632212296,
-            "dense_svd_seconds": 0.031780967488884926,
+            "absolute_error": 1.5677563414140394e-16,
+            "dense_sigma_min": 0.0015041520607555312,
+            "dense_svd_seconds": 0.04051016003359109,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.9991700556129217,
-              "estimate": 0.0015041520632213467,
+              "elapsed_seconds": 0.8210352699970827,
+              "estimate": 0.001504152060755688,
               "forward_adjoint_pairs": 514,
               "forward_applications": 768,
-              "normal_residual_norm": 6.386699562674262e-09,
+              "normal_residual_norm": 7.025589439119096e-09,
               "operator_applications": 1282,
               "point": [
-                1.0000000000013025,
-                0.22394108857975165
+                1.000000000001302,
+                0.22394108848775998
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 2.262473429293034e-06
+              "squared_rayleigh_quotient": 2.262473421875583e-06
             },
-            "matrix_free_time_over_dense_svd": 31.439258605401847,
+            "matrix_free_time_over_dense_svd": 20.26739142270183,
             "point": [
-              1.0000000000013025,
-              0.22394108857975165
+              1.000000000001302,
+              0.22394108848775998
             ],
-            "relative_error": 7.784707244138015e-14
+            "relative_error": 1.0422858049515021e-13
           }
         ]
       }
@@ -350,52 +350,52 @@
     {
       "actual_gmres": {
         "all_converged": true,
-        "iqr_seconds": 0.016035839915275574,
+        "iqr_seconds": 0.006781501055229455,
         "iterations": [
           17
         ],
-        "median_seconds": 0.18195215612649918
+        "median_seconds": 0.14244094904279336
       },
       "cost": {
-        "exact_spectrum_sparse_path_time_over_gmres": 58.880804499614165,
-        "exact_spectrum_sparse_path_total_seconds": 10.713489333167672,
-        "old_dense_time_over_gmres": 370.29099111816964,
-        "runtime_estimate_time_over_gmres": 57.980443204993364,
-        "runtime_estimate_total_seconds": 10.549666654318571
+        "exact_spectrum_sparse_path_time_over_gmres": 41.8512694913295,
+        "exact_spectrum_sparse_path_total_seconds": 5.961334544990677,
+        "old_dense_time_over_gmres": 455.8432454875589,
+        "runtime_estimate_time_over_gmres": 41.64961395421641,
+        "runtime_estimate_total_seconds": 5.932610538904555
       },
       "dense_grid_reference": {
         "actual_iterations": 17,
         "certified": true,
-        "eps_connect_upper": 0.08458645053410069,
-        "epsilon_zero": 0.18266195071232527,
-        "predicted_iterations": 800,
+        "eps_connect_upper": 0.08458645052056873,
+        "epsilon_zero": 0.18266195070886895,
+        "predicted_iterations": 368,
         "sigma_min_evaluations": 1892,
-        "sigma_min_seconds": 67.37524422816932
+        "sigma_min_seconds": 64.93074450199492
       },
       "exact_spectrum_sparse_paths": {
-        "anchor_count": 371,
+        "anchor_count": 412,
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": true,
-        "elapsed_seconds": 10.49081402644515,
-        "eps_connect_path_upper": 0.08936878643249477,
-        "epsilon_zero_estimate": 0.1826619507123256,
-        "epsilon_zero_lower_bound": 0.18266195071232527,
+        "elapsed_seconds": 5.833373424015008,
+        "eps_connect_path_upper": 0.08633631263973848,
+        "epsilon_zero_estimate": 0.18266195070886881,
+        "epsilon_zero_lower_bound": 0.18266195070886884,
         "evaluation_budget_exhausted": true,
         "forward_adjoint_pairs": 2441,
-        "lipschitz_path_upper": 0.08934535054411485,
+        "lipschitz_path_upper": 0.08623901805471557,
         "operator_applications": 5071,
         "provisional": false,
         "rate_bound_available": false,
         "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
         "reason": "tested spectrum-spanning paths lie below a trusted origin-exclusion level",
-        "sampled_path_maximum": 0.06719874115197258,
+        "sampled_path_maximum": 0.06439134118917812,
         "sigma_min_evaluations": 48,
         "spectrum_complete": true,
         "spectrum_coverage_upper": 0.0,
         "spectrum_point_count": 512,
         "spectrum_source": "stored exact dense eigendecomposition",
-        "tree_edge_count": 370,
+        "tree_edge_count": 411,
         "verdict": "certified",
         "window_nonempty": true
       },
@@ -404,13 +404,13 @@
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": false,
-        "elapsed_seconds": 10.155119024217129,
-        "eps_connect_path_upper": 0.18069976178865738,
-        "epsilon_zero_estimate": 0.18266195071232558,
+        "elapsed_seconds": 5.700638678972609,
+        "eps_connect_path_upper": 0.18069976178523772,
+        "epsilon_zero_estimate": 0.1826619507088688,
         "epsilon_zero_lower_bound": null,
         "evaluation_budget_exhausted": true,
         "forward_adjoint_pairs": 2441,
-        "lipschitz_path_upper": 0.18069837990373774,
+        "lipschitz_path_upper": 0.18069837987294646,
         "operator_applications": 5071,
         "provisional": true,
         "rate_bound_available": false,
@@ -418,8 +418,8 @@
         "reason": "a sparse path window was found, but reduced spectrum and/or matrix-free origin estimates do not prove full-spectrum origin exclusion",
         "ritz_arnoldi_steps": 12,
         "ritz_operator_applications": 12,
-        "ritz_seconds": 0.17187232337892056,
-        "sampled_path_maximum": 0.07103680359967908,
+        "ritz_seconds": 0.10401073895627633,
+        "sampled_path_maximum": 0.07103680358024202,
         "sigma_min_evaluations": 48,
         "spectrum_complete": false,
         "spectrum_coverage_upper": 0.0,
@@ -433,71 +433,71 @@
       "method": "tau_blend",
       "operator_dimension": 512,
       "operator_norm_scale": {
-        "dense_operator_norm": 9.396683815720984,
-        "matrix_free_estimate_with_safety_factor": 14.09502541624939,
+        "dense_operator_norm": 9.396683815766277,
+        "matrix_free_estimate_with_safety_factor": 14.095025416317334,
         "operator_applications": 48,
-        "seconds": 0.22267530672252178
+        "seconds": 0.12796112097566947
       },
       "sigma_min_validation": {
-        "maximum_relative_error": 2.082084875590784e-14,
-        "median_dense_svd_seconds": 0.043738256208598614,
-        "median_matrix_free_seconds": 0.9135866044089198,
+        "maximum_relative_error": 2.292203534627735e-15,
+        "median_dense_svd_seconds": 0.05000078148441389,
+        "median_matrix_free_seconds": 0.7529714474803768,
         "points": [
           {
-            "absolute_error": 3.608224830031759e-16,
-            "dense_sigma_min": 0.18266195071232527,
-            "dense_svd_seconds": 0.030717747285962105,
+            "absolute_error": 1.6653345369377348e-16,
+            "dense_sigma_min": 0.18266195070886895,
+            "dense_svd_seconds": 0.06619889399735257,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.9194364286959171,
-              "estimate": 0.18266195071232563,
+              "elapsed_seconds": 0.7571210569585674,
+              "estimate": 0.1826619507088688,
               "forward_adjoint_pairs": 514,
               "forward_applications": 703,
-              "normal_residual_norm": 2.4373363902558164e-09,
+              "normal_residual_norm": 4.523146455163748e-09,
               "operator_applications": 1217,
               "point": [
                 0.0,
                 0.0
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 0.03336538823803208
+              "squared_rayleigh_quotient": 0.03336538823676921
             },
-            "matrix_free_time_over_dense_svd": 29.93176615904045,
+            "matrix_free_time_over_dense_svd": 11.437065051099587,
             "point": [
               0.0,
               0.0
             ],
-            "relative_error": 1.9753565621963387e-15
+            "relative_error": 9.117030287232535e-16
           },
           {
-            "absolute_error": 4.7271214720367993e-17,
-            "dense_sigma_min": 0.002270378853165386,
-            "dense_svd_seconds": 0.05675876513123512,
+            "absolute_error": 5.204170427930421e-18,
+            "dense_sigma_min": 0.0022703788513159253,
+            "dense_svd_seconds": 0.033802668971475214,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.9077367801219225,
-              "estimate": 0.0022703788531654332,
+              "elapsed_seconds": 0.7488218380021863,
+              "estimate": 0.00227037885131592,
               "forward_adjoint_pairs": 514,
               "forward_applications": 702,
-              "normal_residual_norm": 1.0376988826287854e-09,
+              "normal_residual_norm": 2.9271890933047234e-09,
               "operator_applications": 1216,
               "point": [
-                2.0739567862398878,
-                0.40352832100631925
+                2.073956786089793,
+                0.40352832090909974
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 5.154620136900787e-06
+              "squared_rayleigh_quotient": 5.154620128502597e-06
             },
-            "matrix_free_time_over_dense_svd": 15.99289163573403,
+            "matrix_free_time_over_dense_svd": 22.152742987072664,
             "point": [
-              2.0739567862398878,
-              0.40352832100631925
+              2.073956786089793,
+              0.40352832090909974
             ],
-            "relative_error": 2.082084875590784e-14
+            "relative_error": 2.292203534627735e-15
           }
         ]
       }
@@ -505,36 +505,36 @@
     {
       "actual_gmres": {
         "all_converged": true,
-        "iqr_seconds": 0.12094501778483391,
+        "iqr_seconds": 0.23193888401146978,
         "iterations": [
           334
         ],
-        "median_seconds": 10.735568391159177
+        "median_seconds": 5.11821686901385
       },
       "cost": {
-        "exact_spectrum_sparse_path_time_over_gmres": 0.11610262803367248,
-        "exact_spectrum_sparse_path_total_seconds": 1.2464277036488056,
-        "runtime_estimate_time_over_gmres": 0.3171201082119305,
-        "runtime_estimate_total_seconds": 3.4044646099209785
+        "exact_spectrum_sparse_path_time_over_gmres": 0.1743573025251196,
+        "exact_spectrum_sparse_path_total_seconds": 0.8923984870198183,
+        "runtime_estimate_time_over_gmres": 0.33219554983606764,
+        "runtime_estimate_total_seconds": 1.7002488669822924
       },
       "exact_spectrum_sparse_paths": {
         "anchor_count": 512,
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": false,
-        "elapsed_seconds": 1.0796314645558596,
+        "elapsed_seconds": 0.7734563400154002,
         "eps_connect_path_upper": null,
-        "epsilon_zero_estimate": 0.011177481349111153,
-        "epsilon_zero_lower_bound": 0.011177481349113514,
+        "epsilon_zero_estimate": 0.011177481349111172,
+        "epsilon_zero_lower_bound": 0.011177481349109694,
         "evaluation_budget_exhausted": false,
         "forward_adjoint_pairs": 555,
-        "lipschitz_path_upper": 1.2975164127999994,
+        "lipschitz_path_upper": 1.2975164127994574,
         "operator_applications": 1112,
         "provisional": true,
         "rate_bound_available": false,
         "rate_bound_reason": "sparse path probes do not construct the closed contour or arc length required by the Trefethen pseudospectral residual bound",
         "reason": "no tested spectrum-spanning path was established below the origin threshold",
-        "sampled_path_maximum": 1.2975164127999994,
+        "sampled_path_maximum": 1.2975164127994574,
         "sigma_min_evaluations": 2,
         "spectrum_complete": true,
         "spectrum_coverage_upper": 0.0,
@@ -549,13 +549,13 @@
         "arnoldi_steps_per_evaluation": 40,
         "bisection_iterations": 10,
         "certified": false,
-        "elapsed_seconds": 3.02317014336586,
+        "elapsed_seconds": 1.4873392889858223,
         "eps_connect_path_upper": null,
-        "epsilon_zero_estimate": 0.011177481349112079,
+        "epsilon_zero_estimate": 0.011177481349112093,
         "epsilon_zero_lower_bound": null,
         "evaluation_budget_exhausted": false,
         "forward_adjoint_pairs": 1006,
-        "lipschitz_path_upper": 6.402244586551548,
+        "lipschitz_path_upper": 6.4022445865515065,
         "operator_applications": 2014,
         "provisional": true,
         "rate_bound_available": false,
@@ -563,8 +563,8 @@
         "reason": "no tested spectrum-spanning path was established below the origin threshold",
         "ritz_arnoldi_steps": 12,
         "ritz_operator_applications": 12,
-        "ritz_seconds": 0.2144982274621725,
-        "sampled_path_maximum": 1.8230426696449018,
+        "ritz_seconds": 0.09396743099205196,
+        "sampled_path_maximum": 1.823042669644901,
         "sigma_min_evaluations": 13,
         "spectrum_complete": false,
         "spectrum_coverage_upper": 0.0,
@@ -578,77 +578,77 @@
       "method": "frozen_mean",
       "operator_dimension": 512,
       "operator_norm_scale": {
-        "dense_operator_norm": 77.11702238346294,
-        "matrix_free_estimate_with_safety_factor": 113.8697746960647,
+        "dense_operator_norm": 77.11702238346298,
+        "matrix_free_estimate_with_safety_factor": 113.86977469606482,
         "operator_applications": 48,
-        "seconds": 0.16679623909294605
+        "seconds": 0.11894214700441808
       },
       "sigma_min_validation": {
-        "maximum_relative_error": 4.713365231392489e-13,
-        "median_dense_svd_seconds": 0.034388924948871136,
-        "median_matrix_free_seconds": 0.6226395647972822,
+        "maximum_relative_error": 2.5142086515818836e-13,
+        "median_dense_svd_seconds": 0.030084344994975254,
+        "median_matrix_free_seconds": 0.3918500790023245,
         "points": [
           {
-            "absolute_error": 5.268355196541563e-15,
-            "dense_sigma_min": 0.011177481349106297,
-            "dense_svd_seconds": 0.030868757516145706,
+            "absolute_error": 2.8102520310824275e-15,
+            "dense_sigma_min": 0.011177481349108715,
+            "dense_svd_seconds": 0.031612500024493784,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.6134335640817881,
-              "estimate": 0.011177481349111566,
+              "elapsed_seconds": 0.39664550201268867,
+              "estimate": 0.011177481349111526,
               "forward_adjoint_pairs": 514,
               "forward_applications": 516,
-              "normal_residual_norm": 2.4160322963402794e-07,
+              "normal_residual_norm": 2.2870287219785516e-07,
               "operator_applications": 1030,
               "point": [
                 0.0,
                 0.0
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 0.0001249360893097369
+              "squared_rayleigh_quotient": 0.000124936089309736
             },
-            "matrix_free_time_over_dense_svd": 19.872311470940662,
+            "matrix_free_time_over_dense_svd": 12.547109583404112,
             "point": [
               0.0,
               0.0
             ],
-            "relative_error": 4.713365231392489e-13
+            "relative_error": 2.5142086515818836e-13
           },
           {
             "absolute_error": 7.105427357601002e-15,
-            "dense_sigma_min": 10.895694642049135,
-            "dense_svd_seconds": 0.037909092381596565,
+            "dense_sigma_min": 10.895694642048937,
+            "dense_svd_seconds": 0.028556189965456724,
             "matrix_free": {
               "adjoint_applications": 514,
               "arnoldi_steps": 0,
               "converged": true,
-              "elapsed_seconds": 0.6318455655127764,
-              "estimate": 10.895694642049142,
+              "elapsed_seconds": 0.3870546559919603,
+              "estimate": 10.895694642048944,
               "forward_adjoint_pairs": 514,
               "forward_applications": 516,
-              "normal_residual_norm": 7.147891193246778e-08,
+              "normal_residual_norm": 6.30938698540713e-08,
               "operator_applications": 1030,
               "point": [
-                14.348005468819377,
-                11.565876735027329
+                14.348005468819409,
+                11.565876735027128
               ],
               "solver": "propack",
-              "squared_rayleigh_quotient": 118.71616173277837
+              "squared_rayleigh_quotient": 118.71616173277408
             },
-            "matrix_free_time_over_dense_svd": 16.667388370910025,
+            "matrix_free_time_over_dense_svd": 13.554142077782952,
             "point": [
-              14.348005468819377,
-              11.565876735027329
+              14.348005468819409,
+              11.565876735027128
             ],
-            "relative_error": 6.521316530090179e-16
+            "relative_error": 6.521316530090298e-16
           }
         ]
       }
     }
   ],
-  "runtime_seconds": 93.82543422281742,
+  "runtime_seconds": 46.40201312297722,
   "schema": "pme_dst_tau_blend_pseudospectral_runtime_estimator_v1",
   "scope": "Experimental sparse-path pseudospectral connectivity estimate. Exact-spectrum mode is a sufficient qualitative certificate; the fully matrix-free reduced-spectrum mode is provisional. Sparse paths do not provide a closed-contour arc length, so no residual-rate certificate is claimed."
 }

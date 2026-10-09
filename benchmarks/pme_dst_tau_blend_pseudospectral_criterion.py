@@ -205,8 +205,13 @@ def run_experiment(config: CriterionConfig | None = None) -> dict[str, Any]:
             "is not interval arithmetic or a scalable production diagnostic."
         ),
         "bound": {
-            "rate_prefactor": "L(Gamma_epsilon)/(2*pi*epsilon)",
-            "formula": "L(Gamma_epsilon)/(2*pi*epsilon) * rho(polynomial)**k",
+            "rate_prefactor": "L(Gamma)/(2*pi*s_Gamma)",
+            "formula": "L(Gamma)/(2*pi*s_Gamma) * M_Gamma**k",
+            "contour": (
+                "Gamma is the cell boundary of the selected component; s_Gamma is a "
+                "proven lower bound of sigma_min(zI - A) on all of Gamma and M_Gamma a "
+                "proven upper bound of |p| on all of Gamma"
+            ),
             "crouzeix_constant_used": False,
         },
         "config": config._asdict(),
