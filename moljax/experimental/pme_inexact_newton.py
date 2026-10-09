@@ -188,13 +188,16 @@ def _solve_linear_system(
     cosines: list[float] = []
     sines: list[float] = []
     rotated_rhs = [preconditioned_rhs_norm] + [0.0] * config.max_gmres_iters
-    breakdown_threshold = float(jnp.sqrt(jnp.finfo(jnp.float64).eps))
+    # Breakdown is relative to the Arnoldi column scale, as in _counted_gmres:
+    # an absolute threshold stops early on small but healthy directions.
+    breakdown_factor = 64.0 * float(jnp.finfo(jnp.float64).eps)
     last_update = jnp.zeros_like(state)
     last_true_relative_residual = 1.0
 
     for column in range(config.max_gmres_iters):
         jacobian_vector = problem.jacobian_action(state, basis[column])
         candidate_vector = jnp.real(apply_preconditioner(jacobian_vector))
+        breakdown_threshold = breakdown_factor * float(jnp.linalg.norm(candidate_vector))
         coefficients: list[float] = []
         for basis_vector in basis:
             coefficient = float(jnp.vdot(basis_vector, candidate_vector))
@@ -217,7 +220,7 @@ def _solve_linear_system(
         diagonal = hessenberg_column[column]
         subdiagonal = hessenberg_column[column + 1]
         normalization = hypot(diagonal, subdiagonal)
-        if normalization <= breakdown_threshold:
+        if normalization == 0.0:
             cosine, sine = 1.0, 0.0
         else:
             cosine, sine = diagonal / normalization, subdiagonal / normalization

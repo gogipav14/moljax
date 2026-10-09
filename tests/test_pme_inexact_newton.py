@@ -43,3 +43,26 @@ def test_inexact_newton_adapts_forcing_and_reaches_the_same_root() -> None:
         assert len({round(step.eta, 12) for step in result.steps}) > 1
         assert all(config.eta_min <= step.next_eta <= config.eta_max for step in result.steps)
         assert jnp.linalg.norm(result.solution - reference) <= 1.0e-7 * jnp.linalg.norm(reference)
+
+
+def test_inexact_newton_gmres_breakdown_is_relative_to_the_column_scale() -> None:
+    """A small but healthy Arnoldi column is not a breakdown.
+
+    With dt = 1e-10 the identity-preconditioned Jacobian is I plus a tiny
+    perturbation, so every Arnoldi subdiagonal is far below sqrt(eps) while
+    GMRES still has progress to make.  An absolute sqrt(eps) threshold stopped
+    after one iteration at a relative residual near 4e-9.
+    """
+    grid = NodeCenteredDirichletGrid.uniform(8, -1.0, 1.0)
+    previous = jnp.linspace(0.1, 1.0, grid.nx, dtype=jnp.float64)
+    problem = PMEBackwardEulerProblem(previous, grid, 2.0, 1.0e-10, 1.0e-5)
+    config = InexactNewtonConfig(
+        nonlinear_tolerance=1.0e-14,
+        max_newton_iters=4,
+        max_gmres_iters=16,
+        eta_initial=1.0e-10,
+    )
+    result = solve_pme_inexact_newton(problem, method="identity", config=config)
+    assert result.converged
+    assert result.final_residual_norm <= config.nonlinear_tolerance
+    assert all(step.forcing_target_met for step in result.steps)
