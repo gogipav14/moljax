@@ -1,5 +1,18 @@
 # PME DST/tau-blend experimental report
 
+> **Stale.** This report was rendered from the results of the previous coefficient
+> formula. The JSONs in this directory were regenerated in 78925c5 with the
+> residual's coefficient `D = m (u^2 + eps^2)^((m-1)/2)`, on different hardware.
+> Of the numbers below, only the `m = 4, 8` dense spectral results (condition
+> numbers, near-zero eigenvalue counts, disk rates) are confirmed, except the
+> geometric-mean baseline. Every timing, the GPU batching audit and the
+> certificate's predicted counts changed and must be read from the JSONs. For
+> `m = 2` the spectral results changed too: the blend measures `kappa_2 = 132.6`
+> and 50 GMRES iterations, the dense certificate abstains, and on the initial
+> state at tolerance `1e-8` the GMRES oracle selects the floor `d0* = 2e-5`.
+> `make_tau_blend_readme.py` therefore refuses to render; the `m = 2` claims need
+> to be restated before this file is regenerated.
+
 ## Scope and claim discipline
 
 This is a measurement report for Newton--Krylov preconditioning of the
