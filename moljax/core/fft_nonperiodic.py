@@ -150,12 +150,10 @@ def dst_I_fast(x: jnp.ndarray) -> jnp.ndarray:
     N = len(x)
     # Embed x in a 2(N+1) point array with odd extension
     # [0, x[0], x[1], ..., x[N-1], 0, -x[N-1], ..., -x[1], -x[0]]
-    x_ext = jnp.concatenate([
-        jnp.array([0.0]),
-        x,
-        jnp.array([0.0]),
-        -x[::-1]
-    ])
+    # The zero pads take the dtype of x. A literal jnp.array([0.0]) is float64
+    # when x64 is on, and it promoted a float32 transform to float64.
+    zero = jnp.zeros((1,), dtype=x.dtype)
+    x_ext = jnp.concatenate([zero, x, zero, -x[::-1]])
 
     # FFT gives us the DST coefficients in the imaginary part
     fft_result = jnp.fft.fft(x_ext)
