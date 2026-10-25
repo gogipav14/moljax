@@ -34,6 +34,11 @@ EFFECTIVE_SCALAR_METHODS = (
 # The result schema names ``near_zero_eigenvalue_count`` but does not carry the
 # threshold itself. Keep this renderer constant synchronized with the benchmark.
 NEAR_ZERO_THRESHOLD = 0.1
+# These values are not measurements in this branch's committed JSON.  They
+# record the maintainer's corrected complete-certificate runs on
+# work/tau-blend-fixes so this historical report cannot reinstate the withdrawn
+# provisional-estimator cost interpretation when regenerated.
+MAINTAINER_CORRECTED_CERTIFICATE_RATIOS = {2: 14.0, 4: 45.0, 8: 42.0}
 SHORT = {
     "identity": "identity",
     "frozen_mean": "mean",
@@ -220,15 +225,16 @@ def _batching_summary(batch: dict[str, Any]) -> tuple[float, float, float, float
     return min(speedups), max(speedups), min(full), max(full)
 
 
-def _criterion_summary(runtime: dict[str, Any]) -> tuple[float, float, float, int]:
+def _criterion_summary(runtime: dict[str, Any]) -> tuple[dict[int, float], float, int]:
     tau = [record for record in runtime["records"] if record["method"] == "tau_blend"]
-    offline = [record["cost"]["runtime_estimate_time_over_gmres"] for record in tau]
+    provisional = {
+        int(record["m"]): record["cost"]["runtime_estimate_time_over_gmres"] for record in tau
+    }
     rejection_record = next(
         record for record in runtime["records"] if record["method"] == "frozen_mean"
     )
     return (
-        min(offline),
-        max(offline),
+        provisional,
         rejection_record["cost"]["runtime_estimate_time_over_gmres"],
         rejection_record["m"],
     )
@@ -442,7 +448,14 @@ def render() -> str:
         if not report.get("complete", False):
             raise RuntimeError(f"incomplete report: {report.get('schema')}")
     apply_min, apply_max, solve_min, solve_max = _batching_summary(batching)
-    offline_min, offline_max, rejection, rejection_m = _criterion_summary(runtime)
+    provisional_ratios, rejection, rejection_m = _criterion_summary(runtime)
+    provisional_ratio_text = ", ".join(
+        f"`m={m}`: {ratio:.1f}x" for m, ratio in sorted(provisional_ratios.items())
+    )
+    corrected_ratio_text = ", ".join(
+        f"`m={m}`: approximately {ratio:.0f}x"
+        for m, ratio in sorted(MAINTAINER_CORRECTED_CERTIFICATE_RATIOS.items())
+    )
     spectral = _spectral_claims(baseline)
     tight_overview, tight_capped = _tight_claims(baseline)
     loose_summary, loose_case_count = _loose_claims(baseline)
@@ -529,19 +542,25 @@ def render() -> str:
         f"""The dense criterion is mathematically sound for these validation-sized
         operators. Its Trefethen resolvent-contour prefactor is exactly
         `L(Gamma_epsilon)/(2*pi*epsilon)`; no Crouzeix spectral-set constant belongs in
-        that bound. It certifies the tested origin-enclosed blend cases, but
-        certification is offline: the matrix-free runtime estimator costs
-        {offline_min:.1f}--{offline_max:.1f}x the corresponding solve, a fundamental
-        evidence floor rather than an omitted batching optimization. As a rejection
-        gate it can be cheap: rejecting the inadequate `m={rejection_m}` frozen-mean
-        reference costs {rejection:.2f}x its solve. Sparse matrix-free Ritz/path mode
-        remains provisional and records `rate_bound_available=false`, because reduced
-        Ritz values do not prove full spectrum coverage and sparse paths do not provide
-        a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope
-        surrogate with separate real and imaginary linear constraints. The reported
-        sampled maximum modulus and effective rate are measured from the fitted
-        polynomial itself, so the surrogate can make the search suboptimal but cannot
-        make the reported rate optimistic."""
+        that bound. It certifies the tested origin-enclosed blend cases. The committed
+        runtime JSON reports {provisional_ratio_text}, but those values measure the
+        provisional matrix-free estimator, not a complete certificate, and cannot
+        support a certification-cost-floor claim. Pavlov's corrected complete
+        contour-edge certificate on `work/tau-blend-fixes` instead costs
+        {corrected_ratio_text}; those are maintainer-reported regenerated results, not
+        measurements in this branch's JSON. There is therefore no evidence here for a
+        fundamental cost floor, and a faster certificate may be worth pursuing. As an
+        exploratory rejection screen, the committed `m={rejection_m}` frozen-mean
+        estimator costs {rejection:.2f}x its solve (approximately 0.33x in Pavlov's
+        corrected run). Treating certificate failure as a rejection gate requires a
+        separate decision rule: failure to certify does not prove slow GMRES
+        convergence. Sparse matrix-free Ritz/path mode remains provisional and records
+        `rate_bound_available=false`, because reduced Ritz values do not prove full
+        spectrum coverage and sparse paths do not provide a closed-contour arc length.
+        `_fit_polynomial` minimizes a square-envelope surrogate with separate real and
+        imaginary linear constraints. The reported sampled maximum modulus and
+        effective rate are measured from the fitted polynomial itself, so the surrogate
+        can make the search suboptimal but cannot make the reported rate optimistic."""
     )
     matrix_free_rate_available = all(
         not record["fully_matrix_free_runtime_estimate"]["rate_bound_available"]
@@ -551,6 +570,19 @@ def render() -> str:
         raise RuntimeError("matrix-free sparse-path records unexpectedly expose a rate bound")
 
     return f"""# PME DST/tau-blend experimental report
+
+> **Correction notice -- report pending rewrite.** The pseudospectral cost conclusion
+> in the original `d86aa94` report is withdrawn. Its 58.0--73.9x values come from the
+> committed provisional matrix-free estimator, not a complete certificate. Pavlov's
+> corrected contour-edge Lipschitz certificate on `work/tau-blend-fixes` costs
+> approximately 14x, 45x, and 42x for `m=2`, `m=4`, and `m=8`, respectively; those are
+> his regenerated results, not measurements in this branch's JSON. There is no evidence
+> for a fundamental certification-cost floor, and a faster certificate may be worth
+> pursuing. The corrected `m=8` frozen-mean rejection-screen ratio remains approximately
+> 0.33x the solve, but treating certificate failure as a rejection gate requires a
+> separate decision rule: failure to certify does not prove slow GMRES convergence. This
+> report is retained as a historical measurement pending the broader rewrite from the
+> corrected lemmas and scripts.
 
 ## Scope and claim discipline
 

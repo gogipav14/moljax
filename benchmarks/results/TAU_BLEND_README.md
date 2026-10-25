@@ -1,5 +1,18 @@
 # PME DST/tau-blend experimental report
 
+> **Correction notice -- report pending rewrite.** The pseudospectral cost conclusion
+> in the original `d86aa94` report is withdrawn. Its 58.0--73.9x values come from the
+> committed provisional matrix-free estimator, not a complete certificate. Pavlov's
+> corrected contour-edge Lipschitz certificate on `work/tau-blend-fixes` costs
+> approximately 14x, 45x, and 42x for `m=2`, `m=4`, and `m=8`, respectively; those are
+> his regenerated results, not measurements in this branch's JSON. There is no evidence
+> for a fundamental certification-cost floor, and a faster certificate may be worth
+> pursuing. The corrected `m=8` frozen-mean rejection-screen ratio remains approximately
+> 0.33x the solve, but treating certificate failure as a rejection gate requires a
+> separate decision rule: failure to certify does not prove slow GMRES convergence. This
+> report is retained as a historical measurement pending the broader rewrite from the
+> corrected lemmas and scripts.
+
 ## Scope and claim discipline
 
 This is a measurement report for Newton--Krylov preconditioning of the
@@ -202,16 +215,23 @@ application; hoisting it is an identified, unimplemented optimization.
 The dense criterion is mathematically sound for these validation-sized operators. Its
 Trefethen resolvent-contour prefactor is exactly `L(Gamma_epsilon)/(2*pi*epsilon)`; no
 Crouzeix spectral-set constant belongs in that bound. It certifies the tested
-origin-enclosed blend cases, but certification is offline: the matrix-free runtime
-estimator costs 58.0--73.9x the corresponding solve, a fundamental evidence floor rather
-than an omitted batching optimization. As a rejection gate it can be cheap: rejecting
-the inadequate `m=8` frozen-mean reference costs 0.32x its solve. Sparse matrix-free
-Ritz/path mode remains provisional and records `rate_bound_available=false`, because
-reduced Ritz values do not prove full spectrum coverage and sparse paths do not provide
-a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope surrogate
-with separate real and imaginary linear constraints. The reported sampled maximum
-modulus and effective rate are measured from the fitted polynomial itself, so the
-surrogate can make the search suboptimal but cannot make the reported rate optimistic.
+origin-enclosed blend cases. The committed runtime JSON reports `m=2`: 73.9x, `m=4`:
+64.3x, `m=8`: 58.0x, but those values measure the provisional matrix-free estimator, not
+a complete certificate, and cannot support a certification-cost-floor claim. Pavlov's
+corrected complete contour-edge certificate on `work/tau-blend-fixes` instead costs
+`m=2`: approximately 14x, `m=4`: approximately 45x, `m=8`: approximately 42x; those are
+maintainer-reported regenerated results, not measurements in this branch's JSON. There
+is therefore no evidence here for a fundamental cost floor, and a faster certificate may
+be worth pursuing. As an exploratory rejection screen, the committed `m=8` frozen-mean
+estimator costs 0.32x its solve (approximately 0.33x in Pavlov's corrected run).
+Treating certificate failure as a rejection gate requires a separate decision rule:
+failure to certify does not prove slow GMRES convergence. Sparse matrix-free Ritz/path
+mode remains provisional and records `rate_bound_available=false`, because reduced Ritz
+values do not prove full spectrum coverage and sparse paths do not provide a
+closed-contour arc length. `_fit_polynomial` minimizes a square-envelope surrogate with
+separate real and imaginary linear constraints. The reported sampled maximum modulus and
+effective rate are measured from the fitted polynomial itself, so the surrogate can make
+the search suboptimal but cannot make the reported rate optimistic.
 
 ## Honest limits
 
