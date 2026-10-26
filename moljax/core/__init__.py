@@ -6,9 +6,11 @@ from moljax.core.dt_policy import (
     PIDParams,
     imex_cfl_dt,
     propose_dt,
+    propose_dt_etd,
     propose_dt_imex,
 )
 from moljax.core.fft_integrators import (
+    ETDAdaptiveResult,
     batched_fft_exp_matvec,
     batched_fft_matvec,
     batched_fft_solve,
@@ -16,6 +18,7 @@ from moljax.core.fft_integrators import (
     etd1_step,
     etd2_step,
     etd_integrate,
+    etd_integrate_adaptive,
     etdrk4_step,
     stacked_fft_solve_shared_op,
 )
@@ -273,6 +276,7 @@ __all__ = [
     "CFLParams",
     "PIDParams",
     "imex_cfl_dt",
+    "propose_dt_etd",
     "propose_dt_imex",
     # FFT solvers
     "create_fft_cache",
@@ -304,6 +308,8 @@ __all__ = [
     "etd2_step",
     "etdrk4_step",
     "etd_integrate",
+    "etd_integrate_adaptive",
+    "ETDAdaptiveResult",
     "diffusion_only_etd1",
     "fft_imex_euler_step",
     # Batched FFT operations

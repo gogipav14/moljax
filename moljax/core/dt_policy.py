@@ -760,3 +760,55 @@ def propose_dt_imex(
     dt_final = jnp.clip(dt_final, pid_params.dt_min, pid_params.dt_max)
 
     return dt_final, new_controller_state
+
+
+# =============================================================================
+# ETD Policy
+# =============================================================================
+
+def propose_dt_etd(
+    dt_old: jnp.ndarray,
+    err_ratio: jnp.ndarray,
+    controller_state: ControllerState,
+    pid_params: PIDParams | None = None,
+    order: int = 4,
+    accepted: jnp.ndarray | None = None
+) -> tuple[jnp.ndarray, ControllerState]:
+    """
+    Propose dt for the exponential (ETD) integrators.
+
+    The ETD integrators apply exp(dt*L) exactly, so the linear operator
+    gives no CFL limit. This policy therefore has no diffusion limit and
+    no reaction limit. Only the PI controller (see PIDParams) and the
+    clamp to [dt_min, dt_max] set dt.
+
+    Args:
+        dt_old: Time step of the step that was tried
+        err_ratio: Error ratio of that step. Give a large finite value for
+            a step with non-finite values: a NaN here makes dt NaN.
+        controller_state: Controller state
+        pid_params: Controller parameters
+        order: Order of the method
+        accepted: The integrator's own accept/reject decision; see
+            propose_dt. Defaults to err_ratio <= 1.0.
+
+    Returns:
+        Tuple of (proposed_dt, new_controller_state). The proposed dt has
+        the dtype of dt_old.
+    """
+    if pid_params is None:
+        pid_params = PIDParams()
+    if accepted is None:
+        accepted = err_ratio <= 1.0
+
+    def accepted_dt():
+        dt_new, state = pid_controller_dt(dt_old, err_ratio, controller_state, pid_params, order)
+        return dt_new.astype(dt_old.dtype), state
+
+    def rejected_dt():
+        dt_new, state = handle_rejected_step(dt_old, err_ratio, controller_state, pid_params, order)
+        return dt_new.astype(dt_old.dtype), state
+
+    dt_new, new_state = lax.cond(accepted, accepted_dt, rejected_dt)
+    dt_new = jnp.clip(dt_new, pid_params.dt_min, pid_params.dt_max).astype(dt_old.dtype)
+    return dt_new, new_state

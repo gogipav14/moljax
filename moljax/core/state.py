@@ -341,3 +341,35 @@ def scaled_error_norm(
     total_sq = sum(field_scaled_error_sq(error[k], y[k]) for k in error.keys())
     n_dof = state_interior_size(error, grid)
     return jnp.sqrt(total_sq / n_dof)
+
+
+def scaled_error_norm_interior(
+    error: StateDict,
+    y: StateDict,
+    atol: float,
+    rtol: float
+) -> jnp.ndarray:
+    """
+    Compute the scaled error norm for interior-only states.
+
+    This is scaled_error_norm without the interior slice. Use it for
+    states that have no ghost cells, for example the states of the ETD
+    integrators in moljax.core.fft_integrators.
+
+    Computes: sqrt(mean((error / (atol + rtol * |y|))^2))
+    over all points and all fields.
+
+    Args:
+        error: Error estimate state (interior values only)
+        y: Current solution state (interior values only)
+        atol: Absolute tolerance
+        rtol: Relative tolerance
+
+    Returns:
+        Scaled error norm (should be <= 1 for accepted step)
+    """
+    total_sq = sum(
+        jnp.sum((error[k] / (atol + rtol * jnp.abs(y[k]))) ** 2) for k in error.keys()
+    )
+    n_dof = sum(error[k].size for k in error.keys())
+    return jnp.sqrt(total_sq / n_dof)

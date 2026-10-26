@@ -27,6 +27,12 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
+from moljax.core.dt_policy import (
+    ControllerState,
+    PIDParams,
+    create_initial_controller_state,
+    propose_dt_etd,
+)
 from moljax.core.fft_operators import FFTLinearOperator
 from moljax.core.jit_kernels import phi1, phi2, phi3
 from moljax.core.model import CompiledDriverCache, state_cache_key, static_cache_key
@@ -35,7 +41,13 @@ from moljax.core.model import CompiledDriverCache, state_cache_key, static_cache
 # the module they came from; the registry lives with the identity helpers in
 # model, and this clears moljax.core.stepping's drivers too.
 from moljax.core.model import clear_compiled_drivers as clear_compiled_drivers
-from moljax.core.state import StateDict
+from moljax.core.state import StateDict, scaled_error_norm_interior
+from moljax.core.stepping import (
+    _DEFAULT_MAX_REJECTIONS_PER_STEP,
+    _time_dtype,
+    _validate_time_resolution,
+)
+from moljax.core.utils import StatusCode, is_finite
 
 
 class ETDStepResult(NamedTuple):
@@ -603,6 +615,387 @@ def etd_integrate(
         state_history.append(final_state)
 
     return jnp.array(t_history), state_history
+
+
+# =============================================================================
+# Adaptive ETD Integration
+# =============================================================================
+
+# Order p of each method that etd_integrate_adaptive can step. ETD2 is not
+# here: it is a multistep method, and a variable step needs a changed
+# formula and its own history for the full step and the half steps.
+_ETD_ADAPTIVE_ORDER = {'etd1': 1, 'etdrk4': 4}
+
+# The compiled adaptive ETD loops, kept apart from _ETD_DRIVERS so that a
+# sweep of one family cannot remove the drivers of the other family.
+_ETD_ADAPTIVE_DRIVERS = CompiledDriverCache("fft_integrators.etd_integrate_adaptive")
+
+
+class ETDAdaptiveResult(NamedTuple):
+    """
+    Result of etd_integrate_adaptive.
+
+    Attributes:
+        t_final: Time at the end of the run (equal to t_end on success)
+        y_final: State at t_final (interior values only)
+        t_history: Times of the saved states, shape (max_saves,), with
+            max_saves = max_steps // save_every + 2. Only the first
+            n_saved entries are valid; the remaining entries are zero.
+        y_history: Saved states, one array of shape (max_saves, *shape)
+            for each field. Only the first n_saved entries are valid.
+        dt_history: Size of the accepted step that ends at each saved
+            time. Entry 0 (the initial state) is zero.
+        n_saved: Number of valid history entries, the initial state included
+        n_accepted: Number of accepted steps
+        n_rejected: Number of rejected steps
+        dt_final: The step size that the controller proposes for a next step
+        status: A moljax.core.utils.StatusCode value
+        success: True if the run reached t_end (status SUCCESS)
+    """
+    t_final: jnp.ndarray
+    y_final: StateDict
+    t_history: jnp.ndarray
+    y_history: dict[str, jnp.ndarray]
+    dt_history: jnp.ndarray
+    n_saved: jnp.ndarray
+    n_accepted: jnp.ndarray
+    n_rejected: jnp.ndarray
+    dt_final: jnp.ndarray
+    status: jnp.ndarray
+    success: jnp.ndarray
+
+
+class _ETDAdaptiveState(NamedTuple):
+    """
+    Carry of the lax.while_loop of etd_integrate_adaptive.
+
+    Declared at module level for the same reason as
+    moljax.core.stepping._FixedScanState: a NamedTuple that is built for
+    each call is a different pytree node type each time.
+    """
+    t: jnp.ndarray
+    y: StateDict
+    dt: jnp.ndarray
+    controller: ControllerState
+    t_history: jnp.ndarray
+    y_history: dict[str, jnp.ndarray]
+    dt_history: jnp.ndarray
+    write_idx: jnp.ndarray
+    n_accepted: jnp.ndarray
+    n_rejected: jnp.ndarray
+    status: jnp.ndarray
+
+
+def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, max_steps,
+                               save_every, max_rejections_per_step):
+    """
+    Compile the while loop of etd_integrate_adaptive for one set of static parameters.
+
+    The method, the controller parameters, max_steps, save_every and the
+    rejection budget are closure constants. max_steps and save_every set
+    the size of the history buffers. The initial state, t0, t_end and dt0
+    are arguments, so a sweep over dt0 or t_end compiles one loop.
+    """
+    order = _ETD_ADAPTIVE_ORDER[method]
+    step_impl = etd1_step if method == 'etd1' else etdrk4_step
+    # Richardson: the error of the two half steps is
+    # (y_half2 - y_full) / (2^p - 1) to leading order.
+    richardson = 1.0 / (2.0 ** order - 1.0)
+    # The step-doubling estimate is O(dt^(p+1)), so the controller gets
+    # the order p + 1. With the order p, the controller exponents are too
+    # large for ETD1: on a stiff test problem, about half of all attempts
+    # were rejections, against fewer than 1 percent with p + 1.
+    controller_order = order + 1
+    max_saves = max_steps // save_every + 2
+
+    def run(u0, t0, t_end, dt0):
+        time_dtype = _time_dtype()
+        names = list(u0)
+        field_dtypes = {name: jnp.result_type(u0[name]) for name in names}
+        # The dtype of the step arithmetic. dt is cast to it, so that a
+        # float32 state is not widened by a float64 dt.
+        compute_dtype = jnp.result_type(*[u0[name] for name in names])
+
+        def to_field_dtypes(state):
+            return {name: state[name].astype(field_dtypes[name]) for name in names}
+
+        def step(y, t, h):
+            return to_field_dtypes(step_impl(y, t, h, linear_ops, nonlinear_rhs))
+
+        # The final step ends at t_end when the remaining span exceeds dt
+        # only by the rounding of the clock. The clock is a sum of step
+        # sizes, so this rounding grows with the number of steps.
+        eps_time = jnp.finfo(time_dtype).eps
+        time_scale = jnp.maximum(jnp.abs(t0), jnp.abs(t_end))
+
+        dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
+
+        t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(t0)
+        y_history = {
+            name: jnp.zeros((max_saves,) + jnp.shape(u0[name]), dtype=field_dtypes[name])
+            .at[0].set(u0[name])
+            for name in names
+        }
+        dt_history = jnp.zeros(max_saves, dtype=time_dtype)
+
+        init = _ETDAdaptiveState(
+            t=t0,
+            y=to_field_dtypes(u0),
+            dt=dt_init,
+            controller=create_initial_controller_state(time_dtype),
+            t_history=t_history,
+            y_history=y_history,
+            dt_history=dt_history,
+            write_idx=jnp.array(1, dtype=jnp.int32),
+            n_accepted=jnp.array(0, dtype=jnp.int32),
+            n_rejected=jnp.array(0, dtype=jnp.int32),
+            status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32),
+        )
+
+        def cond_fn(s: _ETDAdaptiveState) -> jnp.ndarray:
+            running = s.status == StatusCode.RUNNING
+            return running & (s.t < t_end) & (s.n_accepted < max_steps)
+
+        def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
+            remaining = t_end - s.t
+            slack = (s.n_accepted + 2).astype(time_dtype) * eps_time * time_scale
+            is_final = s.dt >= remaining - slack
+            dt_step = jnp.where(is_final, remaining, s.dt)
+            h = dt_step.astype(compute_dtype)
+
+            # Step doubling: one full step and two half steps.
+            y_full = step(s.y, s.t, h)
+            y_half1 = step(s.y, s.t, h / 2)
+            y_half2 = step(y_half1, s.t + dt_step / 2, h / 2)
+            err = {name: (y_half2[name] - y_full[name]) * richardson for name in names}
+
+            finite = is_finite(y_full) & is_finite(y_half2)
+            err_ratio = scaled_error_norm_interior(err, y_half2, pid_params.atol, pid_params.rtol)
+            err_ratio = err_ratio.astype(time_dtype)
+            # A NaN error ratio makes the controller give a NaN dt. A step
+            # with non-finite values gets a large finite ratio instead, so
+            # the controller cuts dt by min_factor.
+            err_ratio = jnp.where(finite, jnp.maximum(err_ratio, 1e-10), 1e10)
+            accept = finite & (err_ratio <= 1.0)
+
+            dt_new, controller = propose_dt_etd(
+                dt_step, err_ratio, s.controller, pid_params, controller_order, accepted=accept
+            )
+
+            def accept_step():
+                n_accepted = s.n_accepted + 1
+                t_new = jnp.where(is_final, t_end, s.t + dt_step)
+                save = ((n_accepted % save_every) == 0) | is_final
+                idx = s.write_idx
+
+                def write(buffer, value):
+                    # Select the value, not the buffer, so that the update
+                    # stays in place and costs one entry, not the buffer.
+                    return buffer.at[idx].set(jnp.where(save, value, buffer[idx]))
+
+                t_hist = write(s.t_history, t_new)
+                dt_hist = write(s.dt_history, dt_step)
+                y_hist = {name: write(s.y_history[name], y_half2[name]) for name in names}
+                return _ETDAdaptiveState(
+                    t=t_new, y=y_half2, dt=dt_new, controller=controller,
+                    t_history=t_hist, y_history=y_hist, dt_history=dt_hist,
+                    write_idx=idx + save.astype(jnp.int32),
+                    n_accepted=n_accepted, n_rejected=s.n_rejected, status=s.status,
+                )
+
+            def reject_step():
+                # The same extra cut as the adaptive drivers of
+                # moljax.core.stepping: each rejection cuts dt by a factor
+                # of 2 or more.
+                dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min).astype(time_dtype)
+                status = jnp.where(
+                    dt_reject <= pid_params.dt_min * 1.1,
+                    jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
+                    jnp.where(
+                        controller.consecutive_rejects >= max_rejections_per_step,
+                        jnp.array(StatusCode.MAX_ATTEMPTS_REACHED, dtype=jnp.int32),
+                        s.status,
+                    ),
+                )
+                return s._replace(dt=dt_reject, controller=controller,
+                                  n_rejected=s.n_rejected + 1, status=status)
+
+            return lax.cond(accept, accept_step, reject_step)
+
+        final = lax.while_loop(cond_fn, body_fn, init)
+
+        status = jnp.where(
+            final.t >= t_end,
+            jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
+            jnp.where(
+                final.status == StatusCode.RUNNING,
+                jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
+                final.status,
+            ),
+        )
+        return ETDAdaptiveResult(
+            t_final=final.t,
+            y_final=final.y,
+            t_history=final.t_history,
+            y_history=final.y_history,
+            dt_history=final.dt_history,
+            n_saved=final.write_idx,
+            n_accepted=final.n_accepted,
+            n_rejected=final.n_rejected,
+            dt_final=final.dt,
+            status=status,
+            success=status == StatusCode.SUCCESS,
+        )
+
+    return jax.jit(run)
+
+
+def _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params, max_steps,
+                         save_every, max_rejections_per_step):
+    """
+    Look up, or build, the compiled adaptive ETD loop for these parameters.
+
+    The key holds the structure, shapes and dtypes of the state, the
+    linear operators and the nonlinear right-hand side by identity, the
+    method, the controller parameters, max_steps, save_every, the
+    rejection budget and the x64 flag. The key does not hold dt0 or t_end:
+    they are arguments of the compiled loop.
+    """
+    key = (
+        'etd_integrate_adaptive',
+        state_cache_key(u0),
+        static_cache_key(linear_ops),
+        static_cache_key(nonlinear_rhs),
+        method,
+        static_cache_key(pid_params),
+        max_steps,
+        save_every,
+        max_rejections_per_step,
+        bool(jax.config.jax_enable_x64),
+    )
+    return _ETD_ADAPTIVE_DRIVERS.get_or_build(key, lambda: _build_etd_adaptive_driver(
+        linear_ops, nonlinear_rhs, method, pid_params, max_steps, save_every,
+        max_rejections_per_step
+    ))
+
+
+def _check_adaptive_span(t0, t_end, dt0) -> None:
+    """Raise if t_end <= t0 or dt0 <= 0. Skip the check for traced values."""
+    try:
+        bad = bool(t_end <= t0) or bool(dt0 <= 0.0)
+    except (jax.errors.ConcretizationTypeError, TypeError):
+        return
+    if bad:
+        raise ValueError(f"need dt0 > 0 and t_end > t0, got dt0={dt0}, t0={t0}, t_end={t_end}")
+
+
+def etd_integrate_adaptive(
+    u0: StateDict,
+    t_span: tuple[float, float],
+    dt0: float,
+    linear_ops: dict[str, FFTLinearOperator],
+    nonlinear_rhs: Callable[[StateDict, float], StateDict],
+    method: str = 'etdrk4',
+    pid_params: PIDParams | None = None,
+    max_steps: int = 10000,
+    save_every: int = 1,
+    max_rejections_per_step: int = _DEFAULT_MAX_REJECTIONS_PER_STEP,
+) -> ETDAdaptiveResult:
+    """Integrate u_t = L*u + N(u) with an adaptive time step (ETD1 or ETDRK4).
+
+    The driver is a lax.while_loop. It works on interior-only states with
+    the same linear_ops and nonlinear_rhs as etd_integrate, etd1_step and
+    etdrk4_step. It does not use moljax.core.stepping.adaptive_integrate,
+    which works on MOLModel states with ghost cells.
+
+    Error estimate: step doubling. Each attempt takes one step of size dt
+    (y_full) and two steps of size dt/2 (y_half2). The error estimate is
+    (y_half2 - y_full) / (2^p - 1), with p = 1 for ETD1 and p = 4 for
+    ETDRK4. This is the Richardson estimate of the error of y_half2, so a
+    tolerance has the same meaning for each order. An accepted step keeps
+    y_half2 (no extrapolation).
+
+    CAUTION: The step-doubling estimators of moljax.core.stepping
+    (estimate_error_doubling and estimate_error_imex_doubling) keep the
+    raw difference y_half2 - y_full. For the same atol and rtol, those
+    drivers therefore accept a different error than this driver.
+
+    Time-step policy "ETD" (see moljax.core.dt_policy.propose_dt_etd):
+    there is no CFL limit, because exp(dt*L) is exact. The PI controller
+    of PIDParams sets dt, in the range [dt_min, dt_max]. The controller
+    receives the order p + 1 of the local error estimate, not p (the
+    drivers of moljax.core.stepping give it p). The driver
+    rejects a step that has non-finite values and cuts dt for the next
+    attempt.
+
+    The cost of each attempt is three steps (for ETDRK4, 12 evaluations
+    of nonlinear_rhs against 4).
+
+    Args:
+        u0: Initial state (interior values, no ghost cells)
+        t_span: (t0, t_end), with t_end > t0
+        dt0: Initial time step. The driver clamps it to [dt_min, dt_max].
+        linear_ops: Dict mapping field name to FFTLinearOperator
+        nonlinear_rhs: Function computing N(u, t)
+        method: 'etd1' or 'etdrk4'
+        pid_params: Controller parameters, tolerances and dt limits
+            (default PIDParams())
+        max_steps: Maximum number of accepted steps. It also sets the size
+            of the history buffers.
+        save_every: Save the state after each save_every-th accepted step.
+            The driver always saves the final accepted step.
+        max_rejections_per_step: Consecutive rejections allowed for one
+            step before the run stops with StatusCode.MAX_ATTEMPTS_REACHED.
+
+    Returns:
+        ETDAdaptiveResult. The history holds accepted steps only. The last
+        accepted step ends exactly at t_end.
+
+    Raises:
+        ValueError: For an unknown method, save_every < 1, max_steps < 1,
+            max_rejections_per_step < 1, t_end <= t0 or dt0 <= 0.
+
+    Notes:
+        The compiled loop is cached and reused. The cache key holds the
+        linear operators and nonlinear_rhs (by identity), the method,
+        pid_params, max_steps, save_every, max_rejections_per_step and the
+        structure, shapes and dtypes of u0. The values of u0, t0, t_end and
+        dt0 are arguments of the compiled loop, so a sweep over them
+        compiles once. The cache holds 32 entries;
+        clear_compiled_drivers empties it.
+
+        The clock is carried in float64 when x64 is on, also for a float32
+        state (see moljax.core.stepping._time_dtype). The step arithmetic
+        uses the dtype of the state.
+    """
+    if method not in _ETD_ADAPTIVE_ORDER:
+        raise ValueError(
+            f"Unknown method: {method}. Use one of {sorted(_ETD_ADAPTIVE_ORDER)}"
+        )
+    if save_every < 1:
+        raise ValueError(f"save_every must be at least 1, got {save_every}")
+    if max_steps < 1:
+        raise ValueError(f"max_steps must be at least 1, got {max_steps}")
+    if max_rejections_per_step < 1:
+        raise ValueError(
+            f"max_rejections_per_step must be at least 1, got {max_rejections_per_step}"
+        )
+    if pid_params is None:
+        pid_params = PIDParams()
+
+    t0, t_end = t_span
+    _check_adaptive_span(t0, t_end, dt0)
+    _validate_time_resolution(t0, t_end, dt0, "etd_integrate_adaptive")
+
+    driver = _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params,
+                                  max_steps, save_every, max_rejections_per_step)
+    time_dtype = _time_dtype()
+    return driver(
+        u0,
+        jnp.asarray(t0, dtype=time_dtype),
+        jnp.asarray(t_end, dtype=time_dtype),
+        jnp.asarray(dt0, dtype=time_dtype),
+    )
 
 
 # =============================================================================
