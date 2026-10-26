@@ -29,6 +29,8 @@ from benchmarks.tau_blend_mask_analysis import (
     one_inverse_matrix,
     quantile_references,
     repository_blend_check,
+    spectral_metrics,
+    state_from_values,
 )
 from moljax.experimental.node_centered import NodeCenteredDirichletGrid
 
@@ -163,3 +165,50 @@ def test_floor_cfl_value_and_empty_mask_at_n2048():
     D = np.full(2048, 2.0e-5)
     assert not np.any(cfl_mask(floor_state, D, 0.1))
     assert np.all(cfl_mask(floor_state, D, 0.3))
+
+
+@pytest.mark.parametrize("m", [2, 4, 8])
+def test_dense_jacobian_is_the_derivative_of_the_moljax_residual(m):
+    """J v agrees with jax.jvp of the backward-Euler residual of moljax.
+
+    The reference does not use the dense model: it differentiates the
+    repository residual directly, so a wrong dt or coefficient in J fails here.
+    """
+    import jax.numpy as jnp
+
+    from moljax.experimental.pme_conditioning import make_backward_euler_residual
+
+    state = _state(32, m)
+    residual = make_backward_euler_residual(
+        jnp.asarray(state["u"]), state["grid"], float(m), state["dt"], state["epsilon"]
+    )
+    rng = np.random.default_rng(m)
+    for _ in range(3):
+        v = rng.standard_normal(state["nx"])
+        _, jv = jax.jvp(residual, (jnp.asarray(state["u"]),), (jnp.asarray(v),))
+        assert np.allclose(state["J"] @ v, np.asarray(jv), rtol=1e-12, atol=1e-12)
+
+
+def test_spectral_metrics_match_the_analytic_scalar_spectrum():
+    """For a constant state, H(d) J has the known eigenvalues (1 + dt D mu)/(1 + dt d mu).
+
+    mu_k = 4/h^2 sin^2(pi k / (2 (N+1))) are the eigenvalues of -L. The expected
+    values come from this formula, not from the code under test.
+    """
+    nx, m, dt, eps = 24, 4, 0.02, 1.0e-5
+    grid = NodeCenteredDirichletGrid.uniform(nx, CONFIG.x_min, CONFIG.x_max)
+    u = np.full(nx, 0.3)
+    state = state_from_values(u, grid, m, dt, eps)
+    D = float(m * (0.3**2 + eps**2) ** ((m - 1) / 2))
+    d = 50.0 * D
+    h = grid.dx
+    mu = 4.0 / h**2 * np.sin(np.pi * np.arange(1, nx + 1) / (2 * (nx + 1))) ** 2
+    expected = np.sort((1.0 + dt * D * mu) / (1.0 + dt * d * mu))
+    A = ((state["Q"] / (1.0 - dt * d * state["lam"])) @ state["Q"].T) @ state["J"]
+    metrics = spectral_metrics(A, np.zeros(nx, dtype=bool))
+    assert np.allclose(np.sort(np.linalg.eigvals(A).real), expected, rtol=1e-10)
+    assert metrics["min_abs_eigenvalue"] == pytest.approx(expected[0], rel=1e-10)
+    assert metrics["max_abs_eigenvalue"] == pytest.approx(expected[-1], rel=1e-10)
+    # The operator is symmetric here, so kappa_2 is the ratio of the extreme eigenvalues.
+    assert metrics["kappa2"] == pytest.approx(expected[-1] / expected[0], rel=1e-9)
+    assert metrics["eigenvalues_below_0p1"] == int(np.count_nonzero(expected < 0.1))

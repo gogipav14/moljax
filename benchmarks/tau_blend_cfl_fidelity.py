@@ -149,7 +149,9 @@ def make_case(nx: int, m: int, config: CflFidelityConfig) -> dict[str, Any]:
     return state
 
 
-def preconditioner(case: dict[str, Any], D: np.ndarray, dt: float, kind: str, eta: float) -> np.ndarray:
+def preconditioner(
+    case: dict[str, Any], D: np.ndarray, dt: float, kind: str, eta: float
+) -> np.ndarray:
     """Return the dense preconditioner of one kind at the coefficient D."""
     if kind == "S":
         return helmholtz(case, float(D.max()), dt)
@@ -177,7 +179,9 @@ def residual(case: dict[str, Any], u: np.ndarray, u_prev: np.ndarray, dt: float)
 
 def _linear_row(case, dt, kind, eta, M, J, b, D, config, maxit) -> dict[str, Any]:
     chi = local_cfl(case, D, dt)
-    counts = gmres_two_conventions(M, J, b, config.gmres_tol, maxit, checkpoints=config.e4_tolerances)
+    counts = gmres_two_conventions(
+        M, J, b, config.gmres_tol, maxit, checkpoints=config.e4_tolerances
+    )
     masked = chi <= eta if kind in ("Z1", "Zf") else np.zeros(case["nx"], dtype=bool)
     row: dict[str, Any] = {
         "experiment": "E1E2",
@@ -256,11 +260,14 @@ def best_cutoffs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     infinite.
     """
     out = []
-    keys = sorted({(r["nx"], r["m"], r["dt"], r["kind"]) for r in rows if r["kind"] in ("Z1", "Zf")})
+    keys = sorted(
+        {(r["nx"], r["m"], r["dt"], r["kind"]) for r in rows if r["kind"] in ("Z1", "Zf")}
+    )
     for nx, m, dt, kind in keys:
         group = [r for r in rows if (r["nx"], r["m"], r["dt"], r["kind"]) == (nx, m, dt, kind)]
         record = {"nx": nx, "m": m, "dt": dt, "kind": kind, "global_cfl": group[0]["global_cfl"]}
         for convention in ("gmres_preconditioned", "gmres_true"):
+
             def score(r: dict[str, Any], convention: str = convention) -> tuple[float, float]:
                 count = r[convention]
                 return (math.inf if count is None else count, r["eta"])
@@ -416,16 +423,34 @@ def run_e3(case: dict[str, Any], config: CflFidelityConfig) -> tuple[list[dict],
             u_prev = reference[-1]
             atol = 64.0 * np.finfo(float).eps * (1.0 + float(np.linalg.norm(u_prev)))
             u, info = newton_step(
-                case, u_prev, dt, "direct", math.nan, 0.0, "", config,
+                case,
+                u_prev,
+                dt,
+                "direct",
+                math.nan,
+                0.0,
+                "",
+                config,
                 nl_tol=config.e3_reference_tol,
                 max_newton=config.e3_reference_max_newton,
                 atol=atol,
             )
             reference.append(u)
             step_rows.append(
-                {"experiment": "E3_step", "nx": case["nx"], "m": case["m"], "dt": dt,
-                 "global_cfl": c_global, "kind": "direct", "side": None, "forcing": None,
-                 "eta": None, "step": step + 1, "absolute_floor": atol, **info}
+                {
+                    "experiment": "E3_step",
+                    "nx": case["nx"],
+                    "m": case["m"],
+                    "dt": dt,
+                    "global_cfl": c_global,
+                    "kind": "direct",
+                    "side": None,
+                    "forcing": None,
+                    "eta": None,
+                    "step": step + 1,
+                    "absolute_floor": atol,
+                    **info,
+                }
             )
         reference_ok = all(
             r["converged"] and not r["line_search_failed"]
@@ -437,8 +462,14 @@ def run_e3(case: dict[str, Any], config: CflFidelityConfig) -> tuple[list[dict],
             for r in step_rows
             if r["kind"] == "direct" and r["dt"] == dt and r["m"] == case["m"]
         ]
-        cells = [abs(front_halfwidth(case, reference[k + 1], level) - front_halfwidth(case, reference[k], level)) / h
-                 for k in range(steps)]
+        cells = [
+            abs(
+                front_halfwidth(case, reference[k + 1], level)
+                - front_halfwidth(case, reference[k], level)
+            )
+            / h
+            for k in range(steps)
+        ]
         mass0 = float(np.sum(case["u"]) * h)
         base = {
             "experiment": "E3",
@@ -452,8 +483,11 @@ def run_e3(case: dict[str, Any], config: CflFidelityConfig) -> tuple[list[dict],
             "front_cells_per_step_mean": float(np.mean(cells)),
             "front_cells_per_step_max": float(np.max(cells)),
         }
-        print(f"E3 N={case['nx']} m={case['m']} dt={dt:6.0e} c={c_global:8.3g} reference "
-              f"converged={reference_ok} newton to 1e-8 per step={ref_counts}", flush=True)
+        print(
+            f"E3 N={case['nx']} m={case['m']} dt={dt:6.0e} c={c_global:8.3g} reference "
+            f"converged={reference_ok} newton to 1e-8 per step={ref_counts}",
+            flush=True,
+        )
         for side in config.e3_sides:
             for forcing in config.e3_forcings:
                 for kind in KINDS:
@@ -464,16 +498,37 @@ def run_e3(case: dict[str, Any], config: CflFidelityConfig) -> tuple[list[dict],
                         # A failed step keeps its last accepted iterate and the march
                         # continues from it: this models a solver without step rejection.
                         u, info = newton_step(
-                            case, u, dt, kind, eta, forcing, side, config,
-                            nl_tol=config.e3_newton_tol, max_newton=config.e3_max_newton,
+                            case,
+                            u,
+                            dt,
+                            kind,
+                            eta,
+                            forcing,
+                            side,
+                            config,
+                            nl_tol=config.e3_newton_tol,
+                            max_newton=config.e3_max_newton,
                         )
                         records.append(info)
                         step_rows.append(
-                            {"experiment": "E3_step", "nx": case["nx"], "m": case["m"], "dt": dt,
-                             "global_cfl": c_global, "kind": kind, "side": side, "forcing": forcing,
-                             "eta": eta if kind in ("Z1", "Zf") else None, "step": step + 1, **info}
+                            {
+                                "experiment": "E3_step",
+                                "nx": case["nx"],
+                                "m": case["m"],
+                                "dt": dt,
+                                "global_cfl": c_global,
+                                "kind": kind,
+                                "side": side,
+                                "forcing": forcing,
+                                "eta": eta if kind in ("Z1", "Zf") else None,
+                                "step": step + 1,
+                                **info,
+                            }
                         )
                     final_ref = reference[-1]
+                    # Without a converged reference there is no exact backward-Euler
+                    # trajectory to compare with, so the fidelity fields stay NaN.
+                    trusted = reference_ok
                     row = {
                         **base,
                         "kind": kind,
@@ -489,10 +544,20 @@ def run_e3(case: dict[str, Any], config: CflFidelityConfig) -> tuple[list[dict],
                         "max_true_linear_ratio": max(r["max_true_linear_ratio"] for r in records),
                         "relative_l2_difference_to_reference": float(
                             np.linalg.norm(u - final_ref) / np.linalg.norm(final_ref)
-                        ),
-                        "front_halfwidth_difference": front_halfwidth(case, u, level)
-                        - front_halfwidth(case, final_ref, level),
-                        "mass_difference_relative": float(np.sum(u) * h - np.sum(final_ref) * h) / mass0,
+                        )
+                        if trusted
+                        else math.nan,
+                        "front_halfwidth_difference": (
+                            front_halfwidth(case, u, level)
+                            - front_halfwidth(case, final_ref, level)
+                        )
+                        if trusted
+                        else math.nan,
+                        "mass_difference_relative": (
+                            float(np.sum(u) * h - np.sum(final_ref) * h) / mass0
+                        )
+                        if trusted
+                        else math.nan,
                         "min_u": float(u.min()),
                     }
                     summaries.append(row)
@@ -536,7 +601,9 @@ def main(argv: list[str] | None = None) -> None:
     """Run the selected parts and write the JSON and CSV results."""
     defaults = CflFidelityConfig()
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--parts", nargs="+", choices=("e1", "floor", "e3"), default=list(defaults.parts))
+    parser.add_argument(
+        "--parts", nargs="+", choices=("e1", "floor", "e3"), default=list(defaults.parts)
+    )
     parser.add_argument("--nx", type=int, default=defaults.nx)
     parser.add_argument("--m", type=int, nargs="+", default=list(defaults.m))
     parser.add_argument("--e1-dts", type=float, nargs="+", default=list(defaults.e1_dts))

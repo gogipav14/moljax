@@ -83,7 +83,7 @@ JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 python benchmarks/tau_blend_cfl_fidelity.py
 
 | # | Email number | Script | Case or selector | Output field | Expected | Source | Value after regeneration |
 |---|---|---|---|---|---|---|---|
-| C1 | "each variant gives exact backward Euler to 5e-9 or better" (when Newton converges on the true residual) | CF | `e3` rows with `converged` true | max of `relative_l2_difference_to_reference` | 4.9e-9 (m = 8, dt = 0.2, right, forcing 0.1, S) | A10 CSV | |
+| C1 | "each variant gives exact backward Euler to 5e-9 or better" (when Newton converges on the true residual) | CF | `e3` rows with `converged` true and `reference_converged` true (the script writes NaN fidelity fields when the reference fails) | max of `relative_l2_difference_to_reference` | 4.9e-9 (m = 8, dt = 0.2, right, forcing 0.1, S) | A10 CSV | |
 | C2 | "The cutoff bounds the mask perturbation: ||J - J0|| <= eta" | CF | all `e1_e2` rows of kind Z1 and Zf | `J_minus_J0_norm` <= `eta` | true for all rows | algebra (Lemma); the A10 CSV has no such field | |
 | C3 | "by 10 to 1000 times in single-step measurements", "The difference increases with the CFL number" | CF | `e4`, tolerance 1e-8 | `true_over_preconditioned` (normalized) and `absolute_ratio_r_over_Mr` | 10 to 1000 | no saved source; see "Numbers without a saved source" | |
 | C4 | "With loose forcing (0.1), the true linear residual can then be more than one" | CF | `e3`, side left, forcing 0.1 | `max_true_linear_ratio` | > 1 in several rows (for example 2.9, m = 2, dt = 0.2, S) | A10 CSV | |
