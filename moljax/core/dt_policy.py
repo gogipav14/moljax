@@ -3,7 +3,7 @@ Time step policy for MOL-JAX.
 
 This module provides automatic time step selection:
 - Heisenberg/CFL limiter for explicit methods
-- PID/PI controller for adaptive stepping
+- PI controller for adaptive stepping (parameters in PIDParams)
 - Implicit robustness limiter based on Newton-Krylov stats
 - IMEX-aware dt limiting (no diffusion limit when diffusion is implicit)
 
@@ -84,12 +84,20 @@ class CFLParams:
 @dataclass(frozen=True)
 class PIDParams:
     """
-    Parameters for PID/PI adaptive time step controller.
+    Parameters for the adaptive time step controller.
 
-    The controller computes:
+    The controller is a PI controller. It has no derivative term. The
+    class keeps the name PIDParams for API stability. In short form, the
+    controller computes:
         dt_new = dt * safety * err_ratio^(-kI) * prev_err_ratio^(kP)
 
     where err_ratio = error_norm (should be <= 1 for accepted step).
+    The exact form in pid_controller_dt divides kI and kP by the order p
+    of the method, and the proportional factor is a ratio:
+        dt_new = dt * safety * err_ratio^(-kI/p)
+                 * (prev_err_ratio / err_ratio)^(kP/p)
+
+    The controller does not use ControllerState.prevprev_err_ratio.
 
     Attributes:
         safety: Safety factor (default 0.9)
@@ -119,7 +127,9 @@ class ControllerState(NamedTuple):
 
     Attributes:
         prev_err_ratio: Error ratio from previous step
-        prevprev_err_ratio: Error ratio from two steps ago (for PID)
+        prevprev_err_ratio: Error ratio from two steps ago. The controller
+            stores this value but does not read it, because the controller
+            is PI (see PIDParams). The field stays for API stability.
         consecutive_rejects: Number of consecutive rejected steps
     """
     prev_err_ratio: jnp.ndarray
@@ -261,7 +271,7 @@ def pid_controller_dt(
     order: int = 4
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
-    PID/PI controller for adaptive time step.
+    PI controller for adaptive time step (see PIDParams for the name).
 
     Computes new dt based on error ratio using PI formula:
         factor = (1/err_ratio)^(kI/order) * (prev_err/err_ratio)^(kP/order)
@@ -509,19 +519,48 @@ def propose_dt(
     return dt_final, new_controller_state
 
 
+# Order of the error estimate for each IntegratorType value
+# (moljax.core.stepping.IntegratorType). Plain ints for the same reason as
+# _EXPLICIT_STABILITY_BOUNDARY: stepping.py imports from this module.
+_ERROR_ORDER: dict[int, int] = {
+    0: 1,  # EULER
+    1: 3,  # SSPRK3
+    2: 4,  # RK4
+    3: 1,  # BE
+    4: 2,  # CN
+    5: 2,  # BDF2
+    6: 1,  # IMEX_EULER
+    7: 2,  # IMEX_STRANG
+}
+
+
 def compute_error_order(method: int) -> int:
     """
     Get the error estimation order for a given method.
+
+    Each IntegratorType value has an explicit entry. An unknown value
+    raises: a default order would give the controller a wrong exponent
+    and no message.
 
     Args:
         method: Integrator type enum value
 
     Returns:
         Order used for error estimation
+
+    Raises:
+        ValueError: If method is not an IntegratorType value.
     """
-    # EULER=0, SSPRK3=1, RK4=2, BE=3, CN=4, BDF2=5, IMEX_EULER=6, IMEX_SSPRK3=7
-    orders = [1, 3, 4, 1, 2, 2, 1, 2]
-    return orders[min(method, len(orders) - 1)]
+    try:
+        key = int(method)
+    except (TypeError, ValueError):
+        key = None
+    if key is None or key not in _ERROR_ORDER:
+        raise ValueError(
+            f"compute_error_order: unknown method {method!r}; "
+            f"known IntegratorType values are {sorted(_ERROR_ORDER)}"
+        )
+    return _ERROR_ORDER[key]
 
 
 # =============================================================================

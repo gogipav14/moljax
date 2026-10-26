@@ -18,7 +18,9 @@ jax.config.update("jax_enable_x64", True)
 from moljax.core.bc import FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
+    ControllerState,
     PIDParams,
+    compute_error_order,
     create_initial_controller_state,
     heisenberg_cfl_dt,
     imex_cfl_dt,
@@ -29,7 +31,7 @@ from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import NKStats
 from moljax.core.operators import LinearOp
-from moljax.core.stepping import IntegratorType, adaptive_integrate
+from moljax.core.stepping import IntegratorType, adaptive_integrate, integrate_fixed_dt
 from moljax.core.utils import StatusCode
 
 
@@ -525,6 +527,82 @@ class TestRejectionsTerminate:
 
         err_only = reject_sequence(False)
         assert err_only[-1] >= 0.1, err_only
+
+
+class TestErrorOrderTable:
+    """compute_error_order has one entry for each IntegratorType.
+
+    The expected orders come from the methods: forward and backward Euler
+    and IMEX Euler are first order, SSPRK3 is third order, RK4 is fourth
+    order, and Crank-Nicolson, BDF2 and Strang splitting are second order.
+    """
+
+    EXPECTED = {
+        IntegratorType.EULER: 1,
+        IntegratorType.SSPRK3: 3,
+        IntegratorType.RK4: 4,
+        IntegratorType.BE: 1,
+        IntegratorType.CN: 2,
+        IntegratorType.BDF2: 2,
+        IntegratorType.IMEX_EULER: 1,
+        IntegratorType.IMEX_STRANG: 2,
+    }
+
+    def test_every_integrator_type_has_an_entry(self):
+        assert set(self.EXPECTED) == set(IntegratorType)
+        for method, order in self.EXPECTED.items():
+            assert compute_error_order(method) == order, method
+            assert compute_error_order(int(method)) == order, method
+
+    @pytest.mark.parametrize("method", [8, -1, 100, "rk4", None])
+    def test_unknown_method_raises(self, method):
+        with pytest.raises(ValueError, match="unknown method"):
+            compute_error_order(method)
+
+
+class TestDriversRejectUnknownMethods:
+    """The MOLModel drivers raise for a method value that they cannot step.
+
+    Before the check, "method < 3 is explicit, else implicit" sent each
+    unknown value (an IMEX value, or 8) to the BDF2 branch. The check
+    runs before the driver is built, so these calls compile nothing.
+    """
+
+    @pytest.mark.parametrize("method", [IntegratorType.IMEX_EULER, IntegratorType.IMEX_STRANG, 8, -1])
+    def test_adaptive_integrate(self, method):
+        model, y0 = float32_decay_model()
+        with pytest.raises(ValueError, match="not supported"):
+            adaptive_integrate(model, y0, 0.0, 1.0, 0.1, method=method, max_steps=4)
+
+    @pytest.mark.parametrize("method", [IntegratorType.IMEX_EULER, 8])
+    def test_integrate_fixed_dt(self, method):
+        model, y0 = float32_decay_model()
+        with pytest.raises(ValueError, match="not supported"):
+            integrate_fixed_dt(model, y0, 0.0, 1.0, 0.5, method=method)
+
+
+class TestControllerIsPI:
+    """pid_controller_dt is the PI formula of the PIDParams docstring.
+
+    The expected dt is computed here by hand from that formula. The test
+    also shows that prevprev_err_ratio has no effect on the result.
+    """
+
+    def test_formula_and_unused_prevprev(self):
+        p = PIDParams(safety=0.9, kI=0.7, kP=0.4, max_factor=10.0, min_factor=0.1,
+                      dt_min=1e-12, dt_max=10.0)
+        order = 2
+        dt_old, err, prev = 0.1, 0.25, 0.5
+        expected = dt_old * 0.9 * err ** (-0.7 / order) * (prev / err) ** (0.4 / order)
+        for prevprev in (1e-3, 1.0, 1e3):
+            state = ControllerState(
+                prev_err_ratio=jnp.array(prev),
+                prevprev_err_ratio=jnp.array(prevprev),
+                consecutive_rejects=jnp.array(0, dtype=jnp.int32),
+            )
+            dt_new, new_state = pid_controller_dt(jnp.array(dt_old), jnp.array(err), state, p, order)
+            np.testing.assert_allclose(float(dt_new), expected, rtol=1e-12)
+            assert float(new_state.prev_err_ratio) == err
 
 
 if __name__ == "__main__":

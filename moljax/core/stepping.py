@@ -990,6 +990,36 @@ def _validate_time_resolution(t0: float, t_end: float, dt: float, caller: str) -
         )
 
 
+# The IntegratorType values that adaptive_integrate and integrate_fixed_dt
+# can step. The IMEX values have their own drivers (adaptive_integrate_imex
+# and integrate_imex_fixed_dt), because they need an FFT cache and the
+# diffusivities.
+_MOL_METHODS = frozenset({
+    IntegratorType.EULER, IntegratorType.SSPRK3, IntegratorType.RK4,
+    IntegratorType.BE, IntegratorType.CN, IntegratorType.BDF2,
+})
+
+
+def _check_mol_method(method, caller: str) -> None:
+    """
+    Reject a method value that the MOLModel drivers cannot step.
+
+    The drivers select the step with "method < 3 is explicit, else
+    implicit". Without this check, an unknown value (for example an IMEX
+    value or 8) runs as BDF2 and gives no message.
+    """
+    try:
+        known = int(method) in _MOL_METHODS
+    except (TypeError, ValueError):
+        known = False
+    if not known:
+        names = ", ".join(f"{m.name}={int(m)}" for m in sorted(_MOL_METHODS))
+        raise ValueError(
+            f"{caller}: method {method!r} is not supported; use one of {names}. "
+            f"For the IMEX methods, use the IMEX drivers."
+        )
+
+
 def _error_estimate_converged(*solves) -> jnp.ndarray:
     """
     Whether every solve feeding an error estimate reached a finite answer.
@@ -1499,7 +1529,9 @@ def adaptive_integrate(
         t0: Initial time
         t_end: Final time
         dt0: Initial time step
-        method: IntegratorType enum value
+        method: IntegratorType enum value: EULER, SSPRK3, RK4, BE, CN or
+            BDF2. Other values raise ValueError (use adaptive_integrate_imex
+            for the IMEX methods).
         max_steps: Maximum number of steps (for buffer allocation)
         cfl_params: CFL parameters (default created if None)
         pid_params: PID parameters (default created if None)
@@ -1532,6 +1564,7 @@ def adaptive_integrate(
     if nk_params is None:
         nk_params = NKParams()
 
+    _check_mol_method(method, "adaptive_integrate")
     _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate")
 
     driver = _adaptive_driver(model, y0, method, max_steps, save_every, cfl_params,
@@ -1846,7 +1879,8 @@ def integrate_fixed_dt(
         t0: Initial time
         t_end: Final time
         dt: Fixed time step
-        method: IntegratorType
+        method: IntegratorType: EULER, SSPRK3, RK4, BE, CN or BDF2. Other
+            values raise ValueError (use integrate_imex_fixed_dt for IMEX).
         save_every: Keep the state after every save_every-th step
         preconditioner: For implicit methods
         nk_params: For implicit methods
@@ -1894,6 +1928,7 @@ def integrate_fixed_dt(
     if nk_params is None:
         nk_params = NKParams()
 
+    _check_mol_method(method, "integrate_fixed_dt")
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
     _validate_time_resolution(t0, t_end, dt, "integrate_fixed_dt")
 
