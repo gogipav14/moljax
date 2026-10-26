@@ -766,3 +766,34 @@ class TestSpanCheckUnderJit:
                                           pid_params=PIDParams(atol=1e-10, rtol=0.0)).y_final["u"]
 
         np.testing.assert_allclose(np.asarray(run(u0["u"])), np.e, rtol=1e-8)
+
+
+
+class TestStepResolvedInStateDtype:
+    """A step that is zero in the state dtype must not give a false success."""
+
+    @pytest.mark.parametrize("dtype", [jnp.float16, jnp.bfloat16])
+    def test_sixteen_bit_states_are_rejected(self, dtype):
+        """float16 and bfloat16 states raise ValueError before compilation."""
+        u0 = {"u": jnp.zeros(4, dtype=dtype)}
+        ops = {"u": ConstantOp(0.0, 4)}
+        with pytest.raises(ValueError, match="float32 or float64"):
+            etd_integrate_adaptive(
+                u0, (0.0, 1e-8), 1e-8, ops, lambda y, t: {"u": 1e4 + 0 * y["u"]},
+                method="etd1", rhs_uses_time=False,
+            )
+
+    def test_step_below_float32_resolution_stops(self):
+        """u' = 1e38 over (0, 1e-40) in float32: the step is not resolved, so the run fails.
+
+        The exact result is 0.01. Before this check the driver returned SUCCESS
+        with an unchanged state.
+        """
+        u0 = {"u": jnp.zeros(4, dtype=jnp.float32)}
+        ops = {"u": ConstantOp(0.0, 4, jnp.float32)}
+        result = etd_integrate_adaptive(
+            u0, (0.0, 1e-40), 1e-12, ops, lambda y, t: {"u": jnp.full_like(y["u"], 1e38)},
+            method="etd1", rhs_uses_time=False,
+        )
+        assert not bool(result.success)
+        assert int(result.status) == int(StatusCode.DT_TOO_SMALL)

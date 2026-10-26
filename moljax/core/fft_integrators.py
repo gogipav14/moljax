@@ -772,6 +772,20 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             return running & (s.tau < span) & (s.n_accepted < max_steps)
 
         def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
+            # A step that is zero in the state dtype (for example a very small
+            # dt in float32, which the CPU can flush to zero) cannot change
+            # the state, but the clock would still advance. Such a run stops
+            # with DT_TOO_SMALL and does not take the step.
+            dt_step = jnp.minimum(s.dt, span - s.tau)
+            h = dt_step.astype(compute_dtype)
+            resolved = (h > 0) & (h / 2 > 0)
+            return lax.cond(
+                resolved,
+                lambda: _step_body(s),
+                lambda: s._replace(status=jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32)),
+            )
+
+        def _step_body(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
             # The trial step is min(dt, remaining). It is never larger than
             # dt, so it obeys dt_max, and a rejection always gives a smaller
             # trial. There is no stretch of the step to t_end: when the
@@ -1125,6 +1139,12 @@ def etd_integrate_adaptive(
                 f"etd_integrate_adaptive: field {name!r} has dtype "
                 f"{jnp.result_type(field)}; use a real floating dtype. An integer "
                 f"or Boolean state cannot hold the update and truncates it."
+            )
+        if jnp.dtype(jnp.result_type(field)) in (jnp.dtype(jnp.float16), jnp.dtype(jnp.bfloat16)):
+            raise ValueError(
+                f"etd_integrate_adaptive: field {name!r} has dtype "
+                f"{jnp.result_type(field)}; use float32 or float64. In a 16-bit "
+                f"state a small step size becomes zero, so the state cannot change."
             )
 
     t0, t_end = t_span
