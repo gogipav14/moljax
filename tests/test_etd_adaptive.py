@@ -360,7 +360,8 @@ class TestFinalStep:
             for atol in (1.0, 1e-4):
                 res = etd_integrate_adaptive(
                     u0, (t0, t_end), dt0, ops, rhs, method="etdrk4",
-                    pid_params=PIDParams(atol=atol, rtol=0.0, dt_max=dt0))
+                    pid_params=PIDParams(atol=atol, rtol=0.0, dt_max=dt0),
+                    rhs_uses_time=False)
                 assert bool(res.success), int(res.status)
                 assert int(res.n_accepted) == 4
                 assert int(res.n_rejected) == 0
@@ -383,7 +384,8 @@ class TestFinalStep:
         t0, dt0 = 1e15, 0.125
         t_end = t0 + 1.0
         res = etd_integrate_adaptive(u0, (t0, t_end), dt0, ops, rhs, method="etdrk4",
-                                     pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=dt0))
+                                     pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=dt0),
+                                     rhs_uses_time=False)
         assert bool(res.success), int(res.status)
         assert int(res.n_accepted) == 8
         assert float(res.t_final) == t_end
@@ -520,6 +522,9 @@ class TestRelativeClock:
     An absolute clock lost elapsed time: in float32 at t0 = 1e6 the
     spacing is 0.0625, so t + 0.1 advanced the clock by 0.125, and the run
     reported SUCCESS after too few steps with a wrong value.
+
+    The right-hand side is autonomous, and at these t0 the clock cannot
+    resolve the stage times, so the runs declare rhs_uses_time=False.
     """
 
     @staticmethod
@@ -531,7 +536,7 @@ class TestRelativeClock:
             t_end = t0 + span
             res = etd_integrate_adaptive(u0, (t0, t_end), dt0, ops, rhs, method="etdrk4",
                                          pid_params=PIDParams(atol=1e-6, rtol=0.0, dt_max=dt0),
-                                         save_every=save_every)
+                                         save_every=save_every, rhs_uses_time=False)
             res = jax.tree.map(np.asarray, res)
             t_end_clock = float(jnp.asarray(t_end, dtype=dtype))
         finally:
@@ -686,3 +691,78 @@ class TestStageTimes:
                                      pid_params=PIDParams(atol=1e-10, rtol=0.0))
         assert bool(res.success), int(res.status)
         np.testing.assert_allclose(np.asarray(res.y_final["u"]), 0.5, rtol=1e-8)
+
+    def test_autonomous_rhs_at_large_t0(self):
+        """u' = u at t0 = 1e15 with dt0 = 0.125 (the clock spacing there).
+
+        With the default rhs_uses_time=True, the stage check stops the run.
+        With rhs_uses_time=False the run succeeds, for a plain rhs and for
+        jax.jit(rhs). (A trace-based detection of time use rejected the
+        jitted rhs, because the outer equation lists t as an input.)
+        """
+        t0 = self.T0
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+        pid = PIDParams(atol=1.0, rtol=0.0, dt_max=0.125)
+
+        res = etd_integrate_adaptive(u0, (t0, t0 + 1.0), 0.125, ops, rhs, method="etdrk4",
+                                     pid_params=pid)
+        assert int(res.status) == StatusCode.TIME_UNRESOLVED
+
+        for f in (rhs, jax.jit(rhs)):
+            res = etd_integrate_adaptive(u0, (t0, t0 + 1.0), 0.125, ops, f, method="etdrk4",
+                                         pid_params=pid, rhs_uses_time=False)
+            assert bool(res.success), int(res.status)
+            assert int(res.n_accepted) == 8
+            np.testing.assert_allclose(np.asarray(res.y_final["u"]), np.e, rtol=1e-6)
+
+    def test_time_dependent_rhs_default_is_checked(self):
+        """The default rhs_uses_time=True also checks a jitted rhs."""
+        n = 1
+        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 0.125), 0.125,
+                                     {"u": ConstantOp(0.0, n)}, jax.jit(self.rhs_time),
+                                     method="etd1",
+                                     pid_params=PIDParams(atol=1e-12, rtol=0.0, dt_max=0.125))
+        assert int(res.status) == StatusCode.TIME_UNRESOLVED
+
+
+class TestSpanCheckUnderJit:
+    """The span check uses host arithmetic, so it also runs inside jax.jit."""
+
+    def test_changed_span_raises_inside_jit(self):
+        jax.config.update("jax_enable_x64", False)
+        try:
+            n = 1
+            ops = {"u": ConstantOp(0.0, n, jnp.float32)}
+
+            def rhs(state, t):
+                return {"u": jnp.ones_like(state["u"])}
+
+            @jax.jit
+            def run(u):
+                return etd_integrate_adaptive({"u": u}, (1000000.02, 1000000.04), 0.1, ops, rhs,
+                                              method="etd1").y_final["u"]
+
+            with pytest.raises(ValueError, match="clock resolution"):
+                run(jnp.zeros(n, dtype=jnp.float32))
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_traced_t_span_raises(self):
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+
+        @jax.jit
+        def run(t_end):
+            return etd_integrate_adaptive(u0, (0.0, t_end), 0.1, ops, rhs).y_final["u"]
+
+        with pytest.raises(ValueError, match="t_span must be concrete"):
+            run(1.0)
+
+    def test_concrete_t_span_inside_jit_succeeds(self):
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+
+        @jax.jit
+        def run(u):
+            return etd_integrate_adaptive({"u": u}, (0.0, 1.0), 0.1, ops, rhs,
+                                          pid_params=PIDParams(atol=1e-10, rtol=0.0)).y_final["u"]
+
+        np.testing.assert_allclose(np.asarray(run(u0["u"])), np.e, rtol=1e-8)

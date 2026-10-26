@@ -25,6 +25,7 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import lax
 
 from moljax.core.dt_policy import (
@@ -45,7 +46,6 @@ from moljax.core.state import StateDict, scaled_error_norm_interior
 from moljax.core.stepping import (
     _DEFAULT_MAX_REJECTIONS_PER_STEP,
     _time_dtype,
-    _validate_time_resolution,
 )
 from moljax.core.utils import StatusCode, is_finite
 
@@ -698,28 +698,8 @@ class _ETDAdaptiveState(NamedTuple):
     status: jnp.ndarray
 
 
-def _rhs_uses_time(nonlinear_rhs, u0, t) -> bool:
-    """
-    Whether nonlinear_rhs reads its time argument.
-
-    The function is traced once with abstract values. The result is True
-    when an operation of the trace, or the output, reads the time input.
-    The test is conservative: an operation on t whose result is not used
-    also counts as a use.
-    """
-    state_spec = {name: jax.ShapeDtypeStruct(jnp.shape(f), jnp.result_type(f))
-                  for name, f in u0.items()}
-    time_spec = jax.ShapeDtypeStruct((), jnp.result_type(t))
-    closed = jax.make_jaxpr(nonlinear_rhs)(state_spec, time_spec)
-    t_var = closed.jaxpr.invars[-1]
-    for eqn in closed.jaxpr.eqns:
-        if any(v is t_var for v in eqn.invars):
-            return True
-    return any(v is t_var for v in closed.jaxpr.outvars)
-
-
 def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, max_steps,
-                               save_every, max_rejections_per_step):
+                               save_every, max_rejections_per_step, rhs_uses_time):
     """
     Compile the while loop of etd_integrate_adaptive for one set of static parameters.
 
@@ -760,9 +740,9 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
         # 0.0625, so t + 0.1 advanced the clock by 0.125.
         span = t_end - t0
         # A time-dependent nonlinear_rhs needs distinct absolute stage
-        # times (see the docstring of etd_integrate_adaptive). This is a
-        # Python bool, known when the loop is traced.
-        check_stage_times = _rhs_uses_time(nonlinear_rhs, u0, t0)
+        # times (see the docstring of etd_integrate_adaptive). The caller
+        # declares with rhs_uses_time whether nonlinear_rhs reads t.
+        check_stage_times = rhs_uses_time
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
 
         t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(t0)
@@ -928,14 +908,14 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
 
 def _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params, max_steps,
-                         save_every, max_rejections_per_step):
+                         save_every, max_rejections_per_step, rhs_uses_time):
     """
     Look up, or build, the compiled adaptive ETD loop for these parameters.
 
     The key holds the structure, shapes and dtypes of the state, the
     linear operators and the nonlinear right-hand side by identity, the
     method, the controller parameters, max_steps, save_every, the
-    rejection budget and the x64 flag. The key does not hold dt0 or t_end:
+    rejection budget, rhs_uses_time and the x64 flag. The key does not hold dt0 or t_end:
     they are arguments of the compiled loop.
     """
     key = (
@@ -948,11 +928,12 @@ def _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params, max_
         max_steps,
         save_every,
         max_rejections_per_step,
+        rhs_uses_time,
         bool(jax.config.jax_enable_x64),
     )
     return _ETD_ADAPTIVE_DRIVERS.get_or_build(key, lambda: _build_etd_adaptive_driver(
         linear_ops, nonlinear_rhs, method, pid_params, max_steps, save_every,
-        max_rejections_per_step
+        max_rejections_per_step, rhs_uses_time
     ))
 
 
@@ -967,24 +948,49 @@ _SPAN_RELATIVE_TOLERANCE = 1e-6
 
 def _check_adaptive_span(t0, t_end, dt0) -> None:
     """
-    Raise if t_end <= t0 or dt0 <= 0, or if the cast of t0 and t_end to
-    the time dtype changes the span by more than _SPAN_RELATIVE_TOLERANCE
-    (relative). Skip the check for traced values.
+    Check the time arguments of etd_integrate_adaptive on the host.
+
+    Raise ValueError if t0 or t_end is not concrete, if t_end <= t0, if
+    the cast of t0 and t_end to the time dtype changes the span by more
+    than _SPAN_RELATIVE_TOLERANCE (relative), or if a concrete dt0 is not
+    positive or is below the clock resolution at t0 (t0 + dt0 == t0).
+
+    The check uses NumPy scalars, not jnp, so that it gives the same
+    result inside an outer jax.jit. A traced dt0 is permitted: it only
+    sets the first trial step.
     """
-    try:
-        bad = bool(t_end <= t0) or bool(dt0 <= 0.0)
-        dtype = _time_dtype()
-        requested = float(t_end) - float(t0)
-        cast = float(jnp.asarray(t_end, dtype=dtype) - jnp.asarray(t0, dtype=dtype))
-    except (jax.errors.ConcretizationTypeError, TypeError):
-        return
-    if bad:
-        raise ValueError(f"need dt0 > 0 and t_end > t0, got dt0={dt0}, t0={t0}, t_end={t_end}")
+    for name, value in (("t0", t0), ("t_end", t_end)):
+        if isinstance(value, jax.core.Tracer):
+            raise ValueError(
+                f"etd_integrate_adaptive: t_span must be concrete; {name} is a traced "
+                f"value. Pass t_span as Python or NumPy numbers (a static argument "
+                f"of an outer jax.jit)."
+            )
+    t0_f = float(t0)
+    t_end_f = float(t_end)
+    requested = t_end_f - t0_f
+    if not requested > 0.0:
+        raise ValueError(f"need t_end > t0, got t0={t0}, t_end={t_end}")
+
+    clock = np.float64 if _time_dtype() == jnp.float64 else np.float32
+    cast = float(clock(t_end_f) - clock(t0_f))
     if abs(cast - requested) > _SPAN_RELATIVE_TOLERANCE * requested:
         raise ValueError(
             f"the span [{t0}, {t_end}] changes from {requested!r} to {cast!r} when t0 and "
-            f"t_end are cast to {jnp.dtype(dtype).name}: the clock resolution at t0 is too "
+            f"t_end are cast to {np.dtype(clock).name}: the clock resolution at t0 is too "
             f"coarse. Enable x64 or shift the time origin."
+        )
+
+    if isinstance(dt0, jax.core.Tracer):
+        return
+    dt0_f = float(dt0)
+    if not dt0_f > 0.0:
+        raise ValueError(f"need dt0 > 0, got dt0={dt0}")
+    if clock(t0_f) + clock(dt0_f) == clock(t0_f):
+        raise ValueError(
+            f"etd_integrate_adaptive: dt0={dt0} is not representable at t0={t0} in "
+            f"{np.dtype(clock).name} (t0 + dt0 == t0). Enable x64, or shift the time "
+            f"origin so that t0 is comparable in size to dt0."
         )
 
 
@@ -999,6 +1005,7 @@ def etd_integrate_adaptive(
     max_steps: int = 10000,
     save_every: int = 1,
     max_rejections_per_step: int = _DEFAULT_MAX_REJECTIONS_PER_STEP,
+    rhs_uses_time: bool = True,
 ) -> ETDAdaptiveResult:
     """Integrate u_t = L*u + N(u) with an adaptive time step (ETD1 or ETDRK4).
 
@@ -1046,6 +1053,11 @@ def etd_integrate_adaptive(
             The driver always saves the final accepted step.
         max_rejections_per_step: Consecutive rejections allowed for one
             step before the run stops with StatusCode.MAX_ATTEMPTS_REACHED.
+        rhs_uses_time: True (the safe default) if nonlinear_rhs can read
+            t. The driver then checks the stage times of each step (see
+            the CAUTION below). Set False only for an autonomous
+            nonlinear_rhs (one that does not read t); the driver then
+            does not make the check.
 
     Returns:
         ETDAdaptiveResult. The history holds accepted steps only. The last
@@ -1054,16 +1066,18 @@ def etd_integrate_adaptive(
     Raises:
         ValueError: For an unknown method, save_every < 1, max_steps < 1,
             max_rejections_per_step < 1, t_end <= t0, dt0 <= 0, a field of
-            u0 that does not have a real floating dtype, or a span that the
-            cast to the time dtype changes by more than 1e-6 (relative).
+            u0 that does not have a real floating dtype, a traced t0 or
+            t_end, a span that the cast to the time dtype changes by more
+            than 1e-6 (relative), or a dt0 below the clock resolution at t0.
 
     Notes:
         The compiled loop is cached and reused. The cache key holds the
         linear operators and nonlinear_rhs (by identity), the method,
-        pid_params, max_steps, save_every, max_rejections_per_step and the
-        structure, shapes and dtypes of u0. The values of u0, t0, t_end and
-        dt0 are arguments of the compiled loop, so a sweep over them
-        compiles once. The cache holds 32 entries;
+        pid_params, max_steps, save_every, max_rejections_per_step,
+        rhs_uses_time and the structure, shapes and dtypes of u0. The
+        values of u0, t0, t_end and dt0 are arguments of the compiled loop,
+        so a sweep over them compiles once. t_span must be concrete (the
+        driver checks it on the host before it runs the loop). The cache holds 32 entries;
         clear_compiled_drivers empties it.
 
         The clock is carried in float64 when x64 is on, also for a float32
@@ -1078,12 +1092,14 @@ def etd_integrate_adaptive(
         resolution of the time dtype at t0.
 
         CAUTION: A nonlinear_rhs that reads t needs absolute stage times
-        that the time dtype can resolve at t0. When nonlinear_rhs reads t
-        (a trace of it shows the use), the driver checks each step: the
-        stage times must increase strictly. If they do not, the run stops
-        with StatusCode.TIME_UNRESOLVED before it takes the step. The
-        driver does not make this check for a nonlinear_rhs that does not
-        read t. The stage times are also rounded to the clock resolution
+        that the time dtype can resolve at t0. With rhs_uses_time=True
+        (the default), the driver checks each step: the stage times must
+        increase strictly. If they do not, the run stops with
+        StatusCode.TIME_UNRESOLVED before it takes the step. At a large t0
+        this check can also stop an autonomous nonlinear_rhs; declare it
+        with rhs_uses_time=False to skip the check. Do not set False for a
+        nonlinear_rhs that reads t: the result can be wrong with no
+        message. The stage times are also rounded to the clock resolution
         when they increase, so for a time-dependent nonlinear_rhs keep
         that resolution small against dt (enable x64, or shift the time
         origin).
@@ -1113,10 +1129,10 @@ def etd_integrate_adaptive(
 
     t0, t_end = t_span
     _check_adaptive_span(t0, t_end, dt0)
-    _validate_time_resolution(t0, t_end, dt0, "etd_integrate_adaptive")
 
     driver = _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params,
-                                  max_steps, save_every, max_rejections_per_step)
+                                  max_steps, save_every, max_rejections_per_step,
+                                  bool(rhs_uses_time))
     time_dtype = _time_dtype()
     return driver(
         u0,
