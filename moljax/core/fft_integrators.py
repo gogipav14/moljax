@@ -681,8 +681,11 @@ class _ETDAdaptiveState(NamedTuple):
     Declared at module level for the same reason as
     moljax.core.stepping._FixedScanState: a NamedTuple that is built for
     each call is a different pytree node type each time.
+
+    tau is the elapsed time t - t0, not the absolute time (see
+    _build_etd_adaptive_driver).
     """
-    t: jnp.ndarray
+    tau: jnp.ndarray
     y: StateDict
     dt: jnp.ndarray
     controller: ControllerState
@@ -730,6 +733,12 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             return to_field_dtypes(step_impl(y, t, h, linear_ops, nonlinear_rhs))
 
         dt_min = jnp.asarray(pid_params.dt_min, dtype=time_dtype)
+        # The clock is relative: the carry holds the elapsed time tau, from
+        # 0 to the span. The absolute time t0 + tau is formed only for
+        # nonlinear_rhs and for t_history. An absolute clock loses elapsed
+        # time when t0 is large: in float32 at t0 = 1e6 the spacing is
+        # 0.0625, so t + 0.1 advanced the clock by 0.125.
+        span = t_end - t0
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
 
         t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(t0)
@@ -741,7 +750,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
         dt_history = jnp.zeros(max_saves, dtype=time_dtype)
 
         init = _ETDAdaptiveState(
-            t=t0,
+            tau=jnp.zeros((), dtype=time_dtype),
             y=to_field_dtypes(u0),
             dt=dt_init,
             controller=create_initial_controller_state(time_dtype),
@@ -756,7 +765,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
         def cond_fn(s: _ETDAdaptiveState) -> jnp.ndarray:
             running = s.status == StatusCode.RUNNING
-            return running & (s.t < t_end) & (s.n_accepted < max_steps)
+            return running & (s.tau < span) & (s.n_accepted < max_steps)
 
         def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
             # The trial step is min(dt, remaining). It is never larger than
@@ -764,15 +773,16 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             # trial. There is no stretch of the step to t_end: when the
             # clock rounding leaves a very small remaining span, the run
             # takes one more small step.
-            remaining = t_end - s.t
+            remaining = span - s.tau
             is_final = s.dt >= remaining
             dt_step = jnp.minimum(s.dt, remaining)
             h = dt_step.astype(compute_dtype)
+            t_abs = t0 + s.tau
 
             # Step doubling: one full step and two half steps.
-            y_full = step(s.y, s.t, h)
-            y_half1 = step(s.y, s.t, h / 2)
-            y_half2 = step(y_half1, s.t + dt_step / 2, h / 2)
+            y_full = step(s.y, t_abs, h)
+            y_half1 = step(s.y, t_abs, h / 2)
+            y_half2 = step(y_half1, t0 + (s.tau + dt_step / 2), h / 2)
             err = {name: (y_half2[name] - y_full[name]) * richardson for name in names}
 
             finite = is_finite(y_full) & is_finite(y_half2)
@@ -792,7 +802,8 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
             def accept_step():
                 n_accepted = s.n_accepted + 1
-                t_new = jnp.where(is_final, t_end, s.t + dt_step)
+                tau_new = jnp.where(is_final, span, s.tau + dt_step)
+                t_new = jnp.where(is_final, t_end, t0 + tau_new)
                 save = ((n_accepted % save_every) == 0) | is_final
                 idx = s.write_idx
 
@@ -805,7 +816,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 dt_hist = write(s.dt_history, dt_step)
                 y_hist = {name: write(s.y_history[name], y_half2[name]) for name in names}
                 return _ETDAdaptiveState(
-                    t=t_new, y=y_half2, dt=dt_new, controller=controller,
+                    tau=tau_new, y=y_half2, dt=dt_new, controller=controller,
                     t_history=t_hist, y_history=y_hist, dt_history=dt_hist,
                     write_idx=idx + save.astype(jnp.int32),
                     n_accepted=n_accepted, n_rejected=s.n_rejected, status=s.status,
@@ -835,8 +846,9 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
         final = lax.while_loop(cond_fn, body_fn, init)
 
+        reached = final.tau >= span
         status = jnp.where(
-            final.t >= t_end,
+            reached,
             jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
             jnp.where(
                 final.status == StatusCode.RUNNING,
@@ -845,7 +857,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             ),
         )
         return ETDAdaptiveResult(
-            t_final=final.t,
+            t_final=jnp.where(reached, t_end, t0 + final.tau),
             y_final=final.y,
             t_history=final.t_history,
             y_history=final.y_history,
@@ -891,13 +903,25 @@ def _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params, max_
 
 
 def _check_adaptive_span(t0, t_end, dt0) -> None:
-    """Raise if t_end <= t0 or dt0 <= 0. Skip the check for traced values."""
+    """
+    Raise if t_end <= t0 or dt0 <= 0, also after the cast of t0 and t_end
+    to the time dtype. A span below the clock resolution at t0 gives
+    t_end == t0 in that dtype. Skip the check for traced values.
+    """
     try:
         bad = bool(t_end <= t0) or bool(dt0 <= 0.0)
+        dtype = _time_dtype()
+        lost = not bad and bool(jnp.asarray(t_end, dtype=dtype) <= jnp.asarray(t0, dtype=dtype))
     except (jax.errors.ConcretizationTypeError, TypeError):
         return
     if bad:
         raise ValueError(f"need dt0 > 0 and t_end > t0, got dt0={dt0}, t0={t0}, t_end={t_end}")
+    if lost:
+        raise ValueError(
+            f"the span [{t0}, {t_end}] is below the clock resolution at t0 in "
+            f"{jnp.dtype(dtype).name} (t_end == t0 after the cast). Enable x64 or shift "
+            f"the time origin."
+        )
 
 
 def etd_integrate_adaptive(
@@ -980,6 +1004,13 @@ def etd_integrate_adaptive(
         The clock is carried in float64 when x64 is on, also for a float32
         state (see moljax.core.stepping._time_dtype). The step arithmetic
         uses the dtype of the state.
+
+        The clock is relative. The driver carries the elapsed time from t0,
+        not the absolute time, so a large t0 does not change the step
+        sizes or the sum of the accepted steps (it equals t_end - t0 to
+        round-off). Only the time given to nonlinear_rhs and the times in
+        t_history are absolute, t0 + elapsed time. They have the
+        resolution of the time dtype at t0.
     """
     if method not in _ETD_ADAPTIVE_ORDER:
         raise ValueError(

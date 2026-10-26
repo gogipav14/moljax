@@ -512,3 +512,74 @@ class TestControllerOrder:
               f"order p: accepted {acc_p}, rejected {rej_p}")
         assert rej_p1 / (acc_p1 + rej_p1) < 0.05
         assert rej_p / (acc_p + rej_p) > 0.3
+
+
+class TestRelativeClock:
+    """The clock keeps the elapsed time also at a large t0.
+
+    An absolute clock lost elapsed time: in float32 at t0 = 1e6 the
+    spacing is 0.0625, so t + 0.1 advanced the clock by 0.125, and the run
+    reported SUCCESS after too few steps with a wrong value.
+    """
+
+    @staticmethod
+    def run(x64, t0, span, dt0, save_every=1):
+        jax.config.update("jax_enable_x64", x64)
+        try:
+            dtype = jnp.float64 if x64 else jnp.float32
+            u0, ops, rhs = linear_l0_problem(1.0, dtype=dtype)
+            t_end = t0 + span
+            res = etd_integrate_adaptive(u0, (t0, t_end), dt0, ops, rhs, method="etdrk4",
+                                         pid_params=PIDParams(atol=1e-6, rtol=0.0, dt_max=dt0),
+                                         save_every=save_every)
+            res = jax.tree.map(np.asarray, res)
+            t_end_clock = float(jnp.asarray(t_end, dtype=dtype))
+        finally:
+            jax.config.update("jax_enable_x64", True)
+        return res, t_end_clock
+
+    @pytest.mark.parametrize("x64, t0, span, dt0, n_steps, rtol", [
+        (False, 1e6, 0.25, 0.1, 3, 2e-6),
+        (True, 1e15, 1.0, 0.2, 5, 1e-6),
+    ])
+    def test_reproductions(self, x64, t0, span, dt0, n_steps, rtol):
+        res, t_end_clock = self.run(x64, t0, span, dt0)
+        assert bool(res.success), int(res.status)
+        assert int(res.n_accepted) == n_steps
+        assert float(res.t_final) == t_end_clock
+        np.testing.assert_allclose(res.y_final["u"], np.exp(span), rtol=rtol)
+        n = int(res.n_saved)
+        np.testing.assert_allclose(np.sum(res.dt_history[1:n], dtype=np.float64), span,
+                                   rtol=4 * np.finfo(res.dt_history.dtype).eps)
+
+    def test_matches_fixed_step_driver_at_large_t0(self):
+        """x64 at t0 = 1e15 with dt0 = 0.2: the reference is the fixed-step
+        driver with dt = 0.1 on [0, 1] (the problem is autonomous)."""
+        res, _ = self.run(True, 1e15, 1.0, 0.2)
+        u0, ops, rhs = linear_l0_problem(1.0)
+        _, hist = etd_integrate(u0, (0.0, 1.0), 0.1, ops, rhs, method="etdrk4")
+        np.testing.assert_allclose(res.y_final["u"], np.asarray(hist[-1]["u"]), rtol=1e-12)
+
+    @pytest.mark.parametrize("x64, t0, span, dt0", [
+        (False, 1e6, 0.25, 0.1),
+        (True, 1e15, 1.0, 0.2),
+        (True, 1e15, 1.0, 0.1),
+    ])
+    def test_history_holds_the_final_state(self, x64, t0, span, dt0):
+        res, t_end_clock = self.run(x64, t0, span, dt0, save_every=3)
+        assert bool(res.success), int(res.status)
+        n = int(res.n_saved)
+        assert float(res.t_history[n - 1]) == t_end_clock
+        np.testing.assert_array_equal(res.y_history["u"][n - 1], res.y_final["u"])
+        # Round-off of tau can leave one more very small step, never fewer.
+        assert int(np.ceil(span / dt0 - 1e-9)) <= int(res.n_accepted) <= int(np.ceil(span / dt0)) + 1
+        np.testing.assert_allclose(res.y_final["u"], np.exp(span), rtol=2e-6)
+
+    def test_span_below_clock_resolution_raises(self):
+        jax.config.update("jax_enable_x64", False)
+        try:
+            u0, ops, rhs = linear_l0_problem(1.0, dtype=jnp.float32)
+            with pytest.raises(ValueError, match="clock resolution"):
+                etd_integrate_adaptive(u0, (1e6, 1e6 + 0.01), 0.1, ops, rhs)
+        finally:
+            jax.config.update("jax_enable_x64", True)
