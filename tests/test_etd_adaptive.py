@@ -797,3 +797,29 @@ class TestStepResolvedInStateDtype:
         )
         assert not bool(result.success)
         assert int(result.status) == int(StatusCode.DT_TOO_SMALL)
+
+
+class TestSubnormalSpan:
+    """A span below the smallest normal number of the clock dtype is rejected."""
+
+    def _call(self, span, rhs_value, dtype):
+        u0 = {"u": jnp.zeros(4, dtype=dtype)}
+        ops = {"u": ConstantOp(0.0, 4, dtype)}
+        return etd_integrate_adaptive(
+            u0, (0.0, span), 1e-12, ops, lambda y, t: {"u": jnp.full_like(y["u"], rhs_value)},
+            method="etd1", rhs_uses_time=False,
+        )
+
+    def test_subnormal_span_without_x64(self):
+        """float32 clock: the span 2**-130 is subnormal and raises ValueError."""
+        jax.config.update("jax_enable_x64", False)
+        try:
+            with pytest.raises(ValueError, match="smallest normal"):
+                self._call(2.0**-130, 1e38, jnp.float32)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_subnormal_span_with_x64(self):
+        """float64 clock: the span 2**-1030 is subnormal and raises ValueError."""
+        with pytest.raises(ValueError, match="smallest normal"):
+            self._call(2.0**-1030, 1e307, jnp.float64)

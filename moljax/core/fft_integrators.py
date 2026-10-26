@@ -994,6 +994,13 @@ def _check_adaptive_span(t0, t_end, dt0) -> None:
             f"t_end are cast to {np.dtype(clock).name}: the clock resolution at t0 is too "
             f"coarse. Enable x64 or shift the time origin."
         )
+    # A subnormal span can be flushed to zero by the CPU, so the loop would
+    # not run and the driver would report success without a step.
+    if cast < float(np.finfo(clock).tiny):
+        raise ValueError(
+            f"the span {cast!r} is below the smallest normal {np.dtype(clock).name} "
+            f"number; the clock cannot resolve it."
+        )
 
     if isinstance(dt0, jax.core.Tracer):
         return
