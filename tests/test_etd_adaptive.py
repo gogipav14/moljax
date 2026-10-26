@@ -814,12 +814,62 @@ class TestSubnormalSpan:
         """float32 clock: the span 2**-130 is subnormal and raises ValueError."""
         jax.config.update("jax_enable_x64", False)
         try:
-            with pytest.raises(ValueError, match="smallest normal"):
+            with pytest.raises(ValueError, match="subnormal|smallest normal"):
                 self._call(2.0**-130, 1e38, jnp.float32)
         finally:
             jax.config.update("jax_enable_x64", True)
 
     def test_subnormal_span_with_x64(self):
         """float64 clock: the span 2**-1030 is subnormal and raises ValueError."""
-        with pytest.raises(ValueError, match="smallest normal"):
+        with pytest.raises(ValueError, match="subnormal|smallest normal"):
             self._call(2.0**-1030, 1e307, jnp.float64)
+
+
+class TestLongRunCompletion:
+    """Many steps at an ordinary time offset must end at t_end with SUCCESS."""
+
+    @pytest.mark.parametrize("method", ["etd1", "etdrk4"])
+    def test_thousand_steps_from_t0_1000(self, method):
+        """x64, u' = 1 + 0.001 (t - 1000) on (1000, 1010), dt0 = dt_max = 0.01.
+
+        The exact result is 10 + 0.001 * 10**2 / 2 = 10.05. Before the
+        compensated clock, 1000 additions of 0.01 left a residue beyond the
+        completion margin, and the run stopped with TIME_UNRESOLVED.
+        """
+        u0 = {"u": jnp.zeros(1)}
+        ops = {"u": ConstantOp(0.0, 1)}
+        result = etd_integrate_adaptive(
+            u0, (1000.0, 1010.0), 0.01, ops,
+            lambda y, t: {"u": jnp.ones_like(y["u"]) * (1.0 + 0.001 * (t - 1000.0))},
+            method=method, pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(result.status) == int(StatusCode.SUCCESS)
+        assert float(result.t_final) == 1010.0
+        # ETD1 with L = 0 is explicit Euler (first order); ETDRK4 integrates a
+        # forcing that is linear in t exactly.
+        rtol = 1e-4 if method == "etd1" else 1e-9
+        np.testing.assert_allclose(np.asarray(result.y_final["u"]), [10.05], rtol=rtol)
+
+
+class TestSubnormalEndpoints:
+    """A subnormal endpoint can be flushed to zero, so it is rejected."""
+
+    def _call(self, half, rhs_value, dtype):
+        u0 = {"u": jnp.zeros(4, dtype=dtype)}
+        ops = {"u": ConstantOp(0.0, 4, dtype)}
+        return etd_integrate_adaptive(
+            u0, (-half, half), 1e-12, ops, lambda y, t: {"u": jnp.full_like(y["u"], rhs_value)},
+            method="etd1", rhs_uses_time=False,
+        )
+
+    def test_subnormal_endpoints_without_x64(self):
+        jax.config.update("jax_enable_x64", False)
+        try:
+            with pytest.raises(ValueError, match="subnormal"):
+                self._call(2.0**-127, 1e38, jnp.float32)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_subnormal_endpoints_with_x64(self):
+        with pytest.raises(ValueError, match="subnormal"):
+            self._call(2.0**-1023, 1e307, jnp.float64)

@@ -686,6 +686,7 @@ class _ETDAdaptiveState(NamedTuple):
     _build_etd_adaptive_driver).
     """
     tau: jnp.ndarray
+    tau_comp: jnp.ndarray
     y: StateDict
     dt: jnp.ndarray
     controller: ControllerState
@@ -755,6 +756,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
         init = _ETDAdaptiveState(
             tau=jnp.zeros((), dtype=time_dtype),
+            tau_comp=jnp.zeros((), dtype=time_dtype),
             y=to_field_dtypes(u0),
             dt=dt_init,
             controller=create_initial_controller_state(time_dtype),
@@ -823,7 +825,11 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 # Completion is decided on the updated clock: tau + dt_step
                 # can round to the span (or to a few ulp below it) also when
                 # dt_step < remaining. Such a step is the final step.
-                tau_sum = s.tau + dt_step
+                # Compensated (Kahan) summation keeps the rounding error of
+                # tau near one ulp, also after many steps.
+                increment = dt_step - s.tau_comp
+                tau_sum = s.tau + increment
+                comp_new = (tau_sum - s.tau) - increment
                 done = is_final | (tau_sum >= span - 4 * jnp.spacing(span))
                 tau_new = jnp.where(done, span, tau_sum)
                 t_new = jnp.where(done, t_end, t0 + tau_new)
@@ -839,7 +845,8 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 dt_hist = write(s.dt_history, dt_step)
                 y_hist = {name: write(s.y_history[name], y_half2[name]) for name in names}
                 return _ETDAdaptiveState(
-                    tau=tau_new, y=y_half2, dt=dt_new, controller=controller,
+                    tau=tau_new, tau_comp=jnp.where(done, 0.0, comp_new).astype(s.tau.dtype),
+                    y=y_half2, dt=dt_new, controller=controller,
                     t_history=t_hist, y_history=y_hist, dt_history=dt_hist,
                     write_idx=idx + save.astype(jnp.int32),
                     n_accepted=n_accepted, n_rejected=s.n_rejected, status=s.status,
@@ -996,7 +1003,14 @@ def _check_adaptive_span(t0, t_end, dt0) -> None:
         )
     # A subnormal span can be flushed to zero by the CPU, so the loop would
     # not run and the driver would report success without a step.
-    if cast < float(np.finfo(clock).tiny):
+    tiny = float(np.finfo(clock).tiny)
+    for name, value in (("t0", t0_f), ("t_end", t_end_f)):
+        if value != 0.0 and abs(value) < tiny:
+            raise ValueError(
+                f"{name}={value!r} is subnormal in {np.dtype(clock).name}; the CPU can "
+                f"flush it to zero. Shift the time origin."
+            )
+    if cast < tiny:
         raise ValueError(
             f"the span {cast!r} is below the smallest normal {np.dtype(clock).name} "
             f"number; the clock cannot resolve it."
