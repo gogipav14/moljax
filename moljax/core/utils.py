@@ -273,3 +273,7 @@ class StatusCode:
     # Distinct from MAX_STEPS_REACHED, which counts accepted steps, and
     # from DT_TOO_SMALL, which means dt actually reached dt_min.
     MAX_ATTEMPTS_REACHED = 6
+    # The absolute stage times of a step do not increase strictly in the
+    # time dtype, and the right-hand side reads t. Used by
+    # moljax.core.fft_integrators.etd_integrate_adaptive.
+    TIME_UNRESOLVED = 7

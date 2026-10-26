@@ -583,3 +583,106 @@ class TestRelativeClock:
                 etd_integrate_adaptive(u0, (1e6, 1e6 + 0.01), 0.1, ops, rhs)
         finally:
             jax.config.update("jax_enable_x64", True)
+
+
+class TestCompletionOnTheUpdatedClock:
+    """tau + dt_step can round to the span when dt_step < remaining.
+
+    Case: 0.01 + 0.01 + 0.01 = 0.03 and 0.04 - 0.03 > 0.01, but
+    0.03 + 0.01 == 0.04. The run ended after four steps without a save
+    at t_end.
+    """
+
+    def test_reported_case(self):
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+        res = etd_integrate_adaptive(u0, (0.0, 0.04), 0.01, ops, rhs, method="etdrk4",
+                                     pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=0.01),
+                                     save_every=3)
+        assert bool(res.success)
+        assert int(res.n_accepted) == 4
+        n = int(res.n_saved)
+        assert n == 3
+        assert float(res.t_history[n - 1]) == 0.04
+        np.testing.assert_array_equal(np.asarray(res.y_history["u"][n - 1]),
+                                      np.asarray(res.y_final["u"]))
+
+    @pytest.mark.parametrize("dt0", [0.01, 0.03, 0.07, 0.1])
+    def test_sweep_last_entry_is_at_t_end(self, dt0):
+        # save_every is larger than any step count, so the history holds
+        # only the initial state and the final save. The spans 0.04
+        # (dt0 = 0.01), 0.27 (0.03), 4.76 (0.07) and 1.3 (0.1) are spans
+        # where the sum of the steps rounds to the span before the final
+        # step.
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+        for t_end in (0.04, 0.1, 0.27, 0.7, 1.0, 1.3, 4.76):
+            if t_end <= dt0:
+                continue
+            res = etd_integrate_adaptive(u0, (0.0, t_end), dt0, ops, rhs, method="etdrk4",
+                                         pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=dt0),
+                                         save_every=1000)
+            assert bool(res.success), (dt0, t_end)
+            n = int(res.n_saved)
+            assert n == 2, (dt0, t_end, n)
+            assert float(res.t_history[1]) == t_end, (dt0, t_end)
+            np.testing.assert_array_equal(np.asarray(res.y_history["u"][1]),
+                                          np.asarray(res.y_final["u"]))
+            # After many steps the round-off of tau can exceed a few ulp and
+            # leave one more very small step.
+            assert int(res.n_accepted) <= int(np.ceil(t_end / dt0 - 1e-9)) + 1
+            np.testing.assert_allclose(np.asarray(res.y_final["u"]), np.exp(t_end), rtol=1e-5)
+
+
+class TestSpanCast:
+    def test_changed_span_raises_without_x64(self):
+        """In float32, (1000000.02, 1000000.04) is cast to (1000000.0,
+        1000000.0625): the span changes from 0.02 to 0.0625."""
+        jax.config.update("jax_enable_x64", False)
+        try:
+            n = 1
+            u0 = {"u": jnp.zeros(n, dtype=jnp.float32)}
+
+            def rhs(state, t):
+                return {"u": jnp.ones_like(state["u"])}
+
+            with pytest.raises(ValueError, match="clock resolution"):
+                etd_integrate_adaptive(u0, (1000000.02, 1000000.04), 0.1,
+                                       {"u": ConstantOp(0.0, n, jnp.float32)}, rhs,
+                                       method="etd1")
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+
+class TestStageTimes:
+    """A time-dependent right-hand side needs resolvable stage times."""
+
+    T0 = 1e15
+
+    def rhs_time(self, state, t):
+        return {"u": jnp.full_like(state["u"], t - self.T0)}
+
+    def test_unresolved_stage_times_stop_the_run(self):
+        # The clock spacing at 1e15 is 0.125, so t0 + 0.0625 rounds to t0
+        # and the two half steps of ETD1 see the same time.
+        n = 1
+        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 0.125), 0.125,
+                                     {"u": ConstantOp(0.0, n)}, self.rhs_time, method="etd1",
+                                     pid_params=PIDParams(atol=1e-12, rtol=0.0, dt_max=0.125))
+        assert int(res.status) == StatusCode.TIME_UNRESOLVED
+        assert not bool(res.success)
+        assert int(res.n_accepted) == 0
+        np.testing.assert_array_equal(np.asarray(res.y_final["u"]), np.zeros(n))
+
+    def test_resolved_stage_times_give_the_exact_value(self):
+        # u' = t - t0 from u = 0: u(t0 + 1) = 1/2. At t0 = 1e6 with x64 the
+        # spacing is about 1e-10, so the stage times are resolved.
+        t0 = 1e6
+        n = 1
+
+        def rhs(state, t):
+            return {"u": jnp.full_like(state["u"], t - t0)}
+
+        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (t0, t0 + 1.0), 0.1,
+                                     {"u": ConstantOp(0.0, n)}, rhs, method="etdrk4",
+                                     pid_params=PIDParams(atol=1e-10, rtol=0.0))
+        assert bool(res.success), int(res.status)
+        np.testing.assert_allclose(np.asarray(res.y_final["u"]), 0.5, rtol=1e-8)

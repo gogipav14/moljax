@@ -698,6 +698,26 @@ class _ETDAdaptiveState(NamedTuple):
     status: jnp.ndarray
 
 
+def _rhs_uses_time(nonlinear_rhs, u0, t) -> bool:
+    """
+    Whether nonlinear_rhs reads its time argument.
+
+    The function is traced once with abstract values. The result is True
+    when an operation of the trace, or the output, reads the time input.
+    The test is conservative: an operation on t whose result is not used
+    also counts as a use.
+    """
+    state_spec = {name: jax.ShapeDtypeStruct(jnp.shape(f), jnp.result_type(f))
+                  for name, f in u0.items()}
+    time_spec = jax.ShapeDtypeStruct((), jnp.result_type(t))
+    closed = jax.make_jaxpr(nonlinear_rhs)(state_spec, time_spec)
+    t_var = closed.jaxpr.invars[-1]
+    for eqn in closed.jaxpr.eqns:
+        if any(v is t_var for v in eqn.invars):
+            return True
+    return any(v is t_var for v in closed.jaxpr.outvars)
+
+
 def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, max_steps,
                                save_every, max_rejections_per_step):
     """
@@ -739,6 +759,10 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
         # time when t0 is large: in float32 at t0 = 1e6 the spacing is
         # 0.0625, so t + 0.1 advanced the clock by 0.125.
         span = t_end - t0
+        # A time-dependent nonlinear_rhs needs distinct absolute stage
+        # times (see the docstring of etd_integrate_adaptive). This is a
+        # Python bool, known when the loop is traced.
+        check_stage_times = _rhs_uses_time(nonlinear_rhs, u0, t0)
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
 
         t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(t0)
@@ -802,9 +826,14 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
             def accept_step():
                 n_accepted = s.n_accepted + 1
-                tau_new = jnp.where(is_final, span, s.tau + dt_step)
-                t_new = jnp.where(is_final, t_end, t0 + tau_new)
-                save = ((n_accepted % save_every) == 0) | is_final
+                # Completion is decided on the updated clock: tau + dt_step
+                # can round to the span (or to a few ulp below it) also when
+                # dt_step < remaining. Such a step is the final step.
+                tau_sum = s.tau + dt_step
+                done = is_final | (tau_sum >= span - 4 * jnp.spacing(span))
+                tau_new = jnp.where(done, span, tau_sum)
+                t_new = jnp.where(done, t_end, t0 + tau_new)
+                save = ((n_accepted % save_every) == 0) | done
                 idx = s.write_idx
 
                 def write(buffer, value):
@@ -842,7 +871,32 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 return s._replace(dt=dt_reject, controller=controller,
                                   n_rejected=s.n_rejected + 1, status=status)
 
-            return lax.cond(accept, accept_step, reject_step)
+            if not check_stage_times:
+                return lax.cond(accept, accept_step, reject_step)
+
+            # The absolute stage times, as the step functions form them, must
+            # increase strictly. If two of them round to the same value, the
+            # right-hand side sees a wrong time and the step is not valid.
+            t_b = t0 + (s.tau + dt_step / 2)
+            stage_times = [t_abs]
+            if method == 'etdrk4':
+                stage_times.append(t_abs + (h / 2) / 2)
+            stage_times.append(t_b)
+            if method == 'etdrk4':
+                stage_times.append(t_b + (h / 2) / 2)
+            stage_times.append(t0 + (s.tau + dt_step))
+            resolved = jnp.array(True)
+            for earlier, later in zip(stage_times[:-1], stage_times[1:], strict=True):
+                resolved = resolved & (earlier < later)
+
+            def unresolved_step():
+                return s._replace(status=jnp.array(StatusCode.TIME_UNRESOLVED, dtype=jnp.int32))
+
+            return lax.cond(
+                resolved,
+                lambda: lax.cond(accept, accept_step, reject_step),
+                unresolved_step,
+            )
 
         final = lax.while_loop(cond_fn, body_fn, init)
 
@@ -902,25 +956,35 @@ def _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params, max_
     ))
 
 
+# The largest relative change of the span t_end - t0 that the cast of t0
+# and t_end to the time dtype can cause before etd_integrate_adaptive
+# raises. The cast of each endpoint rounds it to the clock resolution at
+# that time. When the resolution is not small against the span, the run
+# integrates over a different duration (in float32, (1000000.02,
+# 1000000.04) becomes (1000000.0, 1000000.0625)).
+_SPAN_RELATIVE_TOLERANCE = 1e-6
+
+
 def _check_adaptive_span(t0, t_end, dt0) -> None:
     """
-    Raise if t_end <= t0 or dt0 <= 0, also after the cast of t0 and t_end
-    to the time dtype. A span below the clock resolution at t0 gives
-    t_end == t0 in that dtype. Skip the check for traced values.
+    Raise if t_end <= t0 or dt0 <= 0, or if the cast of t0 and t_end to
+    the time dtype changes the span by more than _SPAN_RELATIVE_TOLERANCE
+    (relative). Skip the check for traced values.
     """
     try:
         bad = bool(t_end <= t0) or bool(dt0 <= 0.0)
         dtype = _time_dtype()
-        lost = not bad and bool(jnp.asarray(t_end, dtype=dtype) <= jnp.asarray(t0, dtype=dtype))
+        requested = float(t_end) - float(t0)
+        cast = float(jnp.asarray(t_end, dtype=dtype) - jnp.asarray(t0, dtype=dtype))
     except (jax.errors.ConcretizationTypeError, TypeError):
         return
     if bad:
         raise ValueError(f"need dt0 > 0 and t_end > t0, got dt0={dt0}, t0={t0}, t_end={t_end}")
-    if lost:
+    if abs(cast - requested) > _SPAN_RELATIVE_TOLERANCE * requested:
         raise ValueError(
-            f"the span [{t0}, {t_end}] is below the clock resolution at t0 in "
-            f"{jnp.dtype(dtype).name} (t_end == t0 after the cast). Enable x64 or shift "
-            f"the time origin."
+            f"the span [{t0}, {t_end}] changes from {requested!r} to {cast!r} when t0 and "
+            f"t_end are cast to {jnp.dtype(dtype).name}: the clock resolution at t0 is too "
+            f"coarse. Enable x64 or shift the time origin."
         )
 
 
@@ -989,8 +1053,9 @@ def etd_integrate_adaptive(
 
     Raises:
         ValueError: For an unknown method, save_every < 1, max_steps < 1,
-            max_rejections_per_step < 1, t_end <= t0, dt0 <= 0, or a field
-            of u0 that does not have a real floating dtype.
+            max_rejections_per_step < 1, t_end <= t0, dt0 <= 0, a field of
+            u0 that does not have a real floating dtype, or a span that the
+            cast to the time dtype changes by more than 1e-6 (relative).
 
     Notes:
         The compiled loop is cached and reused. The cache key holds the
@@ -1011,6 +1076,17 @@ def etd_integrate_adaptive(
         round-off). Only the time given to nonlinear_rhs and the times in
         t_history are absolute, t0 + elapsed time. They have the
         resolution of the time dtype at t0.
+
+        CAUTION: A nonlinear_rhs that reads t needs absolute stage times
+        that the time dtype can resolve at t0. When nonlinear_rhs reads t
+        (a trace of it shows the use), the driver checks each step: the
+        stage times must increase strictly. If they do not, the run stops
+        with StatusCode.TIME_UNRESOLVED before it takes the step. The
+        driver does not make this check for a nonlinear_rhs that does not
+        read t. The stage times are also rounded to the clock resolution
+        when they increase, so for a time-dependent nonlinear_rhs keep
+        that resolution small against dt (enable x64, or shift the time
+        origin).
     """
     if method not in _ETD_ADAPTIVE_ORDER:
         raise ValueError(
