@@ -626,6 +626,15 @@ def etd_integrate(
 # formula and its own history for the full step and the half steps.
 _ETD_ADAPTIVE_ORDER = {'etd1': 1, 'etdrk4': 4}
 
+# The controller gets the order p + _ETD_CONTROLLER_ORDER_OFFSET. The
+# step-doubling estimate is O(dt^(p+1)), so the offset is 1. With the
+# offset 0 (the order p), the controller exponents are too large for ETD1:
+# on the stiff test problem of
+# tests/test_etd_adaptive.py::TestControllerOrder, about half of all
+# attempts are rejections. The value is read when a loop is compiled; that
+# test changes it to show the difference.
+_ETD_CONTROLLER_ORDER_OFFSET = 1
+
 # The compiled adaptive ETD loops, kept apart from _ETD_DRIVERS so that a
 # sweep of one family cannot remove the drivers of the other family.
 _ETD_ADAPTIVE_DRIVERS = CompiledDriverCache("fft_integrators.etd_integrate_adaptive")
@@ -702,10 +711,8 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
     # (y_half2 - y_full) / (2^p - 1) to leading order.
     richardson = 1.0 / (2.0 ** order - 1.0)
     # The step-doubling estimate is O(dt^(p+1)), so the controller gets
-    # the order p + 1. With the order p, the controller exponents are too
-    # large for ETD1: on a stiff test problem, about half of all attempts
-    # were rejections, against fewer than 1 percent with p + 1.
-    controller_order = order + 1
+    # the order p + 1 (see _ETD_CONTROLLER_ORDER_OFFSET).
+    controller_order = order + _ETD_CONTROLLER_ORDER_OFFSET
     max_saves = max_steps // save_every + 2
 
     def run(u0, t0, t_end, dt0):
@@ -722,12 +729,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
         def step(y, t, h):
             return to_field_dtypes(step_impl(y, t, h, linear_ops, nonlinear_rhs))
 
-        # The final step ends at t_end when the remaining span exceeds dt
-        # only by the rounding of the clock. The clock is a sum of step
-        # sizes, so this rounding grows with the number of steps.
-        eps_time = jnp.finfo(time_dtype).eps
-        time_scale = jnp.maximum(jnp.abs(t0), jnp.abs(t_end))
-
+        dt_min = jnp.asarray(pid_params.dt_min, dtype=time_dtype)
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
 
         t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(t0)
@@ -757,10 +759,14 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             return running & (s.t < t_end) & (s.n_accepted < max_steps)
 
         def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
+            # The trial step is min(dt, remaining). It is never larger than
+            # dt, so it obeys dt_max, and a rejection always gives a smaller
+            # trial. There is no stretch of the step to t_end: when the
+            # clock rounding leaves a very small remaining span, the run
+            # takes one more small step.
             remaining = t_end - s.t
-            slack = (s.n_accepted + 2).astype(time_dtype) * eps_time * time_scale
-            is_final = s.dt >= remaining - slack
-            dt_step = jnp.where(is_final, remaining, s.dt)
+            is_final = s.dt >= remaining
+            dt_step = jnp.minimum(s.dt, remaining)
             h = dt_step.astype(compute_dtype)
 
             # Step doubling: one full step and two half steps.
@@ -772,9 +778,11 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             finite = is_finite(y_full) & is_finite(y_half2)
             err_ratio = scaled_error_norm_interior(err, y_half2, pid_params.atol, pid_params.rtol)
             err_ratio = err_ratio.astype(time_dtype)
-            # A NaN error ratio makes the controller give a NaN dt. A step
-            # with non-finite values gets a large finite ratio instead, so
-            # the controller cuts dt by min_factor.
+            # A non-finite error ratio makes the controller give a NaN dt.
+            # A step with non-finite values, or with a non-finite ratio
+            # (a nonzero error where atol + rtol*|y| is zero), gets a large
+            # finite ratio instead, so the controller cuts dt by min_factor.
+            finite = finite & jnp.isfinite(err_ratio)
             err_ratio = jnp.where(finite, jnp.maximum(err_ratio, 1e-10), 1e10)
             accept = finite & (err_ratio <= 1.0)
 
@@ -808,8 +816,11 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 # moljax.core.stepping: each rejection cuts dt by a factor
                 # of 2 or more.
                 dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min).astype(time_dtype)
+                # Stop only when the rejected trial itself was at dt_min (or
+                # smaller, for a short final step). A proposal that reaches
+                # dt_min gets one trial at dt_min first.
                 status = jnp.where(
-                    dt_reject <= pid_params.dt_min * 1.1,
+                    dt_step <= dt_min,
                     jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
                     jnp.where(
                         controller.consecutive_rejects >= max_rejections_per_step,
@@ -926,7 +937,8 @@ def etd_integrate_adaptive(
     receives the order p + 1 of the local error estimate, not p (the
     drivers of moljax.core.stepping give it p). The driver
     rejects a step that has non-finite values and cuts dt for the next
-    attempt.
+    attempt. The run stops with StatusCode.DT_TOO_SMALL only when a trial
+    at dt_min is also rejected.
 
     The cost of each attempt is three steps (for ETDRK4, 12 evaluations
     of nonlinear_rhs against 4).
@@ -953,7 +965,8 @@ def etd_integrate_adaptive(
 
     Raises:
         ValueError: For an unknown method, save_every < 1, max_steps < 1,
-            max_rejections_per_step < 1, t_end <= t0 or dt0 <= 0.
+            max_rejections_per_step < 1, t_end <= t0, dt0 <= 0, or a field
+            of u0 that does not have a real floating dtype.
 
     Notes:
         The compiled loop is cached and reused. The cache key holds the
@@ -982,6 +995,14 @@ def etd_integrate_adaptive(
         )
     if pid_params is None:
         pid_params = PIDParams()
+
+    for name, field in u0.items():
+        if not jnp.issubdtype(jnp.result_type(field), jnp.floating):
+            raise ValueError(
+                f"etd_integrate_adaptive: field {name!r} has dtype "
+                f"{jnp.result_type(field)}; use a real floating dtype. An integer "
+                f"or Boolean state cannot hold the update and truncates it."
+            )
 
     t0, t_end = t_span
     _check_adaptive_span(t0, t_end, dt0)

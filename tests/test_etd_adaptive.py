@@ -105,7 +105,9 @@ class TestFixedDtMatchesFixedStepDriver:
             u = state["u"]
             return {"u": u - u ** 3}
 
-        dt0, t_end = 0.05, 0.5
+        # Binary-exact times: the clock adds dt0 ten times with no rounding,
+        # so no small extra step appears at the end.
+        dt0, t_end = 0.0625, 0.625
         pid = PIDParams(atol=1e8, rtol=1e8, dt_max=dt0)
         res = etd_integrate_adaptive(u0, (0.0, t_end), dt0, ops, rhs, method=method,
                                      pid_params=pid, save_every=3, max_steps=50)
@@ -119,7 +121,7 @@ class TestFixedDtMatchesFixedStepDriver:
         n_saved = int(res.n_saved)
         assert n_saved == 5
         np.testing.assert_allclose(np.asarray(res.t_history[:n_saved]),
-                                   [0.0, 0.15, 0.3, 0.45, 0.5], rtol=0, atol=1e-14)
+                                   [0.0, 0.1875, 0.375, 0.5625, 0.625], rtol=0, atol=0)
         np.testing.assert_allclose(np.asarray(res.dt_history[1:n_saved]), dt0, rtol=1e-12)
 
         # Fixed step dt0 / 2: the states after 6, 12, 18 and 20 half steps.
@@ -326,3 +328,187 @@ class TestArguments:
         u0, ops, rhs, _ = bernoulli_problem()
         with pytest.raises(ValueError):
             etd_integrate_adaptive(u0, t_span, dt0, ops, rhs)
+
+
+def linear_l0_problem(lam, n=4, dtype=jnp.float64):
+    """u' = lam * u with L = 0, so that ETD1 is explicit Euler and ETDRK4
+    is classical RK4. The step-doubling difference is then a polynomial
+    in z = lam * h that the tests compute by hand.
+    """
+    def rhs(state, t):
+        return {"u": lam * state["u"]}
+
+    return {"u": jnp.ones(n, dtype=dtype)}, {"u": ConstantOp(0.0, n, dtype)}, rhs
+
+
+def rk4_factor(z):
+    return 1.0 + z + z ** 2 / 2 + z ** 3 / 6 + z ** 4 / 24
+
+
+class TestFinalStep:
+    """The trial step is min(dt, remaining) and it never exceeds dt_max."""
+
+    def test_shifted_times_without_x64(self):
+        """At t0 = 1e6 in float32 the old final-step slack forced a step of
+        0.25 > dt_max. With atol = 1e-4, that step failed ten times and the
+        run stopped.
+        """
+        jax.config.update("jax_enable_x64", False)
+        try:
+            u0, ops, rhs = linear_l0_problem(1.0, dtype=jnp.float32)
+            t0, t_end, dt0 = 1e6, 1e6 + 0.25, 0.0625
+            for atol in (1.0, 1e-4):
+                res = etd_integrate_adaptive(
+                    u0, (t0, t_end), dt0, ops, rhs, method="etdrk4",
+                    pid_params=PIDParams(atol=atol, rtol=0.0, dt_max=dt0))
+                assert bool(res.success), int(res.status)
+                assert int(res.n_accepted) == 4
+                assert int(res.n_rejected) == 0
+                assert float(res.t_final) == float(jnp.float32(t_end))
+                n = int(res.n_saved)
+                assert np.all(np.asarray(res.dt_history[1:n]) <= dt0)
+                np.testing.assert_allclose(np.asarray(res.y_final["u"]), np.exp(0.25),
+                                           rtol=1e-5)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_shifted_times_with_x64(self):
+        """At t0 = 1e15 the clock resolution is 0.125, equal to dt_max.
+
+        The old slack grew with the accepted count and forced a step of
+        0.75 after two steps. A loose tolerance holds dt at dt_max, which
+        the clock can represent, so the run takes eight steps.
+        """
+        u0, ops, rhs = linear_l0_problem(1.0)
+        t0, dt0 = 1e15, 0.125
+        t_end = t0 + 1.0
+        res = etd_integrate_adaptive(u0, (t0, t_end), dt0, ops, rhs, method="etdrk4",
+                                     pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=dt0))
+        assert bool(res.success), int(res.status)
+        assert int(res.n_accepted) == 8
+        assert float(res.t_final) == t_end
+        n = int(res.n_saved)
+        assert np.all(np.asarray(res.dt_history[1:n]) <= dt0)
+        np.testing.assert_allclose(np.asarray(res.y_final["u"]), np.e, rtol=1e-6)
+
+
+class TestStateDtypeIsChecked:
+    @pytest.mark.parametrize("field", [jnp.full(4, 2), jnp.full(4, 2, dtype=jnp.int32),
+                                       jnp.ones(4, dtype=bool)])
+    def test_integer_and_boolean_states_raise(self, field):
+        _, ops, rhs = linear_l0_problem(1.0)
+        with pytest.raises(ValueError, match="floating dtype"):
+            etd_integrate_adaptive({"u": field}, (0.0, 0.5), 0.1, ops, rhs)
+        assert len(fi._ETD_ADAPTIVE_DRIVERS) == 0
+
+
+class TestDtMin:
+    """DT_TOO_SMALL comes only after a rejected trial at dt_min."""
+
+    def test_trial_at_dt_min_is_taken(self):
+        # ETD1 with L = 0 is explicit Euler: the error estimate is z^2 / 4 * u
+        # with z = h. At h = 0.02 the ratio is 1e-4 / 6e-5 = 1.67 (reject);
+        # at h = dt_min = 0.01 it is 2.5e-5 / 6e-5 = 0.42 (accept).
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+        res = etd_integrate_adaptive(u0, (0.0, 0.05), 0.02, ops, rhs, method="etd1",
+                                     pid_params=PIDParams(atol=6e-5, rtol=0.0, dt_min=0.01))
+        assert bool(res.success), int(res.status)
+        assert int(res.n_rejected) >= 1
+        assert float(res.t_final) == 0.05
+        np.testing.assert_allclose(np.asarray(res.y_final["u"]), np.exp(0.05), rtol=1e-3)
+
+    def test_rejected_trial_at_dt_min_stops_the_run(self):
+        # atol = 1e-6: the ratio is 100 at h = 0.02 and 25 at h = 0.01.
+        u0, ops, rhs = linear_l0_problem(1.0, n=1)
+        res = etd_integrate_adaptive(u0, (0.0, 0.05), 0.02, ops, rhs, method="etd1",
+                                     pid_params=PIDParams(atol=1e-6, rtol=0.0, dt_min=0.01))
+        assert int(res.status) == StatusCode.DT_TOO_SMALL
+        assert int(res.n_rejected) == 2
+        assert int(res.n_accepted) == 0
+
+
+class TestZeroSolution:
+    def test_zero_state_with_atol_zero(self):
+        """error = 0 and scale = 0 give a zero contribution, not 0/0."""
+        n = 4
+
+        def rhs(state, t):
+            return {"u": jnp.zeros_like(state["u"])}
+
+        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (0.0, 1.0), 0.1,
+                                     {"u": ConstantOp(-1.0, n)}, rhs, method="etdrk4",
+                                     pid_params=PIDParams(atol=0.0, rtol=1e-3))
+        assert bool(res.success), int(res.status)
+        assert int(res.n_rejected) == 0
+        assert np.isfinite(float(res.dt_final))
+        np.testing.assert_array_equal(np.asarray(res.y_final["u"]), np.zeros(n))
+
+
+class TestErrorScale:
+    """The error scale and the controller order, against hand arithmetic."""
+
+    def test_richardson_divisor_sets_the_acceptance_threshold(self):
+        # RK4 on u' = -2u with h = 0.5: z = -1. The step-doubling
+        # difference is R(z/2)^2 - R(z); the estimate is that over 2^4 - 1.
+        lam, h = -2.0, 0.5
+        diff = abs(rk4_factor(lam * h / 2) ** 2 - rk4_factor(lam * h))
+        est = diff / 15.0
+        u0, ops, rhs = linear_l0_problem(lam)
+
+        # The ratio is est / atol: 0.8 (accept), then 1.25 (reject).
+        res = etd_integrate_adaptive(u0, (0.0, h), h, ops, rhs, method="etdrk4",
+                                     pid_params=PIDParams(atol=est / 0.8, rtol=0.0, dt_max=h))
+        assert int(res.n_accepted) == 1 and int(res.n_rejected) == 0
+        res = etd_integrate_adaptive(u0, (0.0, h), h, ops, rhs, method="etdrk4",
+                                     pid_params=PIDParams(atol=est / 1.25, rtol=0.0, dt_max=h),
+                                     max_rejections_per_step=1)
+        assert int(res.n_accepted) == 0 and int(res.n_rejected) == 1
+
+    @pytest.mark.parametrize("method, lam, h, p, step_factor", [
+        ("etd1", -2.0, 0.1, 1, lambda z: 1.0 + z),
+        ("etdrk4", -2.0, 0.5, 4, rk4_factor),
+    ])
+    def test_proposal_uses_order_p_plus_1(self, method, lam, h, p, step_factor):
+        z = lam * h
+        est = abs(step_factor(z / 2) ** 2 - step_factor(z)) / (2 ** p - 1)
+        ratio = 0.5
+        pid = PIDParams(atol=est / ratio, rtol=0.0, dt_max=100.0)
+        q = p + 1
+        # The PI formula with prev_err_ratio = 1 (the initial state).
+        factor = pid.safety * ratio ** (-pid.kI / q) * (1.0 / ratio) ** (pid.kP / q)
+        expected = h * min(max(factor, pid.min_factor), pid.max_factor)
+
+        u0, ops, rhs = linear_l0_problem(lam)
+        res = etd_integrate_adaptive(u0, (0.0, 10.0), h, ops, rhs, method=method,
+                                     pid_params=pid, max_steps=1)
+        assert int(res.status) == StatusCode.MAX_STEPS_REACHED
+        assert int(res.n_accepted) == 1
+        np.testing.assert_allclose(float(res.dt_final), expected, rtol=1e-9)
+
+
+class TestControllerOrder:
+    """The rejection fraction of ETD1 with the order p and with p + 1.
+
+    Problem: the nonlinear Prothero-Robinson problem above (a = 5, 8
+    points, t in [0, 4]), ETD1, dt0 = 0.01, atol = rtol = 1e-3,
+    dt_max = 10. With the order p, the controller oscillates and about
+    half of all attempts are rejections.
+    """
+
+    def counts(self, monkeypatch, offset):
+        monkeypatch.setattr(fi, "_ETD_CONTROLLER_ORDER_OFFSET", offset)
+        clear_compiled_drivers()
+        u0, ops, rhs, _ = pr_problem()
+        res = etd_integrate_adaptive(u0, (0.0, PR_T), 0.01, ops, rhs, method="etd1",
+                                     pid_params=PIDParams(atol=1e-3, rtol=1e-3, dt_max=10.0),
+                                     max_steps=20000)
+        assert bool(res.success)
+        return int(res.n_accepted), int(res.n_rejected)
+
+    def test_rejection_fraction(self, monkeypatch):
+        acc_p1, rej_p1 = self.counts(monkeypatch, 1)
+        acc_p, rej_p = self.counts(monkeypatch, 0)
+        print(f"order p + 1: accepted {acc_p1}, rejected {rej_p1}; "
+              f"order p: accepted {acc_p}, rejected {rej_p}")
+        assert rej_p1 / (acc_p1 + rej_p1) < 0.05
+        assert rej_p / (acc_p + rej_p) > 0.3

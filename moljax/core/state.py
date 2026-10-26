@@ -357,7 +357,9 @@ def scaled_error_norm_interior(
     integrators in moljax.core.fft_integrators.
 
     Computes: sqrt(mean((error / (atol + rtol * |y|))^2))
-    over all points and all fields.
+    over all points and all fields. An entry where both the error and the
+    scale atol + rtol * |y| are zero contributes zero (not 0/0 = NaN). An
+    entry with a nonzero error and a zero scale gives an infinite norm.
 
     Args:
         error: Error estimate state (interior values only)
@@ -368,8 +370,12 @@ def scaled_error_norm_interior(
     Returns:
         Scaled error norm (should be <= 1 for accepted step)
     """
-    total_sq = sum(
-        jnp.sum((error[k] / (atol + rtol * jnp.abs(y[k]))) ** 2) for k in error.keys()
-    )
+    def field_sq(err_f, y_f):
+        scale = atol + rtol * jnp.abs(y_f)
+        both_zero = (err_f == 0) & (scale == 0)
+        ratio = jnp.where(both_zero, 0.0, err_f / jnp.where(both_zero, 1.0, scale))
+        return jnp.sum(ratio ** 2)
+
+    total_sq = sum(field_sq(error[k], y[k]) for k in error.keys())
     n_dof = sum(error[k].size for k in error.keys())
     return jnp.sqrt(total_sq / n_dof)
