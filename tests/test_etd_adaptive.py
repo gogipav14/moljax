@@ -1231,3 +1231,23 @@ class TestTickClock:
                                        pid_params=PIDParams(dt_max=2.0 ** 30, dt_min=1e-40))
         finally:
             jax.config.update("jax_enable_x64", True)
+
+    def test_forced_short_first_step_keeps_the_proposal(self):
+        """t_span (0.05, 1e6) in float32: the partial first step is 0.0125 (one tick cap).
+
+        The controller must not scale the next proposal from that forced
+        short step (it fell below the smallest interior step of 0.25, and
+        the run stopped with TIME_UNRESOLVED).
+        """
+        jax.config.update("jax_enable_x64", False)
+        try:
+            res = etd_integrate_adaptive({"u": jnp.zeros(1, jnp.float32)}, (0.05, 1e6), 1e4,
+                                         {"u": ConstantOp(0.0, 1, jnp.float32)},
+                                         lambda y, t: {"u": jnp.zeros_like(y["u"])},
+                                         method="etdrk4", pid_params=PIDParams(dt_max=5e4))
+            res = jax.tree.map(np.asarray, res)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+        assert bool(res.success), int(res.status)
+        n = int(res.n_saved)
+        assert sum(_exact(h) for h in res.dt_history[1:n]) == _exact(np.float32(1e6)) - _exact(np.float32(0.05))

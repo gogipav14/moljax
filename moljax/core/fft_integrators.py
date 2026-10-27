@@ -832,7 +832,10 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             return to_field_dtypes(y_full), to_field_dtypes(y_half2)
 
         def choose_ticks(k, dt):
-            """Return (n, admissible): the ticks of the next trial for the proposal dt.
+            """Return (n, admissible, shortened) for the proposal dt.
+
+            n is the ticks of the next trial; shortened is True when the
+            schedule (not the proposal) made the trial shorter than n*.
 
             The rule keeps the remaining count R at zero or at least
             n_min_last, so that the end stays reachable (see
@@ -862,7 +865,10 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             # A final step shorter than n_lo (a partial last step can be) is
             # admissible when it is the whole remainder.
             final_only = (n_star >= remaining) & (remaining <= cap_end)
-            return n, (n_star >= n_lo) | final_only
+            # The proposal capped only by dt_max (not by the partial-step cap).
+            n_prop = jnp.floor(jnp.minimum(dt, plan.k_max.astype(time_dtype) * plan.unit)
+                               / plan.unit).astype(tick_dtype)
+            return n, (n_star >= n_lo) | final_only, n < n_prop
 
         dt_min = jnp.asarray(pid_params.dt_min, dtype=time_dtype)
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
@@ -894,18 +900,18 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             return running & (s.k < plan.n_ticks) & (s.n_accepted < max_steps)
 
         def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
-            n, admissible = choose_ticks(s.k, s.dt)
+            n, admissible, shortened = choose_ticks(s.k, s.dt)
             # A proposal below the smallest step stops the run before the
             # step. For a nonlinear_rhs that reads t, the smallest step is
             # set by the clock resolution (TIME_UNRESOLVED).
             too_small = StatusCode.TIME_UNRESOLVED if rhs_uses_time else StatusCode.DT_TOO_SMALL
             return lax.cond(
                 admissible,
-                lambda: _step_body(s, n),
+                lambda: _step_body(s, n, shortened),
                 lambda: s._replace(status=jnp.array(too_small, dtype=jnp.int32)),
             )
 
-        def _step_body(s: _ETDAdaptiveState, n) -> _ETDAdaptiveState:
+        def _step_body(s: _ETDAdaptiveState, n, shortened) -> _ETDAdaptiveState:
             h = step_length(s.k, n)
             y_full, y_half2 = doubled_step(s.y, s.k, n, h)
             err = {name: (y_half2[name] - y_full[name]) * richardson for name in names}
@@ -932,6 +938,12 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 # t_end (no remainder, no margin).
                 k_new = s.k + n
                 done = k_new == plan.n_ticks
+                # A step that the schedule shortened (a partial tick, or a
+                # split that keeps t_end reachable) does not lower the next
+                # proposal below the previous one: the controller scales from
+                # h, and a forced short h would otherwise shrink dt for no
+                # error reason. The next trial gets the normal error test.
+                dt_next = jnp.where(shortened, jnp.maximum(dt_new, s.dt), dt_new)
                 save = ((n_accepted % save_every) == 0) | done
                 idx = s.write_idx
 
@@ -944,7 +956,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 dt_hist = write(s.dt_history, h)
                 y_hist = {name: write(s.y_history[name], y_half2[name]) for name in names}
                 return _ETDAdaptiveState(
-                    k=k_new, y=y_half2, dt=dt_new, controller=controller,
+                    k=k_new, y=y_half2, dt=dt_next.astype(time_dtype), controller=controller,
                     t_history=t_hist, y_history=y_hist, dt_history=dt_hist,
                     write_idx=idx + save.astype(jnp.int32),
                     n_accepted=n_accepted, n_rejected=s.n_rejected, status=s.status,
