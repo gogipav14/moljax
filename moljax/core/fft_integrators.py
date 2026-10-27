@@ -20,7 +20,9 @@ All methods work with FFTLinearOperator instances for efficient computation.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
+from fractions import Fraction
 from typing import NamedTuple
 
 import jax
@@ -260,6 +262,25 @@ def etdrk4_step(
     Returns:
         New state after one ETDRK4 step
     """
+    return _etdrk4_step_at(state, t, t + dt/2, t + dt, dt, linear_ops, nonlinear_rhs)
+
+
+def _etdrk4_step_at(
+    state: StateDict,
+    t: float,
+    t_half: float,
+    t_full: float,
+    dt: float,
+    linear_ops: dict[str, FFTLinearOperator],
+    nonlinear_rhs: Callable[[StateDict, float], StateDict],
+) -> StateDict:
+    """One ETDRK4 step with given stage times (see etdrk4_step).
+
+    t_half and t_full are the times of the stages at t + dt/2 and t + dt.
+    etd_integrate_adaptive gives each of them as one rounding of the
+    exact value. The expressions t + dt/2 and t + dt round twice when t
+    is itself a rounded stage time.
+    """
     # Spectral data for the fields that have a linear operator; the others
     # take the RK4 fallback.
     spectral: dict[str, _ETDRK4Field] = {}
@@ -297,14 +318,14 @@ def etdrk4_step(
     a_hat, a_state = half_stage(
         u_hat, N_n_hat, {name: state[name] + dt/2 * N_n[name] for name in explicit}
     )
-    N_a = nonlinear_rhs(a_state, t + dt/2)
+    N_a = nonlinear_rhs(a_state, t_half)
     N_a_hat = transform(N_a)
 
     # Stage b: another half step from u_n with N_a (RK4: u + dt/2 k2)
     _b_hat, b_state = half_stage(
         u_hat, N_a_hat, {name: state[name] + dt/2 * N_a[name] for name in explicit}
     )
-    N_b = nonlinear_rhs(b_state, t + dt/2)
+    N_b = nonlinear_rhs(b_state, t_half)
     N_b_hat = transform(N_b)
 
     # Stage c: half step from a with 2 N_b - N_n (RK4: u + dt k3)
@@ -313,7 +334,7 @@ def etdrk4_step(
         {name: 2*N_b_hat[name] - N_n_hat[name] for name in spectral},
         {name: state[name] + dt * N_b[name] for name in explicit}
     )
-    N_c = nonlinear_rhs(c_state, t + dt)
+    N_c = nonlinear_rhs(c_state, t_full)
     N_c_hat = transform(N_c)
 
     # Final combination
@@ -682,11 +703,10 @@ class _ETDAdaptiveState(NamedTuple):
     moljax.core.stepping._FixedScanState: a NamedTuple that is built for
     each call is a different pytree node type each time.
 
-    tau is the elapsed time t - t0, not the absolute time (see
-    _build_etd_adaptive_driver).
+    k is the elapsed time as an integer number of ticks (see
+    _etd_tick_plan), not a floating-point time.
     """
-    tau: jnp.ndarray
-    tau_comp: jnp.ndarray
+    k: jnp.ndarray
     y: StateDict
     dt: jnp.ndarray
     controller: ControllerState
@@ -699,6 +719,33 @@ class _ETDAdaptiveState(NamedTuple):
     status: jnp.ndarray
 
 
+class _TickPlan(NamedTuple):
+    """
+    The tick grid of one run of etd_integrate_adaptive (see _etd_tick_plan).
+
+    All entries are arguments of the compiled loop, so a new t_span does
+    not compile a new loop. Positions are absolute times for a
+    nonlinear_rhs that reads t, and elapsed times t - t0 otherwise.
+    """
+    t0: jnp.ndarray            # time dtype
+    t_end: jnp.ndarray         # time dtype
+    lo: jnp.ndarray            # position of tick 0
+    hi: jnp.ndarray            # position of tick n_ticks
+    unit: jnp.ndarray          # the tick length G, a power of two
+    base: jnp.ndarray          # tick k (0 < k < n_ticks) is at (base + k) * unit
+    n_ticks: jnp.ndarray
+    r_lo: jnp.ndarray          # the partial tick at tick 0 (zero if lo is on the grid)
+    r_hi: jnp.ndarray          # the partial tick at tick n_ticks (zero if hi is on the grid)
+    lo_partial: jnp.ndarray
+    hi_partial: jnp.ndarray
+    n_min: jnp.ndarray         # the smallest step, in ticks
+    n_min_first: jnp.ndarray   # the smallest step from tick 0
+    n_min_last: jnp.ndarray    # the smallest step to tick n_ticks
+    k_max: jnp.ndarray         # the largest step, in ticks
+    k_max_first: jnp.ndarray   # the largest step from tick 0
+    k_max_last: jnp.ndarray    # the largest step to tick n_ticks
+
+
 def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, max_steps,
                                save_every, max_rejections_per_step, rhs_uses_time):
     """
@@ -706,11 +753,10 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
     The method, the controller parameters, max_steps, save_every and the
     rejection budget are closure constants. max_steps and save_every set
-    the size of the history buffers. The initial state, t0, t_end and dt0
-    are arguments, so a sweep over dt0 or t_end compiles one loop.
+    the size of the history buffers. The initial state, the tick plan and
+    dt0 are arguments, so a sweep over dt0 or t_end compiles one loop.
     """
     order = _ETD_ADAPTIVE_ORDER[method]
-    step_impl = etd1_step if method == 'etd1' else etdrk4_step
     # Richardson: the error of the two half steps is
     # (y_half2 - y_full) / (2^p - 1) to leading order.
     richardson = 1.0 / (2.0 ** order - 1.0)
@@ -719,8 +765,9 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
     controller_order = order + _ETD_CONTROLLER_ORDER_OFFSET
     max_saves = max_steps // save_every + 2
 
-    def run(u0, t0, t_end, dt0):
+    def run(u0, plan: _TickPlan, dt0):
         time_dtype = _time_dtype()
+        tick_dtype = plan.n_ticks.dtype
         names = list(u0)
         field_dtypes = {name: jnp.result_type(u0[name]) for name in names}
         # The dtype of the step arithmetic. dt is cast to it, so that a
@@ -730,23 +777,93 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
         def to_field_dtypes(state):
             return {name: state[name].astype(field_dtypes[name]) for name in names}
 
-        def step(y, t, h):
-            return to_field_dtypes(step_impl(y, t, h, linear_ops, nonlinear_rhs))
+        def position(k):
+            """The exact position of tick k (a float: see _etd_tick_plan)."""
+            interior = (plan.base + k).astype(time_dtype) * plan.unit
+            return jnp.where(k == 0, plan.lo, jnp.where(k == plan.n_ticks, plan.hi, interior))
+
+        def absolute(x):
+            """The time that nonlinear_rhs and t_history get for the position x."""
+            return x if rhs_uses_time else plan.t0 + x
+
+        def history_time(k):
+            return jnp.where(k == plan.n_ticks, plan.t_end, absolute(position(k)))
+
+        def step_length(k, n):
+            """The exact length of the step from tick k over n ticks."""
+            partial_lo = (k == 0) & plan.lo_partial
+            partial_hi = (k + n == plan.n_ticks) & plan.hi_partial
+            whole = n - partial_lo.astype(tick_dtype) - partial_hi.astype(tick_dtype)
+            return (whole.astype(time_dtype) * plan.unit
+                    + jnp.where(partial_lo, plan.r_lo, 0.0).astype(time_dtype)
+                    + jnp.where(partial_hi, plan.r_hi, 0.0).astype(time_dtype))
+
+        def stage_times(k, n, h):
+            """The stage times of one doubled step, each one rounding of its exact value.
+
+            The start and the end are exact tick positions. The other
+            times add h/4 or h/2 (exact: h is a float and the factor is a
+            power of two) to the start, or subtract h/4 from the end, so
+            each is one rounding of its exact value. Nested expressions
+            such as (t + h/2) + h/4 round twice.
+            """
+            a = position(k)
+            b = position(k + n)
+            mid = a + h / 2
+            if method == 'etd1':
+                return absolute(a), absolute(mid), absolute(b), None, None
+            return absolute(a), absolute(mid), absolute(b), absolute(a + h / 4), absolute(b - h / 4)
+
+        def doubled_step(y, k, n, h):
+            """One full step and two half steps. Returns (y_full, y_half2)."""
+            hc = h.astype(compute_dtype)
+            t_a, t_mid, t_b, t_q1, t_q3 = stage_times(k, n, h)
+            if method == 'etd1':
+                y_full = etd1_step(y, t_a, hc, linear_ops, nonlinear_rhs)
+                y_half1 = etd1_step(y, t_a, hc / 2, linear_ops, nonlinear_rhs)
+                y_half2 = etd1_step(to_field_dtypes(y_half1), t_mid, hc / 2, linear_ops,
+                                    nonlinear_rhs)
+            else:
+                y_full = _etdrk4_step_at(y, t_a, t_mid, t_b, hc, linear_ops, nonlinear_rhs)
+                y_half1 = _etdrk4_step_at(y, t_a, t_q1, t_mid, hc / 2, linear_ops,
+                                          nonlinear_rhs)
+                y_half2 = _etdrk4_step_at(to_field_dtypes(y_half1), t_mid, t_q3, t_b, hc / 2,
+                                          linear_ops, nonlinear_rhs)
+            return to_field_dtypes(y_full), to_field_dtypes(y_half2)
+
+        def choose_ticks(k, dt):
+            """Return (n, admissible): the ticks of the next trial for the proposal dt.
+
+            The rule keeps the remaining count R at zero or at least
+            n_min_last, so that the end stays reachable (see
+            moljax_question/etd_global_ticks.md, section 4):
+            1. n* = floor(dt / unit), capped at k_max.
+            2. The whole remainder, if it fits and exceeds n* by at most n*/8
+               (a decimal dt then gives no very short final step).
+            3. If the remainder after n* is in (0, n_min_last), leave
+               exactly n_min_last ticks, or take the whole remainder if that
+               leaves less than one step.
+            The trial is admissible when n* is at least the smallest step.
+            """
+            remaining = plan.n_ticks - k
+            first = k == 0
+            cap = jnp.where(first, plan.k_max_first, plan.k_max)
+            cap_end = jnp.minimum(cap, plan.k_max_last)
+            n_lo = jnp.where(first, plan.n_min_first, plan.n_min)
+            dt_cap = jnp.minimum(dt, cap.astype(time_dtype) * plan.unit)
+            n_star = jnp.floor(dt_cap / plan.unit).astype(tick_dtype)
+            n = jnp.minimum(n_star, cap)
+            take_all = (remaining <= cap_end) & ((n >= remaining) | (8 * (remaining - n) <= n))
+            short_tail = remaining - n < plan.n_min_last
+            n_split = remaining - plan.n_min_last
+            n = jnp.where(take_all, remaining,
+                          jnp.where(short_tail, jnp.where(n_split >= n_lo, n_split, remaining), n))
+            return n, n_star >= n_lo
 
         dt_min = jnp.asarray(pid_params.dt_min, dtype=time_dtype)
-        # The clock is relative: the carry holds the elapsed time tau, from
-        # 0 to the span. The absolute time t0 + tau is formed only for
-        # nonlinear_rhs and for t_history. An absolute clock loses elapsed
-        # time when t0 is large: in float32 at t0 = 1e6 the spacing is
-        # 0.0625, so t + 0.1 advanced the clock by 0.125.
-        span = t_end - t0
-        # A time-dependent nonlinear_rhs needs distinct absolute stage
-        # times (see the docstring of etd_integrate_adaptive). The caller
-        # declares with rhs_uses_time whether nonlinear_rhs reads t.
-        check_stage_times = rhs_uses_time
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
 
-        t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(t0)
+        t_history = jnp.zeros(max_saves, dtype=time_dtype).at[0].set(plan.t0)
         y_history = {
             name: jnp.zeros((max_saves,) + jnp.shape(u0[name]), dtype=field_dtypes[name])
             .at[0].set(u0[name])
@@ -755,8 +872,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
         dt_history = jnp.zeros(max_saves, dtype=time_dtype)
 
         init = _ETDAdaptiveState(
-            tau=jnp.zeros((), dtype=time_dtype),
-            tau_comp=jnp.zeros((), dtype=time_dtype),
+            k=jnp.zeros((), dtype=tick_dtype),
             y=to_field_dtypes(u0),
             dt=dt_init,
             controller=create_initial_controller_state(time_dtype),
@@ -771,88 +887,23 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
 
         def cond_fn(s: _ETDAdaptiveState) -> jnp.ndarray:
             running = s.status == StatusCode.RUNNING
-            return running & (s.tau < span) & (s.n_accepted < max_steps)
-
-        def compensated_add(tau, comp, increment):
-            """Return (tau + increment, new compensation) by Kahan summation."""
-            corrected = increment - comp
-            total = tau + corrected
-            return total, (total - tau) - corrected
-
-        def stage_times_resolved(tau_start, length):
-            """Return True when the absolute stage times of one doubled step increase strictly.
-
-            The expressions are the ones that the step functions use: the
-            start t0 + tau, for ETDRK4 the midpoint of the first half step,
-            the midpoint t0 + (tau + length/2), for ETDRK4 the midpoint of the
-            second half step, and the end t0 + (tau + length).
-            """
-            h = length.astype(compute_dtype)
-            t_start = t0 + tau_start
-            t_mid = t0 + (tau_start + length / 2)
-            times = [t_start]
-            if method == 'etdrk4':
-                times.append(t_start + (h / 2) / 2)
-            times.append(t_mid)
-            if method == 'etdrk4':
-                times.append(t_mid + (h / 2) / 2)
-            times.append(t0 + (tau_start + length))
-            resolved = jnp.array(True)
-            for earlier, later in zip(times[:-1], times[1:], strict=True):
-                resolved = resolved & (earlier < later)
-            return resolved
-
-        def trial_step(s: _ETDAdaptiveState):
-            """Return (dt_step, is_final) for the next trial.
-
-            The trial is min(dt, remaining). When the right-hand side uses t,
-            a trial must not leave a positive remainder whose stage times the
-            absolute clock cannot resolve: no later step could integrate it.
-            In that case the trial takes half of the remaining span, so that
-            the next step ends exactly at t_end. Half of the remaining span is
-            smaller than dt, so dt_max still holds.
-            """
-            remaining = span - s.tau
-            dt_step = jnp.minimum(s.dt, remaining)
-            if check_stage_times:
-                # Predict the clock exactly as the accepted step will update
-                # it (the same compensated sum), so that the predicted tail is
-                # the remaining span of the next iteration.
-                tau_next, _ = compensated_add(s.tau, s.tau_comp, dt_step)
-                tail = span - tau_next
-                # The tail must pass the same stage-time check as any step.
-                unresolved_tail = (tail > 0) & ~stage_times_resolved(tau_next, tail)
-                dt_step = jnp.where(unresolved_tail, remaining / 2, dt_step)
-            return dt_step, dt_step >= remaining
+            return running & (s.k < plan.n_ticks) & (s.n_accepted < max_steps)
 
         def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
-            # A step that is zero in the state dtype (for example a very small
-            # dt in float32, which the CPU can flush to zero) cannot change
-            # the state, but the clock would still advance. Such a run stops
-            # with DT_TOO_SMALL and does not take the step.
-            dt_step, _ = trial_step(s)
-            h = dt_step.astype(compute_dtype)
-            resolved = (h > 0) & (h / 2 > 0)
+            n, admissible = choose_ticks(s.k, s.dt)
+            # A proposal below the smallest step stops the run before the
+            # step. For a nonlinear_rhs that reads t, the smallest step is
+            # set by the clock resolution (TIME_UNRESOLVED).
+            too_small = StatusCode.TIME_UNRESOLVED if rhs_uses_time else StatusCode.DT_TOO_SMALL
             return lax.cond(
-                resolved,
-                lambda: _step_body(s),
-                lambda: s._replace(status=jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32)),
+                admissible,
+                lambda: _step_body(s, n),
+                lambda: s._replace(status=jnp.array(too_small, dtype=jnp.int32)),
             )
 
-        def _step_body(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
-            # The trial step is min(dt, remaining). It is never larger than
-            # dt, so it obeys dt_max, and a rejection always gives a smaller
-            # trial. There is no stretch of the step to t_end: when the
-            # clock rounding leaves a very small remaining span, the run
-            # takes one more small step.
-            dt_step, is_final = trial_step(s)
-            h = dt_step.astype(compute_dtype)
-            t_abs = t0 + s.tau
-
-            # Step doubling: one full step and two half steps.
-            y_full = step(s.y, t_abs, h)
-            y_half1 = step(s.y, t_abs, h / 2)
-            y_half2 = step(y_half1, t0 + (s.tau + dt_step / 2), h / 2)
+        def _step_body(s: _ETDAdaptiveState, n) -> _ETDAdaptiveState:
+            h = step_length(s.k, n)
+            y_full, y_half2 = doubled_step(s.y, s.k, n, h)
             err = {name: (y_half2[name] - y_full[name]) * richardson for name in names}
 
             finite = is_finite(y_full) & is_finite(y_half2)
@@ -867,23 +918,16 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             accept = finite & (err_ratio <= 1.0)
 
             dt_new, controller = propose_dt_etd(
-                dt_step, err_ratio, s.controller, pid_params, controller_order, accepted=accept
+                h, err_ratio, s.controller, pid_params, controller_order, accepted=accept
             )
 
             def accept_step():
                 n_accepted = s.n_accepted + 1
-                # Completion is decided on the updated clock: tau + dt_step
-                # can round to the span (or to a few ulp below it) also when
-                # dt_step < remaining. Such a step is the final step.
-                # Compensated (Kahan) summation keeps the rounding error of
-                # tau near one ulp, also after many steps.
-                tau_sum, comp_new = compensated_add(s.tau, s.tau_comp, dt_step)
-                # No margin: a remainder is integrated, never discarded. A
-                # tail that the clock could not resolve is split in advance
-                # (see trial_step), and tau_sum can round up to the span.
-                done = is_final | (tau_sum >= span)
-                tau_new = jnp.where(done, span, tau_sum)
-                t_new = jnp.where(done, t_end, t0 + tau_new)
+                # The clock is the integer tick count, so the accepted
+                # lengths sum exactly to t_end - t0 and the last tick is
+                # t_end (no remainder, no margin).
+                k_new = s.k + n
+                done = k_new == plan.n_ticks
                 save = ((n_accepted % save_every) == 0) | done
                 idx = s.write_idx
 
@@ -892,27 +936,28 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                     # stays in place and costs one entry, not the buffer.
                     return buffer.at[idx].set(jnp.where(save, value, buffer[idx]))
 
-                t_hist = write(s.t_history, t_new)
-                dt_hist = write(s.dt_history, dt_step)
+                t_hist = write(s.t_history, history_time(k_new))
+                dt_hist = write(s.dt_history, h)
                 y_hist = {name: write(s.y_history[name], y_half2[name]) for name in names}
                 return _ETDAdaptiveState(
-                    tau=tau_new, tau_comp=jnp.where(done, 0.0, comp_new).astype(s.tau.dtype),
-                    y=y_half2, dt=dt_new, controller=controller,
+                    k=k_new, y=y_half2, dt=dt_new, controller=controller,
                     t_history=t_hist, y_history=y_hist, dt_history=dt_hist,
                     write_idx=idx + save.astype(jnp.int32),
                     n_accepted=n_accepted, n_rejected=s.n_rejected, status=s.status,
                 )
 
             def reject_step():
-                # The same extra cut as the adaptive drivers of
-                # moljax.core.stepping: each rejection cuts dt by a factor
-                # of 2 or more.
-                dt_reject = jnp.maximum(dt_new * 0.5, pid_params.dt_min).astype(time_dtype)
+                # Halve the length of the rejected trial, not an older and
+                # larger proposal: each rejection then halves the ticks of
+                # the next trial (the same extra cut as the adaptive drivers
+                # of moljax.core.stepping).
+                dt_reject = jnp.maximum(jnp.minimum(dt_new, h) * 0.5,
+                                        pid_params.dt_min).astype(time_dtype)
                 # Stop only when the rejected trial itself was at dt_min (or
                 # smaller, for a short final step). A proposal that reaches
                 # dt_min gets one trial at dt_min first.
                 status = jnp.where(
-                    dt_step <= dt_min,
+                    h <= dt_min,
                     jnp.array(StatusCode.DT_TOO_SMALL, dtype=jnp.int32),
                     jnp.where(
                         controller.consecutive_rejects >= max_rejections_per_step,
@@ -923,26 +968,11 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 return s._replace(dt=dt_reject, controller=controller,
                                   n_rejected=s.n_rejected + 1, status=status)
 
-            if not check_stage_times:
-                return lax.cond(accept, accept_step, reject_step)
-
-            # The absolute stage times, as the step functions form them, must
-            # increase strictly. If two of them round to the same value, the
-            # right-hand side sees a wrong time and the step is not valid.
-            resolved = stage_times_resolved(s.tau, dt_step)
-
-            def unresolved_step():
-                return s._replace(status=jnp.array(StatusCode.TIME_UNRESOLVED, dtype=jnp.int32))
-
-            return lax.cond(
-                resolved,
-                lambda: lax.cond(accept, accept_step, reject_step),
-                unresolved_step,
-            )
+            return lax.cond(accept, accept_step, reject_step)
 
         final = lax.while_loop(cond_fn, body_fn, init)
 
-        reached = final.tau >= span
+        reached = final.k == plan.n_ticks
         status = jnp.where(
             reached,
             jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
@@ -953,7 +983,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             ),
         )
         return ETDAdaptiveResult(
-            t_final=jnp.where(reached, t_end, t0 + final.tau),
+            t_final=history_time(final.k),
             y_final=final.y,
             t_history=final.t_history,
             y_history=final.y_history,
@@ -999,6 +1029,143 @@ def _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params, max_
     ))
 
 
+def _floor_log2(x: Fraction) -> int:
+    """Return floor(log2(x)) for a positive rational x."""
+    e = x.numerator.bit_length() - x.denominator.bit_length()
+    if Fraction(2) ** e > x:
+        e -= 1
+    return e
+
+
+def _dyadic_valuation(x: Fraction) -> int:
+    """Return v with x = odd * 2^v, for a nonzero dyadic rational x."""
+    num = abs(x.numerator)
+    return (num & -num).bit_length() - x.denominator.bit_length()
+
+
+def _etd_tick_plan(t0, t_end, dt0, method, rhs_uses_time, compute_dtype,
+                   pid_params) -> _TickPlan:
+    """
+    Build the tick grid of etd_integrate_adaptive on the host, with exact rationals.
+
+    The run covers the cast endpoints fl(t0) and fl(t_end) of the time
+    dtype (p bits). The grid unit is the power of two
+    G = 2^(floor(log2(top)) + 1 - p), where top is the largest position:
+    max(|t0|, |t_end|) for a nonlinear_rhs that reads t (positions are
+    absolute times), and t_end - t0 otherwise (positions are elapsed
+    times). Every multiple of G up to top is a float, so every tick
+    position is exact. An endpoint that is not a multiple of G gives a
+    partial tick at that end; only the step that touches that end
+    includes it.
+
+    A step of n ticks is resolved when n >= m (m = 2 for ETD1 and 4 for
+    ETDRK4; m + 1 for a step with a partial tick): its stage times are
+    then distinct, because each is one rounding of an exact value and
+    adjacent exact values differ by more than G (or are exact). For an
+    elapsed grid there is no resolution limit: the smallest step is one
+    tick (two with a partial tick, so that h/4 stays normal).
+
+    With k_max >= n_min_first + n_min_last - 1, every remaining count of
+    at least n_min_last ticks is reachable, so the span is feasible
+    exactly when it holds at least max(n_min_first, n_min_last) ticks.
+    The derivation and the checks are in moljax_question/etd_global_ticks.md
+    of the research notes.
+
+    Raises:
+        ValueError: if the grid unit is below four times the smallest
+            normal number of the time or state dtype, if dt_max is below
+            n_min_first + n_min_last - 1 ticks, if the span holds fewer
+            ticks than the smallest step, or if a concrete dt0 (clamped to
+            [dt_min, dt_max]) is below the smallest first step.
+    """
+    clock = np.float64 if _time_dtype() == jnp.float64 else np.float32
+    p = np.finfo(clock).nmant + 1
+    lo_c, hi_c = clock(float(t0)), clock(float(t_end))
+    start, end = Fraction(float(lo_c)), Fraction(float(hi_c))
+    if rhs_uses_time:
+        lo, hi = start, end
+        top = max(abs(start), abs(end))
+        m = 2 if method == 'etd1' else 4
+        n_min, n_min_partial = m, m + 1
+    else:
+        lo, hi = Fraction(0), end - start
+        top = hi
+        n_min, n_min_partial = 1, 2
+    unit = Fraction(2) ** (_floor_log2(top) + 1 - p)
+    tiny = max(float(np.finfo(clock).tiny), float(np.finfo(compute_dtype).tiny))
+    if unit < 4 * Fraction(tiny):
+        raise ValueError(
+            f"etd_integrate_adaptive: the clock tick {float(unit)!r} for t_span "
+            f"[{t0}, {t_end}] is below four times the smallest normal number; the "
+            f"CPU can flush the stage times to zero. Shift the time origin."
+        )
+
+    first = math.ceil(lo / unit)
+    last = math.floor(hi / unit)
+    lo_partial = first * unit != lo
+    hi_partial = last * unit != hi
+    base = first - int(lo_partial)
+    n_ticks = last - first + int(lo_partial) + int(hi_partial)
+    r_lo = first * unit - lo if lo_partial else Fraction(0)
+    r_hi = hi - last * unit if hi_partial else Fraction(0)
+    n_min_first = n_min_partial if lo_partial else n_min
+    n_min_last = n_min_partial if hi_partial else n_min
+    need = n_min_first + n_min_last - 1
+
+    dt_max = float(pid_params.dt_max)
+    k_max = 2 ** p if not math.isfinite(dt_max) else min(math.floor(Fraction(dt_max) / unit), 2 ** p)
+
+    def partial_cap(r):
+        """The largest step count whose length (n - 1) G + r is a float, or k_max."""
+        if Fraction(float(clock(float(r)))) != r:
+            return k_max  # r itself is not a float: the length has one rounding
+        cap = 1 + math.floor((Fraction(2) ** (p + _dyadic_valuation(r)) - r) / unit)
+        return min(k_max, cap) if cap >= need else k_max
+
+    k_max_first = partial_cap(r_lo) if lo_partial else k_max
+    k_max_last = partial_cap(r_hi) if hi_partial else k_max
+
+    if min(k_max, k_max_first, k_max_last) < need:
+        raise ValueError(
+            f"etd_integrate_adaptive: dt_max={pid_params.dt_max} is below {need} clock "
+            f"ticks of {float(unit)!r} at t_span [{t0}, {t_end}]; no step schedule can "
+            f"keep t_end reachable. Increase dt_max, enable x64, or shift the time origin."
+        )
+    if n_ticks < max(n_min_first, n_min_last):
+        raise ValueError(
+            f"etd_integrate_adaptive: the span [{t0}, {t_end}] holds {n_ticks} clock ticks "
+            f"of {float(unit)!r}; one {method} step needs at least "
+            f"{max(n_min_first, n_min_last)} ticks so that its stage times are distinct. "
+            f"Enable x64, or shift the time origin."
+        )
+    if not isinstance(dt0, jax.core.Tracer):
+        dt_first = min(max(float(dt0), float(pid_params.dt_min)), dt_max)
+        if math.floor(Fraction(dt_first) / unit) < n_min_first:
+            raise ValueError(
+                f"etd_integrate_adaptive: dt0={dt0} (clamped to [dt_min, dt_max]) is below "
+                f"{n_min_first} clock ticks of {float(unit)!r} at t0={t0}, the smallest "
+                f"first step. Increase dt0, enable x64, or shift the time origin."
+            )
+
+    time_dtype = _time_dtype()
+    tick_dtype = jnp.int64 if time_dtype == jnp.float64 else jnp.int32
+
+    def time(x):
+        return jnp.asarray(clock(float(x)), dtype=time_dtype)
+
+    def ticks(x):
+        return jnp.asarray(x, dtype=tick_dtype)
+
+    return _TickPlan(
+        t0=jnp.asarray(lo_c, dtype=time_dtype), t_end=jnp.asarray(hi_c, dtype=time_dtype),
+        lo=time(lo), hi=time(hi), unit=time(unit),
+        base=ticks(base), n_ticks=ticks(n_ticks), r_lo=time(r_lo), r_hi=time(r_hi),
+        lo_partial=jnp.asarray(lo_partial), hi_partial=jnp.asarray(hi_partial),
+        n_min=ticks(n_min), n_min_first=ticks(n_min_first), n_min_last=ticks(n_min_last),
+        k_max=ticks(k_max), k_max_first=ticks(k_max_first), k_max_last=ticks(k_max_last),
+    )
+
+
 # The largest relative change of the span t_end - t0 that the cast of t0
 # and t_end to the time dtype can cause before etd_integrate_adaptive
 # raises. The cast of each endpoint rounds it to the clock resolution at
@@ -1015,7 +1182,7 @@ def _check_adaptive_span(t0, t_end, dt0) -> None:
     Raise ValueError if t0 or t_end is not concrete, if t_end <= t0, if
     the cast of t0 and t_end to the time dtype changes the span by more
     than _SPAN_RELATIVE_TOLERANCE (relative), or if a concrete dt0 is not
-    positive or is below the clock resolution at t0 (t0 + dt0 == t0).
+    positive. _etd_tick_plan checks the clock resolution.
 
     The check uses NumPy scalars, not jnp, so that it gives the same
     result inside an outer jax.jit. A traced dt0 is permitted: it only
@@ -1064,15 +1231,8 @@ def _check_adaptive_span(t0, t_end, dt0) -> None:
 
     if isinstance(dt0, jax.core.Tracer):
         return
-    dt0_f = float(dt0)
-    if not dt0_f > 0.0:
+    if not float(dt0) > 0.0:
         raise ValueError(f"need dt0 > 0, got dt0={dt0}")
-    if clock(t0_f) + clock(dt0_f) == clock(t0_f):
-        raise ValueError(
-            f"etd_integrate_adaptive: dt0={dt0} is not representable at t0={t0} in "
-            f"{np.dtype(clock).name} (t0 + dt0 == t0). Enable x64, or shift the time "
-            f"origin so that t0 is comparable in size to dt0."
-        )
 
 
 def etd_integrate_adaptive(
@@ -1149,7 +1309,10 @@ def etd_integrate_adaptive(
             max_rejections_per_step < 1, t_end <= t0, dt0 <= 0, a field of
             u0 that does not have a real floating dtype, a traced t0 or
             t_end, a span that the cast to the time dtype changes by more
-            than 1e-6 (relative), or a dt0 below the clock resolution at t0.
+            than 1e-6 (relative), or a span that the clock cannot divide
+            into resolved steps: a span shorter than the smallest step, a
+            dt_max or a dt0 below it, or a clock tick below four times the
+            smallest normal number (see the clock in the Notes).
 
     Notes:
         The compiled loop is cached and reused. The cache key holds the
@@ -1165,25 +1328,39 @@ def etd_integrate_adaptive(
         state (see moljax.core.stepping._time_dtype). The step arithmetic
         uses the dtype of the state.
 
-        The clock is relative. The driver carries the elapsed time from t0,
-        not the absolute time, so a large t0 does not change the step
-        sizes or the sum of the accepted steps (it equals t_end - t0 to
-        round-off). Only the time given to nonlinear_rhs and the times in
-        t_history are absolute, t0 + elapsed time. They have the
-        resolution of the time dtype at t0.
+        The clock is an integer number of ticks. A tick is the power of
+        two G = ulp(max(|t0|, |t_end|)) in the time dtype when
+        rhs_uses_time=True, and G = ulp(t_end - t0) when it is False. Every
+        multiple of G in the span is a float, so each step starts and ends
+        at an exact time, the accepted lengths (dt_history) sum exactly to
+        t_end - t0, and the last time is t_end. No remainder is discarded.
+        An endpoint that is not a multiple of G gives a partial tick, which
+        the step at that end includes. The controller step is rounded down
+        to whole ticks; to keep t_end reachable, a step can also be up to
+        1/8 longer than the proposal (never above dt_max), or end a few
+        ticks earlier.
 
-        CAUTION: A nonlinear_rhs that reads t needs absolute stage times
-        that the time dtype can resolve at t0. With rhs_uses_time=True
-        (the default), the driver checks each step: the stage times must
-        increase strictly. If they do not, the run stops with
-        StatusCode.TIME_UNRESOLVED before it takes the step. At a large t0
-        this check can also stop an autonomous nonlinear_rhs; declare it
-        with rhs_uses_time=False to skip the check. Do not set False for a
-        nonlinear_rhs that reads t: the result can be wrong with no
-        message. The stage times are also rounded to the clock resolution
-        when they increase, so for a time-dependent nonlinear_rhs keep
-        that resolution small against dt (enable x64, or shift the time
-        origin).
+        A nonlinear_rhs that reads t (rhs_uses_time=True, the default) gets
+        stage times that are each one rounding of their exact values. A
+        doubled step needs at least 2 ticks (ETD1) or 4 ticks (ETDRK4), one
+        more with a partial tick, so that its stage times are distinct.
+        Before compilation, the driver raises ValueError if the span, dt_max
+        or dt0 is below that. If the controller later proposes a smaller
+        step, the run stops with StatusCode.TIME_UNRESOLVED before the step.
+        The stage times keep the resolution G of the time dtype; for a
+        time-dependent nonlinear_rhs keep G small against dt (enable x64, or
+        shift the time origin). Near the smallest step, the step-doubling
+        estimate can underestimate the error from this rounding.
+
+        CAUTION: With rhs_uses_time=False, the ticks are on the elapsed
+        time, and the time given to nonlinear_rhs is t0 + elapsed time,
+        rounded. Thus an autonomous problem at a large t0 can use small
+        steps. Do not set False for a nonlinear_rhs that reads t: the result
+        can be wrong with no message.
+
+        The step functions get the step length in the state dtype. For a
+        float32 state with a float64 clock (x64), each length is rounded
+        once to float32.
     """
     if method not in _ETD_ADAPTIVE_ORDER:
         raise ValueError(
@@ -1217,16 +1394,14 @@ def etd_integrate_adaptive(
     t0, t_end = t_span
     _check_adaptive_span(t0, t_end, dt0)
 
+    compute_dtype = jnp.result_type(*[u0[name] for name in u0])
+    plan = _etd_tick_plan(t0, t_end, dt0, method, bool(rhs_uses_time), compute_dtype,
+                          pid_params)
+
     driver = _etd_adaptive_driver(u0, linear_ops, nonlinear_rhs, method, pid_params,
                                   max_steps, save_every, max_rejections_per_step,
                                   bool(rhs_uses_time))
-    time_dtype = _time_dtype()
-    return driver(
-        u0,
-        jnp.asarray(t0, dtype=time_dtype),
-        jnp.asarray(t_end, dtype=time_dtype),
-        jnp.asarray(dt0, dtype=time_dtype),
-    )
+    return driver(u0, plan, jnp.asarray(dt0, dtype=_time_dtype()))
 
 
 # =============================================================================

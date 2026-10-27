@@ -6,6 +6,8 @@ adaptive driver: closed-form solutions, hand arithmetic, and the
 fixed-step driver etd_integrate. The grids are small.
 """
 
+from fractions import Fraction
+
 import jax
 
 # float32 must differ from float64 in the dtype test.
@@ -550,7 +552,9 @@ class TestRelativeClock:
     def test_reproductions(self, x64, t0, span, dt0, n_steps, rtol):
         res, t_end_clock = self.run(x64, t0, span, dt0)
         assert bool(res.success), int(res.status)
-        assert int(res.n_accepted) == n_steps
+        # The round-off of the error estimate can make the PI controller
+        # shorten one step, so the count can be one more.
+        assert n_steps <= int(res.n_accepted) <= n_steps + 1
         assert float(res.t_final) == t_end_clock
         np.testing.assert_allclose(res.y_final["u"], np.exp(span), rtol=rtol)
         n = int(res.n_saved)
@@ -576,7 +580,7 @@ class TestRelativeClock:
         n = int(res.n_saved)
         assert float(res.t_history[n - 1]) == t_end_clock
         np.testing.assert_array_equal(res.y_history["u"][n - 1], res.y_final["u"])
-        # Round-off of tau can leave one more very small step, never fewer.
+        # The floor of dt to whole clock ticks can leave one more step, never fewer.
         assert int(np.ceil(span / dt0 - 1e-9)) <= int(res.n_accepted) <= int(np.ceil(span / dt0)) + 1
         np.testing.assert_allclose(res.y_final["u"], np.exp(span), rtol=2e-6)
 
@@ -633,8 +637,7 @@ class TestCompletionOnTheUpdatedClock:
             assert float(res.t_history[1]) == t_end, (dt0, t_end)
             np.testing.assert_array_equal(np.asarray(res.y_history["u"][1]),
                                           np.asarray(res.y_final["u"]))
-            # After many steps the round-off of tau can exceed a few ulp and
-            # leave one more very small step.
+            # The floor of dt to whole clock ticks can leave one more step.
             assert int(res.n_accepted) <= int(np.ceil(t_end / dt0 - 1e-9)) + 1
             np.testing.assert_allclose(np.asarray(res.y_final["u"]), np.exp(t_end), rtol=1e-5)
 
@@ -667,17 +670,27 @@ class TestStageTimes:
     def rhs_time(self, state, t):
         return {"u": jnp.full_like(state["u"], t - self.T0)}
 
-    def test_unresolved_stage_times_stop_the_run(self):
-        # The clock spacing at 1e15 is 0.125, so t0 + 0.0625 rounds to t0
-        # and the two half steps of ETD1 see the same time.
+    def test_unresolved_stage_times_raise(self):
+        # The clock spacing at 1e15 is 0.125, so the span holds one tick,
+        # and an ETD1 doubled step needs two (distinct start, midpoint and
+        # end). The host plan raises before compilation.
         n = 1
-        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 0.125), 0.125,
+        with pytest.raises(ValueError, match="holds 1 clock ticks"):
+            etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 0.125), 0.125,
+                                   {"u": ConstantOp(0.0, n)}, self.rhs_time, method="etd1",
+                                   pid_params=PIDParams(atol=1e-12, rtol=0.0, dt_max=1.0))
+
+    def test_proposal_below_the_smallest_step_stops_the_run(self):
+        # dt_min below two ticks lets the controller propose a step that the
+        # clock cannot resolve; the run then stops before that step.
+        n = 1
+        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 4.0), 0.25,
                                      {"u": ConstantOp(0.0, n)}, self.rhs_time, method="etd1",
-                                     pid_params=PIDParams(atol=1e-12, rtol=0.0, dt_max=0.125))
+                                     pid_params=PIDParams(atol=1e-30, rtol=0.0, dt_max=1.0,
+                                                          dt_min=1e-3),
+                                     max_rejections_per_step=50)
         assert int(res.status) == StatusCode.TIME_UNRESOLVED
         assert not bool(res.success)
-        assert int(res.n_accepted) == 0
-        np.testing.assert_array_equal(np.asarray(res.y_final["u"]), np.zeros(n))
 
     def test_resolved_stage_times_give_the_exact_value(self):
         # u' = t - t0 from u = 0: u(t0 + 1) = 1/2. At t0 = 1e6 with x64 the
@@ -697,7 +710,8 @@ class TestStageTimes:
     def test_autonomous_rhs_at_large_t0(self):
         """u' = u at t0 = 1e15 with dt0 = 0.125 (the clock spacing there).
 
-        With the default rhs_uses_time=True, the stage check stops the run.
+        With the default rhs_uses_time=True, the host plan raises (dt_max is
+        one clock tick, and ETDRK4 needs four).
         With rhs_uses_time=False the run succeeds, for a plain rhs and for
         jax.jit(rhs). (A trace-based detection of time use rejected the
         jitted rhs, because the outer equation lists t as an input.)
@@ -706,9 +720,9 @@ class TestStageTimes:
         u0, ops, rhs = linear_l0_problem(1.0, n=1)
         pid = PIDParams(atol=1.0, rtol=0.0, dt_max=0.125)
 
-        res = etd_integrate_adaptive(u0, (t0, t0 + 1.0), 0.125, ops, rhs, method="etdrk4",
-                                     pid_params=pid)
-        assert int(res.status) == StatusCode.TIME_UNRESOLVED
+        with pytest.raises(ValueError, match="clock ticks"):
+            etd_integrate_adaptive(u0, (t0, t0 + 1.0), 0.125, ops, rhs, method="etdrk4",
+                                   pid_params=pid)
 
         for f in (rhs, jax.jit(rhs)):
             res = etd_integrate_adaptive(u0, (t0, t0 + 1.0), 0.125, ops, f, method="etdrk4",
@@ -720,11 +734,11 @@ class TestStageTimes:
     def test_time_dependent_rhs_default_is_checked(self):
         """The default rhs_uses_time=True also checks a jitted rhs."""
         n = 1
-        res = etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 0.125), 0.125,
-                                     {"u": ConstantOp(0.0, n)}, jax.jit(self.rhs_time),
-                                     method="etd1",
-                                     pid_params=PIDParams(atol=1e-12, rtol=0.0, dt_max=0.125))
-        assert int(res.status) == StatusCode.TIME_UNRESOLVED
+        with pytest.raises(ValueError, match="clock ticks"):
+            etd_integrate_adaptive({"u": jnp.zeros(n)}, (self.T0, self.T0 + 0.125), 0.125,
+                                   {"u": ConstantOp(0.0, n)}, jax.jit(self.rhs_time),
+                                   method="etd1",
+                                   pid_params=PIDParams(atol=1e-12, rtol=0.0, dt_max=0.125))
 
 
 class TestSpanCheckUnderJit:
@@ -785,20 +799,20 @@ class TestStepResolvedInStateDtype:
                 method="etd1", rhs_uses_time=False,
             )
 
-    def test_step_below_float32_resolution_stops(self):
+    def test_step_below_float32_resolution_raises(self):
         """u' = 1e38 over (0, 1e-40) in float32: the step is not resolved, so the run fails.
 
-        The exact result is 0.01. Before this check the driver returned SUCCESS
-        with an unchanged state.
+        The exact result is 0.01. An early version returned SUCCESS with an
+        unchanged state. The tick of this span is below the smallest normal
+        float32 number, so the host plan raises.
         """
         u0 = {"u": jnp.zeros(4, dtype=jnp.float32)}
         ops = {"u": ConstantOp(0.0, 4, jnp.float32)}
-        result = etd_integrate_adaptive(
-            u0, (0.0, 1e-40), 1e-12, ops, lambda y, t: {"u": jnp.full_like(y["u"], 1e38)},
-            method="etd1", rhs_uses_time=False,
-        )
-        assert not bool(result.success)
-        assert int(result.status) == int(StatusCode.DT_TOO_SMALL)
+        with pytest.raises(ValueError, match="smallest normal"):
+            etd_integrate_adaptive(
+                u0, (0.0, 1e-40), 1e-12, ops, lambda y, t: {"u": jnp.full_like(y["u"], 1e38)},
+                method="etd1", rhs_uses_time=False,
+            )
 
 
 class TestSubnormalSpan:
@@ -994,7 +1008,10 @@ class TestNoDiscardedInterval:
 
 
 class TestTailPredictedOnTheCompensatedClock:
-    """The predicted tail equals the remaining span of the next iteration."""
+    """Cases of the tail prediction of the earlier floating-point clock.
+
+    The integer tick clock has no tail prediction; it must also pass them.
+    """
 
     def test_float64_third_step(self):
         """x64, u' = 1 + 0.001 t on (0, 0.04), dt0 = dt_max = 0.013333333333333326, ETDRK4."""
@@ -1027,5 +1044,151 @@ class TestTailPredictedOnTheCompensatedClock:
             assert int(result.status) == int(StatusCode.SUCCESS)
             np.testing.assert_allclose(np.asarray(result.y_final["u"]),
                                        [0.3 + 0.001 * 0.3**2 / 2], rtol=1e-5)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+
+def _exact(x):
+    return Fraction(float(x))
+
+
+def _record_times(n):
+    """A right-hand side u' = 0 that records each time it gets, in call order."""
+    times = []
+
+    def rhs(state, t):
+        jax.debug.callback(lambda tt: times.append(np.asarray(tt).item()), t, ordered=True)
+        return {"u": jnp.zeros_like(state["u"])}
+
+    return rhs, times
+
+
+class TestTickClock:
+    """The integer tick clock (moljax_question/etd_global_ticks.md).
+
+    The accepted lengths sum exactly to the cast span, the last time is
+    t_end, and each stage time is one rounding of its exact value, with
+    strictly increasing times in each doubled step.
+    """
+
+    SPANS = [
+        # (x64, t0, t_end, dt0, dt_max)
+        (False, 1000.0, 1000.125, 0.01, 0.1),
+        (False, 0.0, 0.04, 0.01, 0.1),
+        (False, 0.1, 30.0, 1.0, 3.0),         # t0 is not on the tick grid of 30
+        (False, -30.0, 0.1, 1.0, 3.0),        # t_end is not on the tick grid of -30
+        (False, -1000.0, 1000.0, 50.0, 100.0),
+        (True, 1.0, 1.1, 0.01, 0.1),
+        (True, 1e15, 1e15 + 2.0, 0.5, 1.0),
+    ]
+
+    @staticmethod
+    def run(x64, t0, t_end, dt0, dt_max, method, rhs, uses_time=True):
+        jax.config.update("jax_enable_x64", x64)
+        try:
+            dtype = jnp.float64 if x64 else jnp.float32
+            res = etd_integrate_adaptive(
+                {"u": jnp.zeros(1, dtype=dtype)}, (t0, t_end), dt0,
+                {"u": ConstantOp(0.0, 1, dtype)}, rhs, method=method,
+                pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=dt_max, dt_min=1e-30),
+                rhs_uses_time=uses_time,
+            )
+            res = jax.tree.map(np.asarray, res)
+            clock = np.float64 if x64 else np.float32
+        finally:
+            jax.config.update("jax_enable_x64", True)
+        return res, clock
+
+    @pytest.mark.parametrize("method", ["etd1", "etdrk4"])
+    @pytest.mark.parametrize("x64, t0, t_end, dt0, dt_max", SPANS)
+    def test_exact_coverage_and_stage_times(self, x64, t0, t_end, dt0, dt_max, method):
+        rhs, times = _record_times(1)
+        res, clock = self.run(x64, t0, t_end, dt0, dt_max, method, rhs)
+        assert bool(res.success), int(res.status)
+        assert int(res.n_rejected) == 0
+        n = int(res.n_saved)
+        # Exact coverage and an exact endpoint.
+        span = _exact(clock(t_end)) - _exact(clock(t0))
+        assert sum(_exact(h) for h in res.dt_history[1:n]) == span
+        assert res.t_history[n - 1] == clock(t_end)
+        assert res.t_final == clock(t_end)
+        # Each trial calls the rhs 3 x 1 (ETD1) or 3 x 4 (ETDRK4) times.
+        calls = 3 if method == "etd1" else 12
+        assert len(times) == calls * (n - 1)
+        for i in range(1, n):
+            a, b, h = _exact(res.t_history[i - 1]), _exact(res.t_history[i]), _exact(res.dt_history[i])
+            assert b - a == h
+            got = times[calls * (i - 1): calls * i]
+            if method == "etd1":
+                exact = [a, a, a + h / 2]
+            else:
+                q1, mid, q3 = a + h / 4, a + h / 2, a + 3 * h / 4
+                exact = [a, mid, mid, b, a, q1, q1, mid, mid, q3, q3, b]
+            # One rounding of each exact value.
+            assert [clock(float(x)) for x in exact] == [clock(x) for x in got]
+            distinct = sorted(set(got) | {float(clock(float(b)))})
+            assert len(distinct) == (3 if method == "etd1" else 5)
+
+    def test_decimal_dt_gives_no_short_final_step(self):
+        """(0, 0.04) with dt held at 0.01 takes four steps, not five.
+
+        floor(0.01 / tick) ticks leave two ticks after four steps; the last
+        step takes them (dt_max = 0.02 permits it).
+        """
+        jax.config.update("jax_enable_x64", False)
+        try:
+            res = etd_integrate_adaptive(
+                {"u": jnp.zeros(1, jnp.float32)}, (0.0, 0.04), 0.01,
+                {"u": ConstantOp(0.0, 1, jnp.float32)},
+                lambda y, t: {"u": jnp.zeros_like(y["u"])}, method="etdrk4",
+                pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=0.02, max_factor=1.0,
+                                     safety=1.0),
+            )
+        finally:
+            jax.config.update("jax_enable_x64", True)
+        assert bool(res.success)
+        assert int(res.n_accepted) == 4
+
+    def test_autonomous_rhs_uses_the_elapsed_grid(self):
+        """At t0 = 1e6 in float32 the absolute tick is 0.0625; the elapsed grid allows 0.01."""
+        u0, ops, rhs = linear_l0_problem(1.0, dtype=jnp.float32)
+        jax.config.update("jax_enable_x64", False)
+        try:
+            res = etd_integrate_adaptive(u0, (1e6, 1e6 + 0.25), 0.01, ops, rhs, method="etd1",
+                                         pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=0.01),
+                                         rhs_uses_time=False)
+            res = jax.tree.map(np.asarray, res)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+        assert bool(res.success)
+        n = int(res.n_saved)
+        assert sum(_exact(h) for h in res.dt_history[1:n]) == Fraction(1, 4)
+        assert int(res.n_accepted) == 26  # 25 steps of floor(0.01 / tick) ticks, then the rest
+
+    @pytest.mark.parametrize("t_span, dt_max, match", [
+        ((1000.0, 1000.0 + 3 * 2.0 ** -14), 1.0, "holds 3 clock ticks"),  # float32 below 4 ticks
+        ((1000.0, 1001.0), 5 * 2.0 ** -14, "below 7 clock ticks"),       # K = 5 < 2m - 1
+    ])
+    def test_infeasible_spans_raise(self, t_span, dt_max, match):
+        jax.config.update("jax_enable_x64", False)
+        try:
+            with pytest.raises(ValueError, match=match):
+                etd_integrate_adaptive({"u": jnp.zeros(1, jnp.float32)}, t_span, dt_max,
+                                       {"u": ConstantOp(0.0, 1, jnp.float32)},
+                                       lambda y, t: {"u": jnp.zeros_like(y["u"])},
+                                       method="etdrk4",
+                                       pid_params=PIDParams(dt_max=dt_max, dt_min=1e-30))
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_dt0_below_the_smallest_step_raises(self):
+        jax.config.update("jax_enable_x64", False)
+        try:
+            with pytest.raises(ValueError, match="dt0="):
+                etd_integrate_adaptive({"u": jnp.zeros(1, jnp.float32)}, (1e6, 1e6 + 1.0), 0.1,
+                                       {"u": ConstantOp(0.0, 1, jnp.float32)},
+                                       lambda y, t: {"u": jnp.zeros_like(y["u"])},
+                                       method="etdrk4",
+                                       pid_params=PIDParams(dt_max=1.0, dt_min=1e-30))
         finally:
             jax.config.update("jax_enable_x64", True)
