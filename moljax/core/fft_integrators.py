@@ -940,10 +940,13 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 done = k_new == plan.n_ticks
                 # A step that the schedule shortened (a partial tick, or a
                 # split that keeps t_end reachable) does not lower the next
-                # proposal below the previous one: the controller scales from
-                # h, and a forced short h would otherwise shrink dt for no
-                # error reason. The next trial gets the normal error test.
-                dt_next = jnp.where(shortened, jnp.maximum(dt_new, s.dt), dt_new)
+                # proposal below the previous one, unless the controller asks
+                # for a step shorter than h (an error reason). The controller
+                # scales from h, and a forced short h would otherwise shrink
+                # dt for no error reason. The next trial gets the normal
+                # error test.
+                keep = shortened & (dt_new >= h)
+                dt_next = jnp.where(keep, jnp.maximum(dt_new, s.dt), dt_new)
                 save = ((n_accepted % save_every) == 0) | done
                 idx = s.write_idx
 

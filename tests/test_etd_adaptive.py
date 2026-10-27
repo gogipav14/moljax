@@ -1251,3 +1251,25 @@ class TestTickClock:
         assert bool(res.success), int(res.status)
         n = int(res.n_saved)
         assert sum(_exact(h) for h in res.dt_history[1:n]) == _exact(np.float32(1e6)) - _exact(np.float32(0.05))
+
+    def test_controller_reduction_after_a_shortened_step_is_kept(self):
+        """u' = -u + exp(-t) from u(0.4) = 0 on (0.4, 1e6), float32, ETDRK4.
+
+        The partial first step (h = 0.475) passes with an error ratio of
+        0.94, and the controller asks for 0.433 < h. The driver must keep
+        that reduction: with the previous proposal 0.5625 the next trial
+        failed, and the rejection fell below the smallest step (0.25).
+        """
+        def rhs(y, t):
+            return {"u": jnp.full_like(y["u"], jnp.exp(-t).astype(y["u"].dtype))}
+
+        jax.config.update("jax_enable_x64", False)
+        try:
+            res = etd_integrate_adaptive({"u": jnp.zeros(1, jnp.float32)}, (0.4, 1e6), 0.5625,
+                                         {"u": ConstantOp(-1.0, 1, jnp.float32)}, rhs,
+                                         method="etdrk4",
+                                         pid_params=PIDParams(atol=7e-7, rtol=0.0, dt_max=5e4))
+            res = jax.tree.map(np.asarray, res)
+        finally:
+            jax.config.update("jax_enable_x64", True)
+        assert bool(res.success), int(res.status)
