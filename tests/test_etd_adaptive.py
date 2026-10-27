@@ -873,3 +873,43 @@ class TestSubnormalEndpoints:
     def test_subnormal_endpoints_with_x64(self):
         with pytest.raises(ValueError, match="subnormal"):
             self._call(2.0**-1023, 1e307, jnp.float64)
+
+
+class TestUnresolvedResidue:
+    """A residue below the absolute clock spacing at t_end completes the run."""
+
+    @pytest.mark.parametrize("method", ["etd1", "etdrk4"])
+    def test_span_one_to_one_point_one(self, method):
+        """x64, u' = 1 + 0.001 t on (1, 1.1), dt0 = dt_max = 0.01, save_every = 3.
+
+        The cast span is 0.10000000000000009; ten steps of 0.01 leave a residue
+        of about 8e-17, below the clock spacing at 1.1. Before this rule the
+        run stopped with TIME_UNRESOLVED. Exact: 0.1 + 0.001 (1.1^2 - 1) / 2.
+        """
+        u0 = {"u": jnp.zeros(1)}
+        ops = {"u": ConstantOp(0.0, 1)}
+        result = etd_integrate_adaptive(
+            u0, (1.0, 1.1), 0.01, ops,
+            lambda y, t: {"u": jnp.ones_like(y["u"]) * (1.0 + 0.001 * t)},
+            method=method, pid_params=PIDParams(dt_max=0.01), save_every=3,
+        )
+        assert int(result.status) == int(StatusCode.SUCCESS)
+        assert float(result.t_final) == 1.1
+        n = int(result.n_saved)
+        assert float(result.t_history[n - 1]) == 1.1
+        np.testing.assert_array_equal(np.asarray(result.y_history["u"][n - 1]),
+                                      np.asarray(result.y_final["u"]))
+        exact = 0.1 + 0.001 * (1.1**2 - 1.0) / 2
+        rtol = 1e-4 if method == "etd1" else 1e-9
+        np.testing.assert_allclose(np.asarray(result.y_final["u"]), [exact], rtol=rtol)
+
+    def test_span_near_the_float_maximum_is_rejected(self):
+        """A span whose clock spacing is not finite raises ValueError."""
+        u0 = {"u": jnp.zeros(1)}
+        ops = {"u": ConstantOp(0.0, 1)}
+        with pytest.raises(ValueError, match="too large"):
+            etd_integrate_adaptive(
+                u0, (0.0, float(np.finfo(np.float64).max)), 1.0, ops,
+                lambda y, t: {"u": jnp.full_like(y["u"], 1e-307)},
+                method="etd1", rhs_uses_time=False,
+            )

@@ -831,6 +831,14 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 tau_sum = s.tau + increment
                 comp_new = (tau_sum - s.tau) - increment
                 done = is_final | (tau_sum >= span - 4 * jnp.spacing(span))
+                if check_stage_times:
+                    # A residue that the absolute clock cannot resolve cannot
+                    # be integrated by a right-hand side that uses t (its
+                    # stage times would coincide). Such a residue is below
+                    # one clock spacing at t_end, so the run is complete.
+                    residue = span - tau_sum
+                    t_here = t0 + tau_sum
+                    done = done | ((residue > 0) & (t0 + (tau_sum + residue / 2) <= t_here))
                 tau_new = jnp.where(done, span, tau_sum)
                 t_new = jnp.where(done, t_end, t0 + tau_new)
                 save = ((n_accepted % save_every) == 0) | done
@@ -1003,6 +1011,11 @@ def _check_adaptive_span(t0, t_end, dt0) -> None:
         )
     # A subnormal span can be flushed to zero by the CPU, so the loop would
     # not run and the driver would report success without a step.
+    if not np.isfinite(np.spacing(clock(cast))):
+        raise ValueError(
+            f"the span {cast!r} is too large for the {np.dtype(clock).name} clock "
+            f"(its spacing is not finite)."
+        )
     tiny = float(np.finfo(clock).tiny)
     for name, value in (("t0", t0_f), ("t_end", t_end_f)):
         if value != 0.0 and abs(value) < tiny:
