@@ -773,12 +773,34 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             running = s.status == StatusCode.RUNNING
             return running & (s.tau < span) & (s.n_accepted < max_steps)
 
+        def trial_step(s: _ETDAdaptiveState):
+            """Return (dt_step, is_final) for the next trial.
+
+            The trial is min(dt, remaining). When the right-hand side uses t,
+            a trial must not leave a positive remainder whose stage times the
+            absolute clock cannot resolve: no later step could integrate it.
+            In that case the trial takes half of the remaining span, so that
+            the next step ends exactly at t_end. Half of the remaining span is
+            smaller than dt, so dt_max still holds.
+            """
+            remaining = span - s.tau
+            dt_step = jnp.minimum(s.dt, remaining)
+            if check_stage_times:
+                tail = remaining - dt_step
+                t_after = t0 + (s.tau + dt_step)
+                # A tail within the completion margin is clock rounding; the
+                # accepted step completes the run, so it needs no split.
+                material = tail > 4 * jnp.spacing(span)
+                unresolved_tail = material & (t0 + (s.tau + dt_step + tail / 2) <= t_after)
+                dt_step = jnp.where(unresolved_tail, remaining / 2, dt_step)
+            return dt_step, dt_step >= remaining
+
         def body_fn(s: _ETDAdaptiveState) -> _ETDAdaptiveState:
             # A step that is zero in the state dtype (for example a very small
             # dt in float32, which the CPU can flush to zero) cannot change
             # the state, but the clock would still advance. Such a run stops
             # with DT_TOO_SMALL and does not take the step.
-            dt_step = jnp.minimum(s.dt, span - s.tau)
+            dt_step, _ = trial_step(s)
             h = dt_step.astype(compute_dtype)
             resolved = (h > 0) & (h / 2 > 0)
             return lax.cond(
@@ -793,9 +815,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             # trial. There is no stretch of the step to t_end: when the
             # clock rounding leaves a very small remaining span, the run
             # takes one more small step.
-            remaining = span - s.tau
-            is_final = s.dt >= remaining
-            dt_step = jnp.minimum(s.dt, remaining)
+            dt_step, is_final = trial_step(s)
             h = dt_step.astype(compute_dtype)
             t_abs = t0 + s.tau
 
@@ -831,14 +851,6 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 tau_sum = s.tau + increment
                 comp_new = (tau_sum - s.tau) - increment
                 done = is_final | (tau_sum >= span - 4 * jnp.spacing(span))
-                if check_stage_times:
-                    # A residue that the absolute clock cannot resolve cannot
-                    # be integrated by a right-hand side that uses t (its
-                    # stage times would coincide). Such a residue is below
-                    # one clock spacing at t_end, so the run is complete.
-                    residue = span - tau_sum
-                    t_here = t0 + tau_sum
-                    done = done | ((residue > 0) & (t0 + (tau_sum + residue / 2) <= t_here))
                 tau_new = jnp.where(done, span, tau_sum)
                 t_new = jnp.where(done, t_end, t0 + tau_new)
                 save = ((n_accepted % save_every) == 0) | done

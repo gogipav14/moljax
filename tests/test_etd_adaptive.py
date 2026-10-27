@@ -913,3 +913,32 @@ class TestUnresolvedResidue:
                 lambda y, t: {"u": jnp.full_like(y["u"], 1e-307)},
                 method="etd1", rhs_uses_time=False,
             )
+
+
+class TestNoUnresolvedTail:
+    """A trial never leaves a tail whose stage times the clock cannot resolve."""
+
+    @pytest.mark.parametrize("method", ["etd1", "etdrk4"])
+    def test_float32_tail_is_split_not_discarded(self, method):
+        """x64 off, u' = 1 on (1000, 1000.125), dt0 = dt_max = 0.12498, atol = 1e-6.
+
+        A first step of 0.12498 would leave 2e-5, below the float32 clock
+        spacing at 1000.125. The driver takes half of the span instead and
+        ends exactly at t_end with the exact value 0.125. An earlier rule
+        discarded the tail and returned 0.12498.
+        """
+        jax.config.update("jax_enable_x64", False)
+        try:
+            u0 = {"u": jnp.zeros(1, dtype=jnp.float32)}
+            ops = {"u": ConstantOp(0.0, 1, jnp.float32)}
+            result = etd_integrate_adaptive(
+                u0, (1000.0, 1000.125), 0.12498, ops,
+                lambda y, t: {"u": jnp.ones_like(y["u"]) + 0.0 * t},
+                method=method, pid_params=PIDParams(dt_max=0.12498, atol=1e-6, rtol=0.0),
+            )
+            assert int(result.status) == int(StatusCode.SUCCESS)
+            np.testing.assert_allclose(np.asarray(result.y_final["u"]), [0.125], rtol=1e-6)
+            assert float(result.t_final) == float(np.float32(1000.125))
+            assert float(np.max(np.asarray(result.dt_history)[: int(result.n_saved)])) <= 0.12498 + 1e-9
+        finally:
+            jax.config.update("jax_enable_x64", True)
