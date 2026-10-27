@@ -48,68 +48,97 @@ JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 python benchmarks/tau_blend_cfl_fidelity.py
 
 | # | Email number | Script | Case or selector | Output field | Expected | Source | Value after regeneration |
 |---|---|---|---|---|---|---|---|
-| D1 | Item 1: P^-1 J = [[I, X], [0, Y]] and spectrum {1}^n0 with sigma(Y) when D = 0 on the inactive set | T | `test_mask_gives_block_triangular_form_when_masked_coefficient_is_zero` | test passes | pass | algebra (Lemma) | |
-| D2 | "90 to 97 percent" of the GMRES reduction | MA | N = 512, 1024; m = 4, 8; (`scalar_max` - `cfl_mask_one_inverse_max`) / (`scalar_max` - `repo_blend_B3`) | `gmres_preconditioned` | 0.905, 0.897, 0.973, 0.921 | A9 CSV | |
-| D3 | N = 512, m = 4: "246 to 37 to 15" | MA | (512, 4): `scalar_max`, `cfl_mask_one_inverse_max`, `repo_blend_B3` | `gmres_preconditioned` | 246, 37, 15 | A9 CSV | |
-| D4 | N = 512, m = 8: "278 to 44 to 17" | MA | (512, 8): same three cases | `gmres_preconditioned` | 278, 44, 17 | A9 CSV | |
-| D5 | N = 1024, m = 4: "425 to 65 to 55" | MA | (1024, 4): same three cases | `gmres_preconditioned` | 425, 65, 55 | A9 CSV | |
-| D6 | N = 1024, m = 8: "488 to 69 to 33" | MA | (1024, 8): same three cases | `gmres_preconditioned` | 488, 69, 33 | A9 CSV | |
-| D7 | "10 and 14 eigenvalues below 0.1" (mask and one inverse, N = 512) | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_max` | `eigenvalues_below_0p1` | 10, 14 | A9 CSV | |
-| D8 | "kappa_2 stays at 1.6e3 to 2.1e3" | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_max` | `kappa2` | 1597, 2059 | A9 CSV | |
-| D9 | "against 55 and 51 for your blend" | MA | (512, 4), (512, 8): `repo_blend_B3` | `kappa2` | 54.78, 51.44 | A9 CSV | |
-| D10 | Blend without the mask: "148 to 226 eigenvalues stay below 0.1" in three of four cases | MA | `repo_blend_B3_no_mask` at (512, 4), (512, 8), (1024, 8) | `eigenvalues_below_0p1` | 196, 148, 226 | A9 CSV | |
-| D11 | Blend without the mask: "89 to 135 iterations" | MA | same three entries | `gmres_preconditioned` | 89, 99, 135 | A9 CSV | |
-| D12 | N = 1024, m = 4: "the references alone remove the tail", "96 iterations, against 55" | MA | (1024, 4): `repo_blend_B3_no_mask`; `repo_blend_B3` | `eigenvalues_below_0p1`; `gmres_preconditioned` | 0; 96 and 55 | A9 CSV | |
-| D13 | m = 2: "With the references taken off the floor and no mask, 170 and 466 small eigenvalues stay" | MA | (512, 2), (1024, 2): `cfl_refs_no_mask_B3` | `eigenvalues_below_0p1` | 170, 466 | A9 CSV | |
-| D14 | "an additional GMRES gain of a factor of approximately 2.5 at N = 512" | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_max` / `repo_blend_B3` | `gmres_preconditioned` | 2.47, 2.59 | A9 CSV | |
-| D15 | "For m = 4 this factor decreases to 1.2 at N = 1024" | MA | (1024, 4): same ratio | `gmres_preconditioned` | 1.18 | A9 CSV | |
-| D16 | "from 50, 15 and 17 to 105, 55 and 33" (blend under refinement) | MA | `repo_blend_B3`, m = 2, 4, 8 at N = 512 and 1024 | `gmres_preconditioned` | 50, 15, 17; 105, 55, 33 | A9 CSV | |
-| D17 | Item 3: the CFL mask "selects exactly the floor nodes" (m = 2) | MA | `states`, (512, 2), (1024, 2) | `cfl_mask_equals_floor_nodes`, `cfl_masked_count` | true; 334, 668 | A9 CSV (inactive count) | |
-| D18 | "the mask alone still needs 50 and 105 iterations" | MA | (512, 2), (1024, 2): `cfl_mask_repo_refs_B3` | `gmres_preconditioned` | 50, 105 | private check; not in the A9 CSV | |
-| D19 | Related control, not in the email: the mask with one inverse at m = 2 | MA | (512, 2), (1024, 2): `cfl_mask_one_inverse_max` | `gmres_preconditioned` | 33, 45 | A9 CSV | |
-| D20 | "the counts become 14 and 17 again" | MA | (512, 2), (1024, 2): `cfl_blend_B3` | `gmres_preconditioned` | 14, 17 | A9 CSV | |
-| D21 | "Your earlier, incorrect coefficient did both of these things" | none | none | none | none | the original branch with the old coefficient | |
-| D22 | Item 4: "||X|| is 9 to 12.6 at N = 512" | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_*` and `repo_blend_B3` | `block_X_norm` | 8.94 to 12.6 | A9 CSV | |
-| D23 | "negative eigenvalues, down to approximately -4" (Hermitian part) | MA | (512, 4), (512, 8): `repo_blend_B3` | `hermitian_part_min_eigenvalue` | -3.96, -2.89 | A9 CSV | |
-| D24 | "This agrees with the abstention of the disk test" | none | none | `disk_only_verdict` | "indeterminate" | `benchmarks/results/pme_dst_tau_blend_spectral_analysis.json` | |
-| D25 | "At m = 2 there is no mask and no X" | MA | (512, 2), (1024, 2): `repo_blend_B3` | `identity_input_count`, `block_X_norm` | 0, null | A9 CSV | |
-| D26 | Item 5: mask, one inverse and frame: "12 to 14 GMRES iterations" at N = 512 and 1024, all m | MA | `cfl_mask_frame` (eta = 0.1) and `cfl_mask_frame_eta1` | `gmres_preconditioned` | N = 512: 12, 12, 14. N = 1024: no saved value | A10 CSV (N = 512, E1E2, dt = 0.02, Zf) | |
-| D27 | "In each case the count is smaller than the count of the blend" | MA | `cfl_mask_frame` against `repo_blend_B3` | `gmres_preconditioned` | frame < blend for all six states | D16, D26 | |
-| D28 | "kappa_2 of this variant is large (up to 2e5)" | MA | (1024, 4), (1024, 8): `cfl_mask_frame_eta1` and `cfl_mask_frame` | `kappa2` | 1.86e5, 1.23e5 (eta = 1) | private CFL study of 2026-09 (N = 1024, eta = 1); no saved CSV | |
-| D29 | "at m = 8 it has negative eigenvalues" | MA | (512, 8), (1024, 8): `cfl_mask_frame`, `cfl_mask_frame_eta1` | `min_real_eigenvalue` | < 0 (-15.17 at N = 512, eta = 1) | private CFL study of 2026-09; no saved CSV | |
-| D30 | "The symmetric version ... controls kappa: the diag(D)^(1/2) similarity ..., then PCG" | none | none | none | none | no measurement; a statement of method | |
+| D1 | Item 1: P^-1 J = [[I, X], [0, Y]] and spectrum {1}^n0 with sigma(Y) when D = 0 on the inactive set | T | `test_mask_gives_block_triangular_form_when_masked_coefficient_is_zero` | test passes | pass | algebra (Lemma) || pass (12 of 12 tests) |
+| D2 | "90 to 97 percent" of the GMRES reduction | MA | N = 512, 1024; m = 4, 8; (`scalar_max` - `cfl_mask_one_inverse_max`) / (`scalar_max` - `repo_blend_B3`) | `gmres_preconditioned` | 0.905, 0.897, 0.973, 0.921 | A9 CSV || 0.905, 0.897, 0.973, 0.920 |
+| D3 | N = 512, m = 4: "246 to 37 to 15" | MA | (512, 4): `scalar_max`, `cfl_mask_one_inverse_max`, `repo_blend_B3` | `gmres_preconditioned` | 246, 37, 15 | A9 CSV || 247, 37, 15 (scalar differs by 1) |
+| D4 | N = 512, m = 8: "278 to 44 to 17" | MA | (512, 8): same three cases | `gmres_preconditioned` | 278, 44, 17 | A9 CSV || 279, 44, 17 (scalar differs by 1) |
+| D5 | N = 1024, m = 4: "425 to 65 to 55" | MA | (1024, 4): same three cases | `gmres_preconditioned` | 425, 65, 55 | A9 CSV || 425, 65, 55 |
+| D6 | N = 1024, m = 8: "488 to 69 to 33" | MA | (1024, 8): same three cases | `gmres_preconditioned` | 488, 69, 33 | A9 CSV || 484, 69, 33 (scalar differs by 4) |
+| D7 | "10 and 14 eigenvalues below 0.1" (mask and one inverse, N = 512) | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_max` | `eigenvalues_below_0p1` | 10, 14 | A9 CSV || 10, 14 |
+| D8 | "kappa_2 stays at 1.6e3 to 2.1e3" | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_max` | `kappa2` | 1597, 2059 | A9 CSV || 1597, 2059 |
+| D9 | "against 55 and 51 for your blend" | MA | (512, 4), (512, 8): `repo_blend_B3` | `kappa2` | 54.78, 51.44 | A9 CSV || 54.78, 51.44 |
+| D10 | Blend without the mask: "148 to 226 eigenvalues stay below 0.1" in three of four cases | MA | `repo_blend_B3_no_mask` at (512, 4), (512, 8), (1024, 8) | `eigenvalues_below_0p1` | 196, 148, 226 | A9 CSV || 196, 148, 226 |
+| D11 | Blend without the mask: "89 to 135 iterations" | MA | same three entries | `gmres_preconditioned` | 89, 99, 135 | A9 CSV || 89, 99, 135 |
+| D12 | N = 1024, m = 4: "the references alone remove the tail", "96 iterations, against 55" | MA | (1024, 4): `repo_blend_B3_no_mask`; `repo_blend_B3` | `eigenvalues_below_0p1`; `gmres_preconditioned` | 0; 96 and 55 | A9 CSV || 0; 96 and 55 |
+| D13 | m = 2: "With the references taken off the floor and no mask, 170 and 466 small eigenvalues stay" | MA | (512, 2), (1024, 2): `cfl_refs_no_mask_B3` | `eigenvalues_below_0p1` | 170, 466 | A9 CSV || 170, 466 |
+| D14 | "an additional GMRES gain of a factor of approximately 2.5 at N = 512" | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_max` / `repo_blend_B3` | `gmres_preconditioned` | 2.47, 2.59 | A9 CSV || 2.47, 2.59 |
+| D15 | "For m = 4 this factor decreases to 1.2 at N = 1024" | MA | (1024, 4): same ratio | `gmres_preconditioned` | 1.18 | A9 CSV || 1.18 |
+| D16 | "from 50, 15 and 17 to 105, 55 and 33" (blend under refinement) | MA | `repo_blend_B3`, m = 2, 4, 8 at N = 512 and 1024 | `gmres_preconditioned` | 50, 15, 17; 105, 55, 33 | A9 CSV || 50, 15, 17; 105, 55, 33 |
+| D17 | Item 3: the CFL mask "selects exactly the floor nodes" (m = 2) | MA | `states`, (512, 2), (1024, 2) | `cfl_mask_equals_floor_nodes`, `cfl_masked_count` | true; 334, 668 | A9 CSV (inactive count) || true, true; 334, 668 |
+| D18 | "the mask alone still needs 50 and 105 iterations" | MA | (512, 2), (1024, 2): `cfl_mask_repo_refs_B3` | `gmres_preconditioned` | 50, 105 | private check; not in the A9 CSV || 50, 105 |
+| D19 | Related control, not in the email: the mask with one inverse at m = 2 | MA | (512, 2), (1024, 2): `cfl_mask_one_inverse_max` | `gmres_preconditioned` | 33, 45 | A9 CSV || 33, 45 |
+| D20 | "the counts become 14 and 17 again" | MA | (512, 2), (1024, 2): `cfl_blend_B3` | `gmres_preconditioned` | 14, 17 | A9 CSV || 14, 17 |
+| D21 | "Your earlier, incorrect coefficient did both of these things" | none | none | none | none | the original branch with the old coefficient || not a measurement |
+| D22 | Item 4: "||X|| is 9 to 12.6 at N = 512" | MA | (512, 4), (512, 8): `cfl_mask_one_inverse_*` and `repo_blend_B3` | `block_X_norm` | 8.94 to 12.6 | A9 CSV || 8.94 to 12.58 |
+| D23 | "negative eigenvalues, down to approximately -4" (Hermitian part) | MA | (512, 4), (512, 8): `repo_blend_B3` | `hermitian_part_min_eigenvalue` | -3.96, -2.89 | A9 CSV || -3.96, -2.89 |
+| D24 | "This agrees with the abstention of the disk test" | none | none | `disk_only_verdict` | "indeterminate" | `benchmarks/results/pme_dst_tau_blend_spectral_analysis.json` || not regenerated (separate JSON) |
+| D25 | "At m = 2 there is no mask and no X" | MA | (512, 2), (1024, 2): `repo_blend_B3` | `identity_input_count`, `block_X_norm` | 0, null | A9 CSV || 0, null; 0, null |
+| D26 | Item 5: mask, one inverse and frame: "12 to 14 GMRES iterations" at N = 512 and 1024, all m | MA | `cfl_mask_frame` (eta = 0.1) and `cfl_mask_frame_eta1` | `gmres_preconditioned` | N = 512: 12, 12, 14. N = 1024: no saved value | A10 CSV (N = 512, E1E2, dt = 0.02, Zf) || N = 512: 12, 12, 14. N = 1024: 12, 14, 14 (eta = 0.1 and eta = 1) |
+| D27 | "In each case the count is smaller than the count of the blend" | MA | `cfl_mask_frame` against `repo_blend_B3` | `gmres_preconditioned` | frame < blend for all six states | D16, D26 || true for all six states |
+| D28 | "kappa_2 of this variant is large (up to 2e5)" | MA | (1024, 4), (1024, 8): `cfl_mask_frame_eta1` and `cfl_mask_frame` | `kappa2` | 1.86e5, 1.23e5 (eta = 1) | private CFL study of 2026-09 (N = 1024, eta = 1); no saved CSV || 1.86e5, 1.23e5 (eta = 1 and eta = 0.1) |
+| D29 | "at m = 8 it has negative eigenvalues" | MA | (512, 8), (1024, 8): `cfl_mask_frame`, `cfl_mask_frame_eta1` | `min_real_eigenvalue` | < 0 (-15.17 at N = 512, eta = 1) | private CFL study of 2026-09; no saved CSV || -15.17 (N = 512), -321.1 (N = 1024), both eta |
+| D30 | "The symmetric version ... controls kappa: the diag(D)^(1/2) similarity ..., then PCG" | none | none | none | none | no measurement; a statement of method || not a measurement |
 
 ## Section "CFL ANALYSIS OF THE MASK"
 
 | # | Email number | Script | Case or selector | Output field | Expected | Source | Value after regeneration |
 |---|---|---|---|---|---|---|---|
-| C1 | "each variant gives exact backward Euler to 5e-9 or better" (when Newton converges on the true residual) | CF | `e3` rows with `converged` true and `reference_converged` true (the script writes NaN fidelity fields when the reference fails) | max of `relative_l2_difference_to_reference` | 4.9e-9 (m = 8, dt = 0.2, right, forcing 0.1, S) | A10 CSV | |
-| C2 | "The cutoff bounds the mask perturbation: ||J - J0|| <= eta" | CF | all `e1_e2` rows of kind Z1 and Zf | `J_minus_J0_norm` <= `eta` | true for all rows | algebra (Lemma); the A10 CSV has no such field | |
-| C3 | "by 10 to 1000 times in single-step measurements", "The difference increases with the CFL number" | CF | `e4`, tolerance 1e-8 | `true_over_preconditioned` (normalized) and `absolute_ratio_r_over_Mr` | 10 to 1000 | no saved source; see "Numbers without a saved source" | |
-| C4 | "With loose forcing (0.1), the true linear residual can then be more than one" | CF | `e3`, side left, forcing 0.1 | `max_true_linear_ratio` | > 1 in several rows (for example 2.9, m = 2, dt = 0.2, S) | A10 CSV | |
-| C5 | "the front was behind: by 1.2 in x at m = 4, c = 3.5e4" | CF | `e3`, m = 4, dt = 0.2, left, forcing 0.1, kinds S and Z1 | `front_halfwidth_difference` | -1.2 | A10 CSV | |
-| C6 | "and by 1.9 for the frame at m = 2, c = 1.1e4" | CF | `e3`, m = 2, dt = 0.2, left, forcing 0.1, Zf | `front_halfwidth_difference` | -1.9 | A10 CSV | |
-| C7 | "Your blend converged in several runs with ratios up to 5" | CF | `e3`, kind B3, `converged` true | `max_true_linear_ratio` | 5.3 (m = 4, dt = 0.2, left, forcing 0.1) | A10 CSV | |
-| C8 | "It failed only two of five steps at m = 8, c = 6.9e4" | CF | `e3`, m = 8, dt = 0.2, left, forcing 0.1, B3 | `steps_converged`, `line_search_failures` | 3, 2 | A10 CSV | |
-| C9 | "Your inexact-Newton harness already checks the true residual" | none | none | none | none | `moljax/experimental/pme_inexact_newton.py` (code) | |
-| C10 | "4 dt m eps^(m-1)/h^2 ... At m = 2, N = 2048, dt = 0.02, this value is 0.105" | CF; T | `floor` rows; `test_floor_cfl_value_and_empty_mask_at_n2048` | `floor_cfl` | 0.104960025 | closed form | |
-| C11 | "eta = 0.1 loses the mask (more than 300 iterations)" | CF | `floor`, eta = 0.1, Z1 and Zf | `masked`, `gmres_true`, `gmres_preconditioned` | 0; true: none within 300 (both kinds); prec: none within 300 (Z1), 269 (Zf) | run of 2026-10-25 (see below) | |
-| C12 | "eta = 0.3 or 1 keeps the mask (97 iterations with one inverse, 20 with the frame)" | CF | `floor`, eta = 0.3 and 1 | `masked`, `gmres_true` | 1334; 97 (Z1), 20 (Zf) | run of 2026-10-25 (see below) | |
-| C13 | Same item, preconditioned convention (not in the email) | CF | `floor`, eta = 0.3 and 1 | `gmres_preconditioned` | 76 (Z1), 16 (Zf) | run of 2026-10-25; an earlier private check | |
-| C14 | "approximately 4, 8 and 18 iterations for each step to 1e-8 at c of approximately 1e2, 1e3 and 1e4" | CF | `e3`, `reference_newton_to_1e-8_per_step`; `e3_steps` with kind "direct" | mean and max over the five steps | means 3.8 to 4.2, 7.6 to 8.2, 17.6 to 19.4; max per step at dt = 0.2: 38, 39, 30 | A10 CSV (means and max only) | |
-| C15 | "With right preconditioning and forcing 0.1, the four preconditioners usually stay within 20 percent of each other" | CF | `e3`, side right, forcing 0.1 | `newton_total` | qualitative | A10 CSV | |
-| C16 | "at m = 2, c = 1.1e4, they need 54, 65, 69 and 119 Newton iterations over five steps (scalar, blend, mask, mask plus frame)" | CF | `e3`, m = 2, dt = 0.2, right, forcing 0.1; S, B3, Z1, Zf | `newton_total` | 54, 65, 69, 119 | A10 CSV | |
-| C17 | "At m = 8, c = 6.9e4, ... 17002 with the scalar, 6312 with the mask, 1971 with your blend and 1396 with the mask plus the frame" | CF | `e3`, m = 8, dt = 0.2, right, forcing 0.1; S, Z1, B3, Zf | `linear_iterations_total` | 17002, 6312, 1971, 1396 | A10 CSV | |
-| C18 | The values of c: 3.5e4 (m = 4), 1.1e4 (m = 2), 6.9e4 (m = 8) at dt = 0.2; 1e2, 1e3, 1e4 at dt = 2e-3, 2e-2, 0.2 | CF | `e3` | `global_cfl` | 35359, 10631, 69022 | A10 CSV | |
+| C1 | "each variant gives exact backward Euler to 5e-9 or better" (when Newton converges on the true residual) | CF | `e3` rows with `converged` true and `reference_converged` true (the script writes NaN fidelity fields when the reference fails) | max of `relative_l2_difference_to_reference` | 4.9e-9 (m = 8, dt = 0.2, right, forcing 0.1, S) | A10 CSV || 2.43e-9 (m = 8, dt = 0.2, right, forcing 0.1, S); 178 of 216 rows qualify |
+| C2 | "The cutoff bounds the mask perturbation: ||J - J0|| <= eta" | CF | all `e1_e2` rows of kind Z1 and Zf | `J_minus_J0_norm` <= `eta` | true for all rows | algebra (Lemma); the A10 CSV has no such field || true for all 432 rows |
+| C3 | "by 10 to 1000 times in single-step measurements", "The difference increases with the CFL number" | CF | `e4`, tolerance 1e-8 | `true_over_preconditioned` (normalized) and `absolute_ratio_r_over_Mr` | 10 to 1000 | no saved source; see "Numbers without a saved source" || normalized 0.68 to 1.5e6; absolute 0.58 to 4.7e5 (see Differences) |
+| C4 | "With loose forcing (0.1), the true linear residual can then be more than one" | CF | `e3`, side left, forcing 0.1 | `max_true_linear_ratio` | > 1 in several rows (for example 2.9, m = 2, dt = 0.2, S) | A10 CSV || > 1 in 28 rows; 2.88 (m = 2, dt = 0.2, S); largest 9.04 (m = 8, dt = 0.2, B3) |
+| C5 | "the front was behind: by 1.2 in x at m = 4, c = 3.5e4" | CF | `e3`, m = 4, dt = 0.2, left, forcing 0.1, kinds S and Z1 | `front_halfwidth_difference` | -1.2 | A10 CSV || -1.20 (S), -1.19 (Z1) |
+| C6 | "and by 1.9 for the frame at m = 2, c = 1.1e4" | CF | `e3`, m = 2, dt = 0.2, left, forcing 0.1, Zf | `front_halfwidth_difference` | -1.9 | A10 CSV || -1.93 |
+| C7 | "Your blend converged in several runs with ratios up to 5" | CF | `e3`, kind B3, `converged` true | `max_true_linear_ratio` | 5.3 (m = 4, dt = 0.2, left, forcing 0.1) | A10 CSV || 5.35 (m = 4, dt = 0.2, left, forcing 0.1) |
+| C8 | "It failed only two of five steps at m = 8, c = 6.9e4" | CF | `e3`, m = 8, dt = 0.2, left, forcing 0.1, B3 | `steps_converged`, `line_search_failures` | 3, 2 | A10 CSV || 2, 3 (see Differences) |
+| C9 | "Your inexact-Newton harness already checks the true residual" | none | none | none | none | `moljax/experimental/pme_inexact_newton.py` (code) || not a measurement |
+| C10 | "4 dt m eps^(m-1)/h^2 ... At m = 2, N = 2048, dt = 0.02, this value is 0.105" | CF; T | `floor` rows; `test_floor_cfl_value_and_empty_mask_at_n2048` | `floor_cfl` | 0.104960025 | closed form || 0.104960025 |
+| C11 | "eta = 0.1 loses the mask (more than 300 iterations)" | CF | `floor`, eta = 0.1, Z1 and Zf | `masked`, `gmres_true`, `gmres_preconditioned` | 0; true: none within 300 (both kinds); prec: none within 300 (Z1), 269 (Zf) | run of 2026-10-25 (see below) || 0; prec none (Z1), 269 (Zf); true none (both) |
+| C12 | "eta = 0.3 or 1 keeps the mask (97 iterations with one inverse, 20 with the frame)" | CF | `floor`, eta = 0.3 and 1 | `masked`, `gmres_true` | 1334; 97 (Z1), 20 (Zf) | run of 2026-10-25 (see below) || 1334; 97 (Z1), 20 (Zf) |
+| C13 | Same item, preconditioned convention (not in the email) | CF | `floor`, eta = 0.3 and 1 | `gmres_preconditioned` | 76 (Z1), 16 (Zf) | run of 2026-10-25; an earlier private check || 76 (Z1), 16 (Zf) |
+| C14 | "approximately 4, 8 and 18 iterations for each step to 1e-8 at c of approximately 1e2, 1e3 and 1e4" | CF | `e3`, `reference_newton_to_1e-8_per_step`; `e3_steps` with kind "direct" | mean and max over the five steps | means 3.8 to 4.2, 7.6 to 8.2, 17.6 to 19.4; max per step at dt = 0.2: 38, 39, 30 | A10 CSV (means and max only) || means 3.8 to 4.2, 7.6 to 8.2, 17.6 to 19.4; max 38, 39, 30 |
+| C15 | "With right preconditioning and forcing 0.1, the four preconditioners usually stay within 20 percent of each other" | CF | `e3`, side right, forcing 0.1 | `newton_total` | qualitative | A10 CSV || m = 4 and 8: within 10 percent; m = 2: 55 to 118 |
+| C16 | "at m = 2, c = 1.1e4, they need 54, 65, 69 and 119 Newton iterations over five steps (scalar, blend, mask, mask plus frame)" | CF | `e3`, m = 2, dt = 0.2, right, forcing 0.1; S, B3, Z1, Zf | `newton_total` | 54, 65, 69, 119 | A10 CSV || 55, 65, 68, 118 |
+| C17 | "At m = 8, c = 6.9e4, ... 17002 with the scalar, 6312 with the mask, 1971 with your blend and 1396 with the mask plus the frame" | CF | `e3`, m = 8, dt = 0.2, right, forcing 0.1; S, Z1, B3, Zf | `linear_iterations_total` | 17002, 6312, 1971, 1396 | A10 CSV || 17290, 6312, 1995, 1356 |
+| C18 | The values of c: 3.5e4 (m = 4), 1.1e4 (m = 2), 6.9e4 (m = 8) at dt = 0.2; 1e2, 1e3, 1e4 at dt = 2e-3, 2e-2, 0.2 | CF | `e3` | `global_cfl` | 35359, 10631, 69022 | A10 CSV || 35359, 10631, 69022 (dt = 0.2); 106 to 690 (2e-3), 1063 to 6902 (2e-2) |
 
 ## Section "DIRECTION" (CFL numbers that E1 also gives)
 
 | # | Email number | Script | Case or selector | Output field | Expected | Source | Value after regeneration |
 |---|---|---|---|---|---|---|---|
-| R1 | "When c increases from 0.1 to 1e5, the count of the scalar increases from approximately 5 to more than 300" | CF | `e1_e2`, kind S, dt = 2e-6 and 2 | `gmres_true` | 5 (m = 2, c = 0.106); 306 and 354 (m = 4, 8, dt = 2) | private CFL study of 2026-09 (both conventions); no saved CSV | |
-| R2 | "to approximately 55 with one inverse" | CF | `e2_best_cutoffs`, kind Z1, dt = 2 | `best_gmres_true` | 55, 48, 54 | private CFL study of 2026-09; no saved CSV | |
-| R3 | "and to 21 to 23 with the frame" | CF | `e2_best_cutoffs`, kind Zf, dt = 2 | `best_gmres_true` | 23, 17, 19 (frame); 21 for the CFL blend at m = 2 | private CFL study of 2026-09; no saved CSV | |
-| R4 | "Up to c of approximately 10, the best cutoff often masks all nodes" | CF | `e2_best_cutoffs`, c <= 10 | `best_masked_gmres_true` = N | several entries | private CFL study of 2026-09 | |
+| R1 | "When c increases from 0.1 to 1e5, the count of the scalar increases from approximately 5 to more than 300" | CF | `e1_e2`, kind S, dt = 2e-6 and 2 | `gmres_true` | 5 (m = 2, c = 0.106); 306 and 354 (m = 4, 8, dt = 2) | private CFL study of 2026-09 (both conventions); no saved CSV || 5 (m = 2, c = 0.106); 306, 353 (m = 4, 8, dt = 2) |
+| R2 | "to approximately 55 with one inverse" | CF | `e2_best_cutoffs`, kind Z1, dt = 2 | `best_gmres_true` | 55, 48, 54 | private CFL study of 2026-09; no saved CSV || 55, 48, 54 |
+| R3 | "and to 21 to 23 with the frame" | CF | `e2_best_cutoffs`, kind Zf, dt = 2 | `best_gmres_true` | 23, 17, 19 (frame); 21 for the CFL blend at m = 2 | private CFL study of 2026-09; no saved CSV || 23, 17, 19 (frame); the CFL blend is not in e2_best_cutoffs |
+| R4 | "Up to c of approximately 10, the best cutoff often masks all nodes" | CF | `e2_best_cutoffs`, c <= 10 | `best_masked_gmres_true` = N | several entries | private CFL study of 2026-09 || all 18 entries with c <= 10 (N = 512) |
+
+## Regeneration of 2026-10-26
+
+Both scripts ran on 2026-10-26 on research/tau-blend-repro (CPU, float64,
+JAX_PLATFORMS=cpu, JAX_ENABLE_X64=1): MA in 1 min 35 s and CF in 5 min 47 s.
+The column "Value after regeneration" gives the values. The JSON files
+record the provenance.
+
+### Differences after regeneration
+
+1. D3, D4, D6: the scalar counts are 247, 279 and 484, against 246, 278
+   and 488 in A9. MA uses its own GMRES (see Conventions). The ratio D2 at
+   N = 1024, m = 8 changes from 0.921 to 0.920. The email range "90 to 97
+   percent" holds.
+2. C16 and C17: 55, 65, 68, 118 against 54, 65, 69, 119; 17290, 6312,
+   1995, 1356 against 17002, 6312, 1971, 1396. The differences are 3 percent
+   or less, and the order of the four preconditioners does not change.
+3. C8: the blend at m = 8, c = 6.9e4 (left, forcing 0.1) converged 2 of 5
+   steps, with 3 line-search failures. The email says "It failed only two
+   of five steps". The regenerated run fails three of five. This is a real
+   difference, not a convention.
+4. C3: E4 does not support the range "10 to 1000 times". At tolerance 1e-8
+   the normalized ratio is 0.68 to 1.5e6, and the absolute ratio is 0.58 to
+   4.7e5. The claim needs a restatement with the case selection.
+5. R1: 353 against 354 at m = 8. R3: the e2_best_cutoffs list has no CFL
+   blend, so the value 21 for the CFL blend at m = 2 has no regenerated
+   source.
+6. C1: the largest qualifying difference is 2.43e-9, against 4.9e-9 in A10.
+   "5e-9 or better" holds.
 
 ## Result of the N = 2048 floor case
 
