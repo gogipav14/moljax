@@ -1080,6 +1080,12 @@ class TestTickClock:
         (False, -1000.0, 1000.0, 50.0, 100.0),
         (True, 1.0, 1.1, 0.01, 0.1),
         (True, 1e15, 1e15 + 2.0, 0.5, 1.0),
+        # The partial tick 2^-22 at t0 needs an exact step of a few ticks
+        # (a step of k_max ticks would round the partial tick away).
+        (False, -(2.0 + 2.0 ** -22), 2.0 ** 23, 5.0, 2.0 ** 24),
+        (True, -(2.0 + 2.0 ** -51), 2.0 ** 52, 5.0, 2.0 ** 53),
+        # A first step of 0.025 from 0.1 to 0.125 is exact and resolved there.
+        (False, 0.1, 1e6, 1e4, 5e4),
     ]
 
     @staticmethod
@@ -1190,5 +1196,38 @@ class TestTickClock:
                                        lambda y, t: {"u": jnp.zeros_like(y["u"])},
                                        method="etdrk4",
                                        pid_params=PIDParams(dt_max=1.0, dt_min=1e-30))
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_float32_state_with_float64_clock_partial_tick(self):
+        """x64 clock, float32 state: the partial tick 2^-51 at t0 is covered exactly."""
+        rhs, _ = _record_times(1)
+        t0, t_end = -(2.0 + 2.0 ** -51), 2.0 ** 52
+        res = etd_integrate_adaptive(
+            {"u": jnp.zeros(1, jnp.float32)}, (t0, t_end), 5.0,
+            {"u": ConstantOp(0.0, 1, jnp.float32)}, rhs, method="etdrk4",
+            pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=2.0 ** 53, dt_min=1e-30),
+        )
+        res = jax.tree.map(np.asarray, res)
+        assert bool(res.success), int(res.status)
+        n = int(res.n_saved)
+        assert sum(_exact(h) for h in res.dt_history[1:n]) == _exact(t_end) - _exact(t0)
+
+    @pytest.mark.parametrize("t0, t_end, match", [
+        # Stage times of the partial step near zero would be subnormal.
+        (-3 * 2.0 ** -124 + 2.0 ** -145, 2.0 ** -101, "subnormal"),
+        # t0 = 2 - 2^-23, tick 2: the partial tick 2^-23 alone is not
+        # resolved, and 2 + 2^-23 (two ticks) is not a float32 number.
+        (2.0 - 2.0 ** -23, 2.0 ** 24 + 8.0, "partial"),
+    ])
+    def test_partial_tick_that_cannot_be_exact_raises(self, t0, t_end, match):
+        jax.config.update("jax_enable_x64", False)
+        try:
+            with pytest.raises(ValueError, match=match):
+                etd_integrate_adaptive({"u": jnp.zeros(1, jnp.float32)}, (t0, t_end), 1.0,
+                                       {"u": ConstantOp(0.0, 1, jnp.float32)},
+                                       lambda y, t: {"u": jnp.zeros_like(y["u"])},
+                                       method="etdrk4",
+                                       pid_params=PIDParams(dt_max=2.0 ** 30, dt_min=1e-40))
         finally:
             jax.config.update("jax_enable_x64", True)

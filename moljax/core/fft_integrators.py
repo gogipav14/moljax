@@ -843,7 +843,8 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             3. If the remainder after n* is in (0, n_min_last), leave
                exactly n_min_last ticks, or take the whole remainder if that
                leaves less than one step.
-            The trial is admissible when n* is at least the smallest step.
+            The trial is admissible when n* is at least the smallest step,
+            or when it covers the whole remainder as a final step.
             """
             remaining = plan.n_ticks - k
             first = k == 0
@@ -858,7 +859,10 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             n_split = remaining - plan.n_min_last
             n = jnp.where(take_all, remaining,
                           jnp.where(short_tail, jnp.where(n_split >= n_lo, n_split, remaining), n))
-            return n, n_star >= n_lo
+            # A final step shorter than n_lo (a partial last step can be) is
+            # admissible when it is the whole remainder.
+            final_only = (n_star >= remaining) & (remaining <= cap_end)
+            return n, (n_star >= n_lo) | final_only
 
         dt_min = jnp.asarray(pid_params.dt_min, dtype=time_dtype)
         dt_init = jnp.clip(dt0, pid_params.dt_min, pid_params.dt_max).astype(time_dtype)
@@ -1059,15 +1063,22 @@ def _etd_tick_plan(t0, t_end, dt0, method, rhs_uses_time, compute_dtype,
     includes it.
 
     A step of n ticks is resolved when n >= m (m = 2 for ETD1 and 4 for
-    ETDRK4; m + 1 for a step with a partial tick): its stage times are
-    then distinct, because each is one rounding of an exact value and
-    adjacent exact values differ by more than G (or are exact). For an
-    elapsed grid there is no resolution limit: the smallest step is one
-    tick (two with a partial tick, so that h/4 stays normal).
+    ETDRK4): its stage times are then distinct, because each is one
+    rounding of an exact value and adjacent exact values differ by more
+    than G (or are exact). For an elapsed grid there is no resolution
+    limit: the smallest step is one tick.
 
-    With k_max >= n_min_first + n_min_last - 1, every remaining count of
-    at least n_min_last ticks is reachable, so the span is feasible
-    exactly when it holds at least max(n_min_first, n_min_last) ticks.
+    The step with a partial tick r has the length (n - 1) G + r. Its
+    length must be a float, which limits n, and its stage times lie near
+    the endpoint, where the spacing is finer than G; the step is resolved
+    when h/m exceeds that local spacing. If no n satisfies both, or if r
+    is not a float, or if its stage times can be subnormal, the plan
+    raises: the clock cannot cover that span exactly.
+
+    With min(k_max, k_max_last) >= n_min + n_min_last - 1, every remaining
+    count of at least n_min_last ticks is reachable, so the span is
+    feasible when it holds at least n_min_first + n_min_last ticks, or
+    when one step can cover it.
     The derivation and the checks are in moljax_question/etd_global_ticks.md
     of the research notes.
 
@@ -1086,11 +1097,12 @@ def _etd_tick_plan(t0, t_end, dt0, method, rhs_uses_time, compute_dtype,
         lo, hi = start, end
         top = max(abs(start), abs(end))
         m = 2 if method == 'etd1' else 4
-        n_min, n_min_partial = m, m + 1
+        n_min = m
     else:
         lo, hi = Fraction(0), end - start
         top = hi
-        n_min, n_min_partial = 1, 2
+        m = 1
+        n_min = 1
     unit = Fraction(2) ** (_floor_log2(top) + 1 - p)
     tiny = max(float(np.finfo(clock).tiny), float(np.finfo(compute_dtype).tiny))
     if unit < 4 * Fraction(tiny):
@@ -1108,30 +1120,72 @@ def _etd_tick_plan(t0, t_end, dt0, method, rhs_uses_time, compute_dtype,
     n_ticks = last - first + int(lo_partial) + int(hi_partial)
     r_lo = first * unit - lo if lo_partial else Fraction(0)
     r_hi = hi - last * unit if hi_partial else Fraction(0)
-    n_min_first = n_min_partial if lo_partial else n_min
-    n_min_last = n_min_partial if hi_partial else n_min
-    need = n_min_first + n_min_last - 1
-
     dt_max = float(pid_params.dt_max)
     k_max = 2 ** p if not math.isfinite(dt_max) else min(math.floor(Fraction(dt_max) / unit), 2 ** p)
 
-    def partial_cap(r):
-        """The largest step count whose length (n - 1) G + r is a float, or k_max."""
-        if Fraction(float(clock(float(r)))) != r:
-            return k_max  # r itself is not a float: the length has one rounding
-        cap = 1 + math.floor((Fraction(2) ** (p + _dyadic_valuation(r)) - r) / unit)
-        return min(k_max, cap) if cap >= need else k_max
+    def position(k):
+        if k <= 0:
+            return lo
+        if k >= n_ticks:
+            return hi
+        return (base + k) * unit
 
-    k_max_first = partial_cap(r_lo) if lo_partial else k_max
-    k_max_last = partial_cap(r_hi) if hi_partial else k_max
+    def partial_step(r, at_start):
+        """Return (n_min, n_cap) for the step with the partial tick r.
 
-    if min(k_max, k_max_first, k_max_last) < need:
+        The step from tick 0 (at_start) or to tick n_ticks over n ticks has
+        the length (n - 1) G + r. It must be a float (n <= n_cap), so that
+        the length and the stage times are exact or one rounding. Its stage
+        times lie in a region of finer spacing near the endpoint, so it is
+        resolved when its quarter (ETDRK4) or half (ETD1) exceeds the local
+        spacing (n >= n_min). Raise ValueError when no such n exists.
+        """
+        v = _dyadic_valuation(r)
+        if Fraction(float(clock(float(r)))) != r or Fraction(2) ** (v - 2) < Fraction(tiny):
+            raise ValueError(
+                f"etd_integrate_adaptive: the endpoint {float(lo if at_start else hi)!r} is "
+                f"{float(r)!r} away from the clock tick grid of {float(unit)!r} at t_span "
+                f"[{t0}, {t_end}], and the clock cannot cover this partial tick exactly "
+                f"(or its stage times can be subnormal). Round the endpoint to a multiple "
+                f"of {float(unit)!r}, enable x64, or shift the time origin."
+            )
+        n_cap = min(k_max, 1 + math.floor((Fraction(2) ** (p + v) - r) / unit))
+        for n in range(1, n_min + 2):
+            h = (n - 1) * unit + r
+            if rhs_uses_time:
+                ends = (lo, position(n)) if at_start else (position(n_ticks - n), hi)
+                local = Fraction(2) ** (_floor_log2(max(abs(ends[0]), abs(ends[1]))) + 1 - p)
+                resolved = h / m > local
+            else:
+                resolved = h / 4 >= Fraction(tiny)
+            if resolved:
+                break
+        if n > n_cap:
+            raise ValueError(
+                f"etd_integrate_adaptive: the partial clock tick {float(r)!r} at t_span "
+                f"[{t0}, {t_end}] needs a step of {n} ticks of {float(unit)!r}, but a step "
+                f"length with this partial tick is a float only up to {n_cap} ticks. Round "
+                f"the endpoint to a multiple of {float(unit)!r}, enable x64, or shift the "
+                f"time origin."
+            )
+        return n, n_cap
+
+    n_min_first, k_max_first = partial_step(r_lo, True) if lo_partial else (n_min, k_max)
+    n_min_last, k_max_last = partial_step(r_hi, False) if hi_partial else (n_min, k_max)
+
+    # Reachability (etd_global_ticks.md, section 4): an interior step has
+    # n_min to k_max ticks, the last step n_min_last to k_max_last ticks.
+    # With min(k_max, k_max_last) >= n_min + n_min_last - 1, every remainder
+    # of at least n_min_last ticks is reachable.
+    need = n_min + n_min_last - 1
+    if min(k_max, k_max_last) < need or k_max_first < n_min_first:
         raise ValueError(
             f"etd_integrate_adaptive: dt_max={pid_params.dt_max} is below {need} clock "
             f"ticks of {float(unit)!r} at t_span [{t0}, {t_end}]; no step schedule can "
             f"keep t_end reachable. Increase dt_max, enable x64, or shift the time origin."
         )
-    if n_ticks < max(n_min_first, n_min_last):
+    one_step = (max(n_min_first, n_min_last) <= n_ticks <= min(k_max_first, k_max_last))
+    if not (n_ticks >= n_min_first + n_min_last or one_step):
         raise ValueError(
             f"etd_integrate_adaptive: the span [{t0}, {t_end}] holds {n_ticks} clock ticks "
             f"of {float(unit)!r}; one {method} step needs at least "
@@ -1311,7 +1365,8 @@ def etd_integrate_adaptive(
             t_end, a span that the cast to the time dtype changes by more
             than 1e-6 (relative), or a span that the clock cannot divide
             into resolved steps: a span shorter than the smallest step, a
-            dt_max or a dt0 below it, or a clock tick below four times the
+            dt_max or a dt0 below it, an endpoint whose partial tick the
+            clock cannot cover exactly, or a clock tick below four times the
             smallest normal number (see the clock in the Notes).
 
     Notes:
@@ -1342,8 +1397,9 @@ def etd_integrate_adaptive(
 
         A nonlinear_rhs that reads t (rhs_uses_time=True, the default) gets
         stage times that are each one rounding of their exact values. A
-        doubled step needs at least 2 ticks (ETD1) or 4 ticks (ETDRK4), one
-        more with a partial tick, so that its stage times are distinct.
+        doubled step needs at least 2 ticks (ETD1) or 4 ticks (ETDRK4), so
+        that its stage times are distinct. The step with a partial tick is
+        resolved against the finer spacing near its endpoint.
         Before compilation, the driver raises ValueError if the span, dt_max
         or dt0 is below that. If the controller later proposes a smaller
         step, the run stops with StatusCode.TIME_UNRESOLVED before the step.
