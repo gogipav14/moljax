@@ -773,6 +773,29 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             running = s.status == StatusCode.RUNNING
             return running & (s.tau < span) & (s.n_accepted < max_steps)
 
+        def stage_times_resolved(tau_start, length):
+            """Return True when the absolute stage times of one doubled step increase strictly.
+
+            The expressions are the ones that the step functions use: the
+            start t0 + tau, for ETDRK4 the midpoint of the first half step,
+            the midpoint t0 + (tau + length/2), for ETDRK4 the midpoint of the
+            second half step, and the end t0 + (tau + length).
+            """
+            h = length.astype(compute_dtype)
+            t_start = t0 + tau_start
+            t_mid = t0 + (tau_start + length / 2)
+            times = [t_start]
+            if method == 'etdrk4':
+                times.append(t_start + (h / 2) / 2)
+            times.append(t_mid)
+            if method == 'etdrk4':
+                times.append(t_mid + (h / 2) / 2)
+            times.append(t0 + (tau_start + length))
+            resolved = jnp.array(True)
+            for earlier, later in zip(times[:-1], times[1:], strict=True):
+                resolved = resolved & (earlier < later)
+            return resolved
+
         def trial_step(s: _ETDAdaptiveState):
             """Return (dt_step, is_final) for the next trial.
 
@@ -787,11 +810,8 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             dt_step = jnp.minimum(s.dt, remaining)
             if check_stage_times:
                 tail = remaining - dt_step
-                t_after = t0 + (s.tau + dt_step)
-                # A tail within the completion margin is clock rounding; the
-                # accepted step completes the run, so it needs no split.
-                material = tail > 4 * jnp.spacing(span)
-                unresolved_tail = material & (t0 + (s.tau + dt_step + tail / 2) <= t_after)
+                # The tail must pass the same stage-time check as any step.
+                unresolved_tail = (tail > 0) & ~stage_times_resolved(s.tau + dt_step, tail)
                 dt_step = jnp.where(unresolved_tail, remaining / 2, dt_step)
             return dt_step, dt_step >= remaining
 
@@ -850,7 +870,10 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 increment = dt_step - s.tau_comp
                 tau_sum = s.tau + increment
                 comp_new = (tau_sum - s.tau) - increment
-                done = is_final | (tau_sum >= span - 4 * jnp.spacing(span))
+                # No margin: a remainder is integrated, never discarded. A
+                # tail that the clock could not resolve is split in advance
+                # (see trial_step), and tau_sum can round up to the span.
+                done = is_final | (tau_sum >= span)
                 tau_new = jnp.where(done, span, tau_sum)
                 t_new = jnp.where(done, t_end, t0 + tau_new)
                 save = ((n_accepted % save_every) == 0) | done
@@ -898,17 +921,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             # The absolute stage times, as the step functions form them, must
             # increase strictly. If two of them round to the same value, the
             # right-hand side sees a wrong time and the step is not valid.
-            t_b = t0 + (s.tau + dt_step / 2)
-            stage_times = [t_abs]
-            if method == 'etdrk4':
-                stage_times.append(t_abs + (h / 2) / 2)
-            stage_times.append(t_b)
-            if method == 'etdrk4':
-                stage_times.append(t_b + (h / 2) / 2)
-            stage_times.append(t0 + (s.tau + dt_step))
-            resolved = jnp.array(True)
-            for earlier, later in zip(stage_times[:-1], stage_times[1:], strict=True):
-                resolved = resolved & (earlier < later)
+            resolved = stage_times_resolved(s.tau, dt_step)
 
             def unresolved_step():
                 return s._replace(status=jnp.array(StatusCode.TIME_UNRESOLVED, dtype=jnp.int32))

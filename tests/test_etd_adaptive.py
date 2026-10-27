@@ -604,7 +604,9 @@ class TestCompletionOnTheUpdatedClock:
                                      pid_params=PIDParams(atol=1.0, rtol=0.0, dt_max=0.01),
                                      save_every=3)
         assert bool(res.success)
-        assert int(res.n_accepted) == 4
+        # Four steps of 0.01, or five when the last one is split because a
+        # rounding tail could not be resolved; nothing is discarded.
+        assert int(res.n_accepted) in (4, 5)
         n = int(res.n_saved)
         assert n == 3
         assert float(res.t_history[n - 1]) == 0.04
@@ -940,5 +942,52 @@ class TestNoUnresolvedTail:
             np.testing.assert_allclose(np.asarray(result.y_final["u"]), [0.125], rtol=1e-6)
             assert float(result.t_final) == float(np.float32(1000.125))
             assert float(np.max(np.asarray(result.dt_history)[: int(result.n_saved)])) <= 0.12498 + 1e-9
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+
+class TestNoDiscardedInterval:
+    """No resolved interval is discarded at the end of a run."""
+
+    @pytest.mark.parametrize("method", ["etd1", "etdrk4"])
+    def test_float32_remainder_is_integrated(self, method):
+        """x64 off, u0 = -100, u' = 100 on (0, 1), dt0 = 0.9999997, atol = 1e-6, rtol = 0.
+
+        Exact: 0. A completion margin of four ulp once discarded the last
+        3e-7 and returned -3.05e-5 (30 times atol).
+        """
+        jax.config.update("jax_enable_x64", False)
+        try:
+            u0 = {"u": jnp.full(1, -100.0, dtype=jnp.float32)}
+            ops = {"u": ConstantOp(0.0, 1, jnp.float32)}
+            result = etd_integrate_adaptive(
+                u0, (0.0, 1.0), 0.9999997, ops,
+                lambda y, t: {"u": jnp.full_like(y["u"], 100.0) + 0.0 * t},
+                method=method, pid_params=PIDParams(atol=1e-6, rtol=0.0),
+            )
+            assert int(result.status) == int(StatusCode.SUCCESS)
+            assert abs(float(result.y_final["u"][0])) <= 1e-5
+        finally:
+            jax.config.update("jax_enable_x64", True)
+
+    def test_etdrk4_quarter_stages_of_the_tail(self):
+        """x64 off, u' = 1 + 0.001 (t - 1000) on (1000, 1000.125), dt0 = dt_max = 0.1249.
+
+        A first step of 0.1249 leaves a tail whose quarter-step times
+        coincide in float32. The trial must split instead, and the run must
+        succeed with the exact value 0.125 + 0.001 * 0.125**2 / 2.
+        """
+        jax.config.update("jax_enable_x64", False)
+        try:
+            u0 = {"u": jnp.zeros(1, dtype=jnp.float32)}
+            ops = {"u": ConstantOp(0.0, 1, jnp.float32)}
+            result = etd_integrate_adaptive(
+                u0, (1000.0, 1000.125), 0.1249, ops,
+                lambda y, t: {"u": jnp.ones_like(y["u"]) * (1.0 + 0.001 * (t - 1000.0))},
+                method="etdrk4", pid_params=PIDParams(dt_max=0.1249),
+            )
+            assert int(result.status) == int(StatusCode.SUCCESS)
+            np.testing.assert_allclose(np.asarray(result.y_final["u"]),
+                                       [0.125 + 0.001 * 0.125**2 / 2], rtol=1e-5)
         finally:
             jax.config.update("jax_enable_x64", True)
