@@ -139,15 +139,23 @@ a positive semidefinite update of rank `s` of a matrix with eigenvalues
 `beta_k`. A positive semidefinite update of rank `s` moves at most `s`
 eigenvalues across any level.
 
-Consequence: for `f` much smaller than `d`, the high-frequency `beta_k` are
-near `f/d`, so a scalar reference near the maximum keeps a tail of small
-eigenvalues, one for almost each degree of freedom in the floor region.
+Consequence: `beta_k - f/d = (1 - f/d) / (1 + dt d mu_k)`, so `beta_k` is near
+`f/d` only when the modal CFL number `dt d mu_k` is large. For a level `a`
+with `f/d < a < 1`, `beta_k < a` exactly when
+`mu_k > (1 - a) / (dt (d a - f))`. The lemma therefore predicts at least
+`#{k : mu_k > (1 - a) / (dt (d a - f))} - s` eigenvalues below `a`. When `dt d`
+is small against `h^2`, this count can be zero, and then no tail need exist;
+for example `N = 7`, `h = 1`, `dt = 0.02`, `f = 1e-6`, `d = 1` with one node at
+`d` gives all eigenvalues in `[0.929, 1]`. At the CFL numbers of the PME study
+(`c` of order `1e3` and more), most `mu_k` satisfy the condition. The lemma
+gives only a lower bound; the measured tails are in the analysis outputs.
 
 ## Lemma 7. The frame gain for one mode (constant-coefficient model)
 
 Assumptions: a model with commuting operators: one eigenvector with the
 eigenvalue `a > 0` of `dt Dmax T` and a constant ratio `s = d/Dmax` in
-`(0, 1]`; no mask boundary.
+`(0, 1)`; no mask boundary. (At `s = 1` both eigenvalues are `1` and the
+ratio below is not defined.)
 
 Statement: the mask with one inverse gives the eigenvalue
 `b_1 = (1 + a s)/(1 + a)`, the frame gives `b_f = (1 + a s)/(s (1 + a))`, and
