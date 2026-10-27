@@ -773,6 +773,12 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             running = s.status == StatusCode.RUNNING
             return running & (s.tau < span) & (s.n_accepted < max_steps)
 
+        def compensated_add(tau, comp, increment):
+            """Return (tau + increment, new compensation) by Kahan summation."""
+            corrected = increment - comp
+            total = tau + corrected
+            return total, (total - tau) - corrected
+
         def stage_times_resolved(tau_start, length):
             """Return True when the absolute stage times of one doubled step increase strictly.
 
@@ -809,9 +815,13 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
             remaining = span - s.tau
             dt_step = jnp.minimum(s.dt, remaining)
             if check_stage_times:
-                tail = remaining - dt_step
+                # Predict the clock exactly as the accepted step will update
+                # it (the same compensated sum), so that the predicted tail is
+                # the remaining span of the next iteration.
+                tau_next, _ = compensated_add(s.tau, s.tau_comp, dt_step)
+                tail = span - tau_next
                 # The tail must pass the same stage-time check as any step.
-                unresolved_tail = (tail > 0) & ~stage_times_resolved(s.tau + dt_step, tail)
+                unresolved_tail = (tail > 0) & ~stage_times_resolved(tau_next, tail)
                 dt_step = jnp.where(unresolved_tail, remaining / 2, dt_step)
             return dt_step, dt_step >= remaining
 
@@ -867,9 +877,7 @@ def _build_etd_adaptive_driver(linear_ops, nonlinear_rhs, method, pid_params, ma
                 # dt_step < remaining. Such a step is the final step.
                 # Compensated (Kahan) summation keeps the rounding error of
                 # tau near one ulp, also after many steps.
-                increment = dt_step - s.tau_comp
-                tau_sum = s.tau + increment
-                comp_new = (tau_sum - s.tau) - increment
+                tau_sum, comp_new = compensated_add(s.tau, s.tau_comp, dt_step)
                 # No margin: a remainder is integrated, never discarded. A
                 # tail that the clock could not resolve is split in advance
                 # (see trial_step), and tau_sum can round up to the span.

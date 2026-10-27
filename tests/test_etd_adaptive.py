@@ -991,3 +991,41 @@ class TestNoDiscardedInterval:
                                        [0.125 + 0.001 * 0.125**2 / 2], rtol=1e-5)
         finally:
             jax.config.update("jax_enable_x64", True)
+
+
+class TestTailPredictedOnTheCompensatedClock:
+    """The predicted tail equals the remaining span of the next iteration."""
+
+    def test_float64_third_step(self):
+        """x64, u' = 1 + 0.001 t on (0, 0.04), dt0 = dt_max = 0.013333333333333326, ETDRK4."""
+        u0 = {"u": jnp.zeros(1)}
+        ops = {"u": ConstantOp(0.0, 1)}
+        dt = 0.013333333333333326
+        result = etd_integrate_adaptive(
+            u0, (0.0, 0.04), dt, ops,
+            lambda y, t: {"u": jnp.ones_like(y["u"]) * (1.0 + 0.001 * t)},
+            method="etdrk4", pid_params=PIDParams(dt_max=dt), save_every=2,
+        )
+        assert int(result.status) == int(StatusCode.SUCCESS)
+        n = int(result.n_saved)
+        assert float(result.t_history[n - 1]) == 0.04
+        np.testing.assert_allclose(np.asarray(result.y_final["u"]),
+                                   [0.04 + 0.001 * 0.04**2 / 2], rtol=1e-12)
+
+    def test_float32_short_steps(self):
+        """x64 off, u' = 1 + 0.001 t on (0, 0.3), dt0 = dt_max = 0.009999997, ETDRK4."""
+        jax.config.update("jax_enable_x64", False)
+        try:
+            u0 = {"u": jnp.zeros(1, dtype=jnp.float32)}
+            ops = {"u": ConstantOp(0.0, 1, jnp.float32)}
+            dt = 0.009999997
+            result = etd_integrate_adaptive(
+                u0, (0.0, 0.3), dt, ops,
+                lambda y, t: {"u": jnp.ones_like(y["u"]) * (1.0 + 0.001 * t)},
+                method="etdrk4", pid_params=PIDParams(dt_max=dt),
+            )
+            assert int(result.status) == int(StatusCode.SUCCESS)
+            np.testing.assert_allclose(np.asarray(result.y_final["u"]),
+                                       [0.3 + 0.001 * 0.3**2 / 2], rtol=1e-5)
+        finally:
+            jax.config.update("jax_enable_x64", True)
