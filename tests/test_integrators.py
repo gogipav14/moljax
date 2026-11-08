@@ -845,7 +845,6 @@ class TestFixedStep:
             integrate_imex_fixed_dt(model, y0, 0.0, self.T_END, 0.03, fft_cache, diffusivities)
 
 
-
 def cubic_decay_model():
     """u' = -u^3 on a one-cell periodic grid, the reviewer's fixed-step reproduction.
 
@@ -1455,7 +1454,9 @@ class TestReusedDriversAreFasterAndUnchanged:
     identity within one process is asserted by
     TestDriversAreCompiledOnce, which compares repeated calls, and by
     test_clear_compiled_drivers_forces_a_rebuild, which compares a reused
-    loop with a freshly built one.
+    loop with a freshly built one. The adaptive references below follow the
+    estimator-order controller schedule; the fixed-step references are
+    unchanged by that correction.
     """
 
     def test_gray_scott_trajectory_is_unchanged(self):
@@ -1464,38 +1465,59 @@ class TestReusedDriversAreFasterAndUnchanged:
         _, _, y_final = integrate_fixed_dt(
             model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4, save_every=5
         )
-        assert float(y_final['u'][5, 4]) == pytest.approx(0.6260809327941341, rel=1e-13)
-        assert float(y_final['v'][3, 6]) == pytest.approx(0.1487888294542065, rel=1e-13)
+        assert float(y_final["u"][5, 4]) == pytest.approx(0.6260809327941341, rel=1e-13)
+        assert float(y_final["v"][3, 6]) == pytest.approx(0.1487888294542065, rel=1e-13)
 
         _, _, y_final = integrate_fixed_dt(
-            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE, save_every=5,
-            nk_params=NKParams(newton_tol=1e-12)
+            model,
+            y0,
+            0.0,
+            0.5,
+            0.05,
+            method=IntegratorType.BE,
+            save_every=5,
+            nk_params=NKParams(newton_tol=1e-12),
         )
-        assert float(y_final['u'][5, 4]) == pytest.approx(0.6240511704012716, rel=1e-13)
+        assert float(y_final["u"][5, 4]) == pytest.approx(0.6240511704012716, rel=1e-13)
 
-        result = adaptive_integrate(model, y0, 0.0, 0.2, 0.01,
-                                    method=IntegratorType.RK4, max_steps=100)
-        assert float(result.y_final['u'][5, 4]) == pytest.approx(0.5715040636320732,
-                                                                 rel=1e-13)
+        result = adaptive_integrate(
+            model, y0, 0.0, 0.2, 0.01, method=IntegratorType.RK4, max_steps=100
+        )
+        assert float(result.y_final["u"][5, 4]) == pytest.approx(0.5715040645982623, rel=1e-13)
         assert int(result.n_accepted) == 4
         assert int(result.status) == StatusCode.SUCCESS
 
     def test_one_dimensional_trajectory_is_unchanged(self):
         model, y0, _ = counting_cubic_model()
         clear_compiled_drivers()
-        _, _, y_final = integrate_fixed_dt(model, y0, 0.0, 1.0, 0.1,
-                                           method=IntegratorType.RK4, save_every=2)
-        assert float(y_final['u'][7]) == pytest.approx(0.5996605020001645, rel=1e-13)
+        _, _, y_final = integrate_fixed_dt(
+            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.RK4, save_every=2
+        )
+        assert float(y_final["u"][7]) == pytest.approx(0.5996605020001645, rel=1e-13)
 
-        _, _, y_final = integrate_fixed_dt(model, y0, 0.0, 1.0, 0.1,
-                                           method=IntegratorType.BDF2, save_every=2,
-                                           nk_params=NKParams(newton_tol=1e-12))
-        assert float(y_final['u'][7]) == pytest.approx(0.6007181904376475, rel=1e-13)
+        _, _, y_final = integrate_fixed_dt(
+            model,
+            y0,
+            0.0,
+            1.0,
+            0.1,
+            method=IntegratorType.BDF2,
+            save_every=2,
+            nk_params=NKParams(newton_tol=1e-12),
+        )
+        assert float(y_final["u"][7]) == pytest.approx(0.6007181904376475, rel=1e-13)
 
-        result = adaptive_integrate(model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE,
-                                    max_steps=50, nk_params=NKParams(newton_tol=1e-12))
-        assert float(result.y_final['u'][7]) == pytest.approx(0.9076426244308792,
-                                                              rel=1e-13)
+        result = adaptive_integrate(
+            model,
+            y0,
+            0.0,
+            0.5,
+            0.05,
+            method=IntegratorType.BE,
+            max_steps=50,
+            nk_params=NKParams(newton_tol=1e-12),
+        )
+        assert float(result.y_final["u"][7]) == pytest.approx(0.820385941218744, rel=1e-13)
 
     def test_a_reused_loop_only_dispatches(self):
         """The wall clock, generously: the reused calls cost a fraction of the first.

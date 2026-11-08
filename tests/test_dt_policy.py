@@ -30,7 +30,7 @@ from moljax.core.dt_policy import (
 from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import NKStats
-from moljax.core.operators import LinearOp
+from moljax.core.operators import LinearOp, NonlinearOp
 from moljax.core.stepping import IntegratorType, adaptive_integrate, integrate_fixed_dt
 from moljax.core.utils import StatusCode
 
@@ -532,20 +532,21 @@ class TestRejectionsTerminate:
 class TestErrorOrderTable:
     """compute_error_order has one entry for each IntegratorType.
 
-    The expected orders come from the methods: forward and backward Euler
-    and IMEX Euler are first order, SSPRK3 is third order, RK4 is fourth
-    order, and Crank-Nicolson, BDF2 and Strang splitting are second order.
+    These are the powers of h in the local error estimates, not the methods'
+    global convergence orders. Step doubling raises the exponent by one;
+    the CN--BE and BDF2--BE comparisons are dominated by BE's O(h**2)
+    local error.
     """
 
     EXPECTED = {
-        IntegratorType.EULER: 1,
-        IntegratorType.SSPRK3: 3,
-        IntegratorType.RK4: 4,
-        IntegratorType.BE: 1,
+        IntegratorType.EULER: 2,
+        IntegratorType.SSPRK3: 4,
+        IntegratorType.RK4: 5,
+        IntegratorType.BE: 2,
         IntegratorType.CN: 2,
         IntegratorType.BDF2: 2,
-        IntegratorType.IMEX_EULER: 1,
-        IntegratorType.IMEX_STRANG: 2,
+        IntegratorType.IMEX_EULER: 2,
+        IntegratorType.IMEX_STRANG: 3,
     }
 
     def test_every_integrator_type_has_an_entry(self):
@@ -559,6 +560,53 @@ class TestErrorOrderTable:
         with pytest.raises(ValueError, match="unknown method"):
             compute_error_order(method)
 
+    def test_euler_controller_no_longer_oscillates_on_transient(self):
+        """The estimator exponent removes the old near-50% rejection cycle.
+
+        The manufactured solution is u(t, x) = cos(t + x) for
+        u' = -5 u - u**2 + forcing. With Euler's method order (1) in the
+        controller this run takes about 100 accepted and 100 rejected steps;
+        with its local-estimate exponent (2), it finishes with essentially no
+        rejections. Broad bounds keep the regression about controller
+        behavior rather than a platform-specific exact count.
+        """
+        grid = Grid1D.uniform(8, 0.0, 1.0)
+        x = grid.x_coords(include_ghost=True)
+
+        def linear_apply(state, grid, t, params):
+            return {"u": -5.0 * state["u"]}
+
+        def nonlinear_apply(state, grid, t, params):
+            phi = jnp.cos(t + x)
+            dphi = -jnp.sin(t + x)
+            u = state["u"]
+            return {"u": -u * u + 5.0 * phi + dphi + phi * phi}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
+            linear_ops=(LinearOp("minus_five", linear_apply),),
+            nonlinear_ops=(NonlinearOp("forcing", nonlinear_apply),),
+        )
+        y0 = model.apply_bcs({"u": jnp.cos(x)}, 0.0)
+        result = adaptive_integrate(
+            model,
+            y0,
+            0.0,
+            4.0,
+            0.01,
+            method=IntegratorType.EULER,
+            max_steps=500,
+            save_every=500,
+            pid_params=PIDParams(atol=1e-3, rtol=1e-3, dt_max=10.0),
+        )
+
+        assert int(result.status) == StatusCode.SUCCESS
+        attempts = int(result.n_accepted + result.n_rejected)
+        assert int(result.n_accepted) < 70
+        assert int(result.n_rejected) / attempts < 0.05
+
 
 class TestDriversRejectUnknownMethods:
     """The MOLModel drivers raise for a method value that they cannot step.
@@ -568,7 +616,9 @@ class TestDriversRejectUnknownMethods:
     runs before the driver is built, so these calls compile nothing.
     """
 
-    @pytest.mark.parametrize("method", [IntegratorType.IMEX_EULER, IntegratorType.IMEX_STRANG, 8, -1])
+    @pytest.mark.parametrize(
+        "method", [IntegratorType.IMEX_EULER, IntegratorType.IMEX_STRANG, 8, -1]
+    )
     def test_adaptive_integrate(self, method):
         model, y0 = float32_decay_model()
         with pytest.raises(ValueError, match="not supported"):

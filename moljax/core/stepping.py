@@ -1168,7 +1168,7 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
         # _time_dtype for why the clock does not follow the field's dtype.
         time_dtype = _time_dtype()
 
-        # Get method order for error scaling
+        # Get the power of h in this method's local error estimate.
         order = compute_error_order(method)
 
         # Compute initial CFL-limited dt for explicit methods, in the model's
@@ -1176,9 +1176,7 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
         is_explicit = method < 3
         dt_cfl = heisenberg_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
         dt_init = lax.cond(
-            is_explicit,
-            lambda: jnp.minimum(dt0, dt_cfl),
-            lambda: jnp.array(dt0, dtype=dtype)
+            is_explicit, lambda: jnp.minimum(dt0, dt_cfl), lambda: jnp.array(dt0, dtype=dtype)
         )
 
         # Allocate output buffers. +1 for the initial state at t0, +1 more for

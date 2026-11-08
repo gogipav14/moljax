@@ -92,10 +92,10 @@ class PIDParams:
         dt_new = dt * safety * err_ratio^(-kI) * prev_err_ratio^(kP)
 
     where err_ratio = error_norm (should be <= 1 for accepted step).
-    The exact form in pid_controller_dt divides kI and kP by the order p
-    of the method, and the proportional factor is a ratio:
-        dt_new = dt * safety * err_ratio^(-kI/p)
-                 * (prev_err_ratio / err_ratio)^(kP/p)
+    The exact form in pid_controller_dt divides kI and kP by the exponent q
+    of the local error estimate, and the proportional factor is a ratio:
+        dt_new = dt * safety * err_ratio^(-kI/q)
+                 * (prev_err_ratio / err_ratio)^(kP/q)
 
     The controller does not use ControllerState.prevprev_err_ratio.
 
@@ -110,6 +110,7 @@ class PIDParams:
         atol: Absolute tolerance for error (default 1e-6)
         rtol: Relative tolerance for error (default 1e-4)
     """
+
     safety: float = 0.9
     kI: float = 0.7  # Scaled by 1/order in controller
     kP: float = 0.4  # Scaled by 1/order in controller
@@ -268,7 +269,7 @@ def pid_controller_dt(
     err_ratio: jnp.ndarray,
     controller_state: ControllerState,
     pid_params: PIDParams,
-    order: int = 4
+    order: int = 4,
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     PI controller for adaptive time step (see PIDParams for the name).
@@ -282,7 +283,7 @@ def pid_controller_dt(
         err_ratio: Current error norm (should be <= 1 for accepted step)
         controller_state: Previous controller state
         pid_params: PID parameters
-        order: Order of the method (for scaling coefficients)
+        order: Power of h in the local error estimate (for scaling coefficients)
 
     Returns:
         Tuple of (dt_new, new_controller_state)
@@ -309,7 +310,7 @@ def pid_controller_dt(
     new_state = ControllerState(
         prev_err_ratio=err_ratio,
         prevprev_err_ratio=controller_state.prev_err_ratio,
-        consecutive_rejects=jnp.array(0, dtype=jnp.int32)
+        consecutive_rejects=jnp.array(0, dtype=jnp.int32),
     )
 
     return dt_new, new_state
@@ -320,7 +321,7 @@ def handle_rejected_step(
     err_ratio: jnp.ndarray,
     controller_state: ControllerState,
     pid_params: PIDParams,
-    order: int = 4
+    order: int = 4,
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Handle a rejected step by reducing dt more aggressively.
@@ -330,7 +331,7 @@ def handle_rejected_step(
         err_ratio: Error ratio that caused rejection (> 1)
         controller_state: Current controller state
         pid_params: PID parameters
-        order: Order of the method
+        order: Power of h in the local error estimate
 
     Returns:
         Tuple of (dt_new, new_controller_state)
@@ -393,17 +394,13 @@ def implicit_robustness_dt(
         New dt
     """
     # Shrink if not converged
-    dt_new = lax.cond(
-        nk_stats.converged,
-        lambda: dt_old,
-        lambda: dt_old * shrink_factor
-    )
+    dt_new = lax.cond(nk_stats.converged, lambda: dt_old, lambda: dt_old * shrink_factor)
 
     # Adjust based on iteration count (only if converged)
     dt_new = lax.cond(
         jnp.logical_and(nk_stats.converged, nk_stats.newton_iters <= fast_iters_threshold),
         lambda: jnp.minimum(dt_new * growth_factor, dt_max),
-        lambda: dt_new
+        lambda: dt_new,
     )
 
     return jnp.clip(dt_new, dt_min, dt_max)
@@ -422,7 +419,7 @@ def propose_dt(
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
     order: int = 4,
-    accepted: jnp.ndarray | None = None
+    accepted: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Unified dt proposal function for all methods.
@@ -439,7 +436,7 @@ def propose_dt(
         nk_stats: NK statistics (for implicit methods)
         cfl_params: CFL parameters (default created if None)
         pid_params: PID parameters (default created if None)
-        order: Method order
+        order: Power of h in the local error estimate
         accepted: The integrator's own accept/reject decision. Pass it: a
             small error ratio is not by itself an acceptance, since the
             step must also be finite and its Newton-Krylov solve must have
@@ -483,11 +480,7 @@ def propose_dt(
         )
         return dt_rej, new_state
 
-    dt_adaptive, new_controller_state = lax.cond(
-        accepted,
-        accepted_dt,
-        rejected_dt
-    )
+    dt_adaptive, new_controller_state = lax.cond(accepted, accepted_dt, rejected_dt)
 
     # For explicit methods (0-2), also enforce CFL. The limit is taken in
     # dt_old's dtype so the two lax.cond branches below agree, and in the
@@ -497,21 +490,13 @@ def propose_dt(
     is_explicit = method < 3
     dt_cfl = heisenberg_cfl_dt(grid, params, cfl_params, dtype=dt_old.dtype, method=method)
 
-    dt_final = lax.cond(
-        is_explicit,
-        lambda: jnp.minimum(dt_adaptive, dt_cfl),
-        lambda: dt_adaptive
-    )
+    dt_final = lax.cond(is_explicit, lambda: jnp.minimum(dt_adaptive, dt_cfl), lambda: dt_adaptive)
 
     # For implicit methods with NK stats, apply robustness limiter
     if nk_stats is not None:
         is_implicit = method >= 3
         dt_robust = implicit_robustness_dt(dt_final, nk_stats)
-        dt_final = lax.cond(
-            is_implicit,
-            lambda: dt_robust,
-            lambda: dt_final
-        )
+        dt_final = lax.cond(is_implicit, lambda: dt_robust, lambda: dt_final)
 
     # Final clamp
     dt_final = jnp.clip(dt_final, pid_params.dt_min, pid_params.dt_max)
@@ -519,34 +504,44 @@ def propose_dt(
     return dt_final, new_controller_state
 
 
-# Order of the error estimate for each IntegratorType value
-# (moljax.core.stepping.IntegratorType). Plain ints for the same reason as
+# Power of h in the local error estimate supplied to the controller for each
+# IntegratorType value (moljax.core.stepping.IntegratorType). This is one
+# larger than a method's order for a step-doubling estimate. For the implicit
+# comparison estimates it is the order of the lower-order method whose defect
+# dominates the difference. Plain ints are used for the same reason as
 # _EXPLICIT_STABILITY_BOUNDARY: stepping.py imports from this module.
 _ERROR_ORDER: dict[int, int] = {
-    0: 1,  # EULER
-    1: 3,  # SSPRK3
-    2: 4,  # RK4
-    3: 1,  # BE
-    4: 2,  # CN
-    5: 2,  # BDF2
-    6: 1,  # IMEX_EULER
-    7: 2,  # IMEX_STRANG
+    0: 2,  # EULER: Euler step doubling, O(h**2)
+    1: 4,  # SSPRK3: SSPRK3 step doubling, O(h**4)
+    2: 5,  # RK4: RK4 step doubling, O(h**5)
+    3: 2,  # BE: CN - BE, dominated by BE's O(h**2) local error
+    4: 2,  # CN: CN - BE, still measuring BE's O(h**2) local error
+    5: 2,  # BDF2: BDF2 - BE, dominated by BE's O(h**2) local error
+    6: 2,  # IMEX_EULER: IMEX Euler step doubling, O(h**2)
+    7: 3,  # IMEX_STRANG: Strang step doubling, O(h**3)
 }
 
 
 def compute_error_order(method: int) -> int:
     """
-    Get the error estimation order for a given method.
+    Get the power of ``h`` in a method's local error estimate.
 
     Each IntegratorType value has an explicit entry. An unknown value
     raises: a default order would give the controller a wrong exponent
     and no message.
 
+    Explicit and IMEX methods use step doubling, so a method of order ``p``
+    supplies an estimate proportional to ``h**(p + 1)``. BE uses the
+    CN--BE difference, while CN and BDF2 compare their second-order solution
+    with BE; all three differences are dominated by BE's ``O(h**2)`` local
+    error. The controller therefore needs ``[2, 4, 5, 2, 2, 2, 2, 3]``, not
+    the methods' convergence orders.
+
     Args:
         method: Integrator type enum value
 
     Returns:
-        Order used for error estimation
+        Power of ``h`` used to scale the error controller
 
     Raises:
         ValueError: If method is not an IntegratorType value.
@@ -698,7 +693,7 @@ def propose_dt_imex(
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
     order: int = 2,
-    accepted: jnp.ndarray | None = None
+    accepted: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Propose dt for IMEX methods.
@@ -715,7 +710,7 @@ def propose_dt_imex(
         controller_state: Controller state
         cfl_params: CFL parameters
         pid_params: PID parameters
-        order: Method order
+        order: Power of h in the local error estimate
         accepted: The integrator's own accept/reject decision; see
             propose_dt. Defaults to err_ratio <= 1.0.
 
