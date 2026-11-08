@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import weakref
 from collections.abc import Callable
 from typing import NamedTuple
 
@@ -35,6 +36,10 @@ from moljax.conditioning._geometry import (
 )
 
 Matvec = Callable[[jax.Array], jax.Array]
+SupportKernel = Callable[
+    [jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+    tuple[jax.Array, jax.Array],
+]
 # The numerical range is a 2-spectral set (Jin 2026; Lorist and Schwenninger
 # 2026), superseding the 1 + sqrt(2) prefactor of Crouzeix and Palencia
 # (2017). See the module docstring for full citations.
@@ -225,6 +230,139 @@ def _default_operator_key(matvec: Matvec, n: int) -> jax.Array:
     return jax.random.PRNGKey(seed)
 
 
+# Each compiled kernel closes over weak references to the operator actions, so
+# the cache does not keep a no-longer-used operator alive.  Bound methods are
+# keyed by their owner rather than by the ephemeral bound-method object Python
+# creates on every attribute access.
+_SUPPORT_KERNEL_CACHE: weakref.WeakKeyDictionary[
+    object,
+    weakref.WeakKeyDictionary[object, dict[tuple[object, ...], SupportKernel]],
+] = weakref.WeakKeyDictionary()
+
+
+def _action_identity(action: Matvec) -> tuple[object, object | None]:
+    """Return the weak-cache owner and unbound function for one action."""
+    owner = getattr(action, "__self__", None)
+    function = getattr(action, "__func__", None)
+    return (action, None) if owner is None or function is None else (owner, function)
+
+
+def _weak_action(action: Matvec) -> tuple[weakref.ReferenceType[object], object | None]:
+    """Represent an action without retaining its callable or bound-method owner."""
+    owner, function = _action_identity(action)
+    return weakref.ref(owner), function
+
+
+def _resolve_action(reference: weakref.ReferenceType[object], function: object | None) -> Matvec:
+    """Resolve an action while its operator is alive for tracing."""
+    owner = reference()
+    if owner is None:
+        raise RuntimeError("the numerical-range operator expired before support tracing")
+    if function is None:
+        return owner  # type: ignore[return-value]
+    return lambda value: function(owner, value)  # type: ignore[operator]
+
+
+def _build_support_kernel(
+    matvec: Matvec,
+    matvec_adjoint: Matvec,
+    n: int,
+    max_iters: int,
+    tolerance: float,
+) -> SupportKernel:
+    """Build one dynamic-angle LOBPCG kernel for an operator and solve shape."""
+    matvec_reference, matvec_function = _weak_action(matvec)
+    adjoint_reference, adjoint_function = _weak_action(matvec_adjoint)
+    real_dimension = 2 * n
+    block_width = 3
+    padded_dimension = max(real_dimension, 5 * block_width + 1)
+
+    def support_kernel(
+        theta: jax.Array,
+        padded_initial: jax.Array,
+        spectral_scale: jax.Array,
+        restart: jax.Array,
+        operator_key: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        forward_action = _resolve_action(matvec_reference, matvec_function)
+        adjoint_action = _resolve_action(adjoint_reference, adjoint_function)
+        phase = jnp.exp(jnp.asarray(1j, dtype=jnp.complex128) * theta)
+
+        def hermitian_action(value: jax.Array) -> jax.Array:
+            forward = _complex_action(forward_action, value)
+            adjoint = _complex_action(adjoint_action, value)
+            return 0.5 * (phase * forward + jnp.conj(phase) * adjoint)
+
+        real_action = _realified_action(hermitian_action, n)
+        shift = 2.0 * spectral_scale
+
+        def shifted_action(value: jax.Array) -> jax.Array:
+            active = value[:real_dimension]
+            shifted = (real_action(active) + shift * active) / shift
+            if value.ndim == 1:
+                return jnp.pad(shifted, (0, padded_dimension - real_dimension))
+            return jnp.pad(shifted, ((0, padded_dimension - real_dimension), (0, 0)))
+
+        angle_seed = jnp.asarray(theta * 1_000_003, dtype=jnp.int32)
+        restart_seed = jnp.asarray(7_919, dtype=jnp.int32) * restart
+        probe_seed = jnp.bitwise_and(angle_seed + restart_seed, 0x7FFFFFFF)
+        probe_key = jax.random.fold_in(operator_key, probe_seed)
+        random_column = jax.random.normal(probe_key, (padded_dimension,), dtype=jnp.float64)
+        restarted_columns = jax.random.normal(
+            jax.random.fold_in(probe_key, 1),
+            (padded_dimension, 2),
+            dtype=jnp.float64,
+        )
+        first_block = jnp.column_stack((padded_initial, jnp.roll(padded_initial, 1), random_column))
+        restarted_block = jnp.column_stack((random_column, restarted_columns))
+        initial_block = jax.lax.cond(
+            restart == 0,
+            lambda: first_block,
+            lambda: restarted_block,
+        )
+        _, vectors, _ = lobpcg_standard(
+            shifted_action,
+            initial_block,
+            m=max_iters,
+            tol=tolerance,
+        )
+        candidate = vectors[:, 0]
+        real_vector = candidate[:real_dimension]
+        real_vector = real_vector / jnp.linalg.norm(real_vector)
+        action_value = real_action(real_vector)
+        rayleigh = jnp.real(jnp.vdot(real_vector, action_value))
+        residual = jnp.linalg.norm(action_value - rayleigh * real_vector)
+        vector = real_vector[:n] + 1j * real_vector[n:]
+        return vector, residual
+
+    return jax.jit(support_kernel)
+
+
+def _support_kernel_for(
+    matvec: Matvec,
+    matvec_adjoint: Matvec,
+    n: int,
+    max_iters: int,
+    tolerance: float,
+) -> SupportKernel:
+    """Return the shape-specialized support kernel cached for this operator."""
+    matvec_owner, matvec_function = _action_identity(matvec)
+    adjoint_owner, adjoint_function = _action_identity(matvec_adjoint)
+    key = (matvec_function, adjoint_function, n, max_iters, tolerance)
+    try:
+        adjoint_caches = _SUPPORT_KERNEL_CACHE.setdefault(matvec_owner, weakref.WeakKeyDictionary())
+        kernels = adjoint_caches.setdefault(adjoint_owner, {})
+    except TypeError:
+        # A rare callable may not support weak references or hashing.  It still
+        # gets one kernel for this call; only cross-call reuse is unavailable.
+        return _build_support_kernel(matvec, matvec_adjoint, n, max_iters, tolerance)
+    kernel = kernels.get(key)
+    if kernel is None:
+        kernel = _build_support_kernel(matvec, matvec_adjoint, n, max_iters, tolerance)
+        kernels[key] = kernel
+    return kernel
+
+
 def _largest_hermitian_eigenvector(
     action: Matvec,
     n: int,
@@ -233,6 +371,7 @@ def _largest_hermitian_eigenvector(
     tolerance: float,
     restart: int,
     operator_key: jax.Array,
+    support_kernel: SupportKernel,
 ) -> tuple[jax.Array, float, float]:
     """Find a dominant eigenvector, its eigenpair residual norm, and the scale.
 
@@ -271,21 +410,6 @@ def _largest_hermitian_eigenvector(
         # direction to resolve or scale to shift by.
         vector = initial_complex / jnp.linalg.norm(initial_complex)
         return vector, 0.0, spectral_scale
-    # Dividing by twice the spectral radius maps the spectrum of the rotated
-    # Hermitian part into [0.5, 1.5] whatever the operator's magnitude, so
-    # LOBPCG's convergence test, which is relative to the operator it is
-    # handed, behaves identically for A and for s * A.  The previous floor of
-    # 1.0 on the shift turned any operator of magnitude well below one into a
-    # perturbation of the identity that the solver accepted in one step.
-    shift = 2.0 * spectral_scale
-
-    def shifted_action(value: jax.Array) -> jax.Array:
-        active = value[:real_dimension]
-        shifted = (real_action(active) + shift * active) / shift
-        if value.ndim == 1:
-            return jnp.pad(shifted, (0, padded_dimension - real_dimension))
-        return jnp.pad(shifted, ((0, padded_dimension - real_dimension), (0, 0)))
-
     padded_initial = jnp.pad(initial_real, (0, padded_dimension - real_dimension))
     # A fixed starting block can, in principle, be orthogonal to the dominant
     # invariant subspace, in which case LOBPCG converges to a subdominant
@@ -299,43 +423,20 @@ def _largest_hermitian_eigenvector(
     # its roll) at every angle and restart a call uses.  Folding operator_key
     # into the seed keeps runs reproducible for a given operator while tying
     # the blind subspace, if any, to that operator instead of to every one.
-    probe_key = jax.random.fold_in(
-        operator_key, (int(theta * 1_000_003) + 7_919 * restart) & 0x7FFFFFFF
+    vector, residual_value = support_kernel(
+        jnp.asarray(theta, dtype=jnp.float64),
+        padded_initial,
+        jnp.asarray(spectral_scale, dtype=jnp.float64),
+        jnp.asarray(restart, dtype=jnp.int32),
+        operator_key,
     )
-    random_column = jax.random.normal(probe_key, (padded_dimension,), dtype=jnp.float64)
-    if restart == 0:
-        initial_block = jnp.column_stack(
-            (padded_initial, jnp.roll(padded_initial, 1), random_column)
-        )
-    else:
-        # Later attempts start from an entirely independent space, so a
-        # dominant eigenspace orthogonal to the first attempt's columns is not
-        # also orthogonal to these.
-        extra = jax.random.normal(
-            jax.random.fold_in(probe_key, 1), (padded_dimension, 2), dtype=jnp.float64
-        )
-        initial_block = jnp.column_stack((random_column, extra))
-    _, vectors, _ = lobpcg_standard(
-        shifted_action,
-        initial_block,
-        m=max_iters,
-        tol=tolerance,
-    )
-    candidate = vectors[:, 0]
     # lobpcg_standard reports neither convergence nor a residual, so an
     # iteration budget that is too small returns a vector that is not an
     # eigenvector at all.  Accepting it would place the support point in the
     # interior of the numerical range, understating the radius and, with it,
     # the disk rate that the adequacy verdict is read from.  Validate the
     # eigenpair before trusting it.
-    real_vector = candidate[:real_dimension]
-    real_vector = real_vector / jnp.linalg.norm(real_vector)
-    # Measured on the unshifted action.  The shifted operator has norm about
-    # one at every scale, so a residual taken there and floored at one shrank
-    # with the operator and hid every defect once the operator was small.
-    action_value = real_action(real_vector)
-    rayleigh = jnp.real(jnp.vdot(real_vector, action_value))
-    residual = float(jnp.linalg.norm(action_value - rayleigh * real_vector))
+    residual = float(residual_value)
     if not math.isfinite(residual):
         raise RuntimeError(
             "numerical-range support produced a non-finite eigenpair residual "
@@ -350,7 +451,6 @@ def _largest_hermitian_eigenvector(
     # absolute geometry is not certified.  The residual travels with the
     # result and assess_preconditioner abstains on it, so the verdict path
     # stays safe while the numbers remain available.
-    vector = real_vector[:n] + 1j * real_vector[n:]
     return vector, residual, spectral_scale
 
 
@@ -432,6 +532,7 @@ def numerical_range(
     require_x64("conditioning diagnostics")
     if operator_key is None:
         operator_key = _default_operator_key(matvec, n)
+    support_kernel = _support_kernel_for(matvec, matvec_adjoint, n, max_iters, tolerance)
 
     boundary: list[jax.Array] = []
     thetas: list[float] = []
@@ -462,6 +563,7 @@ def numerical_range(
                 tolerance,
                 restart,
                 operator_key,
+                support_kernel,
             )
             worst_residual = max(worst_residual, support_residual)
             operator_scale = max(operator_scale, spectral_scale)

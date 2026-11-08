@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from moljax.conditioning import FieldOfValuesResult, numerical_range
-from moljax.conditioning.field_of_values import _CP_PREFACTOR
+from moljax.conditioning.field_of_values import _CP_PREFACTOR, _SUPPORT_KERNEL_CACHE
 
 
 def _matrix_actions(matrix: np.ndarray) -> tuple[Callable[[jax.Array], jax.Array], ...]:
@@ -36,6 +36,51 @@ def _dense_boundary(matrix: np.ndarray, n_angles: int) -> np.ndarray:
         vector = vectors[:, -1]
         boundary[index] = np.vdot(vector, matrix @ vector)
     return boundary
+
+
+def _assert_boundary_matches_dense(
+    matrix: np.ndarray,
+    result: FieldOfValuesResult,
+    expected: np.ndarray,
+) -> None:
+    """Check supports tightly and boundary points at residual-tied accuracy.
+
+    The support ``h(theta)`` is a Rayleigh quotient of the Hermitian part, so
+    its error is second order in the dominant-eigenvector error.  The
+    tangential coordinate of the Johnson boundary point is a Rayleigh
+    quotient of the rotated skew-Hermitian part and is only first order.
+    Consequently an absolute pin on the full boundary point is neither
+    portable nor mathematically appropriate: use the measured eigenpair
+    residual and the dense top-eigenvalue gap to scale the two checks.
+    """
+    actual = np.asarray(result.boundary)
+    matrix_norm = np.linalg.norm(matrix, 2)
+    scales: list[float] = []
+    gaps: list[float] = []
+    for index in range(actual.size):
+        theta = 2.0 * math.pi * index / actual.size
+        phase = np.exp(1j * theta)
+        hermitian = 0.5 * (phase * matrix + phase.conjugate() * matrix.conj().T)
+        eigenvalues = np.linalg.eigvalsh(hermitian)
+        scales.append(float(np.max(np.abs(eigenvalues))))
+        gaps.append(float(eigenvalues[-1] - eigenvalues[-2]))
+    absolute_residual = result.max_support_residual * max(scales)
+    machine_floor = np.finfo(np.float64).eps * max(matrix_norm, 1.0)
+    for index, (value, reference, gap) in enumerate(zip(actual, expected, gaps, strict=True)):
+        theta = 2.0 * math.pi * index / actual.size
+        phase = np.exp(1j * theta)
+        support = float(np.real(phase * value))
+        support_reference = float(np.real(phase * reference))
+        support_tolerance = 64.0 * max(
+            machine_floor,
+            absolute_residual**2 / max(gap, machine_floor),
+        )
+        boundary_tolerance = 64.0 * max(
+            machine_floor,
+            matrix_norm * absolute_residual / max(gap, machine_floor),
+        )
+        assert support == pytest.approx(support_reference, abs=support_tolerance)
+        assert value == pytest.approx(reference, abs=boundary_tolerance)
 
 
 def _result(matrix: np.ndarray, n_angles: int = 12) -> FieldOfValuesResult:
@@ -74,12 +119,7 @@ def test_normal_boundary_matches_convex_hull_supports():
     matrix = np.diag(eigenvalues)
     result = _result(matrix)
     expected = _dense_boundary(matrix, result.boundary.size)
-
-    np.testing.assert_allclose(np.asarray(result.boundary), expected, atol=1.0e-9, rtol=0.0)
-    for index, value in enumerate(np.asarray(result.boundary)):
-        theta = 2.0 * math.pi * index / result.boundary.size
-        support = np.max(np.real(np.exp(1j * theta) * eigenvalues))
-        assert abs(np.real(np.exp(1j * theta) * value) - support) <= 1.0e-9
+    _assert_boundary_matches_dense(matrix, result, expected)
 
 
 @pytest.mark.parametrize(
@@ -95,7 +135,66 @@ def test_nonnormal_boundary_matches_dense_hermitian_reference(matrix: np.ndarray
     """Matrix-free supports agree with dense Hermitian-part eigensolves."""
     result = _result(matrix)
     expected = _dense_boundary(matrix, result.boundary.size)
-    np.testing.assert_allclose(np.asarray(result.boundary), expected, atol=1.0e-9, rtol=0.0)
+    _assert_boundary_matches_dense(matrix, result, expected)
+
+
+def test_support_kernel_compiles_once_and_is_reused_for_the_same_operator():
+    """Angle and restart changes reuse one operator-and-shape support executable."""
+
+    class Operator:
+        def __init__(self) -> None:
+            self.matrix = jnp.asarray(_grcar(8))
+
+        def matvec(self, value: jax.Array) -> jax.Array:
+            return self.matrix @ value
+
+        def adjoint(self, value: jax.Array) -> jax.Array:
+            return self.matrix.conj().T @ value
+
+    operator = Operator()
+    _SUPPORT_KERNEL_CACHE.clear()
+    jax.clear_caches()
+    compilations: list[str] = []
+
+    def listener(name: str, duration: float, **metadata: object) -> None:
+        del duration
+        if (
+            name == "/jax/core/compile/backend_compile_duration"
+            and metadata.get("fun_name") == "jit(support_kernel)"
+        ):
+            compilations.append(name)
+
+    jax.monitoring.register_event_duration_secs_listener(listener)
+    try:
+        first = numerical_range(
+            operator.matvec,
+            operator.adjoint,
+            8,
+            n_angles=4,
+            max_iters=20,
+            n_restarts=2,
+        )
+        jax.block_until_ready(first.boundary)
+        first_compilations = len(compilations)
+        second = numerical_range(
+            operator.matvec,
+            operator.adjoint,
+            8,
+            n_angles=8,
+            max_iters=20,
+            n_restarts=2,
+        )
+        jax.block_until_ready(second.boundary)
+        repeated_compilations = len(compilations) - first_compilations
+    finally:
+        unregister = getattr(jax.monitoring, "unregister_event_duration_listener", None)
+        if unregister is not None:
+            unregister(listener)
+
+    # A persistent on-disk compilation-cache hit can make the first count zero;
+    # either way the number is independent of direction/restart count.
+    assert first_compilations <= 1
+    assert repeated_compilations == 0
 
 
 def test_adjoint_identity():
