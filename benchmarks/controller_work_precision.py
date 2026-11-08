@@ -1,10 +1,12 @@
-"""Work--precision comparison for the adaptive-controller error exponent.
+"""Work--precision comparison for adaptive-controller corrections.
 
-Configuration ``method_order`` reproduces the inherited controller table;
-``estimator_order`` uses the power of ``h`` in the actual local error
-estimate.  Work is counted in right-hand-side evaluations.  ``NKStats`` does
-not expose spent Krylov iterations, so the JSON keeps its configured budget
-separate from Newton iterations and does not present it as measured work.
+Configuration ``method_order`` (A) reproduces the inherited exponent and
+Newton-growth policy. ``estimator_order`` (B) changes only the error exponent;
+``estimator_order_cap`` (B+cap) additionally prevents Newton diagnostics from
+enlarging the PI proposal while retaining failed-solve shrinkage. Work is
+counted in right-hand-side evaluations. ``NKStats`` does not expose spent
+Krylov iterations, so the JSON keeps its configured budget separate from
+Newton iterations and does not present it as measured work.
 """
 
 from __future__ import annotations
@@ -12,10 +14,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import platform
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import jax
+import jaxlib
 
 jax.config.update("jax_enable_x64", True)
 
@@ -54,6 +59,19 @@ METHODS = {
 METHOD_ORDER = [1, 3, 4, 1, 2, 2, 1, 2]
 ESTIMATOR_ORDER = [2, 4, 5, 2, 2, 2, 2, 3]
 STAGES = {"euler": 1, "ssprk3": 3, "rk4": 4}
+
+
+def environment_provenance() -> dict[str, str]:
+    """Return the numerical environment used to generate the report."""
+    return {
+        "python": platform.python_version(),
+        "jax": jax.__version__,
+        "jaxlib": jaxlib.__version__,
+        "numpy": np.__version__,
+        "platform": platform.platform(),
+        "backend": jax.default_backend(),
+        "executable": sys.executable,
+    }
 
 
 @dataclass
@@ -193,6 +211,45 @@ def make_pr_problem() -> Problem:
     )
 
 
+def make_stiff_pr_problem() -> Problem:
+    """Rapid manufactured transient with lambda=-1e4 and monotone error curves."""
+    grid = Grid1D.uniform(8, 0.0, 1.0)
+    x = grid.x_coords(include_ghost=True)
+    rate = -1.0e4
+    omega = 100.0
+
+    def linear_apply(state, grid, t, params):
+        return {"u": rate * state["u"]}
+
+    def forcing_apply(state, grid, t, params):
+        phi = jnp.cos(omega * t + x)
+        dphi = -omega * jnp.sin(omega * t + x)
+        return {"u": -rate * phi + dphi}
+
+    base = MOLModel(
+        grid=grid,
+        bc_spec={"u": FieldBCSpec(kind=BCType.PERIODIC)},
+        params={"dtype": jnp.float64},
+        linear_ops=(LinearOp("stiff_relaxation", linear_apply),),
+        nonlinear_ops=(NonlinearOp("manufactured_forcing", forcing_apply),),
+        metadata={"pde_type": "ode_array", "lambda": rate, "omega": omega},
+    )
+    t_end = 0.25
+    y0 = base.apply_bcs({"u": jnp.cos(x)}, 0.0)
+    ref = base.apply_bcs({"u": jnp.cos(omega * t_end + x)}, t_end)
+    counter = RuntimeCounter()
+    return Problem(
+        "stiff_prothero_robinson",
+        instrument_model(base, counter),
+        y0,
+        0.0,
+        t_end,
+        0.001,
+        ref,
+        counter,
+    )
+
+
 def gray_reference(model: MOLModel, y0: dict, t_end: float) -> dict:
     n = 8192
     dt = t_end / n
@@ -320,7 +377,7 @@ def attempt(problem, stepper, method, y, y_prev, t, dt, dt_prev, step_count):
     return y_new, err, ok and finite_tree(y_new), newton, gmres, primary
 
 
-def controller_dt(dt, err, prev_err, order, accepted, implicit_primary, pid):
+def controller_dt(dt, err, prev_err, order, config, accepted, implicit_primary, pid):
     err_safe = max(err, 1.0e-10)
     if accepted:
         factor = (
@@ -334,9 +391,14 @@ def controller_dt(dt, err, prev_err, order, accepted, implicit_primary, pid):
         factor = min(max(factor, pid.min_factor), 1.0)
     out = dt * factor
     if implicit_primary is not None:
-        if not bool(implicit_primary.converged):
+        converged = bool(implicit_primary.converged)
+        iterations = int(implicit_primary.newton_iters)
+        if config == "estimator_order_cap":
+            if not converged:
+                out *= 0.5
+        elif not converged:
             out *= 0.5
-        elif int(implicit_primary.newton_iters) <= 3:
+        elif iterations <= 3:
             out *= 1.2
     out = min(max(out, pid.dt_min), pid.dt_max)
     if not accepted:
@@ -378,7 +440,7 @@ def run_one(problem, stepper, method, config, tol):
         ratio = float(scaled_error_norm(err, y_new, problem.model.grid, tol, tol))
         ratio = max(ratio, 1e-10)
         take = ratio <= 1.0 and solves_ok
-        new_dt = controller_dt(h, ratio, prev_err, order, take, primary, pid)
+        new_dt = controller_dt(h, ratio, prev_err, order, config, take, primary, pid)
         new_dt = min(new_dt, cfl_limit)
         if take:
             old_y = y
@@ -426,8 +488,12 @@ def run_one(problem, stepper, method, config, tol):
 
 
 def plot_results(results, outdir):
-    marker_by_config = {"method_order": "o", "estimator_order": "s"}
-    config_order = ["method_order", "estimator_order"]
+    marker_by_config = {
+        "method_order": "o",
+        "estimator_order": "s",
+        "estimator_order_cap": "^",
+    }
+    config_order = ["method_order", "estimator_order", "estimator_order_cap"]
     problems = sorted({r.problem for r in results})
     for problem in problems:
         methods = sorted({r.method for r in results if r.problem == problem})
@@ -510,12 +576,16 @@ def plot_results(results, outdir):
 
 
 def matched_error_summary(results):
-    """Interpolate log NFE at common errors for estimator/method-order ratios."""
+    """Interpolate log NFE on measured common-error intervals only."""
     summary = []
     pairs = sorted({(row.problem, row.method) for row in results})
     for problem, method in pairs:
         series = {}
-        for config in ("method_order", "estimator_order"):
+        for config in (
+            "method_order",
+            "estimator_order",
+            "estimator_order_cap",
+        ):
             selected = [
                 row
                 for row in results
@@ -534,25 +604,52 @@ def matched_error_summary(results):
                 np.log(np.asarray(errors)),
                 np.log(np.asarray([best[error] for error in errors])),
             )
-        x_old, y_old = series["method_order"]
-        x_new, y_new = series["estimator_order"]
-        lower = max(float(x_old.min()), float(x_new.min()))
-        upper = min(float(x_old.max()), float(x_new.max()))
-        if upper <= lower:
-            continue
-        common = np.linspace(lower, upper, 101)
-        ratio = np.exp(np.interp(common, x_new, y_new) - np.interp(common, x_old, y_old))
-        summary.append(
-            {
-                "problem": problem,
-                "method": method,
-                "common_error_min": float(np.exp(lower)),
-                "common_error_max": float(np.exp(upper)),
-                "estimator_over_method_order_nfe_median": float(np.median(ratio)),
-                "estimator_over_method_order_nfe_min": float(np.min(ratio)),
-                "estimator_over_method_order_nfe_max": float(np.max(ratio)),
-            }
-        )
+        for numerator, denominator, label in (
+            ("estimator_order", "method_order", "B_over_A"),
+            ("estimator_order_cap", "estimator_order", "B_cap_over_B"),
+        ):
+            x_den, y_den = series[denominator]
+            x_num, y_num = series[numerator]
+            lower = max(float(x_den.min()), float(x_num.min()))
+            upper = min(float(x_den.max()), float(x_num.max()))
+            if upper <= lower:
+                continue
+            common = np.linspace(lower, upper, 101)
+            ratio = np.exp(np.interp(common, x_num, y_num) - np.interp(common, x_den, y_den))
+            summary.append(
+                {
+                    "problem": problem,
+                    "method": method,
+                    "comparison": label,
+                    "common_error_min": float(np.exp(lower)),
+                    "common_error_max": float(np.exp(upper)),
+                    "nfe_ratio_median": float(np.median(ratio)),
+                    "nfe_ratio_min": float(np.min(ratio)),
+                    "nfe_ratio_max": float(np.max(ratio)),
+                }
+            )
+    return summary
+
+
+def per_method_summary(matched_rows):
+    """Median of per-problem matched-error medians for each method."""
+    summary = []
+    for method in sorted({row["method"] for row in matched_rows}):
+        for comparison in ("B_over_A", "B_cap_over_B"):
+            values = [
+                row["nfe_ratio_median"]
+                for row in matched_rows
+                if row["method"] == method and row["comparison"] == comparison
+            ]
+            if values:
+                summary.append(
+                    {
+                        "method": method,
+                        "comparison": comparison,
+                        "median_of_problem_medians": float(np.median(values)),
+                        "problem_count": len(values),
+                    }
+                )
     return summary
 
 
@@ -565,27 +662,51 @@ def main():
         default=Path("benchmarks/results/controller_work_precision.json"),
     )
     args = parser.parse_args()
-    problems = [make_pr_problem(), make_gray_problem(), make_heat_problem()]
+    work_precision_problems = [
+        make_pr_problem(),
+        make_gray_problem(),
+        make_stiff_pr_problem(),
+    ]
+    robustness_problems = [make_heat_problem()]
     tolerances = list(np.logspace(-2, -5, 7)) if not args.quick else [1e-3]
-    results = []
-    for problem in problems:
+    work_precision_results = []
+    robustness_results = []
+    for problem in work_precision_problems + robustness_problems:
         stepper = Stepper(problem)
         methods = ["euler", "ssprk3", "rk4", "be", "cn", "bdf2"]
+        if problem.name in {"stiff_prothero_robinson", "heat_1d_256"}:
+            methods = ["be", "cn", "bdf2"]
         if problem.fft_cache is not None:
             methods += ["imex_euler", "imex_strang"]
         for method in methods:
-            configs = ["method_order", "estimator_order"]
+            configs = [
+                "method_order",
+                "estimator_order",
+                "estimator_order_cap",
+            ]
             for config in configs:
                 for tol in tolerances:
                     result = run_one(problem, stepper, method, config, tol)
-                    results.append(result)
+                    target = (
+                        robustness_results
+                        if problem.name == "heat_1d_256"
+                        else work_precision_results
+                    )
+                    target.append(result)
                     print(json.dumps(asdict(result), sort_keys=True), flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    matched_rows = matched_error_summary(work_precision_results)
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "provenance": environment_provenance(),
         "configurations": {
-            "method_order": METHOD_ORDER,
-            "estimator_order": ESTIMATOR_ORDER,
+            "method_order": {"label": "A", "error_orders": METHOD_ORDER},
+            "estimator_order": {"label": "B", "error_orders": ESTIMATOR_ORDER},
+            "estimator_order_cap": {
+                "label": "B+cap",
+                "error_orders": ESTIMATOR_ORDER,
+                "newton_policy": ("no post-PI growth; retain the inherited failed-solve shrink"),
+            },
         },
         "tolerances": tolerances,
         "work_metric": "right-hand-side evaluations",
@@ -593,11 +714,17 @@ def main():
             "gmres_budget is NKStats.lin_iters: the configured Krylov budget, "
             "not iterations spent; Newton iterations are reported separately."
         ),
-        "results": [asdict(result) for result in results],
-        "matched_error_nfe": matched_error_summary(results),
+        "work_precision_results": [asdict(result) for result in work_precision_results],
+        "robustness_results": [asdict(result) for result in robustness_results],
+        "robustness_note": (
+            "The heat problem probes rejection/robustness only and is excluded "
+            "from matched-error summaries."
+        ),
+        "matched_error_nfe": matched_rows,
+        "per_method_median_matched_error_nfe": per_method_summary(matched_rows),
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
-    plot_results(results, args.output.parent)
+    plot_results(work_precision_results + robustness_results, args.output.parent)
 
 
 if __name__ == "__main__":

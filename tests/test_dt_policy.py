@@ -24,6 +24,7 @@ from moljax.core.dt_policy import (
     create_initial_controller_state,
     heisenberg_cfl_dt,
     imex_cfl_dt,
+    implicit_robustness_dt,
     pid_controller_dt,
     propose_dt,
 )
@@ -45,7 +46,7 @@ class TestCFLDtype:
     @pytest.mark.parametrize("cfl_fn", [heisenberg_cfl_dt, imex_cfl_dt])
     def test_cfl_dt_dtype_follows_argument(self, cfl_fn):
         grid = Grid2D.uniform(8, 8, 0.0, 1.0, 0.0, 1.0)
-        params = {'Du': 0.16, 'Dv': 0.08, 'F': 0.04, 'k': 0.06, 'vx': 0.3}
+        params = {"Du": 0.16, "Dv": 0.08, "F": 0.04, "k": 0.06, "vx": 0.3}
         cfl_params = CFLParams(dt_max=10.0)
 
         dt32 = cfl_fn(grid, params, cfl_params, dtype=jnp.float32)
@@ -69,7 +70,7 @@ class TestCFLLimiter:
 
         for nx in [50, 100, 200]:
             grid = Grid1D.uniform(nx, 0.0, 1.0)
-            params = {'vx': 1.0, 'vy': 0.0}
+            params = {"vx": 1.0, "vy": 0.0}
             cfl_params = CFLParams(cfl_advection=0.5)
 
             dt = heisenberg_cfl_dt(grid, params, cfl_params)
@@ -92,7 +93,7 @@ class TestCFLLimiter:
 
         for nx in [50, 100, 200]:
             grid = Grid1D.uniform(nx, 0.0, 1.0)
-            params = {'D': 1.0}
+            params = {"D": 1.0}
             cfl_params = CFLParams(cfl_diffusion=0.25)
 
             dt = heisenberg_cfl_dt(grid, params, cfl_params)
@@ -113,8 +114,8 @@ class TestCFLLimiter:
         grid = Grid1D.uniform(100, 0.0, 1.0)
         cfl_params = CFLParams(cfl_advection=0.5)
 
-        params1 = {'vx': 1.0}
-        params2 = {'vx': 2.0}
+        params1 = {"vx": 1.0}
+        params2 = {"vx": 2.0}
 
         dt1 = heisenberg_cfl_dt(grid, params1, cfl_params)
         dt2 = heisenberg_cfl_dt(grid, params2, cfl_params)
@@ -128,8 +129,8 @@ class TestCFLLimiter:
         grid = Grid1D.uniform(100, 0.0, 1.0)
         cfl_params = CFLParams(cfl_diffusion=0.25)
 
-        params1 = {'D': 1.0}
-        params2 = {'D': 2.0}
+        params1 = {"D": 1.0}
+        params2 = {"D": 2.0}
 
         dt1 = heisenberg_cfl_dt(grid, params1, cfl_params)
         dt2 = heisenberg_cfl_dt(grid, params2, cfl_params)
@@ -186,6 +187,25 @@ class TestPIDController:
         assert float(dt_new) >= pid_params.dt_min, "dt should be clamped to min"
 
 
+class TestImplicitRobustnessLimiter:
+    """Newton diagnostics may restrict, but never enlarge, a PI proposal."""
+
+    def test_fast_solve_does_not_grow_and_slow_solve_is_unchanged(self):
+        dt = jnp.array(0.1)
+        fast = NKStats(
+            converged=jnp.array(True),
+            newton_iters=jnp.array(3, dtype=jnp.int32),
+            lin_iters=jnp.array(50, dtype=jnp.int32),
+            final_res_norm=jnp.array(1.0e-12),
+        )
+        slow = fast._replace(newton_iters=jnp.array(4, dtype=jnp.int32))
+        failed = fast._replace(converged=jnp.array(False))
+
+        assert float(implicit_robustness_dt(dt, fast)) == pytest.approx(0.1)
+        assert float(implicit_robustness_dt(dt, slow)) == pytest.approx(0.1)
+        assert float(implicit_robustness_dt(dt, failed)) == pytest.approx(0.05)
+
+
 class TestWaveCFL:
     """Test CFL for wave problems."""
 
@@ -198,7 +218,7 @@ class TestWaveCFL:
 
         for nx in [50, 100, 200]:
             grid = Grid1D.uniform(nx, 0.0, 1.0)
-            params = {'K': K, 'rho': rho}
+            params = {"K": K, "rho": rho}
             cfl_params = CFLParams(cfl_wave=0.5)
 
             dt = heisenberg_cfl_dt(grid, params, cfl_params)
@@ -217,8 +237,8 @@ class TestWaveCFL:
         cfl_params = CFLParams(cfl_wave=0.5)
 
         # c = sqrt(K/rho)
-        params1 = {'K': 1.0, 'rho': 1.0}  # c = 1
-        params2 = {'K': 4.0, 'rho': 1.0}  # c = 2
+        params1 = {"K": 1.0, "rho": 1.0}  # c = 1
+        params2 = {"K": 4.0, "rho": 1.0}  # c = 2
 
         dt1 = heisenberg_cfl_dt(grid, params1, cfl_params)
         dt2 = heisenberg_cfl_dt(grid, params2, cfl_params)
@@ -235,7 +255,7 @@ class Test2DCFL:
         grid1d = Grid1D.uniform(nx, 0.0, 1.0)
         grid2d = Grid2D.uniform(nx, nx, 0.0, 1.0, 0.0, 1.0)
 
-        params = {'D': 1.0}
+        params = {"D": 1.0}
         cfl_params = CFLParams(cfl_diffusion=0.25)
 
         # Both have same dx, but 2D should have smaller dt
@@ -270,7 +290,7 @@ class TestCombinedAdvectionDiffusionCFL:
         from moljax.core.bc import apply_bc
         from moljax.core.operators import d1_upwind_2d, laplacian_2d
 
-        bc_spec = {'u': FieldBCSpec.periodic()}
+        bc_spec = {"u": FieldBCSpec.periodic()}
         ny, nx = grid.ny, grid.nx
         n = ny * nx
 
@@ -278,7 +298,7 @@ class TestCombinedAdvectionDiffusionCFL:
             u_interior = u_interior_flat.reshape(ny, nx)
             full = jnp.zeros((grid.ny_total, grid.nx_total))
             full = full.at[grid.interior_slice].set(u_interior)
-            full = apply_bc({'u': full}, grid, bc_spec)['u']
+            full = apply_bc({"u": full}, grid, bc_spec)["u"]
             dudx = d1_upwind_2d(full, vx, grid, axis=1)
             dudy = d1_upwind_2d(full, vy, grid, axis=0)
             lap = laplacian_2d(full, grid)
@@ -291,7 +311,7 @@ class TestCombinedAdvectionDiffusionCFL:
 
     def test_checkerboard_reproduction_is_stable_for_euler_and_ssprk3(self):
         grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
-        params = {'D': 1.0, 'vx': 32.0, 'vy': 0.0}
+        params = {"D": 1.0, "vx": 32.0, "vy": 0.0}
         A = self._build_dense_operator(grid, vx=32.0, vy=0.0, D=1.0)
         eigenvalues = np.linalg.eigvals(A)
 
@@ -299,7 +319,7 @@ class TestCombinedAdvectionDiffusionCFL:
             return 1.0 + z
 
         def R_ssprk3(z):
-            return 1.0 + z + z ** 2 / 2.0 + z ** 3 / 6.0
+            return 1.0 + z + z**2 / 2.0 + z**3 / 6.0
 
         for method, R in ((IntegratorType.EULER, R_euler), (IntegratorType.SSPRK3, R_ssprk3)):
             cfl_params = CFLParams()
@@ -330,13 +350,13 @@ class TestCombinedAdvectionDiffusionCFL:
         dx = 1.0 / 16.0
         # Both x and y diffuse (D applies on both axes even though vy=0);
         # only x advects.
-        lam_checkerboard = -(4.0 * 1.0 / dx ** 2 + 4.0 * 1.0 / dx ** 2 + 2.0 * 32.0 / dx)
-        old_dt = 0.9 * min(0.5 * dx / 32.0, 0.25 * dx ** 2 / 1.0)  # old CFLParams defaults
+        lam_checkerboard = -(4.0 * 1.0 / dx**2 + 4.0 * 1.0 / dx**2 + 2.0 * 32.0 / dx)
+        old_dt = 0.9 * min(0.5 * dx / 32.0, 0.25 * dx**2 / 1.0)  # old CFLParams defaults
         z = old_dt * lam_checkerboard
         assert abs(old_dt - 8.789e-4) < 1e-7, old_dt
         assert abs(z - (-2.7)) < 1e-2, z
         assert abs((1.0 + z) - (-1.7)) < 1e-2
-        r3 = 1.0 + z + z ** 2 / 2.0 + z ** 3 / 6.0
+        r3 = 1.0 + z + z**2 / 2.0 + z**3 / 6.0
         assert abs(r3 - (-1.3355)) < 1e-3
         assert abs(1.0 + z) > 1.0
         assert abs(r3) > 1.0
@@ -350,7 +370,7 @@ class TestCombinedAdvectionDiffusionCFL:
         because of the new keyword argument.
         """
         grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
-        params = {'D': 1.0, 'vx': 32.0, 'vy': 0.0}
+        params = {"D": 1.0, "vx": 32.0, "vy": 0.0}
         A = self._build_dense_operator(grid, vx=32.0, vy=0.0, D=1.0)
         eigenvalues = np.linalg.eigvals(A)
 
@@ -368,10 +388,10 @@ class TestCombinedAdvectionDiffusionCFL:
         formula reduces to.
         """
         grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
-        params = {'D': 1.0}
+        params = {"D": 1.0}
         cfl_params = CFLParams()
         dt = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.EULER)))
-        expected = cfl_params.safety * grid.dx ** 2 / (4.0 * 1.0)
+        expected = cfl_params.safety * grid.dx**2 / (4.0 * 1.0)
         assert abs(dt - expected) < 1e-12, (dt, expected)
 
     def test_more_permissive_integrator_gets_a_larger_dt(self):
@@ -379,10 +399,14 @@ class TestCombinedAdvectionDiffusionCFL:
         Euler's on the same combined advection-diffusion operator.
         """
         grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0)
-        params = {'D': 1.0, 'vx': 32.0, 'vy': 0.0}
+        params = {"D": 1.0, "vx": 32.0, "vy": 0.0}
         cfl_params = CFLParams()
-        dt_euler = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.EULER)))
-        dt_ssprk3 = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.SSPRK3)))
+        dt_euler = float(
+            heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.EULER))
+        )
+        dt_ssprk3 = float(
+            heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.SSPRK3))
+        )
         dt_rk4 = float(heisenberg_cfl_dt(grid, params, cfl_params, method=int(IntegratorType.RK4)))
         assert dt_euler < dt_ssprk3 < dt_rk4
 
@@ -398,12 +422,12 @@ def float32_decay_model():
     grid = Grid1D.uniform(1, 0.0, 1.0)
     model = MOLModel(
         grid=grid,
-        bc_spec={'u': FieldBCSpec.periodic()},
-        params={'dtype': jnp.float32},
-        linear_ops=(LinearOp(name="decay", apply=lambda s, g, t, p: {'u': -s['u']}),),
-        nonlinear_ops=()
+        bc_spec={"u": FieldBCSpec.periodic()},
+        params={"dtype": jnp.float32},
+        linear_ops=(LinearOp(name="decay", apply=lambda s, g, t, p: {"u": -s["u"]}),),
+        nonlinear_ops=(),
     )
-    return model, {'u': jnp.full(grid.nx_total, 1000.0, dtype=jnp.float32)}
+    return model, {"u": jnp.full(grid.nx_total, 1000.0, dtype=jnp.float32)}
 
 
 class TestRejectionsTerminate:
@@ -425,8 +449,8 @@ class TestRejectionsTerminate:
     def test_failed_solve_never_grows_dt(self):
         """The accepted branch, with its growth factor, is not taken on a failure."""
         grid = Grid1D.uniform(4, 0.0, 1.0)
-        params = {'dtype': jnp.float64}
-        state = {'u': jnp.ones(grid.nx_total)}
+        params = {"dtype": jnp.float64}
+        state = {"u": jnp.ones(grid.nx_total)}
         controller = create_initial_controller_state(jnp.float64)
         dt_old = jnp.array(0.1)
         # The error estimate a pair of failed solves produces: tiny, and
@@ -436,24 +460,38 @@ class TestRejectionsTerminate:
             converged=jnp.array(False),
             newton_iters=jnp.array(1, dtype=jnp.int32),
             lin_iters=jnp.array(50, dtype=jnp.int32),
-            final_res_norm=jnp.array(0.6495)
+            final_res_norm=jnp.array(0.6495),
         )
 
         dt_told, _ = propose_dt(
-            method=int(IntegratorType.BE), grid=grid, params=params, state=state,
-            t=jnp.array(0.0), dt_old=dt_old, err_ratio=err_ratio,
-            controller_state=controller, nk_stats=failed, order=1,
-            accepted=jnp.array(False)
+            method=int(IntegratorType.BE),
+            grid=grid,
+            params=params,
+            state=state,
+            t=jnp.array(0.0),
+            dt_old=dt_old,
+            err_ratio=err_ratio,
+            controller_state=controller,
+            nk_stats=failed,
+            order=1,
+            accepted=jnp.array(False),
         )
-        assert float(dt_told) < float(dt_old), (
-            f"a failed solve grew dt from {float(dt_old)} to {float(dt_told)}"
-        )
+        assert float(dt_told) < float(
+            dt_old
+        ), f"a failed solve grew dt from {float(dt_old)} to {float(dt_told)}"
 
         # Left to the error test alone, the same call grows it.
         dt_err_only, _ = propose_dt(
-            method=int(IntegratorType.BE), grid=grid, params=params, state=state,
-            t=jnp.array(0.0), dt_old=dt_old, err_ratio=err_ratio,
-            controller_state=controller, nk_stats=failed, order=1
+            method=int(IntegratorType.BE),
+            grid=grid,
+            params=params,
+            state=state,
+            t=jnp.array(0.0),
+            dt_old=dt_old,
+            err_ratio=err_ratio,
+            controller_state=controller,
+            nk_stats=failed,
+            order=1,
         )
         assert float(dt_err_only) > float(dt_old)
 
@@ -469,8 +507,14 @@ class TestRejectionsTerminate:
         model, y0 = float32_decay_model()
 
         result = adaptive_integrate(
-            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BE, max_steps=1,
-            max_rejections_per_step=5
+            model,
+            y0,
+            0.0,
+            1.0,
+            0.1,
+            method=IntegratorType.BE,
+            max_steps=1,
+            max_rejections_per_step=5,
         )
         assert int(result.status) == StatusCode.MAX_ATTEMPTS_REACHED
         assert int(result.n_accepted) == 0
@@ -494,15 +538,15 @@ class TestRejectionsTerminate:
         at the controller's clamp instead of shrinking.
         """
         grid = Grid1D.uniform(4, 0.0, 1.0)
-        params = {'dtype': jnp.float64}
-        state = {'u': jnp.ones(grid.nx_total)}
+        params = {"dtype": jnp.float64}
+        state = {"u": jnp.ones(grid.nx_total)}
         pid_params = PIDParams()
         err_ratio = jnp.array(1e-10)
         failed = NKStats(
             converged=jnp.array(False),
             newton_iters=jnp.array(1, dtype=jnp.int32),
             lin_iters=jnp.array(50, dtype=jnp.int32),
-            final_res_norm=jnp.array(0.6495)
+            final_res_norm=jnp.array(0.6495),
         )
 
         def reject_sequence(pass_decision):
@@ -510,12 +554,20 @@ class TestRejectionsTerminate:
             dt = jnp.array(0.1)
             seq = []
             for _ in range(10):
-                kwargs = {'accepted': jnp.array(False)} if pass_decision else {}
+                kwargs = {"accepted": jnp.array(False)} if pass_decision else {}
                 dt_new, controller = propose_dt(
-                    method=int(IntegratorType.BE), grid=grid, params=params,
-                    state=state, t=jnp.array(0.0), dt_old=dt, err_ratio=err_ratio,
-                    controller_state=controller, nk_stats=failed,
-                    pid_params=pid_params, order=1, **kwargs
+                    method=int(IntegratorType.BE),
+                    grid=grid,
+                    params=params,
+                    state=state,
+                    t=jnp.array(0.0),
+                    dt_old=dt,
+                    err_ratio=err_ratio,
+                    controller_state=controller,
+                    nk_stats=failed,
+                    pid_params=pid_params,
+                    order=1,
+                    **kwargs,
                 )
                 dt = jnp.maximum(dt_new * 0.5, pid_params.dt_min)
                 seq.append(float(dt))
@@ -607,6 +659,50 @@ class TestErrorOrderTable:
         assert int(result.n_accepted) < 70
         assert int(result.n_rejected) / attempts < 0.05
 
+    def test_be_controller_does_not_reintroduce_a_rejection_cycle(self):
+        """Fast Newton convergence must not enlarge the PI proposal.
+
+        On this manufactured transient, the inherited post-PI factor 1.2
+        produces a one-in-three rejection cycle at tight tolerance.  The
+        robustness limiter now leaves a fast solve alone, so the estimator-
+        order controller remains below a five-percent rejection fraction.
+        """
+        grid = Grid1D.uniform(8, 0.0, 1.0)
+        x = grid.x_coords(include_ghost=True)
+
+        def linear_apply(state, grid, t, params):
+            return {"u": -5.0 * state["u"]}
+
+        def nonlinear_apply(state, grid, t, params):
+            phi = jnp.cos(t + x)
+            dphi = -jnp.sin(t + x)
+            u = state["u"]
+            return {"u": -u * u + 5.0 * phi + dphi + phi * phi}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
+            linear_ops=(LinearOp("minus_five", linear_apply),),
+            nonlinear_ops=(NonlinearOp("forcing", nonlinear_apply),),
+        )
+        y0 = model.apply_bcs({"u": jnp.cos(x)}, 0.0)
+        result = adaptive_integrate(
+            model,
+            y0,
+            0.0,
+            4.0,
+            0.01,
+            method=IntegratorType.BE,
+            max_steps=5000,
+            save_every=5000,
+            pid_params=PIDParams(atol=1.0e-5, rtol=1.0e-5, dt_max=10.0),
+        )
+
+        assert int(result.status) == StatusCode.SUCCESS
+        attempts = int(result.n_accepted + result.n_rejected)
+        assert int(result.n_rejected) / attempts < 0.05
+
 
 class TestDriversRejectUnknownMethods:
     """The MOLModel drivers raise for a method value that they cannot step.
@@ -639,8 +735,9 @@ class TestControllerIsPI:
     """
 
     def test_formula_and_unused_prevprev(self):
-        p = PIDParams(safety=0.9, kI=0.7, kP=0.4, max_factor=10.0, min_factor=0.1,
-                      dt_min=1e-12, dt_max=10.0)
+        p = PIDParams(
+            safety=0.9, kI=0.7, kP=0.4, max_factor=10.0, min_factor=0.1, dt_min=1e-12, dt_max=10.0
+        )
         order = 2
         dt_old, err, prev = 0.1, 0.25, 0.5
         expected = dt_old * 0.9 * err ** (-0.7 / order) * (prev / err) ** (0.4 / order)
@@ -650,7 +747,9 @@ class TestControllerIsPI:
                 prevprev_err_ratio=jnp.array(prevprev),
                 consecutive_rejects=jnp.array(0, dtype=jnp.int32),
             )
-            dt_new, new_state = pid_controller_dt(jnp.array(dt_old), jnp.array(err), state, p, order)
+            dt_new, new_state = pid_controller_dt(
+                jnp.array(dt_old), jnp.array(err), state, p, order
+            )
             np.testing.assert_allclose(float(dt_new), expected, rtol=1e-12)
             assert float(new_state.prev_err_ratio) == err
 

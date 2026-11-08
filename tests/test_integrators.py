@@ -59,20 +59,20 @@ class TestExplicitIntegrators:
         grid = Grid1D.uniform(1, 0.0, 1.0)
 
         def decay_rhs(state, grid, t, params):
-            return {'u': -state['u']}
+            return {"u": -state["u"]}
 
         decay_op = LinearOp(name="decay", apply=decay_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(decay_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
         # Initial condition
-        y0 = {'u': jnp.array([1.0, 1.0, 1.0])}  # padded
+        y0 = {"u": jnp.array([1.0, 1.0, 1.0])}  # padded
 
         # Integrate
         dt = 0.1
@@ -81,7 +81,7 @@ class TestExplicitIntegrators:
             y = euler_step(model, y, 0.0, dt)
 
         # Expected: u(1) = exp(-1) ~ 0.368
-        u_final = float(y['u'][1])
+        u_final = float(y["u"][1])
         expected = np.exp(-1.0)
 
         # Euler is first order, so ~10% error is expected
@@ -92,16 +92,16 @@ class TestExplicitIntegrators:
         grid = Grid1D.uniform(1, 0.0, 1.0)
 
         def decay_rhs(state, grid, t, params):
-            return {'u': -state['u']}
+            return {"u": -state["u"]}
 
         decay_op = LinearOp(name="decay", apply=decay_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(decay_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
         errors = []
@@ -110,13 +110,13 @@ class TestExplicitIntegrators:
         expected = np.exp(-t_end)
 
         for dt in dts:
-            y = {'u': jnp.array([1.0, 1.0, 1.0])}
+            y = {"u": jnp.array([1.0, 1.0, 1.0])}
             n_steps = int(t_end / dt)
 
             for _ in range(n_steps):
                 y = rk4_step(model, y, 0.0, dt)
 
-            error = abs(float(y['u'][1]) - expected)
+            error = abs(float(y["u"][1]) - expected)
             errors.append(error)
 
         # Check convergence rate ~ 4
@@ -137,24 +137,25 @@ class TestExplicitIntegrators:
         def advection_rhs(state, grid, t, params):
             from moljax.core.bc import apply_bc
             from moljax.core.operators import d1_upwind_1d
-            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
-            du_dx = d1_upwind_1d(state['u'], v, grid)
-            return {'u': -v * du_dx}
+
+            state = apply_bc(state, grid, {"u": FieldBCSpec.periodic()})
+            du_dx = d1_upwind_1d(state["u"], v, grid)
+            return {"u": -v * du_dx}
 
         advection_op = LinearOp(name="advection", apply=advection_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(advection_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
         # Initial condition: smooth bump
         x = grid.x_coords(include_ghost=True)
         u0 = jnp.exp(-100 * (x - 0.5) ** 2)
-        y = {'u': u0}
+        y = {"u": u0}
 
         # CFL dt
         dt = 0.5 * grid.dx / v
@@ -165,8 +166,8 @@ class TestExplicitIntegrators:
             y = ssprk3_step(model, y, 0.0, dt)
 
         # Should not blow up
-        assert jnp.all(jnp.isfinite(y['u'])), "SSPRK3 produced non-finite values"
-        assert float(jnp.max(jnp.abs(y['u']))) < 2.0, "SSPRK3 solution unstable"
+        assert jnp.all(jnp.isfinite(y["u"])), "SSPRK3 produced non-finite values"
+        assert float(jnp.max(jnp.abs(y["u"]))) < 2.0, "SSPRK3 solution unstable"
 
 
 class TestImplicitIntegrators:
@@ -180,19 +181,19 @@ class TestImplicitIntegrators:
         lambda_stiff = 100.0
 
         def stiff_rhs(state, grid, t, params):
-            return {'u': -lambda_stiff * state['u']}
+            return {"u": -lambda_stiff * state["u"]}
 
         stiff_op = LinearOp(name="stiff", apply=stiff_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(stiff_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
-        y = {'u': jnp.array([1.0, 1.0, 1.0])}
+        y = {"u": jnp.array([1.0, 1.0, 1.0])}
 
         # Large dt that would be unstable for explicit
         dt = 0.1  # >> 2/lambda for explicit stability
@@ -201,25 +202,25 @@ class TestImplicitIntegrators:
         y_new, stats = be_step(model, y, 0.0, dt)
 
         # Should not blow up
-        assert jnp.all(jnp.isfinite(y_new['u'])), "BE produced non-finite values"
+        assert jnp.all(jnp.isfinite(y_new["u"])), "BE produced non-finite values"
         # Solution should decay
-        assert float(y_new['u'][1]) < float(y['u'][1]), "BE solution should decay"
+        assert float(y_new["u"][1]) < float(y["u"][1]), "BE solution should decay"
 
     def test_cn_second_order(self):
         """Test CN achieves second order convergence."""
         grid = Grid1D.uniform(1, 0.0, 1.0)
 
         def decay_rhs(state, grid, t, params):
-            return {'u': -state['u']}
+            return {"u": -state["u"]}
 
         decay_op = LinearOp(name="decay", apply=decay_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(decay_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
         errors = []
@@ -228,13 +229,13 @@ class TestImplicitIntegrators:
         expected = np.exp(-t_end)
 
         for dt in dts:
-            y = {'u': jnp.array([1.0, 1.0, 1.0])}
+            y = {"u": jnp.array([1.0, 1.0, 1.0])}
             n_steps = int(t_end / dt)
 
             for i in range(n_steps):
                 y, _ = cn_step(model, y, i * dt, dt)
 
-            error = abs(float(y['u'][1]) - expected)
+            error = abs(float(y["u"][1]) - expected)
             errors.append(error)
 
         # Check convergence rate ~ 2
@@ -255,26 +256,27 @@ class TestStability:
         def diffusion_rhs(state, grid, t, params):
             from moljax.core.bc import apply_bc
             from moljax.core.operators import laplacian_1d
-            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
-            return {'u': D * laplacian_1d(state['u'], grid)}
+
+            state = apply_bc(state, grid, {"u": FieldBCSpec.periodic()})
+            return {"u": D * laplacian_1d(state["u"], grid)}
 
         diffusion_op = LinearOp(name="diffusion", apply=diffusion_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(diffusion_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
         # Initial condition
         x = grid.x_coords(include_ghost=True)
         u0 = jnp.sin(2 * jnp.pi * x)
-        y = {'u': u0}
+        y = {"u": u0}
 
         # dt above stability limit: dt > 0.5 * dx^2 / D
-        dt_stable = 0.5 * grid.dx ** 2 / D
+        dt_stable = 0.5 * grid.dx**2 / D
         dt_unstable = 10 * dt_stable  # Well above limit
 
         # Run many steps with unstable dt
@@ -282,10 +284,7 @@ class TestStability:
             y = euler_step(model, y, 0.0, dt_unstable)
 
         # Should blow up (NaN or very large values)
-        is_blown = (
-            not jnp.all(jnp.isfinite(y['u'])) or
-            float(jnp.max(jnp.abs(y['u']))) > 1e5
-        )
+        is_blown = not jnp.all(jnp.isfinite(y["u"])) or float(jnp.max(jnp.abs(y["u"]))) > 1e5
         assert is_blown, "Explicit should be unstable with large dt"
 
 
@@ -300,23 +299,24 @@ class TestAdaptive:
         def diffusion_rhs(state, grid, t, params):
             from moljax.core.bc import apply_bc
             from moljax.core.operators import laplacian_1d
-            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
-            D = params.get('D', 0.1)
-            return {'u': D * laplacian_1d(state['u'], grid)}
+
+            state = apply_bc(state, grid, {"u": FieldBCSpec.periodic()})
+            D = params.get("D", 0.1)
+            return {"u": D * laplacian_1d(state["u"], grid)}
 
         diffusion_op = LinearOp(name="diffusion", apply=diffusion_rhs)
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'D': 0.1, 'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"D": 0.1, "dtype": jnp.float64},
             linear_ops=(diffusion_op,),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
 
         # Initial condition
         x = grid.x_coords(include_ghost=True)
-        y0 = {'u': jnp.sin(2 * jnp.pi * x)}
+        y0 = {"u": jnp.sin(2 * jnp.pi * x)}
 
         cfl_params = CFLParams(cfl_diffusion=0.25, dt_max=0.1)
         pid_params = PIDParams(atol=1e-4, rtol=1e-3, dt_max=0.1)
@@ -330,11 +330,12 @@ class TestAdaptive:
             method=IntegratorType.RK4,
             max_steps=1000,
             cfl_params=cfl_params,
-            pid_params=pid_params
+            pid_params=pid_params,
         )
 
         # Should complete successfully
         from moljax.core.utils import StatusCode
+
         assert int(result.status) == StatusCode.SUCCESS, f"Status: {int(result.status)}"
         assert float(result.t_final) >= 0.1 - 1e-6
 
@@ -349,26 +350,34 @@ class TestAdaptive:
         grid = Grid1D.uniform(4, 0.0, 1.0)
 
         def decay_rhs(state, grid, t, params):
-            return {'u': -state['u']}
+            return {"u": -state["u"]}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="decay", apply=decay_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
-        y0 = {'u': jnp.ones(grid.nx_total)}
+        y0 = {"u": jnp.ones(grid.nx_total)}
 
         result = adaptive_integrate(
-            model, y0, 0.0, 1.0, 0.01, method=IntegratorType.BE,
-            max_steps=2000, nk_params=NKParams(newton_tol=1e-12)
+            model,
+            y0,
+            0.0,
+            1.0,
+            0.01,
+            method=IntegratorType.BE,
+            max_steps=2000,
+            nk_params=NKParams(newton_tol=1e-12),
         )
 
-        assert int(result.status) == 0, f"status {int(result.status)}, t_final {float(result.t_final)}"
+        assert (
+            int(result.status) == 0
+        ), f"status {int(result.status)}, t_final {float(result.t_final)}"
         assert abs(float(result.t_final) - 1.0) < 1e-12
         assert int(result.n_accepted) < 200, f"{int(result.n_accepted)} accepted steps"
-        assert abs(float(result.y_final['u'][1]) - np.exp(-1.0)) < 5e-3
+        assert abs(float(result.y_final["u"][1]) - np.exp(-1.0)) < 5e-3
 
     def test_adaptive_float32_model_under_x64(self):
         """A float32 model must integrate while x64 is enabled.
@@ -383,12 +392,14 @@ class TestAdaptive:
         dtype is what this test pins, and it is still float32.
         """
         model = create_gray_scott_model(Grid2D.uniform(8, 8, 0, 1, 0, 1), dtype=jnp.float32)
-        y0 = model.create_initial_state(fill_values={'u': 1.0, 'v': 0.1})
+        y0 = model.create_initial_state(fill_values={"u": 1.0, "v": 0.1})
 
-        result = adaptive_integrate(model, y0, 0.0, 0.01, 0.001, method=IntegratorType.RK4, max_steps=50)
+        result = adaptive_integrate(
+            model, y0, 0.0, 0.01, 0.001, method=IntegratorType.RK4, max_steps=50
+        )
 
         assert int(result.status) == 0
-        assert result.y_final['u'].dtype == jnp.float32
+        assert result.y_final["u"].dtype == jnp.float32
         assert result.dt_history.dtype == jnp.float32
         assert result.t_final.dtype == jnp.float64
 
@@ -424,28 +435,32 @@ class TestAdaptive:
         grid = Grid1D.uniform(4, 0.0, 1.0)
 
         def decay_rhs(state, grid, t, params):
-            return {'u': -state['u']}
+            return {"u": -state["u"]}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="decay", apply=decay_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
-        y0 = {'u': jnp.ones(grid.nx_total)}
+        y0 = {"u": jnp.ones(grid.nx_total)}
 
         result = adaptive_integrate(
-            model, y0, 0.0, t_end, dt0,
+            model,
+            y0,
+            0.0,
+            t_end,
+            dt0,
             method=IntegratorType.BE,
             max_steps=100,
             pid_params=pid_params,
             nk_params=NKParams(newton_tol=1e-12),
-            save_every=save_every
+            save_every=save_every,
         )
 
         assert int(result.n_accepted) == n_steps
-        t_hist = result.t_history[:int(result.n_steps)]
+        t_hist = result.t_history[: int(result.n_steps)]
         assert jnp.allclose(t_hist, jnp.array(expected_t)), f"BE history: {t_hist}"
         assert abs(float(result.t_final) - t_end) < 1e-12
         assert float(t_hist[-1]) == float(result.t_final)
@@ -455,12 +470,21 @@ class TestAdaptive:
         imex_model, fft_cache, diffusivities, y0_imex = gray_scott_off_equilibrium()
 
         result_imex = adaptive_integrate_imex(
-            imex_model, y0_imex, 0.0, t_end, dt0, fft_cache, diffusivities,
-            use_strang=False, max_steps=100, pid_params=pid_params, save_every=save_every
+            imex_model,
+            y0_imex,
+            0.0,
+            t_end,
+            dt0,
+            fft_cache,
+            diffusivities,
+            use_strang=False,
+            max_steps=100,
+            pid_params=pid_params,
+            save_every=save_every,
         )
 
         assert int(result_imex.n_accepted) == n_steps
-        t_hist_imex = result_imex.t_history[:int(result_imex.n_steps)]
+        t_hist_imex = result_imex.t_history[: int(result_imex.n_steps)]
         assert jnp.allclose(t_hist_imex, jnp.array(expected_t)), f"IMEX history: {t_hist_imex}"
         assert abs(float(result_imex.t_final) - t_end) < 1e-12
         assert float(t_hist_imex[-1]) == float(result_imex.t_final)
@@ -484,31 +508,35 @@ class TestAdaptive:
         grid = Grid1D.uniform(4, 0.0, 1.0)
 
         def decay_rhs(state, grid, t, params):
-            return {'u': -state['u']}
+            return {"u": -state["u"]}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="decay", apply=decay_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
         nk_params = NKParams(newton_tol=1e-13, max_newton_iters=20)
         pid_params = PIDParams(atol=1.0, rtol=1.0)
 
         errors = []
         for dt in (0.1, 0.05):
-            y0 = {'u': jnp.ones(grid.nx_total)}
+            y0 = {"u": jnp.ones(grid.nx_total)}
             result = adaptive_integrate(
-                model, y0, 0.0, dt, dt,
+                model,
+                y0,
+                0.0,
+                dt,
+                dt,
                 method=IntegratorType.BDF2,
                 max_steps=1,
                 pid_params=pid_params,
-                nk_params=nk_params
+                nk_params=nk_params,
             )
             assert int(result.n_accepted) == 1, "the single startup step must be accepted"
             assert abs(float(result.t_final) - dt) < 1e-12
-            errors.append(abs(float(result.y_final['u'][1]) - np.exp(-dt)))
+            errors.append(abs(float(result.y_final["u"][1]) - np.exp(-dt)))
 
         ratio = errors[0] / errors[1]
         assert 7.0 <= ratio <= 8.5, f"errors {errors}, ratio {ratio:.3f}"
@@ -535,36 +563,45 @@ class TestAdaptive:
         grid = Grid1D.uniform(1, 0.0, 1.0)
 
         def growth_rhs(state, grid, t, params):
-            return {'u': 2.0 * state['u']}
+            return {"u": 2.0 * state["u"]}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="growth", apply=growth_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
-        y0 = {'u': jnp.full(grid.nx_total, 1e-7)}
+        y0 = {"u": jnp.full(grid.nx_total, 1e-7)}
         dt = 1.0
         nk_params = NKParams()  # default newton_tol = 1e-8
 
         _, stats_be = be_step(model, y0, 0.0, dt, nk_params=nk_params)
         _, stats_cn = cn_step(model, y0, 0.0, dt, nk_params=nk_params)
         assert bool(stats_be.converged), "BE must converge for this case to exercise the regression"
-        assert not bool(stats_cn.converged), "CN must fail to converge for this case to exercise the regression"
+        assert not bool(
+            stats_cn.converged
+        ), "CN must fail to converge for this case to exercise the regression"
 
         result = adaptive_integrate(
-            model, y0, 0.0, dt, dt,
+            model,
+            y0,
+            0.0,
+            dt,
+            dt,
             method=IntegratorType.BDF2,
             max_steps=200,
             pid_params=PIDParams(),
-            nk_params=nk_params
+            nk_params=nk_params,
         )
-        assert int(result.n_rejected) >= 1, \
-            "the dt = 1 startup attempt must be rejected since its CN solve did not converge"
+        assert (
+            int(result.n_rejected) >= 1
+        ), "the dt = 1 startup attempt must be rejected since its CN solve did not converge"
         exact = 1e-7 * np.exp(2.0)
-        error = abs(float(result.y_final['u'][1]) - exact)
-        assert error < 2e-7, f"error {error:.3e} too large; startup should have subdivided to converge"
+        error = abs(float(result.y_final["u"][1]) - exact)
+        assert (
+            error < 2e-7
+        ), f"error {error:.3e} too large; startup should have subdivided to converge"
 
 
 class TestImplicitPredictor:
@@ -581,24 +618,24 @@ class TestImplicitPredictor:
         grid = Grid1D.uniform(1, 0.0, 1.0)
 
         def forced_decay(state, grid, t, params):
-            return {'u': -state['u'] + 1.0 / jnp.sqrt(t)}
+            return {"u": -state["u"] + 1.0 / jnp.sqrt(t)}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="forced_decay", apply=forced_decay),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
-        y0 = {'u': jnp.ones(3)}
+        y0 = {"u": jnp.ones(3)}
         dt = 0.1
 
         y1, stats = be_step(model, y0, 0.0, dt, nk_params=NKParams(newton_tol=1e-12))
 
         expected = (1.0 + dt / np.sqrt(dt)) / (1.0 + dt)
-        assert bool(jnp.all(jnp.isfinite(y1['u'])))
+        assert bool(jnp.all(jnp.isfinite(y1["u"])))
         assert bool(stats.converged)
-        assert abs(float(y1['u'][1]) - expected) < 1e-8
+        assert abs(float(y1["u"][1]) - expected) < 1e-8
 
     def test_newton_start_rejects_amplified_predictor(self):
         """A finite but wildly amplified predictor must fall back to y.
@@ -618,30 +655,33 @@ class TestImplicitPredictor:
         def diffusion_rhs(state, grid, t, params):
             from moljax.core.bc import apply_bc
             from moljax.core.operators import laplacian_1d
-            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
-            return {'u': D * laplacian_1d(state['u'], grid)}
+
+            state = apply_bc(state, grid, {"u": FieldBCSpec.periodic()})
+            return {"u": D * laplacian_1d(state["u"], grid)}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="diffusion", apply=diffusion_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
-        dt = 100 * 0.5 * grid.dx ** 2 / D
+        dt = 100 * 0.5 * grid.dx**2 / D
 
         nyquist = jnp.where(jnp.arange(grid.nx_total) % 2 == 0, 1.0, -1.0)
-        y_nyquist = {'u': nyquist}
+        y_nyquist = {"u": nyquist}
         start = _newton_start(model, y_nyquist, 0.0, dt)
-        assert jnp.array_equal(start['u'], y_nyquist['u']), \
-            "an amplified Nyquist predictor should be rejected, returning y exactly"
+        assert jnp.array_equal(
+            start["u"], y_nyquist["u"]
+        ), "an amplified Nyquist predictor should be rejected, returning y exactly"
 
         x = grid.x_coords(include_ghost=True)
-        y_smooth = {'u': jnp.sin(2 * jnp.pi * x)}
+        y_smooth = {"u": jnp.sin(2 * jnp.pi * x)}
         predicted = euler_step(model, y_smooth, 0.0, dt)
         start_smooth = _newton_start(model, y_smooth, 0.0, dt)
-        assert jnp.array_equal(start_smooth['u'], predicted['u']), \
-            "a smooth low-mode state at the same dt should still return the predictor"
+        assert jnp.array_equal(
+            start_smooth["u"], predicted["u"]
+        ), "a smooth low-mode state at the same dt should still return the predictor"
 
     def test_newton_start_accepts_predictor_from_zero_state(self):
         """A cold start (y = 0) with a nonzero forcing must not reject its own predictor.
@@ -657,23 +697,24 @@ class TestImplicitPredictor:
         grid = Grid1D.uniform(4, 0.0, 1.0)
 
         def forced_rhs(state, grid, t, params):
-            return {'u': jnp.ones_like(state['u'])}
+            return {"u": jnp.ones_like(state["u"])}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="forced", apply=forced_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
-        y0 = {'u': jnp.zeros(grid.nx_total)}
+        y0 = {"u": jnp.zeros(grid.nx_total)}
         dt = 0.1
 
         predicted = euler_step(model, y0, 0.0, dt)
         start = _newton_start(model, y0, 0.0, dt)
-        assert jnp.array_equal(start['u'], predicted['u']), \
-            "a cold start with nonzero forcing should return the Euler predictor, not y"
-        assert not jnp.array_equal(start['u'], y0['u'])
+        assert jnp.array_equal(
+            start["u"], predicted["u"]
+        ), "a cold start with nonzero forcing should return the Euler predictor, not y"
+        assert not jnp.array_equal(start["u"], y0["u"])
 
     def test_bdf2_predictor_is_ratio_aware(self):
         """(1+w) y_n - w y_{n-1} must beat 2 y_n - y_{n-1} when w != 1.
@@ -691,19 +732,19 @@ class TestImplicitPredictor:
         grid = Grid1D.uniform(4, 0.0, 1.0)
         model = MOLModel(
             grid=grid,
-            bc_spec={'y': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"y": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
         )
         n = grid.nx_total
         dt_prev, dt = 1.0, 0.1
-        y_prev = {'y': jnp.ones(n)}
-        y = {'y': jnp.full(n, np.exp(-1.0))}
+        y_prev = {"y": jnp.ones(n)}
+        y = {"y": jnp.full(n, np.exp(-1.0))}
 
         pred = _bdf2_predictor(model, y, y_prev, dt, dt_prev)
         exact = np.exp(-1.1)
 
-        assert float(pred['y'][1]) > 0, "predictor has the wrong sign"
-        rel_err = abs(float(pred['y'][1]) - exact) / exact
+        assert float(pred["y"][1]) > 0, "predictor has the wrong sign"
+        rel_err = abs(float(pred["y"][1]) - exact) / exact
         assert rel_err < 0.15, f"relative error {rel_err:.4f} exceeds 0.15"
 
     def test_implicit_steps_far_above_explicit_limit(self):
@@ -715,25 +756,26 @@ class TestImplicitPredictor:
         def diffusion_rhs(state, grid, t, params):
             from moljax.core.bc import apply_bc
             from moljax.core.operators import laplacian_1d
-            state = apply_bc(state, grid, {'u': FieldBCSpec.periodic()})
-            return {'u': D * laplacian_1d(state['u'], grid)}
+
+            state = apply_bc(state, grid, {"u": FieldBCSpec.periodic()})
+            return {"u": D * laplacian_1d(state["u"], grid)}
 
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(LinearOp(name="diffusion", apply=diffusion_rhs),),
-            nonlinear_ops=()
+            nonlinear_ops=(),
         )
         x = grid.x_coords(include_ghost=True)
-        y0 = {'u': jnp.sin(2 * jnp.pi * x)}
-        dt = 100 * 0.5 * grid.dx ** 2 / D
+        y0 = {"u": jnp.sin(2 * jnp.pi * x)}
+        dt = 100 * 0.5 * grid.dx**2 / D
 
         for step in (be_step, cn_step):
             y1, stats = step(model, y0, 0.0, dt, nk_params=NKParams(max_krylov_iters=200))
-            assert bool(jnp.all(jnp.isfinite(y1['u'])))
+            assert bool(jnp.all(jnp.isfinite(y1["u"])))
             assert bool(stats.converged)
-            assert float(jnp.max(jnp.abs(y1['u']))) <= 1.0 + 1e-8
+            assert float(jnp.max(jnp.abs(y1["u"]))) <= 1.0 + 1e-8
 
 
 def gray_scott_off_equilibrium():
@@ -748,10 +790,12 @@ def gray_scott_off_equilibrium():
     def bump(X, Y):
         return jnp.exp(-((X - 1.25) ** 2 + (Y - 1.25) ** 2))
 
-    state = model.create_initial_state(init_fns={
-        'u': lambda X, Y: 1.0 - 0.5 * bump(X, Y),
-        'v': lambda X, Y: 0.25 * bump(X, Y),
-    })
+    state = model.create_initial_state(
+        init_fns={
+            "u": lambda X, Y: 1.0 - 0.5 * bump(X, Y),
+            "v": lambda X, Y: 0.25 * bump(X, Y),
+        }
+    )
     return model, fft_cache, diffusivities, state
 
 
@@ -789,8 +833,13 @@ class TestFixedStep:
             y = rk4_step(model, y, i * self.DT, self.DT)
 
         t_hist, y_hist, y_final = integrate_fixed_dt(
-            model, y0, 0.0, self.T_END, self.DT,
-            method=IntegratorType.RK4, save_every=self.SAVE_EVERY
+            model,
+            y0,
+            0.0,
+            self.T_END,
+            self.DT,
+            method=IntegratorType.RK4,
+            save_every=self.SAVE_EVERY,
         )
         assert_states_match(y_final, y)
         assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
@@ -803,8 +852,14 @@ class TestFixedStep:
             y, _ = be_step(model, y, i * self.DT, self.DT, nk_params=self.NK)
 
         t_hist, y_hist, y_final = integrate_fixed_dt(
-            model, y0, 0.0, self.T_END, self.DT,
-            method=IntegratorType.BE, save_every=self.SAVE_EVERY, nk_params=self.NK
+            model,
+            y0,
+            0.0,
+            self.T_END,
+            self.DT,
+            method=IntegratorType.BE,
+            save_every=self.SAVE_EVERY,
+            nk_params=self.NK,
         )
         assert_states_match(y_final, y)
         assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
@@ -818,8 +873,14 @@ class TestFixedStep:
             y_prev, y = y, y_new
 
         t_hist, y_hist, y_final = integrate_fixed_dt(
-            model, y0, 0.0, self.T_END, self.DT,
-            method=IntegratorType.BDF2, save_every=self.SAVE_EVERY, nk_params=self.NK
+            model,
+            y0,
+            0.0,
+            self.T_END,
+            self.DT,
+            method=IntegratorType.BDF2,
+            save_every=self.SAVE_EVERY,
+            nk_params=self.NK,
         )
         assert_states_match(y_final, y)
         assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
@@ -831,8 +892,15 @@ class TestFixedStep:
             y = imex_strang_step(model, y, i * self.DT, self.DT, fft_cache, diffusivities)
 
         t_hist, y_hist, y_final = integrate_imex_fixed_dt(
-            model, y0, 0.0, self.T_END, self.DT, fft_cache, diffusivities,
-            use_strang=True, save_every=self.SAVE_EVERY
+            model,
+            y0,
+            0.0,
+            self.T_END,
+            self.DT,
+            fft_cache,
+            diffusivities,
+            use_strang=True,
+            save_every=self.SAVE_EVERY,
         )
         assert_states_match(y_final, y)
         assert_history_layout(t_hist, y_hist, y_final, model.grid, self.T_END, 2)
@@ -853,15 +921,15 @@ def cubic_decay_model():
     the 1e-8 tolerance.
     """
     grid = Grid1D.uniform(1, 0.0, 1.0)
-    op = NonlinearOp(name="cubic", apply=lambda s, g, t, p: {'u': -s['u'] ** 3})
+    op = NonlinearOp(name="cubic", apply=lambda s, g, t, p: {"u": -s["u"] ** 3})
     model = MOLModel(
         grid=grid,
-        bc_spec={'u': FieldBCSpec.periodic()},
-        params={'dtype': jnp.float64},
+        bc_spec={"u": FieldBCSpec.periodic()},
+        params={"dtype": jnp.float64},
         linear_ops=(),
-        nonlinear_ops=(op,)
+        nonlinear_ops=(op,),
     )
-    return model, {'u': jnp.ones(grid.nx_total)}
+    return model, {"u": jnp.ones(grid.nx_total)}
 
 
 class TestFixedStepReportsFailedSolves:
@@ -884,35 +952,31 @@ class TestFixedStepReportsFailedSolves:
 
         y_step, stats = be_step(model, y0, 0.0, 1.0, nk_params=nk)
         assert not bool(stats.converged)
-        assert abs(float(y_step['u'][1]) - 0.5) < 1e-12
+        assert abs(float(y_step["u"][1]) - 0.5) < 1e-12
         assert abs(float(stats.final_res_norm) - 0.6495190528383293) < 1e-12
 
         with pytest.raises(RuntimeError, match="NK_FAILED"):
-            integrate_fixed_dt(
-                model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, nk_params=nk
-            )
+            integrate_fixed_dt(model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, nk_params=nk)
 
         _, _, y_final, status = integrate_fixed_dt(
-            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, nk_params=nk,
-            return_status=True
+            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, nk_params=nk, return_status=True
         )
         assert int(status) == StatusCode.NK_FAILED
         # The failed step does not advance the state: the 0.5 is not returned.
-        assert float(y_final['u'][1]) == 1.0
+        assert float(y_final["u"][1]) == 1.0
 
     def test_failure_freezes_the_remaining_steps(self):
         """Every step after the first failure is a no-op, not a further wrong step."""
         model, y0 = cubic_decay_model()
         nk = NKParams(max_newton_iters=1)
         t_hist, y_hist, y_final, status = integrate_fixed_dt(
-            model, y0, 0.0, 5.0, 1.0, method=IntegratorType.BE, nk_params=nk,
-            return_status=True
+            model, y0, 0.0, 5.0, 1.0, method=IntegratorType.BE, nk_params=nk, return_status=True
         )
         assert int(status) == StatusCode.NK_FAILED
         assert t_hist.shape == (5,)
         # All five saved states are the frozen initial state.
-        assert float(jnp.max(jnp.abs(y_hist['u'] - 1.0))) == 0.0
-        assert float(y_final['u'][1]) == 1.0
+        assert float(jnp.max(jnp.abs(y_hist["u"] - 1.0))) == 0.0
+        assert float(y_final["u"][1]) == 1.0
 
     def test_converging_run_reports_success_and_is_bit_identical(self):
         """A converging run reports SUCCESS and matches an eager loop exactly.
@@ -932,27 +996,34 @@ class TestFixedStepReportsFailedSolves:
             assert bool(stats.converged)
 
         t_hist, y_hist, y_final, status = integrate_fixed_dt(
-            model, y0, 0.0, dt * n_steps, dt, method=IntegratorType.BE,
-            save_every=5, nk_params=nk, return_status=True
+            model,
+            y0,
+            0.0,
+            dt * n_steps,
+            dt,
+            method=IntegratorType.BE,
+            save_every=5,
+            nk_params=nk,
+            return_status=True,
         )
         assert int(status) == StatusCode.SUCCESS
         for name in y:
             assert jnp.array_equal(y_final[name], y[name]), f"field {name} not bit-identical"
         assert t_hist.shape == (2,)
-        assert y_hist['u'].shape[0] == 2
+        assert y_hist["u"].shape[0] == 2
 
     def test_explicit_blowup_is_reported(self):
         """A non-finite explicit state stops the run with NON_FINITE_VALUES."""
         grid = Grid1D.uniform(1, 0.0, 1.0)
-        op = NonlinearOp(name="blowup", apply=lambda s, g, t, p: {'u': s['u'] ** 3})
+        op = NonlinearOp(name="blowup", apply=lambda s, g, t, p: {"u": s["u"] ** 3})
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
             linear_ops=(),
-            nonlinear_ops=(op,)
+            nonlinear_ops=(op,),
         )
-        y0 = {'u': jnp.full(grid.nx_total, 1e3)}
+        y0 = {"u": jnp.full(grid.nx_total, 1e3)}
         _, _, _, status = integrate_fixed_dt(
             model, y0, 0.0, 1.0, 0.1, method=IntegratorType.EULER, return_status=True
         )
@@ -966,18 +1037,15 @@ def source_term_model(t0, dtype=jnp.float32):
     advance is the whole answer: u stays at 0.
     """
     grid = Grid1D.uniform(1, 0.0, 1.0)
-    op = NonlinearOp(
-        name="source",
-        apply=lambda s, g, t, p: {'u': jnp.full_like(s['u'], t - t0)}
-    )
+    op = NonlinearOp(name="source", apply=lambda s, g, t, p: {"u": jnp.full_like(s["u"], t - t0)})
     model = MOLModel(
         grid=grid,
-        bc_spec={'u': FieldBCSpec.periodic()},
-        params={'dtype': dtype},
+        bc_spec={"u": FieldBCSpec.periodic()},
+        params={"dtype": dtype},
         linear_ops=(),
-        nonlinear_ops=(op,)
+        nonlinear_ops=(op,),
     )
-    return model, {'u': jnp.zeros(grid.nx_total, dtype=dtype)}
+    return model, {"u": jnp.zeros(grid.nx_total, dtype=dtype)}
 
 
 class TestTimeIsNotCarriedInTheStateDtype:
@@ -1001,23 +1069,29 @@ class TestTimeIsNotCarriedInTheStateDtype:
         t_hist, y_hist, y_final = integrate_fixed_dt(
             model, y0, self.T0, self.T0 + 1.0, 0.01, method=IntegratorType.RK4
         )
-        assert abs(float(y_final['u'][1]) - 0.5) < 1e-6, float(y_final['u'][1])
+        assert abs(float(y_final["u"][1]) - 0.5) < 1e-6, float(y_final["u"][1])
         assert abs(float(t_hist[-1]) - (self.T0 + 1.0)) < 1e-9
         assert float(t_hist[0]) > self.T0
         # The field itself is still float32; only the clock is wider.
-        assert y_final['u'].dtype == jnp.float32
+        assert y_final["u"].dtype == jnp.float32
         assert t_hist.dtype == jnp.float64
 
     def test_adaptive_advances_at_a_large_t0(self):
         model, y0 = source_term_model(self.T0)
         result = adaptive_integrate(
-            model, y0, self.T0, self.T0 + 1.0, 0.01, method=IntegratorType.RK4,
-            max_steps=500, pid_params=PIDParams(dt_max=0.01)
+            model,
+            y0,
+            self.T0,
+            self.T0 + 1.0,
+            0.01,
+            method=IntegratorType.RK4,
+            max_steps=500,
+            pid_params=PIDParams(dt_max=0.01),
         )
         assert int(result.status) == StatusCode.SUCCESS
         assert abs(float(result.t_final) - (self.T0 + 1.0)) < 1e-9
-        assert abs(float(result.y_final['u'][1]) - 0.5) < 1e-6
-        assert result.y_final['u'].dtype == jnp.float32
+        assert abs(float(result.y_final["u"][1]) - 0.5) < 1e-6
+        assert result.y_final["u"].dtype == jnp.float32
 
     def test_timestamps_do_not_drift_with_the_step_count(self):
         """t0 + i*dt, not a running sum: 1000 steps of 0.001 land exactly on 1.0."""
@@ -1043,13 +1117,10 @@ class TestTimeIsNotCarriedInTheStateDtype:
         try:
             model, y0 = source_term_model(1e6)
             with pytest.raises(ValueError, match="not representable"):
-                integrate_fixed_dt(
-                    model, y0, 1e6, 1e6 + 1.0, 0.01, method=IntegratorType.RK4
-                )
+                integrate_fixed_dt(model, y0, 1e6, 1e6 + 1.0, 0.01, method=IntegratorType.RK4)
             with pytest.raises(ValueError, match="not representable"):
                 adaptive_integrate(
-                    model, y0, 1e6, 1e6 + 1.0, 0.01, method=IntegratorType.RK4,
-                    max_steps=50
+                    model, y0, 1e6, 1e6 + 1.0, 0.01, method=IntegratorType.RK4, max_steps=50
                 )
         finally:
             jax.config.update("jax_enable_x64", True)
@@ -1064,17 +1135,16 @@ def two_root_model():
     """
     grid = Grid1D.uniform(1, 0.0, 1.0)
     op = NonlinearOp(
-        name="two_root",
-        apply=lambda s, g, t, p: {'u': -2.0 * s['u'] ** 2 * (s['u'] - 0.5)}
+        name="two_root", apply=lambda s, g, t, p: {"u": -2.0 * s["u"] ** 2 * (s["u"] - 0.5)}
     )
     model = MOLModel(
         grid=grid,
-        bc_spec={'u': FieldBCSpec.periodic()},
-        params={'dtype': jnp.float64},
+        bc_spec={"u": FieldBCSpec.periodic()},
+        params={"dtype": jnp.float64},
         linear_ops=(),
-        nonlinear_ops=(op,)
+        nonlinear_ops=(op,),
     )
-    return model, {'u': jnp.ones(grid.nx_total)}
+    return model, {"u": jnp.ones(grid.nx_total)}
 
 
 # u(1) for two_root_model, from scipy.integrate.solve_ivp at rtol 1e-12,
@@ -1107,29 +1177,42 @@ class TestErrorEstimateRequiresEverySolve:
         y_be, stats_be = be_step(model, y0, 0.0, 1.0, nk_params=nk)
         assert bool(stats_cn.converged)
         assert not bool(stats_be.converged)
-        assert float(y_cn['u'][1] - y_be['u'][1]) == 0.0, "the zero estimate is the premise"
+        assert float(y_cn["u"][1] - y_be["u"][1]) == 0.0, "the zero estimate is the premise"
 
         result = adaptive_integrate(
-            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.CN, max_steps=500,
-            nk_params=nk, pid_params=PIDParams(dt_max=1.0)
+            model,
+            y0,
+            0.0,
+            1.0,
+            1.0,
+            method=IntegratorType.CN,
+            max_steps=500,
+            nk_params=nk,
+            pid_params=PIDParams(dt_max=1.0),
         )
         assert int(result.n_rejected) >= 1, "the dt = 1 attempt was accepted again"
         assert int(result.status) == StatusCode.SUCCESS
-        assert abs(float(result.y_final['u'][1]) - TWO_ROOT_EXACT) < 1e-3, (
-            f"subdivided to {float(result.y_final['u'][1])}, "
-            f"reference {TWO_ROOT_EXACT}"
+        assert abs(float(result.y_final["u"][1]) - TWO_ROOT_EXACT) < 1e-3, (
+            f"subdivided to {float(result.y_final['u'][1])}, " f"reference {TWO_ROOT_EXACT}"
         )
 
     def test_bdf2_estimate_requires_its_auxiliary_solve(self):
         """bdf2_with_err has the same auxiliary backward Euler solve."""
         model, y0 = two_root_model()
         result = adaptive_integrate(
-            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BDF2, max_steps=500,
-            nk_params=NKParams(max_newton_iters=1), pid_params=PIDParams(dt_max=1.0)
+            model,
+            y0,
+            0.0,
+            1.0,
+            1.0,
+            method=IntegratorType.BDF2,
+            max_steps=500,
+            nk_params=NKParams(max_newton_iters=1),
+            pid_params=PIDParams(dt_max=1.0),
         )
         assert int(result.n_rejected) >= 1
         assert int(result.status) == StatusCode.SUCCESS
-        assert abs(float(result.y_final['u'][1]) - TWO_ROOT_EXACT) < 1e-3
+        assert abs(float(result.y_final["u"][1]) - TWO_ROOT_EXACT) < 1e-3
 
     def test_be_method_rejects_when_its_auxiliary_cn_fails(self):
         """The plain BE branch reads the same y_cn - y_be difference.
@@ -1144,12 +1227,12 @@ class TestErrorEstimateRequiresEverySolve:
         grid = Grid1D.uniform(1, 0.0, 1.0)
         model = MOLModel(
             grid=grid,
-            bc_spec={'u': FieldBCSpec.periodic()},
-            params={'dtype': jnp.float64},
-            linear_ops=(LinearOp(name="grow", apply=lambda s, g, t, p: {'u': 2.0 * s['u']}),),
-            nonlinear_ops=()
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
+            linear_ops=(LinearOp(name="grow", apply=lambda s, g, t, p: {"u": 2.0 * s["u"]}),),
+            nonlinear_ops=(),
         )
-        y0 = {'u': jnp.full(grid.nx_total, 1e-7)}
+        y0 = {"u": jnp.full(grid.nx_total, 1e-7)}
 
         _, stats_be = be_step(model, y0, 0.0, 1.0)
         _, stats_cn = cn_step(model, y0, 0.0, 1.0)
@@ -1157,8 +1240,14 @@ class TestErrorEstimateRequiresEverySolve:
         assert not bool(stats_cn.converged)
 
         result = adaptive_integrate(
-            model, y0, 0.0, 1.0, 1.0, method=IntegratorType.BE, max_steps=500,
-            pid_params=PIDParams(dt_max=1.0)
+            model,
+            y0,
+            0.0,
+            1.0,
+            1.0,
+            method=IntegratorType.BE,
+            max_steps=500,
+            pid_params=PIDParams(dt_max=1.0),
         )
         assert int(result.n_rejected) >= 1, "the dt = 1 attempt was accepted again"
         assert int(result.status) == StatusCode.SUCCESS
@@ -1179,17 +1268,17 @@ def counting_cubic_model(nx=16):
 
     def cubic(state, g, t, params):
         traces.append(1)
-        return {'u': -state['u'] ** 3}
+        return {"u": -state["u"] ** 3}
 
     model = MOLModel(
         grid=grid,
-        bc_spec={'u': FieldBCSpec.periodic()},
-        params={'dtype': jnp.float64},
+        bc_spec={"u": FieldBCSpec.periodic()},
+        params={"dtype": jnp.float64},
         linear_ops=(),
-        nonlinear_ops=(NonlinearOp(name="counting_cubic", apply=cubic),)
+        nonlinear_ops=(NonlinearOp(name="counting_cubic", apply=cubic),),
     )
     x = jnp.linspace(0.0, 1.0, grid.nx_total)
-    return model, {'u': 1.0 + 0.25 * jnp.sin(2 * jnp.pi * x)}, traces
+    return model, {"u": 1.0 + 0.25 * jnp.sin(2 * jnp.pi * x)}, traces
 
 
 def counting_gray_scott():
@@ -1201,6 +1290,7 @@ def counting_gray_scott():
         def counted(state, g, t, params):
             traces.append(1)
             return apply(state, g, t, params)
+
         return counted
 
     counted_ops = tuple(
@@ -1252,9 +1342,12 @@ class TestDriversAreCompiledOnce:
     def test_fixed_step_traces_once_and_repeats_bit_identically(self):
         model, y0, traces = counting_cubic_model()
         clear_compiled_drivers()
-        counts, results = traces_per_call(traces, lambda: integrate_fixed_dt(
-            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.RK4, save_every=2
-        ))
+        counts, results = traces_per_call(
+            traces,
+            lambda: integrate_fixed_dt(
+                model, y0, 0.0, 1.0, 0.1, method=IntegratorType.RK4, save_every=2
+            ),
+        )
         assert counts[0] > 0, "the first call must trace the loop"
         assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
         assert_leaves_identical(results[1], results[0])
@@ -1265,10 +1358,12 @@ class TestDriversAreCompiledOnce:
         model, y0, traces = counting_cubic_model()
         clear_compiled_drivers()
         nk = NKParams(newton_tol=1e-12)
-        counts, results = traces_per_call(traces, lambda: integrate_fixed_dt(
-            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BDF2, save_every=2,
-            nk_params=nk
-        ))
+        counts, results = traces_per_call(
+            traces,
+            lambda: integrate_fixed_dt(
+                model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BDF2, save_every=2, nk_params=nk
+            ),
+        )
         assert counts[0] > 0
         assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
         assert_leaves_identical(results[2], results[0])
@@ -1283,17 +1378,23 @@ class TestDriversAreCompiledOnce:
         """
         model, y0, traces = counting_cubic_model()
         clear_compiled_drivers()
-        counts, _ = traces_per_call(traces, lambda: integrate_fixed_dt(
-            model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BE, save_every=2
-        ))
+        counts, _ = traces_per_call(
+            traces,
+            lambda: integrate_fixed_dt(
+                model, y0, 0.0, 1.0, 0.1, method=IntegratorType.BE, save_every=2
+            ),
+        )
         assert counts[1:] == [0, 0], f"the default path retraced: {counts}"
 
     def test_adaptive_traces_once_and_repeats_bit_identically(self):
         model, y0, traces = counting_cubic_model()
         clear_compiled_drivers()
-        counts, results = traces_per_call(traces, lambda: adaptive_integrate(
-            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4, max_steps=50
-        ))
+        counts, results = traces_per_call(
+            traces,
+            lambda: adaptive_integrate(
+                model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4, max_steps=50
+            ),
+        )
         assert counts[0] > 0
         assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
         assert_leaves_identical(results[1], results[0])
@@ -1302,10 +1403,19 @@ class TestDriversAreCompiledOnce:
     def test_adaptive_implicit_traces_once(self):
         model, y0, traces = counting_cubic_model()
         clear_compiled_drivers()
-        counts, results = traces_per_call(traces, lambda: adaptive_integrate(
-            model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE, max_steps=50,
-            nk_params=NKParams(newton_tol=1e-12)
-        ))
+        counts, results = traces_per_call(
+            traces,
+            lambda: adaptive_integrate(
+                model,
+                y0,
+                0.0,
+                0.5,
+                0.05,
+                method=IntegratorType.BE,
+                max_steps=50,
+                nk_params=NKParams(newton_tol=1e-12),
+            ),
+        )
         assert counts[0] > 0
         assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
         assert_leaves_identical(results[2], results[0])
@@ -1313,10 +1423,12 @@ class TestDriversAreCompiledOnce:
     def test_adaptive_imex_traces_once_and_repeats_bit_identically(self):
         model, fft_cache, diffusivities, y0, traces = counting_gray_scott()
         clear_compiled_drivers()
-        counts, results = traces_per_call(traces, lambda: adaptive_integrate_imex(
-            model, y0, 0.0, 0.2, 0.01, fft_cache, diffusivities, use_strang=True,
-            max_steps=100
-        ))
+        counts, results = traces_per_call(
+            traces,
+            lambda: adaptive_integrate_imex(
+                model, y0, 0.0, 0.2, 0.01, fft_cache, diffusivities, use_strang=True, max_steps=100
+            ),
+        )
         assert counts[0] > 0
         assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
         assert_leaves_identical(results[1], results[0])
@@ -1325,10 +1437,12 @@ class TestDriversAreCompiledOnce:
     def test_imex_fixed_step_traces_once(self):
         model, fft_cache, diffusivities, y0, traces = counting_gray_scott()
         clear_compiled_drivers()
-        counts, results = traces_per_call(traces, lambda: integrate_imex_fixed_dt(
-            model, y0, 0.0, 0.5, 0.05, fft_cache, diffusivities, use_strang=True,
-            save_every=5
-        ))
+        counts, results = traces_per_call(
+            traces,
+            lambda: integrate_imex_fixed_dt(
+                model, y0, 0.0, 0.5, 0.05, fft_cache, diffusivities, use_strang=True, save_every=5
+            ),
+        )
         assert counts[0] > 0
         assert counts[1:] == [0, 0], f"repeat calls retraced: {counts}"
         assert_leaves_identical(results[2], results[0])
@@ -1343,15 +1457,13 @@ class TestDriversAreCompiledOnce:
         """
         model, y0, traces = counting_cubic_model()
         clear_compiled_drivers()
-        adaptive_integrate(model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4,
-                           max_steps=50)
+        adaptive_integrate(model, y0, 0.0, 0.5, 0.05, method=IntegratorType.RK4, max_steps=50)
         before = len(traces)
-        adaptive_integrate(model, y0, 0.0, 0.3, 0.05, method=IntegratorType.RK4,
-                           max_steps=50)
-        adaptive_integrate(model, y0, 0.0, 0.5, 0.02, method=IntegratorType.RK4,
-                           max_steps=50)
-        adaptive_integrate(model, {'u': y0['u'] * 0.5}, 0.1, 0.6, 0.05,
-                           method=IntegratorType.RK4, max_steps=50)
+        adaptive_integrate(model, y0, 0.0, 0.3, 0.05, method=IntegratorType.RK4, max_steps=50)
+        adaptive_integrate(model, y0, 0.0, 0.5, 0.02, method=IntegratorType.RK4, max_steps=50)
+        adaptive_integrate(
+            model, {"u": y0["u"] * 0.5}, 0.1, 0.6, 0.05, method=IntegratorType.RK4, max_steps=50
+        )
         assert len(traces) == before, "a change of t_end, dt0 or y0 retraced"
 
 
@@ -1375,8 +1487,7 @@ class TestDriverCacheDiscriminates:
         clear_compiled_drivers()
         self._run(model, y0)
         before = len(traces)
-        integrate_fixed_dt(model, y0, 0.0, 1.0, 0.05, method=IntegratorType.RK4,
-                           save_every=2)
+        integrate_fixed_dt(model, y0, 0.0, 1.0, 0.05, method=IntegratorType.RK4, save_every=2)
         assert len(traces) > before, "a different dt reused a loop built for another"
 
     def test_changing_save_every_retraces(self):
@@ -1411,7 +1522,7 @@ class TestDriverCacheDiscriminates:
         clear_compiled_drivers()
         self._run(model, y0)
         before = len(traces)
-        model.params['forcing'] = 0.5
+        model.params["forcing"] = 0.5
         self._run(model, y0)
         assert len(traces) > before, "a mutated params dict reused a stale loop"
 
@@ -1435,8 +1546,7 @@ class TestDriverCacheDiscriminates:
         assert len(_FIXED_DRIVERS) == 0
         for _ in range(_FIXED_DRIVERS.max_entries + 3):
             model, y0, _ = counting_cubic_model()
-            integrate_fixed_dt(model, y0, 0.0, 0.2, 0.1, method=IntegratorType.EULER,
-                               save_every=1)
+            integrate_fixed_dt(model, y0, 0.0, 0.2, 0.1, method=IntegratorType.EULER, save_every=1)
             assert len(_FIXED_DRIVERS) <= _FIXED_DRIVERS.max_entries
         assert len(_FIXED_DRIVERS) == _FIXED_DRIVERS.max_entries
         clear_compiled_drivers()
@@ -1455,8 +1565,8 @@ class TestReusedDriversAreFasterAndUnchanged:
     TestDriversAreCompiledOnce, which compares repeated calls, and by
     test_clear_compiled_drivers_forces_a_rebuild, which compares a reused
     loop with a freshly built one. The adaptive references below follow the
-    estimator-order controller schedule; the fixed-step references are
-    unchanged by that correction.
+    estimator-order controller schedule and the Newton-robustness cap; the
+    fixed-step references are unchanged by those corrections.
     """
 
     def test_gray_scott_trajectory_is_unchanged(self):
@@ -1517,7 +1627,7 @@ class TestReusedDriversAreFasterAndUnchanged:
             max_steps=50,
             nk_params=NKParams(newton_tol=1e-12),
         )
-        assert float(result.y_final["u"][7]) == pytest.approx(0.820385941218744, rel=1e-13)
+        assert float(result.y_final["u"][7]) == pytest.approx(0.7708589678861957, rel=1e-13)
 
     def test_a_reused_loop_only_dispatches(self):
         """The wall clock, generously: the reused calls cost a fraction of the first.
@@ -1533,14 +1643,21 @@ class TestReusedDriversAreFasterAndUnchanged:
         elapsed = []
         for _ in range(3):
             start = time.perf_counter()
-            out = integrate_fixed_dt(model, y0, 0.0, 0.5, 0.05,
-                                     method=IntegratorType.BE, save_every=5,
-                                     nk_params=NKParams(newton_tol=1e-12))
+            out = integrate_fixed_dt(
+                model,
+                y0,
+                0.0,
+                0.5,
+                0.05,
+                method=IntegratorType.BE,
+                save_every=5,
+                nk_params=NKParams(newton_tol=1e-12),
+            )
             jax.block_until_ready(jax.tree_util.tree_leaves(out))
             elapsed.append(time.perf_counter() - start)
-        assert elapsed[2] * 5 < elapsed[0], (
-            f"the third call was not meaningfully cheaper than the first: {elapsed}"
-        )
+        assert (
+            elapsed[2] * 5 < elapsed[0]
+        ), f"the third call was not meaningfully cheaper than the first: {elapsed}"
 
 
 if __name__ == "__main__":
