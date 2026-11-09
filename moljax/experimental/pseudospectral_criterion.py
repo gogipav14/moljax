@@ -18,12 +18,12 @@ continuous contour: the staircase boundary ``Gamma`` of the component's grid
 cells, which encloses every eigenvalue. On each boundary edge the 1-Lipschitz
 property bounds ``sigma_min(z I - A)`` from below through the true coarse
 samples, and a Lipschitz bound on ``p`` covers the points between polynomial
-samples. The Cauchy integral then gives
+    samples. The Cauchy integral then gives
 ``||p(A)**k|| <= L(Gamma) / (2 pi s_Gamma) * M_Gamma**k`` with the proven
 resolvent floor ``s_Gamma`` and modulus bound ``M_Gamma``, and no Crouzeix
-spectral-set constant. Apart from floating-point rounding in the SVD samples
-(covered by an explicit backward-error margin) and in polynomial evaluation,
-this is a certificate; it is not interval arithmetic. Its dense
+    spectral-set constant. Floating-point rounding in the SVD samples and in
+    polynomial evaluation is covered by explicit forward/backward-error
+    margins. This is a floating-point certificate, not interval arithmetic. Its dense
 resolvent-sampling cost is exposed because a certificate can cost more than
 the Krylov solve it describes.
 
@@ -393,13 +393,25 @@ def _contour_modulus_bound(
     ``p(z) = 1 + sum_k c_k (z / scale)**k``. On the disk of radius ``R`` that
     contains the contour, ``|p'| <= sum_k k |c_k| R**(k-1) / scale**k``. Each
     edge is sampled so that every point lies within ``h / (2 K)`` of a sample,
-    and the Lipschitz term covers the gap.
+    and the Lipschitz term covers the gap.  At each sample, Horner evaluation
+    is enclosed by Higham's standard forward-error bound
+    ``gamma_{2n} sum_i |a_i| |z|**i``.  The origin and translated contour-centred
+    bases are both enclosed and the tighter valid upper bound is used.  The
+    centred enclosure additionally propagates its coefficient-translation
+    error.  Thus floating-point evaluation cannot make the reported contour
+    maximum smaller.
     """
     complex_coefficients = np.array([real + 1j * imag for real, imag in coefficients])
     orders = np.arange(1, complex_coefficients.size + 1)
     radius = float(max(np.max(np.abs(starts)), np.max(np.abs(ends)))) / scale
     origin_lipschitz = float(
         np.sum(orders * np.abs(complex_coefficients) * radius ** (orders - 1)) / scale
+    )
+    center, translated, translation_errors, _ = _translate_polynomial_to_contour_center(
+        starts,
+        ends,
+        complex_coefficients,
+        scale,
     )
     centered_lipschitz = _centered_polynomial_derivative_bound(
         starts,
@@ -424,14 +436,137 @@ def _contour_modulus_bound(
     )
     fractions = np.linspace(0.0, 1.0, subdivisions + 1)
     points = starts[:, None] + fractions[None, :] * (ends - starts)[:, None]
+    all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), complex_coefficients))
     scaled = points / scale
-    values = np.ones_like(scaled)
-    power = np.ones_like(scaled)
-    for coefficient in complex_coefficients:
-        power = power * scaled
-        values = values + coefficient * power
-    sampled = float(np.max(np.abs(values)))
+    origin_upper, origin_absolute_sum, _ = _horner_modulus_upper(
+        scaled,
+        all_coefficients,
+    )
+    centered_scaled = (points - center) / scale
+    centered_upper, centered_absolute_sum, _ = _horner_modulus_upper(
+        centered_scaled,
+        translated,
+        coefficient_errors=translation_errors,
+    )
+    # Both upper bounds enclose the same exact polynomial value.  Prefer the
+    # basis with the smaller absolute polynomial sum, as this directly controls
+    # the Horner forward-error term; either choice is rigorous.
+    use_centered = centered_absolute_sum < origin_absolute_sum
+    sampled_upper = np.where(use_centered, centered_upper, origin_upper)
+    sampled = float(np.max(sampled_upper))
     return sampled + lipschitz * edge_length / (2.0 * subdivisions), lipschitz
+
+
+def _roundoff_gamma(operation_count: int) -> float:
+    """Return ``gamma_n = n u / (1 - n u)`` or infinity if unavailable."""
+    unit_roundoff = float(np.finfo(np.float64).eps) / 2.0
+    product = operation_count * unit_roundoff
+    if product >= 1.0:
+        return float("inf")
+    return product / (1.0 - product)
+
+
+def _translate_polynomial_to_contour_center(
+    starts: np.ndarray,
+    ends: np.ndarray,
+    coefficients: np.ndarray,
+    scale: float,
+) -> tuple[complex, np.ndarray, np.ndarray, float]:
+    """Translate ``p(z)`` to the contour centre with coefficient enclosures.
+
+    The operation allowance counts complex products, powers, binomial-factor
+    products, and summation for every translated coefficient; it is not merely
+    a summation allowance.  The returned componentwise errors enclose the
+    floating-point binomial translation under the standard round-to-nearest
+    model, absent overflow or underflow.
+    """
+    degree = int(coefficients.size)
+    all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), coefficients))
+    points = np.concatenate((starts, ends))
+    real_min = float(np.min(points.real))
+    real_max = float(np.max(points.real))
+    imag_min = float(np.min(points.imag))
+    imag_max = float(np.max(points.imag))
+    center = complex(0.5 * (real_min + real_max), 0.5 * (imag_min + imag_max))
+    unit_roundoff = float(np.finfo(np.float64).eps) / 2.0
+    geometry_scale = max(1.0, abs(center), float(np.max(np.abs(points))))
+    geometry_allowance = 32.0 * unit_roundoff * geometry_scale
+    centered_radius = np.nextafter(
+        float(np.max(np.abs(points - center))) + geometry_allowance,
+        np.inf,
+    )
+    normalized_center = center / scale
+
+    # A complex multiply/add uses several real operations.  This deliberately
+    # generous count covers powers, products, binomial-factor conversion, and
+    # summation for all degree <= 40 fits used by the study.
+    gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
+    if not np.isfinite(gamma):
+        return (
+            center,
+            np.full(degree + 1, complex(np.nan, np.nan)),
+            np.full(degree + 1, np.inf),
+            centered_radius,
+        )
+    translated_coefficients: list[complex] = []
+    translation_errors: list[float] = []
+    for shifted_order in range(degree + 1):
+        translated_terms = [
+            all_coefficients[origin_order]
+            * comb(origin_order, shifted_order)
+            * normalized_center ** (origin_order - shifted_order)
+            for origin_order in range(shifted_order, degree + 1)
+        ]
+        translated = sum(translated_terms, 0.0j)
+        absolute_sum = fsum(abs(term) for term in translated_terms)
+        translated_coefficients.append(translated)
+        translation_errors.append(float(np.nextafter(gamma * absolute_sum, np.inf)))
+    return (
+        center,
+        np.asarray(translated_coefficients, dtype=np.complex128),
+        np.asarray(translation_errors, dtype=np.float64),
+        centered_radius,
+    )
+
+
+def _horner_modulus_upper(
+    points: np.ndarray,
+    coefficients: np.ndarray,
+    *,
+    coefficient_errors: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Enclose ``|p(z)|`` for ascending coefficients evaluated by Horner.
+
+    For degree ``n``, Higham's Horner bound gives
+    ``|fl(p(z)) - p(z)| <= gamma_{2n} sum_i |a_i| |z|**i``.
+    If coefficients themselves are enclosed, their propagated uncertainty is
+    added separately.  The result fails closed to infinity on non-finite data.
+    """
+    degree = int(coefficients.size - 1)
+    if coefficient_errors is None:
+        coefficient_errors = np.zeros(coefficients.size, dtype=np.float64)
+    values = np.full(points.shape, coefficients[-1], dtype=np.complex128)
+    absolute_sum = np.full(points.shape, abs(coefficients[-1]), dtype=np.float64)
+    translation_sum = np.full(points.shape, coefficient_errors[-1], dtype=np.float64)
+    point_modulus = np.abs(points)
+    for coefficient, coefficient_error in zip(
+        coefficients[-2::-1],
+        coefficient_errors[-2::-1],
+        strict=True,
+    ):
+        values = values * points + coefficient
+        absolute_sum = absolute_sum * point_modulus + abs(coefficient)
+        translation_sum = translation_sum * point_modulus + coefficient_error
+    gamma = _roundoff_gamma(2 * degree)
+    absolute_sum_upper = np.nextafter(absolute_sum * (1.0 + gamma), np.inf)
+    evaluation_error = np.nextafter(gamma * absolute_sum_upper, np.inf)
+    upper = np.nextafter(np.abs(values) + evaluation_error + translation_sum, np.inf)
+    finite = np.isfinite(upper) & np.isfinite(absolute_sum_upper) & np.isfinite(evaluation_error)
+    return (
+        np.where(finite, upper, np.inf),
+        np.where(finite, absolute_sum_upper, np.inf),
+        np.where(finite, evaluation_error, np.inf),
+    )
 
 
 def _centered_polynomial_derivative_bound(
@@ -459,47 +594,22 @@ def _centered_polynomial_derivative_bound(
     degree = int(coefficients.size)
     if degree == 0:
         return 0.0
-    all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), coefficients))
-    points = np.concatenate((starts, ends))
-    real_min = float(np.min(points.real))
-    real_max = float(np.max(points.real))
-    imag_min = float(np.min(points.imag))
-    imag_max = float(np.max(points.imag))
-    center = complex(0.5 * (real_min + real_max), 0.5 * (imag_min + imag_max))
-    unit_roundoff = float(np.finfo(np.float64).eps) / 2.0
-    geometry_scale = max(
-        1.0,
-        abs(center),
-        float(np.max(np.abs(points))),
+    _, translated, translation_errors, centered_radius = _translate_polynomial_to_contour_center(
+        starts,
+        ends,
+        coefficients,
+        scale,
     )
-    geometry_allowance = 32.0 * unit_roundoff * geometry_scale
-    centered_radius = np.nextafter(
-        float(np.max(np.abs(points - center))) + geometry_allowance,
-        np.inf,
-    )
-    normalized_center = center / scale
     normalized_radius = centered_radius / scale
-
-    # A complex multiply/add uses several real operations.  This deliberately
-    # generous count also covers powers and binomial-factor conversion for all
-    # degree <= 40 fits used by the study.
-    operation_count = 32 * (degree + 1) ** 2
-    product = operation_count * unit_roundoff
-    if product >= 1.0:
+    gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
+    if not np.isfinite(gamma):
         return float("inf")
-    gamma = product / (1.0 - product)
     derivative_terms: list[float] = []
     for shifted_order in range(1, degree + 1):
-        translated_terms = [
-            all_coefficients[origin_order]
-            * comb(origin_order, shifted_order)
-            * normalized_center ** (origin_order - shifted_order)
-            for origin_order in range(shifted_order, degree + 1)
-        ]
-        translated = sum(translated_terms, 0.0j)
-        absolute_sum = fsum(abs(term) for term in translated_terms)
-        conversion_error = gamma * absolute_sum
-        coefficient_upper = np.nextafter(abs(translated) + conversion_error, np.inf)
+        coefficient_upper = np.nextafter(
+            abs(translated[shifted_order]) + translation_errors[shifted_order],
+            np.inf,
+        )
         derivative_terms.append(
             shifted_order * coefficient_upper * normalized_radius ** (shifted_order - 1) / scale
         )

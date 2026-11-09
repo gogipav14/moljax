@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import ceil, pi
+from math import ceil, comb, pi
 
 import jax
 
@@ -18,6 +18,7 @@ from moljax.experimental.pseudospectral_criterion import (
     _contour_modulus_bound,
     _contour_sigma_min_lower_bound,
     _fit_polynomial,
+    _horner_modulus_upper,
     assess_dense_pseudospectral_criterion,
     dense_sigma_min,
     materialize_dense_operator,
@@ -115,6 +116,34 @@ def test_contour_modulus_bound_covers_points_between_samples() -> None:
     true_maximum = float(np.max(np.abs(values)))
     assert true_maximum == pytest.approx(1.0 / 99.0, rel=1.0e-6)
     assert bound >= true_maximum
+
+
+def test_degree_40_evaluation_roundoff_is_included_in_contour_bound() -> None:
+    """Large cancelling coefficients cannot hide Horner evaluation error."""
+    degree = 40
+    # p(z) = (1 - z)**40 vanishes at z=1, but its monomial absolute sum is
+    # 2**40 there.  The gamma_80 evaluation term must therefore dominate the
+    # computed zero and enter the rigorous contour maximum.
+    coefficients = np.asarray(
+        [(-1) ** order * comb(degree, order) for order in range(degree + 1)],
+        dtype=np.complex128,
+    )
+    upper, absolute_sum, evaluation_error = _horner_modulus_upper(
+        np.asarray([1.0 + 0.0j]),
+        coefficients,
+    )
+    assert absolute_sum[0] >= 2.0**degree
+    assert evaluation_error[0] > 1.0e-3
+    assert upper[0] >= evaluation_error[0]
+
+    serialized = tuple((float(value.real), float(value.imag)) for value in coefficients[1:])
+    bound, _ = _contour_modulus_bound(
+        np.asarray([1.0 + 0.0j]),
+        np.asarray([1.0 + 0.0j]),
+        serialized,
+        1.0,
+    )
+    assert bound >= evaluation_error[0]
 
 
 def test_centered_derivative_bound_covers_random_fitted_polynomials() -> None:
