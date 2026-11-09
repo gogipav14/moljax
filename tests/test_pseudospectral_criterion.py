@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import pi
+from math import ceil, pi
 
 import jax
 
@@ -14,6 +14,7 @@ import pytest
 
 from moljax.conditioning import pseudospectrum_dense
 from moljax.experimental.pseudospectral_criterion import (
+    _centered_polynomial_derivative_bound,
     _contour_modulus_bound,
     _contour_sigma_min_lower_bound,
     _fit_polynomial,
@@ -114,6 +115,106 @@ def test_contour_modulus_bound_covers_points_between_samples() -> None:
     true_maximum = float(np.max(np.abs(values)))
     assert true_maximum == pytest.approx(1.0 / 99.0, rel=1.0e-6)
     assert bound >= true_maximum
+
+
+def test_centered_derivative_bound_covers_random_fitted_polynomials() -> None:
+    """The translated enclosure covers dense contour samples through degree 40."""
+    rng = np.random.default_rng(20261109)
+    angles = np.linspace(0.0, 2.0 * pi, 24, endpoint=False)
+    successful_fits = {degree: 0 for degree in range(4, 41, 4)}
+    for _ in range(4):
+        center = (0.8 + 0.3 * rng.normal()) + 0.2j * rng.normal()
+        radii = 0.2 + 0.12 * rng.random(angles.size)
+        starts = center + radii * np.exp(1j * angles)
+        ends = np.roll(starts, -1)
+        fitting_points = center + (
+            0.18 * np.sqrt(rng.random(96)) * np.exp(2j * pi * rng.random(96))
+        )
+        fractions = np.linspace(0.0, 1.0, 100 * angles.size + 1)
+        contour = starts[:, None] + fractions[None, :] * (ends - starts)[:, None]
+        for degree in range(4, 41, 4):
+            fitted = _fit_polynomial(fitting_points, degree)
+            if fitted is None:
+                continue
+            successful_fits[degree] += 1
+            _, _, serialized, scale = fitted
+            coefficients = np.asarray([complex(*value) for value in serialized])
+            derivative_bound = _centered_polynomial_derivative_bound(
+                starts,
+                ends,
+                coefficients,
+                scale,
+            )
+            scaled = contour / scale
+            derivative = sum(
+                order * coefficient * scaled ** (order - 1) / scale
+                for order, coefficient in enumerate(coefficients, start=1)
+            )
+            assert derivative_bound >= float(np.max(np.abs(derivative)))
+            new_modulus_bound, _ = _contour_modulus_bound(
+                starts,
+                ends,
+                serialized,
+                scale,
+            )
+            orders = np.arange(1, degree + 1)
+            radius = float(np.max(np.abs(np.concatenate((starts, ends))))) / scale
+            origin_derivative_bound = float(
+                np.sum(orders * np.abs(coefficients) * radius ** (orders - 1)) / scale
+            )
+            edge_length = float(np.max(np.abs(ends - starts)))
+            subdivisions = min(
+                max(8, ceil(origin_derivative_bound * edge_length / (2.0e-3))),
+                1024,
+            )
+            old_fractions = np.linspace(0.0, 1.0, subdivisions + 1)
+            old_points = starts[:, None] + old_fractions[None, :] * (ends - starts)[:, None]
+            old_scaled = old_points / scale
+            old_values = 1.0 + sum(
+                coefficient * old_scaled**order
+                for order, coefficient in enumerate(coefficients, start=1)
+            )
+            old_modulus_bound = float(np.max(np.abs(old_values))) + (
+                origin_derivative_bound * edge_length / (2.0 * subdivisions)
+            )
+            assert new_modulus_bound <= old_modulus_bound
+    assert min(successful_fits.values()) >= 3
+
+
+def test_shifted_sigma_min_dominates_distance_to_numerical_range() -> None:
+    """Random non-normal matrices satisfy the numerical-range distance lemma."""
+    rng = np.random.default_rng(20261109)
+    dimension = 40
+    for _ in range(2):
+        matrix = np.triu(rng.normal(size=(dimension, dimension)))
+        matrix += 0.05 * np.tril(rng.normal(size=(dimension, dimension)), -1)
+        matrix = matrix.astype(np.complex128)
+        matrix += 0.2j * np.triu(rng.normal(size=(dimension, dimension)), 1)
+        directions = np.linspace(0.0, 2.0 * pi, 720, endpoint=False)
+        supports = np.empty(directions.size)
+        for index, theta in enumerate(directions):
+            rotation = np.exp(1j * theta)
+            hermitian = 0.5 * (rotation * matrix + np.conj(rotation) * matrix.conj().T)
+            supports[index] = np.linalg.eigvalsh(hermitian)[-1]
+        real_points = np.linspace(-7.0, 7.0, 7)
+        imag_points = np.linspace(-5.0, 5.0, 5)
+        identity = np.eye(dimension, dtype=np.complex128)
+        for real in real_points:
+            for imag in imag_points:
+                point = complex(real, imag)
+                shifted = point * identity - matrix
+                _, singular_values, right_adjoint = np.linalg.svd(shifted)
+                sigma_min = float(singular_values[-1])
+                right = right_adjoint[-1].conj()
+                rayleigh_point = complex(np.vdot(right, matrix @ right))
+                # The support-grid maximum is a lower approximation to
+                # dist(point, W(A)); the Rayleigh witness proves the exact lemma.
+                sampled_distance = max(
+                    0.0,
+                    float(np.max(np.real(np.exp(1j * directions) * point) - supports)),
+                )
+                assert sigma_min + 2.0e-12 >= sampled_distance
+                assert sigma_min + 2.0e-12 >= abs(point - rayleigh_point)
 
 
 def test_origin_eigenvalue_fails_closed() -> None:
