@@ -77,7 +77,6 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 import numpy as np
-from scipy.linalg import solve_triangular
 
 from benchmarks.pme_breakdown import _initial_state
 from benchmarks.tau_blend_reproducibility import provenance_revisions, state_identity
@@ -88,6 +87,7 @@ from moljax.experimental.nonlinear_diffusion import (
 )
 from moljax.experimental.pme_conditioning import make_backward_euler_residual
 from moljax.experimental.pme_dst_tau_blend import pme_dst_tau_blend_preconditioner
+from moljax.experimental.tau_blend_active_block import unrestarted_gmres as gmres
 
 SCHEMA = "tau_blend_mask_analysis_v1"
 NEAR_ZERO = 0.1
@@ -161,9 +161,7 @@ def state_from_values(
     lam, Q = np.linalg.eigh(L)
     residual = make_backward_euler_residual(jnp.asarray(u), grid, float(m), dt, epsilon)
     b = -np.asarray(residual(jnp.asarray(u)), dtype=np.float64)
-    phi = np.asarray(
-        regularized_porous_medium_potential(jnp.asarray(u), float(m), epsilon=epsilon)
-    )
+    phi = np.asarray(regularized_porous_medium_potential(jnp.asarray(u), float(m), epsilon=epsilon))
     b_dense = dt * (L @ phi)
     return {
         "grid": grid,
@@ -208,7 +206,9 @@ def floor_cfl(m: int, epsilon: float, dt: float, dx: float) -> float:
     return 4.0 * dt * m * epsilon ** (m - 1) / dx**2
 
 
-def cfl_mask(state: dict[str, Any], D: np.ndarray, eta: float, dt: float | None = None) -> np.ndarray:
+def cfl_mask(
+    state: dict[str, Any], D: np.ndarray, eta: float, dt: float | None = None
+) -> np.ndarray:
     """Return the CFL mask (True on masked nodes)."""
     return local_cfl(state, D, dt) <= eta
 
@@ -216,7 +216,9 @@ def cfl_mask(state: dict[str, Any], D: np.ndarray, eta: float, dt: float | None 
 def repository_mask(D: np.ndarray) -> np.ndarray:
     """Return the inactive set of the repository blend (True on masked nodes)."""
     nonnegative = np.maximum(D, 0.0)
-    threshold = max(REPOSITORY_ACTIVE_ABSOLUTE, REPOSITORY_ACTIVE_RELATIVE * float(nonnegative.max()))
+    threshold = max(
+        REPOSITORY_ACTIVE_ABSOLUTE, REPOSITORY_ACTIVE_RELATIVE * float(nonnegative.max())
+    )
     return ~(nonnegative > threshold)
 
 
@@ -269,137 +271,6 @@ def blend_matrix(
 # ---------------------------------------------------------------------------
 # GMRES with two residual conventions
 # ---------------------------------------------------------------------------
-
-
-def gmres(
-    A: np.ndarray,
-    rhs: np.ndarray,
-    tol: float,
-    maxit: int,
-    *,
-    secondary: tuple[np.ndarray, np.ndarray] | None = None,
-    stop: str = "primary",
-    checkpoints: tuple[float, ...] = (),
-) -> dict[str, Any]:
-    """Run unrestarted GMRES on ``A x = rhs`` from ``x = 0``.
-
-    The "primary" residual is ``||rhs - A x|| / ||rhs||``; GMRES minimizes it.
-    The optional ``secondary = (B, c)`` gives a second residual
-    ``||c - B x|| / ||c||``.  For left preconditioning, use ``A = M J``,
-    ``rhs = M b`` and ``secondary = (J, b)``: then the primary residual is the
-    preconditioned residual and the secondary residual is the true residual.
-
-    ``stop`` is "primary", "secondary" or "both".  The run stops when the
-    selected residuals are at or below ``tol``, at a breakdown, or after
-    ``maxit`` iterations.  ``checkpoints`` gives tolerances: for each, the
-    result records the first k with a primary residual at or below it, and the
-    secondary residual at that k.
-    """
-    if stop not in ("primary", "secondary", "both"):
-        raise ValueError("stop must be 'primary', 'secondary' or 'both'")
-    if stop != "primary" and secondary is None:
-        raise ValueError("this stop rule needs a secondary residual")
-    n = A.shape[0]
-    beta = float(np.linalg.norm(rhs))
-    result: dict[str, Any] = {
-        "iterations": 0,
-        "iterations_primary": None,
-        "iterations_secondary": None,
-        "breakdown": False,
-        "checkpoints": {},
-    }
-    if beta == 0.0:
-        result.update(
-            iterations_primary=0,
-            iterations_secondary=0,
-            x=np.zeros(n),
-            primary_ratio=0.0,
-            secondary_ratio=0.0,
-        )
-        return result
-    if secondary is not None:
-        B, c = secondary
-        c_norm = float(np.linalg.norm(c))
-        BV = np.zeros((n, maxit + 1))
-    V = np.zeros((n, maxit + 1))
-    H = np.zeros((maxit + 1, maxit))
-    cs = np.zeros(maxit)
-    sn = np.zeros(maxit)
-    g = np.zeros(maxit + 1)
-    g[0] = beta
-    V[:, 0] = rhs / beta
-    if secondary is not None:
-        BV[:, 0] = B @ V[:, 0]
-    pending = sorted(set(checkpoints), reverse=True)
-    y = np.zeros(0)
-    primary_ratio = 1.0
-    secondary_ratio = 1.0 if secondary is None else float(np.linalg.norm(c)) / c_norm
-    for k in range(maxit):
-        w = A @ V[:, k]
-        w_norm = float(np.linalg.norm(w))
-        for _ in range(2):
-            h = V[:, : k + 1].T @ w
-            w = w - V[:, : k + 1] @ h
-            H[: k + 1, k] += h
-        H[k + 1, k] = float(np.linalg.norm(w))
-        breakdown = H[k + 1, k] <= 64.0 * np.finfo(float).eps * max(w_norm, np.finfo(float).tiny)
-        if not breakdown:
-            V[:, k + 1] = w / H[k + 1, k]
-            if secondary is not None:
-                BV[:, k + 1] = B @ V[:, k + 1]
-        for i in range(k):
-            t = cs[i] * H[i, k] + sn[i] * H[i + 1, k]
-            H[i + 1, k] = -sn[i] * H[i, k] + cs[i] * H[i + 1, k]
-            H[i, k] = t
-        r = math.hypot(H[k, k], H[k + 1, k])
-        cs[k], sn[k] = (1.0, 0.0) if r == 0.0 else (H[k, k] / r, H[k + 1, k] / r)
-        H[k, k] = r
-        H[k + 1, k] = 0.0
-        g[k + 1] = -sn[k] * g[k]
-        g[k] = cs[k] * g[k]
-        primary_ratio = abs(g[k + 1]) / beta
-        iteration = k + 1
-        need_y = secondary is not None or pending or breakdown or iteration == maxit
-        if need_y or primary_ratio <= tol:
-            y = solve_triangular(H[: k + 1, : k + 1], g[: k + 1])
-        if secondary is not None:
-            secondary_ratio = float(np.linalg.norm(c - BV[:, : k + 1] @ y)) / c_norm
-        while pending and primary_ratio <= pending[0]:
-            level = pending.pop(0)
-            result["checkpoints"][repr(level)] = {
-                "iterations": iteration,
-                "primary_ratio": primary_ratio,
-                "secondary_ratio": secondary_ratio if secondary is not None else None,
-            }
-        if result["iterations_primary"] is None and primary_ratio <= tol:
-            result["iterations_primary"] = iteration
-        if (
-            secondary is not None
-            and result["iterations_secondary"] is None
-            and secondary_ratio <= tol
-        ):
-            result["iterations_secondary"] = iteration
-        done = {
-            "primary": result["iterations_primary"] is not None,
-            "secondary": result["iterations_secondary"] is not None,
-            "both": result["iterations_primary"] is not None
-            and result["iterations_secondary"] is not None,
-        }[stop]
-        result["iterations"] = iteration
-        if done or breakdown:
-            result["breakdown"] = bool(breakdown)
-            break
-    k_done = result["iterations"]
-    x = V[:, :k_done] @ y if y.size == k_done else V[:, :k_done] @ solve_triangular(
-        H[:k_done, :k_done], g[:k_done]
-    )
-    result["x"] = x
-    # Verified residuals of the returned iterate (not the Givens estimate).
-    result["primary_ratio"] = float(np.linalg.norm(rhs - A @ x)) / beta
-    result["primary_ratio_estimate"] = float(primary_ratio)
-    if secondary is not None:
-        result["secondary_ratio"] = float(np.linalg.norm(c - B @ x)) / c_norm
-    return result
 
 
 def gmres_two_conventions(
@@ -481,7 +352,14 @@ def build_cases(state: dict[str, Any], config: MaskAnalysisConfig) -> list[dict[
     }
     for label, d in scalars.items():
         cases.append(
-            _case(f"scalar_{label}", helmholtz(state, d), nowhere, d, family="scalar", mask_rule="none")
+            _case(
+                f"scalar_{label}",
+                helmholtz(state, d),
+                nowhere,
+                d,
+                family="scalar",
+                mask_rule="none",
+            )
         )
     for label, d in scalars.items():
         weights = (~q_cfl).astype(float)[None, :]
@@ -596,7 +474,9 @@ def build_cases(state: dict[str, Any], config: MaskAnalysisConfig) -> list[dict[
     return cases
 
 
-def frame_matrix(state: dict[str, Any], D: np.ndarray, masked: np.ndarray, dt: float | None = None) -> np.ndarray:
+def frame_matrix(
+    state: dict[str, Any], D: np.ndarray, masked: np.ndarray, dt: float | None = None
+) -> np.ndarray:
     """Return Q + H(Dmax) diag(Dmax / D) (I - Q), with Dmax over the active nodes."""
     if not np.any(~masked):
         return np.eye(state["nx"])
@@ -605,12 +485,17 @@ def frame_matrix(state: dict[str, Any], D: np.ndarray, masked: np.ndarray, dt: f
     return np.diag(masked.astype(float)) + helmholtz(state, dmax, dt) * gain[None, :]
 
 
-def one_inverse_matrix(state: dict[str, Any], D: np.ndarray, masked: np.ndarray, dt: float | None = None) -> np.ndarray:
+def one_inverse_matrix(
+    state: dict[str, Any], D: np.ndarray, masked: np.ndarray, dt: float | None = None
+) -> np.ndarray:
     """Return Q + H(Dmax) (I - Q), with Dmax over the active nodes."""
     if not np.any(~masked):
         return np.eye(state["nx"])
     dmax = float(D[~masked].max())
-    return np.diag(masked.astype(float)) + helmholtz(state, dmax, dt) * (~masked).astype(float)[None, :]
+    return (
+        np.diag(masked.astype(float))
+        + helmholtz(state, dmax, dt) * (~masked).astype(float)[None, :]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +666,9 @@ def analyze_state(nx: int, m: int, config: MaskAnalysisConfig) -> tuple[dict[str
         "cfl_mask_equals_floor_nodes": bool(np.array_equal(q_cfl, floor_nodes)),
         "repository_masked_count": int(np.count_nonzero(q_repo)),
         "a9_rule_masked_count": int(np.count_nonzero(q_a9)),
-        "a9_rule_and_cfl_rule_agree": bool(np.array_equal(q_a9, q_cfl)) if config.eta == 0.1 else None,
+        "a9_rule_and_cfl_rule_agree": (
+            bool(np.array_equal(q_a9, q_cfl)) if config.eta == 0.1 else None
+        ),
         "rhs_dense_relative_difference": state["rhs_dense_relative_difference"],
         "repository_checks": {},
     }
@@ -789,7 +676,9 @@ def analyze_state(nx: int, m: int, config: MaskAnalysisConfig) -> tuple[dict[str
     for case in build_cases(state, config):
         A = case["M"] @ state["J"]
         metrics = spectral_metrics(A, case["identity_inputs"])
-        counts = gmres_two_conventions(case["M"], state["J"], state["b"], config.gmres_tol, config.gmres_max)
+        counts = gmres_two_conventions(
+            case["M"], state["J"], state["b"], config.gmres_tol, config.gmres_max
+        )
         counts.pop("checkpoints")
         row = {
             "nx": nx,
