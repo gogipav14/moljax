@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import ceil, log, pi
+from math import ceil, comb, fsum, log, pi
 from time import perf_counter
 
 import jax
@@ -115,6 +115,13 @@ class _PolynomialCandidate:
     polynomial_lipschitz_bound: float
 
 
+@dataclass(frozen=True)
+class _PolynomialSearch:
+    candidate: _PolynomialCandidate | None
+    touched_domain_boundary: bool
+    largest_boundary_envelope_epsilon: float | None
+
+
 def materialize_dense_operator(matvec: Matvec, n: int) -> np.ndarray:
     """Materialize a real/complex linear action in the standard basis."""
     require_x64("dense pseudospectral operator materialization")
@@ -162,13 +169,22 @@ def _sample_sigma_min_grid(
 ) -> tuple[np.ndarray, int, float]:
     values = np.empty((imag_grid.size, real_grid.size), dtype=float)
     real_matrix = float(np.max(np.abs(matrix.imag))) <= 1.0e-13
+    identity = np.eye(matrix.shape[0], dtype=np.complex128)
+
+    def sample(point: complex) -> float:
+        # NumPy's scalar LAPACK wrapper keeps constant workspace on current
+        # SciPy/NumPy stacks.  Repeated SciPy calls and batched drivers retain
+        # gigabytes over the refined fallback grids.  The minima agree to the
+        # existing SVD backward-error allowance (3e-15 in the stress check).
+        return float(np.linalg.svdvals(point * identity - matrix)[-1])
+
     started = perf_counter()
     evaluations = 0
     if real_matrix and np.allclose(imag_grid, -imag_grid[::-1], rtol=0.0, atol=1.0e-14):
         middle = imag_grid.size // 2
         for row in range(middle, imag_grid.size):
             for column, real in enumerate(real_grid):
-                values[row, column] = dense_sigma_min(matrix, complex(real, imag_grid[row]))
+                values[row, column] = sample(complex(real, imag_grid[row]))
                 evaluations += 1
             mirror = imag_grid.size - 1 - row
             if mirror != row:
@@ -176,7 +192,7 @@ def _sample_sigma_min_grid(
     else:
         for row, imag in enumerate(imag_grid):
             for column, real in enumerate(real_grid):
-                values[row, column] = dense_sigma_min(matrix, complex(real, imag))
+                values[row, column] = sample(complex(real, imag))
                 evaluations += 1
     return values, evaluations, perf_counter() - started
 
@@ -260,6 +276,16 @@ def _connected_component(
     epsilon: float,
     seeds: np.ndarray,
 ) -> np.ndarray | None:
+    component, _ = _connected_component_status(sigma_min, epsilon, seeds)
+    return component
+
+
+def _connected_component_status(
+    sigma_min: np.ndarray,
+    epsilon: float,
+    seeds: np.ndarray,
+) -> tuple[np.ndarray | None, str]:
+    """Return a seed component and distinguish disconnection from edge contact."""
     inside = sigma_min <= epsilon
     labels, _ = scipy.ndimage.label(
         inside,
@@ -268,7 +294,7 @@ def _connected_component(
     seed_labels = np.unique(labels.ravel()[seeds])
     seed_labels = seed_labels[seed_labels != 0]
     if seed_labels.size != 1 or np.any(labels.ravel()[seeds] != seed_labels[0]):
-        return None
+        return None, "disconnected"
     component = labels == seed_labels[0]
     if (
         np.any(component[0])
@@ -276,8 +302,8 @@ def _connected_component(
         or np.any(component[:, 0])
         or np.any(component[:, -1])
     ):
-        return None
-    return component
+        return None, "touches_domain_boundary"
+    return component, "closed"
 
 
 def _grid_boundary_arc_length(component: np.ndarray, dx: float, dy: float) -> float:
@@ -372,13 +398,27 @@ def _contour_modulus_bound(
     complex_coefficients = np.array([real + 1j * imag for real, imag in coefficients])
     orders = np.arange(1, complex_coefficients.size + 1)
     radius = float(max(np.max(np.abs(starts)), np.max(np.abs(ends)))) / scale
-    lipschitz = float(
+    origin_lipschitz = float(
         np.sum(orders * np.abs(complex_coefficients) * radius ** (orders - 1)) / scale
     )
+    centered_lipschitz = _centered_polynomial_derivative_bound(
+        starts,
+        ends,
+        complex_coefficients,
+        scale,
+    )
+    # Both bounds follow from the triangle inequality on disks containing the
+    # complete contour.  Their minimum is therefore valid and can only tighten
+    # the previous origin-centred enclosure.
+    lipschitz = min(origin_lipschitz, centered_lipschitz)
     edge_length = float(np.max(np.abs(ends - starts)))
     subdivisions = int(
         min(
-            max(8, ceil(lipschitz * edge_length / (2.0 * absolute_slack))),
+            # Preserve the old origin-bound sampling grid.  The sampled
+            # maximum is then identical to the previous algorithm while the
+            # remainder can only decrease with the centred enclosure, making
+            # the complete contour bound monotone.
+            max(8, ceil(origin_lipschitz * edge_length / (2.0 * absolute_slack))),
             max_subdivisions,
         )
     )
@@ -392,6 +432,81 @@ def _contour_modulus_bound(
         values = values + coefficient * power
     sampled = float(np.max(np.abs(values)))
     return sampled + lipschitz * edge_length / (2.0 * subdivisions), lipschitz
+
+
+def _centered_polynomial_derivative_bound(
+    starts: np.ndarray,
+    ends: np.ndarray,
+    coefficients: np.ndarray,
+    scale: float,
+) -> float:
+    """Bound ``max |p'|`` after translating the polynomial to the contour.
+
+    If ``p(z) = sum_j a_j (z / scale)**j`` and ``z = c + w``, then
+    ``p(c + w) = sum_j b_j (w / scale)**j``.  On the contour-enclosing disk
+    ``|w| <= R_c``, the triangle inequality gives
+    ``|p'| <= sum_j j |b_j| (R_c / scale)**(j-1) / scale``.
+
+    The coefficients are translated with the binomial identity.  The returned
+    enclosure adds a standard floating-point ``gamma_n`` allowance to every
+    translated coefficient and to the final nonnegative sum.  Under the usual
+    IEEE round-to-nearest model (without overflow or underflow), this covers
+    the conversion error.  Any non-finite intermediate fails closed to
+    infinity.  The radius includes all edge endpoints; convexity of distance
+    along a segment then includes every contour sample and every between-sample
+    point as well.
+    """
+    degree = int(coefficients.size)
+    if degree == 0:
+        return 0.0
+    all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), coefficients))
+    points = np.concatenate((starts, ends))
+    real_min = float(np.min(points.real))
+    real_max = float(np.max(points.real))
+    imag_min = float(np.min(points.imag))
+    imag_max = float(np.max(points.imag))
+    center = complex(0.5 * (real_min + real_max), 0.5 * (imag_min + imag_max))
+    unit_roundoff = float(np.finfo(np.float64).eps) / 2.0
+    geometry_scale = max(
+        1.0,
+        abs(center),
+        float(np.max(np.abs(points))),
+    )
+    geometry_allowance = 32.0 * unit_roundoff * geometry_scale
+    centered_radius = np.nextafter(
+        float(np.max(np.abs(points - center))) + geometry_allowance,
+        np.inf,
+    )
+    normalized_center = center / scale
+    normalized_radius = centered_radius / scale
+
+    # A complex multiply/add uses several real operations.  This deliberately
+    # generous count also covers powers and binomial-factor conversion for all
+    # degree <= 40 fits used by the study.
+    operation_count = 32 * (degree + 1) ** 2
+    product = operation_count * unit_roundoff
+    if product >= 1.0:
+        return float("inf")
+    gamma = product / (1.0 - product)
+    derivative_terms: list[float] = []
+    for shifted_order in range(1, degree + 1):
+        translated_terms = [
+            all_coefficients[origin_order]
+            * comb(origin_order, shifted_order)
+            * normalized_center ** (origin_order - shifted_order)
+            for origin_order in range(shifted_order, degree + 1)
+        ]
+        translated = sum(translated_terms, 0.0j)
+        absolute_sum = fsum(abs(term) for term in translated_terms)
+        conversion_error = gamma * absolute_sum
+        coefficient_upper = np.nextafter(abs(translated) + conversion_error, np.inf)
+        derivative_terms.append(
+            shifted_order * coefficient_upper * normalized_radius ** (shifted_order - 1) / scale
+        )
+    bound = fsum(derivative_terms)
+    if not np.isfinite(bound):
+        return float("inf")
+    return float(np.nextafter(bound * (1.0 + gamma), np.inf))
 
 
 def _fit_polynomial(
@@ -471,7 +586,8 @@ def _search_polynomial_certificate(
     polynomial_degrees: tuple[int, ...],
     epsilon_samples: int,
     sample_error: float,
-) -> _PolynomialCandidate | None:
+    max_constraint_points: int | None = None,
+) -> _PolynomialSearch:
     dx = float(real_grid[1] - real_grid[0])
     dy = float(imag_grid[1] - imag_grid[0])
     interpolation_allowance = 0.5 * float(np.hypot(dx, dy))
@@ -492,23 +608,35 @@ def _search_polynomial_certificate(
     fine_seeds, _ = _eigenvalue_seed_indices(fine_real, fine_imag, eigenvalues)
     gap = epsilon_zero - eps_connect_upper
     if gap <= 0.0:
-        return None
+        return _PolynomialSearch(None, False, None)
     candidates: list[_PolynomialCandidate] = []
+    touched_domain_boundary = False
+    boundary_envelope_epsilons: list[float] = []
     fractions = np.linspace(0.15, 0.9, epsilon_samples)
     for fraction in fractions:
         epsilon = eps_connect_upper + float(fraction) * gap
         envelope_epsilon = epsilon + interpolation_allowance
         if envelope_epsilon >= epsilon_zero:
             continue
-        component = _connected_component(fine_sigma_min, epsilon, fine_seeds)
+        component, component_status = _connected_component_status(
+            fine_sigma_min,
+            epsilon,
+            fine_seeds,
+        )
         if component is None:
+            if component_status == "touches_domain_boundary":
+                touched_domain_boundary = True
+                boundary_envelope_epsilons.append(envelope_epsilon)
             continue
-        envelope = _connected_component(
+        envelope, envelope_status = _connected_component_status(
             fine_sigma_min,
             envelope_epsilon,
             fine_seeds,
         )
         if envelope is None:
+            if envelope_status == "touches_domain_boundary":
+                touched_domain_boundary = True
+                boundary_envelope_epsilons.append(envelope_epsilon)
             continue
         points = fine_points[envelope]
         arc_length = _grid_boundary_arc_length(component, 0.5 * dx, 0.5 * dy)
@@ -529,7 +657,24 @@ def _search_polynomial_certificate(
         # Crouzeix constant belongs to functional calculus over W(A), not here.
         prefactor = arc_length / (2.0 * pi * contour_floor)
         for degree in polynomial_degrees:
-            fitted = _fit_polynomial(points, degree)
+            constraint_limit = max_constraint_points
+            if constraint_limit is None and degree > 20:
+                # Degrees through 20 retain every old constraint, preserving
+                # all pre-tightening candidates exactly.  Higher degrees are
+                # new to the resolution study.  Their fit is only a search
+                # heuristic, so a deterministic spread is sufficient; every
+                # candidate still faces the complete contour certificate.
+                constraint_limit = 4096
+            fit_points = points
+            if constraint_limit is not None and points.size > constraint_limit:
+                indices = np.linspace(
+                    0,
+                    points.size - 1,
+                    constraint_limit,
+                    dtype=int,
+                )
+                fit_points = points[indices]
+            fitted = _fit_polynomial(fit_points, degree)
             if fitted is None:
                 continue
             maximum, _, coefficients, scale = fitted
@@ -555,7 +700,7 @@ def _search_polynomial_certificate(
                     epsilon=epsilon,
                     degree=degree,
                     envelope_epsilon=envelope_epsilon,
-                    constraint_point_count=points.size,
+                    constraint_point_count=fit_points.size,
                     sampled_max_modulus=maximum,
                     effective_rate=effective_rate,
                     coefficients=coefficients,
@@ -570,15 +715,97 @@ def _search_polynomial_certificate(
                 )
             )
     if not candidates:
-        return None
-    return min(
+        return _PolynomialSearch(
+            None,
+            touched_domain_boundary,
+            max(boundary_envelope_epsilons, default=None),
+        )
+    candidate = min(
         candidates,
-        key=lambda candidate: (
-            candidate.predicted_iterations,
-            candidate.effective_rate,
-            candidate.degree,
+        key=lambda item: (
+            item.predicted_iterations,
+            item.effective_rate,
+            item.degree,
         ),
     )
+    return _PolynomialSearch(
+        candidate,
+        touched_domain_boundary,
+        max(boundary_envelope_epsilons, default=None),
+    )
+
+
+def _numerical_range_outer_domain(
+    matrix: np.ndarray,
+    epsilon: float,
+) -> tuple[float, float, float, float]:
+    """Bound ``W(A) + D(0, epsilon)`` by an exact-support outer rectangle.
+
+    The four sides are dense Hermitian support solves in the real and
+    imaginary coordinate directions, so their rectangle is an outer support
+    polygon for ``W(A)``.  For every unit vector ``x``, choosing a right
+    singular vector of ``z I - A`` gives
+    ``sigma_min(z I - A) >= dist(z, W(A))``.  Consequently
+    ``sigma_epsilon(A)`` lies in ``W(A) + D(0, epsilon)`` and therefore in
+    this rectangle expanded by ``epsilon``.
+    """
+    hermitian_real = 0.5 * (matrix + matrix.conj().T)
+    hermitian_imag = (matrix - matrix.conj().T) / (2.0j)
+    real_support = scipy.linalg.eigvalsh(hermitian_real, check_finite=False)
+    imag_support = scipy.linalg.eigvalsh(hermitian_imag, check_finite=False)
+    support_scale = max(
+        1.0,
+        float(np.max(np.abs(real_support))),
+        float(np.max(np.abs(imag_support))),
+        abs(epsilon),
+    )
+    allowance = 64.0 * matrix.shape[0] * np.finfo(np.float64).eps * support_scale
+    expanded = float(np.nextafter(epsilon + allowance, np.inf))
+    return (
+        float(np.nextafter(real_support[0] - expanded, -np.inf)),
+        float(np.nextafter(real_support[-1] + expanded, np.inf)),
+        float(np.nextafter(imag_support[0] - expanded, -np.inf)),
+        float(np.nextafter(imag_support[-1] + expanded, np.inf)),
+    )
+
+
+def _expanded_domain_grid(
+    original_domain: tuple[float, float, float, float],
+    outer_domain: tuple[float, float, float, float],
+    original_dx: float,
+    original_dy: float,
+    original_count: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Union two domains without increasing either original grid spacing."""
+    real_min = min(original_domain[0], outer_domain[0])
+    real_max = max(original_domain[1], outer_domain[1])
+    imag_min = min(original_domain[2], outer_domain[2])
+    imag_max = max(original_domain[3], outer_domain[3])
+    count = max(
+        original_count,
+        ceil((real_max - real_min) / original_dx) + 1,
+        ceil((imag_max - imag_min) / original_dy) + 1,
+    )
+    if count % 2 == 0:
+        count += 1
+    return np.linspace(real_min, real_max, count), np.linspace(imag_min, imag_max, count)
+
+
+def _sigma_min_evaluation_count(
+    matrix: np.ndarray,
+    real_grid: np.ndarray,
+    imag_grid: np.ndarray,
+) -> int:
+    real_matrix = float(np.max(np.abs(matrix.imag))) <= 1.0e-13
+    symmetric_imaginary_grid = np.allclose(
+        imag_grid,
+        -imag_grid[::-1],
+        rtol=0.0,
+        atol=1.0e-14,
+    )
+    if real_matrix and symmetric_imaginary_grid:
+        return int(real_grid.size * (imag_grid.size // 2 + 1))
+    return int(real_grid.size * imag_grid.size)
 
 
 def assess_dense_pseudospectral_criterion(
@@ -609,6 +836,7 @@ def assess_dense_pseudospectral_criterion(
         eigenvalues,
         domain_padding_fraction,
     )
+    original_domain = (real_min, real_max, imag_min, imag_max)
     real_grid = np.linspace(real_min, real_max, grid_points_per_axis)
     imag_grid = np.linspace(imag_min, imag_max, grid_points_per_axis)
     sigma_min, evaluations, sigma_seconds = _sample_sigma_min_grid(
@@ -629,14 +857,21 @@ def assess_dense_pseudospectral_criterion(
         maximum_seed_distance,
     )
     epsilon_zero = dense_sigma_min(square, 0.0)
-    # Backward-error allowance for each sampled sigma_min(z I - A).
-    largest_shift = float(np.max(np.abs(real_grid))) + float(np.max(np.abs(imag_grid)))
     operator_norm = float(scipy.linalg.svdvals(square, check_finite=False)[0])
-    sample_error = (
-        8.0 * square.shape[0] * float(np.finfo(np.float64).eps) * (operator_norm + largest_shift)
-    )
+
+    def sample_error_for_grid(real_values: np.ndarray, imag_values: np.ndarray) -> float:
+        # Backward-error allowance for each sampled sigma_min(z I - A).
+        largest_shift = float(np.max(np.abs(real_values))) + float(np.max(np.abs(imag_values)))
+        return (
+            8.0
+            * square.shape[0]
+            * float(np.finfo(np.float64).eps)
+            * (operator_norm + largest_shift)
+        )
+
+    sample_error = sample_error_for_grid(real_grid, imag_grid)
     search_started = perf_counter()
-    candidate = _search_polynomial_certificate(
+    search = _search_polynomial_certificate(
         sigma_min,
         real_grid,
         imag_grid,
@@ -649,12 +884,106 @@ def assess_dense_pseudospectral_criterion(
         sample_error,
     )
     search_seconds = perf_counter() - search_started
+    candidate = search.candidate
+    total_evaluations = evaluations
+    total_sigma_seconds = sigma_seconds
+    fallback_reason: str | None = None
+
+    # A sampled component that touches the eigenvalue-padded box may be a
+    # domain artefact rather than a geometric obstruction.  Retry once on an
+    # outer-support box for W(A) + D(0, epsilon_env).  The singular-value
+    # inequality sigma_min(z I - A) >= dist(z, W(A)) proves that this enlarged
+    # box contains every pseudospectral component searched here.  Existing
+    # certificates never enter this path, so the fallback is monotone.
+    if candidate is None and eps_connect_upper < epsilon_zero and search.touched_domain_boundary:
+        epsilon_env = float(np.nextafter(epsilon_zero + sample_error, np.inf))
+        outer_domain = _numerical_range_outer_domain(square, epsilon_env)
+        expanded_real, expanded_imag = _expanded_domain_grid(
+            original_domain,
+            outer_domain,
+            dx,
+            dy,
+            grid_points_per_axis,
+        )
+        fallback_evaluations = _sigma_min_evaluation_count(
+            square,
+            expanded_real,
+            expanded_imag,
+        )
+        seconds_per_evaluation = sigma_seconds / max(evaluations, 1)
+        estimated_total_seconds = sigma_seconds + fallback_evaluations * seconds_per_evaluation
+        if estimated_total_seconds <= 4.0 * 60.0 * 60.0:
+            fallback_sigma, fallback_count, fallback_seconds = _sample_sigma_min_grid(
+                square,
+                expanded_real,
+                expanded_imag,
+            )
+            fallback_seeds, fallback_seed_distance = _eigenvalue_seed_indices(
+                expanded_real,
+                expanded_imag,
+                eigenvalues,
+            )
+            fallback_eps_grid = _grid_connectivity_threshold(
+                fallback_sigma,
+                fallback_seeds,
+            )
+            fallback_dx = float(expanded_real[1] - expanded_real[0])
+            fallback_dy = float(expanded_imag[1] - expanded_imag[0])
+            fallback_eps_upper = max(
+                fallback_eps_grid + 0.5 * max(fallback_dx, fallback_dy),
+                fallback_seed_distance,
+            )
+            fallback_sample_error = sample_error_for_grid(expanded_real, expanded_imag)
+            fallback_search_started = perf_counter()
+            fallback_search = _search_polynomial_certificate(
+                fallback_sigma,
+                expanded_real,
+                expanded_imag,
+                eigenvalues,
+                fallback_eps_upper,
+                epsilon_zero,
+                target_tolerance,
+                polynomial_degrees,
+                epsilon_samples,
+                fallback_sample_error,
+                max_constraint_points=4096,
+            )
+            search_seconds += perf_counter() - fallback_search_started
+            total_evaluations += fallback_count
+            total_sigma_seconds += fallback_seconds
+            real_grid = expanded_real
+            imag_grid = expanded_imag
+            sigma_min = fallback_sigma
+            seeds = fallback_seeds
+            eps_connect_grid = fallback_eps_grid
+            eps_connect_upper = fallback_eps_upper
+            dx = fallback_dx
+            dy = fallback_dy
+            sample_error = fallback_sample_error
+            search = fallback_search
+            candidate = fallback_search.candidate
+            real_min = float(real_grid[0])
+            real_max = float(real_grid[-1])
+            imag_min = float(imag_grid[0])
+            imag_max = float(imag_grid[-1])
+            if candidate is None and fallback_search.touched_domain_boundary:
+                fallback_reason = (
+                    "the component or fitting envelope touches the exact-support "
+                    "fallback domain boundary"
+                )
+        else:
+            fallback_reason = (
+                "the component or fitting envelope touches the padded domain; "
+                "the exact-support fallback exceeds the four-hour estimated cap"
+            )
     if eps_connect_upper >= epsilon_zero:
         certified = False
         reason = "spectrum connectivity reaches the origin-exclusion threshold"
     elif candidate is None:
         certified = False
-        reason = "the connected window has no polynomial with a proven contour bound below one"
+        reason = fallback_reason or (
+            "the connected window has no polynomial with a proven contour bound below one"
+        )
     else:
         certified = True
         reason = "connected pseudospectral window excludes the origin"
@@ -699,11 +1028,11 @@ def assess_dense_pseudospectral_criterion(
         domain_real_max=real_max,
         domain_imag_min=imag_min,
         domain_imag_max=imag_max,
-        grid_points_per_axis=grid_points_per_axis,
+        grid_points_per_axis=int(real_grid.size),
         grid_spacing_real=dx,
         grid_spacing_imag=dy,
-        sigma_min_evaluations=evaluations + 1,
-        sigma_min_seconds=sigma_seconds,
+        sigma_min_evaluations=total_evaluations + 1,
+        sigma_min_seconds=total_sigma_seconds,
         polynomial_search_seconds=search_seconds,
     )
 
