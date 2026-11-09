@@ -140,6 +140,12 @@ def test_nonnormal_boundary_matches_dense_hermitian_reference(matrix: np.ndarray
 
 def test_support_kernel_compiles_once_and_is_reused_for_the_same_operator():
     """Angle and restart changes reuse one operator-and-shape support executable."""
+    if jax.__version_info__ < (0, 7):
+        pytest.skip(
+            "JAX < 0.7 has no public event-listener unregister API; registering "
+            "the compile listener would retain its growing event list for the "
+            "rest of the test process"
+        )
 
     class Operator:
         def __init__(self) -> None:
