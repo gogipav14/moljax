@@ -1,0 +1,412 @@
+{
+  "protocol": {
+    "linear_forcing": 0.0001,
+    "mask_note": "operator masks use BE dt and CN dt/2, matching their Jacobians; physical-dt masks are also reported for a same-dt comparison.",
+    "preconditioner": "Z1, right-preconditioned",
+    "steps": 5
+  },
+  "provenance": {
+    "backend": "cpu",
+    "git_commit": "eb18efe0b9f1552eb875376e32c8d06a2dca98a1",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "numpy": "2.5.2",
+    "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35",
+    "python": "3.12.13 | packaged by Anaconda, Inc. | (main, Jul  9 2026, 14:38:16) [GCC 14.3.0]",
+    "scipy": "1.18.0",
+    "script": "benchmarks/tau_blend_cn_replay.py",
+    "script_sha256": "50c4215cda60b67ef8ee9a50355aca1637d496b209cc82da9f361bafea9b187b",
+    "wall_seconds": 1.9858046844601631
+  },
+  "schema": "tau_blend_cn_replay_v1",
+  "steps": [
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 2.876704188947267e-12,
+        "gmres_iterations": 541,
+        "initial_residual": 1.2789945787134416,
+        "line_search_failed": false,
+        "min_u": -1.178735770548974e-13,
+        "negative_undershoot": -1.178735770548974e-13,
+        "newton_iterations": 13
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 1.0537932133989105e-10,
+        "gmres_iterations": 317,
+        "initial_residual": 1.2789945787134416,
+        "line_search_failed": false,
+        "min_u": 8.562759938776289e-20,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 10
+      },
+      "active_size_BE_operator_mask": 204,
+      "active_size_BE_same_physical_dt_mask": 204,
+      "active_size_CN_operator_mask": 196,
+      "active_size_CN_same_physical_dt_mask": 196,
+      "dt": 0.02,
+      "eta": 0.3,
+      "m": 2,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 8,
+      "physical_dt_mask_symmetric_difference": 8,
+      "step": 1
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 2.155915767316029e-11,
+        "gmres_iterations": 355,
+        "initial_residual": 1.0301745743345074,
+        "line_search_failed": false,
+        "min_u": -6.362571785564105e-13,
+        "negative_undershoot": -6.362571785564105e-13,
+        "newton_iterations": 7
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 1.3047208525369602e-11,
+        "gmres_iterations": 256,
+        "initial_residual": 1.0604356786587399,
+        "line_search_failed": false,
+        "min_u": -7.68213996766193e-14,
+        "negative_undershoot": -7.68213996766193e-14,
+        "newton_iterations": 7
+      },
+      "active_size_BE_operator_mask": 214,
+      "active_size_BE_same_physical_dt_mask": 214,
+      "active_size_CN_operator_mask": 206,
+      "active_size_CN_same_physical_dt_mask": 206,
+      "dt": 0.02,
+      "eta": 0.3,
+      "m": 2,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 8,
+      "physical_dt_mask_symmetric_difference": 8,
+      "step": 2
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 3.72261967961737e-09,
+        "gmres_iterations": 309,
+        "initial_residual": 0.8559568829853456,
+        "line_search_failed": false,
+        "min_u": -6.935496128104153e-11,
+        "negative_undershoot": -6.935496128104153e-11,
+        "newton_iterations": 6
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 3.67232877767463e-10,
+        "gmres_iterations": 213,
+        "initial_residual": 0.8895165314602153,
+        "line_search_failed": false,
+        "min_u": 3.728416492845162e-18,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 6
+      },
+      "active_size_BE_operator_mask": 222,
+      "active_size_BE_same_physical_dt_mask": 222,
+      "active_size_CN_operator_mask": 214,
+      "active_size_CN_same_physical_dt_mask": 214,
+      "dt": 0.02,
+      "eta": 0.3,
+      "m": 2,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 8,
+      "physical_dt_mask_symmetric_difference": 8,
+      "step": 3
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 3.634937506873115e-10,
+        "gmres_iterations": 295,
+        "initial_residual": 0.7312081155095407,
+        "line_search_failed": false,
+        "min_u": -4.116174339208218e-12,
+        "negative_undershoot": -4.116174339208218e-12,
+        "newton_iterations": 6
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 2.0447018332688761e-10,
+        "gmres_iterations": 210,
+        "initial_residual": 0.7634047423051518,
+        "line_search_failed": false,
+        "min_u": 4.254960724746151e-18,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 6
+      },
+      "active_size_BE_operator_mask": 230,
+      "active_size_BE_same_physical_dt_mask": 230,
+      "active_size_CN_operator_mask": 222,
+      "active_size_CN_same_physical_dt_mask": 222,
+      "dt": 0.02,
+      "eta": 0.3,
+      "m": 2,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 8,
+      "physical_dt_mask_symmetric_difference": 8,
+      "step": 4
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 2.4420042669648194e-11,
+        "gmres_iterations": 302,
+        "initial_residual": 0.6368889973675991,
+        "line_search_failed": false,
+        "min_u": -2.457054325125488e-12,
+        "negative_undershoot": -2.457054325125488e-12,
+        "newton_iterations": 6
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 9.227502732153694e-12,
+        "gmres_iterations": 214,
+        "initial_residual": 0.6672009962369732,
+        "line_search_failed": false,
+        "min_u": 4.2017795361442896e-18,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 6
+      },
+      "active_size_BE_operator_mask": 238,
+      "active_size_BE_same_physical_dt_mask": 238,
+      "active_size_CN_operator_mask": 230,
+      "active_size_CN_same_physical_dt_mask": 230,
+      "dt": 0.02,
+      "eta": 0.3,
+      "m": 2,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 8,
+      "physical_dt_mask_symmetric_difference": 8,
+      "step": 5
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 4.405649836663192e-12,
+        "gmres_iterations": 539,
+        "initial_residual": 2.1539593014009064,
+        "line_search_failed": false,
+        "min_u": 2.1766258042315682e-17,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 11
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 1.7743696139935473e-08,
+        "gmres_iterations": 362,
+        "initial_residual": 2.1539593014009064,
+        "line_search_failed": false,
+        "min_u": 1.2027428535387738e-14,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 9
+      },
+      "active_size_BE_operator_mask": 256,
+      "active_size_BE_same_physical_dt_mask": 256,
+      "active_size_CN_operator_mask": 254,
+      "active_size_CN_same_physical_dt_mask": 254,
+      "dt": 0.02,
+      "eta": 0.1,
+      "m": 4,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 2,
+      "physical_dt_mask_symmetric_difference": 2,
+      "step": 1
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 6.3262871068179936e-09,
+        "gmres_iterations": 436,
+        "initial_residual": 1.4370716154231984,
+        "line_search_failed": false,
+        "min_u": -4.304468495872159e-11,
+        "negative_undershoot": -4.304468495872159e-11,
+        "newton_iterations": 8
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 3.3466324443643667e-10,
+        "gmres_iterations": 311,
+        "initial_residual": 2.1436979858108582,
+        "line_search_failed": false,
+        "min_u": 1.2072433266957904e-14,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 8
+      },
+      "active_size_BE_operator_mask": 264,
+      "active_size_BE_same_physical_dt_mask": 264,
+      "active_size_CN_operator_mask": 262,
+      "active_size_CN_same_physical_dt_mask": 262,
+      "dt": 0.02,
+      "eta": 0.1,
+      "m": 4,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 2,
+      "physical_dt_mask_symmetric_difference": 2,
+      "step": 2
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 1.3774001100200416e-09,
+        "gmres_iterations": 437,
+        "initial_residual": 1.1094294953810309,
+        "line_search_failed": false,
+        "min_u": -1.1731579610819304e-11,
+        "negative_undershoot": -1.1731579610819304e-11,
+        "newton_iterations": 8
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 1.4869730618406816e-10,
+        "gmres_iterations": 268,
+        "initial_residual": 2.1669095199809196,
+        "line_search_failed": false,
+        "min_u": 1.2575354196336194e-14,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 7
+      },
+      "active_size_BE_operator_mask": 270,
+      "active_size_BE_same_physical_dt_mask": 270,
+      "active_size_CN_operator_mask": 268,
+      "active_size_CN_same_physical_dt_mask": 268,
+      "dt": 0.02,
+      "eta": 0.1,
+      "m": 4,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 2,
+      "physical_dt_mask_symmetric_difference": 2,
+      "step": 3
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 5.1255070432597634e-11,
+        "gmres_iterations": 371,
+        "initial_residual": 0.95860980659964,
+        "line_search_failed": false,
+        "min_u": -7.62591832339457e-12,
+        "negative_undershoot": -7.62591832339457e-12,
+        "newton_iterations": 7
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 3.2373986121067325e-09,
+        "gmres_iterations": 271,
+        "initial_residual": 2.1491520396642527,
+        "line_search_failed": false,
+        "min_u": 1.448820547180747e-14,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 7
+      },
+      "active_size_BE_operator_mask": 276,
+      "active_size_BE_same_physical_dt_mask": 276,
+      "active_size_CN_operator_mask": 274,
+      "active_size_CN_same_physical_dt_mask": 274,
+      "dt": 0.02,
+      "eta": 0.1,
+      "m": 4,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 2,
+      "physical_dt_mask_symmetric_difference": 2,
+      "step": 4
+    },
+    {
+      "BE": {
+        "converged": true,
+        "effective_jacobian_dt": 0.02,
+        "final_residual": 3.6708467709233117e-09,
+        "gmres_iterations": 369,
+        "initial_residual": 0.852468624671918,
+        "line_search_failed": false,
+        "min_u": -7.46570048004853e-13,
+        "negative_undershoot": -7.46570048004853e-13,
+        "newton_iterations": 7
+      },
+      "CN": {
+        "converged": true,
+        "effective_jacobian_dt": 0.01,
+        "final_residual": 1.575510405796373e-08,
+        "gmres_iterations": 259,
+        "initial_residual": 2.1127289952385357,
+        "line_search_failed": false,
+        "min_u": 1.2604926478228888e-13,
+        "negative_undershoot": 0.0,
+        "newton_iterations": 7
+      },
+      "active_size_BE_operator_mask": 282,
+      "active_size_BE_same_physical_dt_mask": 282,
+      "active_size_CN_operator_mask": 280,
+      "active_size_CN_same_physical_dt_mask": 280,
+      "dt": 0.02,
+      "eta": 0.1,
+      "m": 4,
+      "nx": 512,
+      "operator_mask_symmetric_difference": 2,
+      "physical_dt_mask_symmetric_difference": 2,
+      "step": 5
+    }
+  ],
+  "summaries": [
+    {
+      "BE": {
+        "all_steps_converged": true,
+        "gmres_total": 1802,
+        "minimum_u": -6.935496128104153e-11,
+        "newton_total": 38
+      },
+      "CN": {
+        "all_steps_converged": true,
+        "gmres_total": 1210,
+        "minimum_u": -7.68213996766193e-14,
+        "newton_total": 35
+      },
+      "dt": 0.02,
+      "eta": 0.3,
+      "m": 2,
+      "nx": 512
+    },
+    {
+      "BE": {
+        "all_steps_converged": true,
+        "gmres_total": 2152,
+        "minimum_u": -4.304468495872159e-11,
+        "newton_total": 41
+      },
+      "CN": {
+        "all_steps_converged": true,
+        "gmres_total": 1471,
+        "minimum_u": 1.2027428535387738e-14,
+        "newton_total": 38
+      },
+      "dt": 0.02,
+      "eta": 0.1,
+      "m": 4,
+      "nx": 512
+    }
+  ]
+}
