@@ -49,6 +49,7 @@ from moljax.experimental.tau_blend_active_block import (
 DEGREES = tuple(range(4, 41, 4))
 GRID_LADDER = (121, 241, 481)
 CASE_CAP_SECONDS = 4.0 * 60.0 * 60.0
+RATE_TIE_THRESHOLD = 0.05
 METHODS_BY_M = {
     2: ("one_inverse_cfl_mask", "repository_blend_B3", "cfl_reference_blend_B3"),
     4: ("one_inverse_cfl_mask", "cfl_reference_blend_B3"),
@@ -191,6 +192,19 @@ def _certificate_ladder(
     return rows
 
 
+def _gmres_summary(result: dict[str, Any], operator: str) -> dict[str, Any]:
+    """Return the auditable stopping counts for one named operator."""
+    return {
+        "operator": operator,
+        "iterations_run": result["iterations"],
+        "true_stop_count": result["true_stop_count"],
+        "preconditioned_stop_count": result["preconditioned_stop_count"],
+        "true_relative_residual": result["secondary_ratio"],
+        "preconditioned_relative_residual": result["primary_ratio"],
+        "converged": result["converged"],
+    }
+
+
 def analyze_case(nx: int, m: int, method: str) -> dict[str, Any]:
     """Run one unique method/state case."""
     started = perf_counter()
@@ -207,9 +221,15 @@ def analyze_case(nx: int, m: int, method: str) -> dict[str, Any]:
     # The active-block certificate is for J0, so its measured comparator is
     # the same J0 solve used by the archived A5/B0 table.  Direct certificates
     # for the regularized full operator are reported separately below.
-    gmres = true_residual_gmres(
+    gmres_j0 = true_residual_gmres(
         preconditioner,
         j0,
+        state["b"],
+        tolerance=1.0e-8,
+    )
+    gmres_regularized = true_residual_gmres(
+        preconditioner,
+        state["J"],
         state["b"],
         tolerance=1.0e-8,
     )
@@ -242,21 +262,16 @@ def analyze_case(nx: int, m: int, method: str) -> dict[str, Any]:
             "Y_byte_identical_to_J0": bool(np.array_equal(blocks0.Y, blocks.Y)),
         },
         "Y_spectrum": _spectrum(blocks0.Y),
+        "MJ_spectrum": _spectrum(mj),
         "Y_certificate_ladder": y_ladder,
         "Y_certificate_selected": selected,
         "Y_fov": asdict(fov_y),
         "MJ_fov": asdict(fov_mj),
         "merged_policy": disk_policy,
         "union": union,
-        "gmres": {
-            "operator": "J0",
-            "iterations_run": gmres["iterations"],
-            "true_stop_count": gmres["true_stop_count"],
-            "preconditioned_stop_count": gmres["preconditioned_stop_count"],
-            "true_relative_residual": gmres["secondary_ratio"],
-            "preconditioned_relative_residual": gmres["primary_ratio"],
-            "converged": gmres["converged"],
-        },
+        "gmres_J0": _gmres_summary(gmres_j0, "J0"),
+        "gmres_regularized": _gmres_summary(gmres_regularized, "regularized_J"),
+        "gmres": _gmres_summary(gmres_regularized, "regularized_J (headline)"),
         "wall_seconds": perf_counter() - started,
     }
 
@@ -299,16 +314,16 @@ def refresh_case_protocol(row: dict[str, Any]) -> dict[str, Any]:
     zeroed_diffusivity = np.where(mask, 0.0, state["D"])
     j0 = jacobian(state["L"], zeroed_diffusivity, state["dt"])
     blocks0 = extract_active_block(preconditioner @ j0, mask)
-    gmres = true_residual_gmres(preconditioner, j0, state["b"], tolerance=1.0e-8)
-    row["gmres"] = {
-        "operator": "J0",
-        "iterations_run": gmres["iterations"],
-        "true_stop_count": gmres["true_stop_count"],
-        "preconditioned_stop_count": gmres["preconditioned_stop_count"],
-        "true_relative_residual": gmres["secondary_ratio"],
-        "preconditioned_relative_residual": gmres["primary_ratio"],
-        "converged": gmres["converged"],
-    }
+    gmres_j0 = true_residual_gmres(preconditioner, j0, state["b"], tolerance=1.0e-8)
+    gmres_regularized = true_residual_gmres(
+        preconditioner,
+        state["J"],
+        state["b"],
+        tolerance=1.0e-8,
+    )
+    row["gmres_J0"] = _gmres_summary(gmres_j0, "J0")
+    row["gmres_regularized"] = _gmres_summary(gmres_regularized, "regularized_J")
+    row["gmres"] = _gmres_summary(gmres_regularized, "regularized_J (headline)")
     ladder = row["Y_certificate_ladder"]
     selected_index = next((index for index, item in enumerate(ladder) if item["certified"]), None)
     if selected_index is not None:
@@ -333,6 +348,27 @@ def refresh_case_protocol(row: dict[str, Any]) -> dict[str, Any]:
         (item for item in ladder if item["certified"]),
         ladder[-1],
     )
+    return row
+
+
+def refresh_gmres_counts(row: dict[str, Any]) -> dict[str, Any]:
+    """Refresh both GMRES operators without rerunning any certificate."""
+    nx, m, method = int(row["nx"]), int(row["m"]), str(row["method"])
+    state = _state(nx, m)
+    preconditioner, mask, _ = _preconditioner(state, method)
+    zeroed_diffusivity = np.where(mask, 0.0, state["D"])
+    j0 = jacobian(state["L"], zeroed_diffusivity, state["dt"])
+    gmres_j0 = true_residual_gmres(preconditioner, j0, state["b"], tolerance=1.0e-8)
+    gmres_regularized = true_residual_gmres(
+        preconditioner,
+        state["J"],
+        state["b"],
+        tolerance=1.0e-8,
+    )
+    row["gmres_J0"] = _gmres_summary(gmres_j0, "J0")
+    row["gmres_regularized"] = _gmres_summary(gmres_regularized, "regularized_J")
+    row["gmres"] = _gmres_summary(gmres_regularized, "regularized_J (headline)")
+    row["MJ_spectrum"] = _spectrum(preconditioner @ state["J"])
     return row
 
 
@@ -377,7 +413,7 @@ def ordering_check(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             predicted_tie = False
             if len(nonnull_rates) > 1:
                 values = [rate for _, rate in nonnull_rates]
-                predicted_tie = max(values) - min(values) < 0.05
+                predicted_tie = max(values) - min(values) < RATE_TIE_THRESHOLD
             reports.append(
                 {
                     "nx": nx,
@@ -389,6 +425,21 @@ def ordering_check(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
     return reports
+
+
+def decision_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Make the union convention and its counts explicit in the artifact."""
+    return {
+        "case_count": len(rows),
+        "Y_certified_count": sum(row["Y_certificate_selected"]["certified"] for row in rows),
+        "disk_adequate_count": sum(row["merged_policy"]["verdict"] == "adequate" for row in rows),
+        "union_certified_count": sum(row["union"] == "certified" for row in rows),
+        "union_positive_rule": (
+            "Y certificate is certified OR merged dense-disk policy verdict is adequate"
+        ),
+        "disk_positive_categories": ["adequate"],
+        "disk_nonpositive_categories": ["provisional", "investigate", "indeterminate"],
+    }
 
 
 def _json_ready(value: Any) -> Any:
@@ -420,6 +471,11 @@ def main() -> None:
         help="refresh J0 GMRES and selected certificates in a completed checkpoint",
     )
     parser.add_argument(
+        "--refresh-gmres",
+        action="store_true",
+        help="refresh J0 and regularized GMRES counts without rerunning certificates",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("benchmarks/results/tau_blend_active_block.json"),
@@ -448,9 +504,26 @@ def main() -> None:
         "fov_directions": 32,
         "case_cap_seconds": CASE_CAP_SECONDS,
         "true_residual_protocol": "physical Newton RHS, unrestarted, tolerance 1e-8",
-        "gmres_operator": "J0",
+        "gmres_operators": ["J0", "regularized_J"],
+        "gmres_headline_operator": "regularized_J",
         "certificate_matrix_dtype": "complex128",
         "full_operator_selected_grid_N128": 565,
+        "rewrite_base_revision": "ad478fc",
+        "rate_tie_threshold": RATE_TIE_THRESHOLD,
+        "certificate_changes": [
+            {
+                "commit": "61fa907",
+                "change": "centred derivative enclosure and numerical-range domain fallback",
+            },
+            {
+                "commit": "a7d6dae",
+                "change": "Horner floating-point evaluation allowance",
+            },
+            {
+                "commit": "c9c4a8e",
+                "change": "soundness and monotonicity validation for the tightened certificate",
+            },
+        ],
     }
 
     def checkpoint() -> None:
@@ -459,6 +532,7 @@ def main() -> None:
             "configuration": configuration,
             "cases": rows,
             "direct_regularized_full_MJ_certificates": full,
+            "decision_summary": decision_summary(rows),
             "ordering_check": ordering_check(rows),
             "provenance": benchmark_provenance(__file__, perf_counter() - started),
         }
@@ -474,6 +548,14 @@ def main() -> None:
             for index, row in enumerate(full):
                 full[index] = refresh_full_protocol(row)
                 checkpoint()
+        checkpoint()
+        return
+
+    if args.refresh_gmres:
+        if not args.resume or not rows:
+            raise ValueError("--refresh-gmres requires --resume and a completed checkpoint")
+        for index, row in enumerate(rows):
+            rows[index] = refresh_gmres_counts(row)
         checkpoint()
         return
 

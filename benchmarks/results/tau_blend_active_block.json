@@ -214,6 +214,16 @@
           1.3399644928687582
         ]
       },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0004154868098434,
+        "maximum_abs_imag": 0.0,
+        "maximum_real": 1.0004154868098434,
+        "minimum_abs": 0.17061336686595027,
+        "minimum_real": 0.17061336686595027,
+        "sigma_max": 1.5924050462858261,
+        "sigma_min": 0.13065440295793593
+      },
       "Y_certificate_ladder": [
         {
           "certified": true,
@@ -480,10 +490,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 17,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 2.439127013977029e-10,
+        "preconditioned_stop_count": 16,
+        "true_relative_residual": 9.845547229284323e-09,
+        "true_stop_count": 17
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 17,
         "operator": "J0",
         "preconditioned_relative_residual": 2.4391740364739203e-10,
         "preconditioned_stop_count": 16,
         "true_relative_residual": 9.844681565885792e-09,
+        "true_stop_count": 17
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 17,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 2.439127013977029e-10,
+        "preconditioned_stop_count": 16,
+        "true_relative_residual": 9.845547229284323e-09,
         "true_stop_count": 17
       },
       "inactive_count": 84,
@@ -733,6 +761,16 @@
           3.074842600506024,
           3.264230148191773
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 3.328137298675599,
+        "maximum_abs_imag": 0.15060025711502592,
+        "maximum_real": 3.328137298675599,
+        "minimum_abs": 0.6855806765700622,
+        "minimum_real": 0.6688351266516677,
+        "sigma_max": 3.3281797234395714,
+        "sigma_min": 0.4569388039061088
       },
       "Y_certificate_ladder": [
         {
@@ -1000,7 +1038,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 15,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 4.351660917842937e-10,
+        "preconditioned_stop_count": 13,
+        "true_relative_residual": 4.3674998488633314e-09,
+        "true_stop_count": 15
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 15,
         "operator": "J0",
+        "preconditioned_relative_residual": 4.351660917842937e-10,
+        "preconditioned_stop_count": 13,
+        "true_relative_residual": 4.3674998488633314e-09,
+        "true_stop_count": 15
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 15,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 4.351660917842937e-10,
         "preconditioned_stop_count": 13,
         "true_relative_residual": 4.3674998488633314e-09,
@@ -1255,6 +1311,16 @@
           1.501919681633453,
           1.555102307181855
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 1.2341634726776225,
+        "maximum_abs_imag": 0.3102462208637638,
+        "maximum_real": 1.2341634726776225,
+        "minimum_abs": 0.887490213773879,
+        "minimum_real": 0.8778031998356218,
+        "sigma_max": 1.6760157677753402,
+        "sigma_min": 0.7158888176515069
       },
       "Y_certificate_ladder": [
         {
@@ -1522,10 +1588,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 10,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 3.750977071497988e-10,
+        "preconditioned_stop_count": 9,
+        "true_relative_residual": 4.881124939913842e-09,
+        "true_stop_count": 10
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 10,
         "operator": "J0",
         "preconditioned_relative_residual": 3.748743771840275e-10,
         "preconditioned_stop_count": 9,
         "true_relative_residual": 4.879896676556335e-09,
+        "true_stop_count": 10
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 10,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 3.750977071497988e-10,
+        "preconditioned_stop_count": 9,
+        "true_relative_residual": 4.881124939913842e-09,
         "true_stop_count": 10
       },
       "inactive_count": 84,
@@ -1777,6 +1861,16 @@
           0.9541897899622915,
           1.009743201387116
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0000000000000857,
+        "maximum_abs_imag": 0.0,
+        "maximum_real": 1.0000000000000857,
+        "minimum_abs": 0.03350697608774401,
+        "minimum_real": 0.03350697608774401,
+        "sigma_max": 1.036098379632392,
+        "sigma_min": 0.03339074818843546
       },
       "Y_certificate_ladder": [
         {
@@ -2086,10 +2180,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 24,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 6.893308959794226e-11,
+        "preconditioned_stop_count": 22,
+        "true_relative_residual": 4.4395017821263884e-09,
+        "true_stop_count": 24
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 24,
         "operator": "J0",
         "preconditioned_relative_residual": 6.893310590934408e-11,
         "preconditioned_stop_count": 22,
         "true_relative_residual": 4.439501604659285e-09,
+        "true_stop_count": 24
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 24,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 6.893308959794226e-11,
+        "preconditioned_stop_count": 22,
+        "true_relative_residual": 4.4395017821263884e-09,
         "true_stop_count": 24
       },
       "inactive_count": 66,
@@ -2339,6 +2451,16 @@
           2.632010708066328,
           2.707872199449413
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 2.682916898734835,
+        "maximum_abs_imag": 0.3134781366552487,
+        "maximum_real": 2.682916898734835,
+        "minimum_abs": 0.7351408076813856,
+        "minimum_real": 0.7139020100390705,
+        "sigma_max": 3.267814303107601,
+        "sigma_min": 0.34810314066374237
       },
       "Y_certificate_ladder": [
         {
@@ -2606,10 +2728,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 17,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 7.493444913630719e-11,
+        "preconditioned_stop_count": 14,
+        "true_relative_residual": 2.396823012461162e-09,
+        "true_stop_count": 17
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 17,
         "operator": "J0",
         "preconditioned_relative_residual": 7.493446258620445e-11,
         "preconditioned_stop_count": 14,
         "true_relative_residual": 2.3968246152110473e-09,
+        "true_stop_count": 17
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 17,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 7.493444913630719e-11,
+        "preconditioned_stop_count": 14,
+        "true_relative_residual": 2.396823012461162e-09,
         "true_stop_count": 17
       },
       "inactive_count": 66,
@@ -2861,6 +3001,16 @@
           3.265033922037337,
           3.3056884585021997
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0000000000000018,
+        "maximum_abs_imag": 0.0,
+        "maximum_real": 1.0000000000000018,
+        "minimum_abs": 0.10138439458835008,
+        "minimum_real": 0.10138439458835008,
+        "sigma_max": 5.369800263354698,
+        "sigma_min": 0.03751334962875076
       },
       "Y_certificate_ladder": [
         {
@@ -3128,7 +3278,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 24,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 6.245861592415321e-12,
+        "preconditioned_stop_count": 20,
+        "true_relative_residual": 1.966933792650773e-09,
+        "true_stop_count": 24
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 24,
         "operator": "J0",
+        "preconditioned_relative_residual": 6.245861592415321e-12,
+        "preconditioned_stop_count": 20,
+        "true_relative_residual": 1.966933792650773e-09,
+        "true_stop_count": 24
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 24,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 6.245861592415321e-12,
         "preconditioned_stop_count": 20,
         "true_relative_residual": 1.966933792650773e-09,
@@ -3381,6 +3549,16 @@
           3.565355403809967,
           3.6375810787485046
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 1.4372035450165033,
+        "maximum_abs_imag": 0.6839957820918067,
+        "maximum_real": 1.3219496724886157,
+        "minimum_abs": 0.9402593416108538,
+        "minimum_real": 0.9202201289928748,
+        "sigma_max": 4.955150532012936,
+        "sigma_min": 0.3666727025057897
       },
       "Y_certificate_ladder": [
         {
@@ -3648,7 +3826,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 11,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 1.184255436601531e-10,
+        "preconditioned_stop_count": 10,
+        "true_relative_residual": 3.651368329945098e-09,
+        "true_stop_count": 11
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 11,
         "operator": "J0",
+        "preconditioned_relative_residual": 1.184255436601531e-10,
+        "preconditioned_stop_count": 10,
+        "true_relative_residual": 3.651368329945098e-09,
+        "true_stop_count": 11
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 11,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 1.184255436601531e-10,
         "preconditioned_stop_count": 10,
         "true_relative_residual": 3.651368329945098e-09,
@@ -3903,6 +4099,16 @@
           2.863883507944949,
           2.9019081428202225
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.006578652884321,
+        "maximum_abs_imag": 0.0,
+        "maximum_real": 1.006578652884321,
+        "minimum_abs": 0.03922723624447106,
+        "minimum_real": 0.03922723624447106,
+        "sigma_max": 4.684132605434843,
+        "sigma_min": 0.01670719693396246
       },
       "Y_certificate_ladder": [
         {
@@ -4170,10 +4376,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 40,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 1.4242974702058165e-11,
+        "preconditioned_stop_count": 33,
+        "true_relative_residual": 6.64592763524378e-09,
+        "true_stop_count": 40
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 40,
         "operator": "J0",
         "preconditioned_relative_residual": 1.2253736894877715e-11,
         "preconditioned_stop_count": 33,
         "true_relative_residual": 5.7567820883520156e-09,
+        "true_stop_count": 40
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 40,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 1.4242974702058165e-11,
+        "preconditioned_stop_count": 33,
+        "true_relative_residual": 6.64592763524378e-09,
         "true_stop_count": 40
       },
       "inactive_count": 334,
@@ -4423,6 +4647,16 @@
           35.28355201013414,
           37.4568171518569
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 38.19062452868364,
+        "maximum_abs_imag": 0.17709344874015479,
+        "maximum_real": 38.19062452868364,
+        "minimum_abs": 0.7046761018655804,
+        "minimum_real": 0.6820603484690986,
+        "sigma_max": 38.19063910816764,
+        "sigma_min": 0.28807928307832587
       },
       "Y_certificate_ladder": [
         {
@@ -4732,7 +4966,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 57,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 9.801930664665309e-10,
+        "preconditioned_stop_count": 50,
+        "true_relative_residual": 9.506842008249164e-09,
+        "true_stop_count": 57
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 57,
         "operator": "J0",
+        "preconditioned_relative_residual": 9.801930664665309e-10,
+        "preconditioned_stop_count": 50,
+        "true_relative_residual": 9.506842008249164e-09,
+        "true_stop_count": 57
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 57,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 9.801930664665309e-10,
         "preconditioned_stop_count": 50,
         "true_relative_residual": 9.506842008249164e-09,
@@ -4987,6 +5239,16 @@
           3.1604254549177764,
           3.2273291144265115
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 2.0196608444165944,
+        "maximum_abs_imag": 0.7060379161683059,
+        "maximum_real": 2.0196608444165944,
+        "minimum_abs": 0.7987272833526383,
+        "minimum_real": 0.7856405515508793,
+        "sigma_max": 4.262373906817541,
+        "sigma_min": 0.3837670258019192
       },
       "Y_certificate_ladder": [
         {
@@ -5254,10 +5516,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 15,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 4.95363070493428e-10,
+        "preconditioned_stop_count": 14,
+        "true_relative_residual": 5.9916735308660735e-09,
+        "true_stop_count": 15
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 15,
         "operator": "J0",
         "preconditioned_relative_residual": 4.946639844760192e-10,
         "preconditioned_stop_count": 14,
         "true_relative_residual": 5.986771298564199e-09,
+        "true_stop_count": 15
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 15,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 4.95363070493428e-10,
+        "preconditioned_stop_count": 14,
+        "true_relative_residual": 5.9916735308660735e-09,
         "true_stop_count": 15
       },
       "inactive_count": 334,
@@ -5509,6 +5789,16 @@
           6.88410224301354,
           6.920799214877127
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0000000000013203,
+        "maximum_abs_imag": 2.2328600213250833e-15,
+        "maximum_real": 1.0000000000013203,
+        "minimum_abs": 0.030619475803613988,
+        "minimum_real": 0.030619475803613988,
+        "sigma_max": 12.64744360113012,
+        "sigma_min": 0.007921891903990341
       },
       "Y_certificate_ladder": [
         {
@@ -5797,10 +6087,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 47,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 3.2911306968662133e-12,
+        "preconditioned_stop_count": 37,
+        "true_relative_residual": 5.892543637988139e-09,
+        "true_stop_count": 47
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 47,
         "operator": "J0",
         "preconditioned_relative_residual": 3.291127897886414e-12,
         "preconditioned_stop_count": 37,
         "true_relative_residual": 5.892527821861582e-09,
+        "true_stop_count": 47
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 47,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 3.2911306968662133e-12,
+        "preconditioned_stop_count": 37,
+        "true_relative_residual": 5.892543637988139e-09,
         "true_stop_count": 47
       },
       "inactive_count": 270,
@@ -6050,6 +6358,16 @@
           7.242699319337945,
           7.3324319625743035
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 2.321277139089522,
+        "maximum_abs_imag": 1.1295800557675226,
+        "maximum_real": 2.321277139089522,
+        "minimum_abs": 0.8482124629139125,
+        "minimum_real": 0.8283365492455714,
+        "sigma_max": 11.608064491799862,
+        "sigma_min": 0.21191450146984134
       },
       "Y_certificate_ladder": [
         {
@@ -6317,10 +6635,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 17,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 5.734156420886186e-11,
+        "preconditioned_stop_count": 15,
+        "true_relative_residual": 1.4354505292569717e-09,
+        "true_stop_count": 17
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 17,
         "operator": "J0",
         "preconditioned_relative_residual": 5.73415751820297e-11,
         "preconditioned_stop_count": 15,
         "true_relative_residual": 1.4354574319747877e-09,
+        "true_stop_count": 17
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 17,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 5.734156420886186e-11,
+        "preconditioned_stop_count": 15,
+        "true_relative_residual": 1.4354505292569717e-09,
         "true_stop_count": 17
       },
       "inactive_count": 270,
@@ -6572,6 +6908,16 @@
           5.684055293266199,
           5.718557592873312
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0000000000001157,
+        "maximum_abs_imag": 2.0259669043392775e-15,
+        "maximum_real": 1.0000000000001157,
+        "minimum_abs": 0.018673656704643483,
+        "minimum_real": 0.018673656704643483,
+        "sigma_max": 10.335376189530942,
+        "sigma_min": 0.005019764599120935
       },
       "Y_certificate_ladder": [
         {
@@ -6881,7 +7227,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 55,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 2.925695864173522e-12,
+        "preconditioned_stop_count": 44,
+        "true_relative_residual": 6.593032068077895e-09,
+        "true_stop_count": 55
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 55,
         "operator": "J0",
+        "preconditioned_relative_residual": 2.925695864173522e-12,
+        "preconditioned_stop_count": 44,
+        "true_relative_residual": 6.593032068077895e-09,
+        "true_stop_count": 55
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 55,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 2.925695864173522e-12,
         "preconditioned_stop_count": 44,
         "true_relative_residual": 6.593032068077895e-09,
@@ -7134,6 +7498,16 @@
           6.059100019274353,
           6.130397448559191
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 3.497623773229327,
+        "maximum_abs_imag": 1.628429150495727,
+        "maximum_real": 3.4975362588022456,
+        "minimum_abs": 0.8325540849802401,
+        "minimum_real": 0.8073474524753661,
+        "sigma_max": 9.396683815766272,
+        "sigma_min": 0.1826619507088838
       },
       "Y_certificate_ladder": [
         {
@@ -7401,7 +7775,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 20,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 8.040306663953253e-11,
+        "preconditioned_stop_count": 17,
+        "true_relative_residual": 2.120574754561678e-09,
+        "true_stop_count": 20
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 20,
         "operator": "J0",
+        "preconditioned_relative_residual": 8.040306663953253e-11,
+        "preconditioned_stop_count": 17,
+        "true_relative_residual": 2.120574754561678e-09,
+        "true_stop_count": 20
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 20,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 8.040306663953253e-11,
         "preconditioned_stop_count": 17,
         "true_relative_residual": 2.120574754561678e-09,
@@ -7656,6 +8048,16 @@
           5.90454559006526,
           5.940614331202458
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0262650492975132,
+        "maximum_abs_imag": 0.0,
+        "maximum_real": 1.0262650492975132,
+        "minimum_abs": 0.021249243622238956,
+        "minimum_real": 0.021249243622238956,
+        "sigma_max": 10.724622530495138,
+        "sigma_min": 0.006208002931856668
       },
       "Y_certificate_ladder": [
         {
@@ -7943,12 +8345,30 @@
       "eta": 0.3,
       "gmres": {
         "converged": true,
+        "iterations_run": 58,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 3.5481847817025636e-12,
+        "preconditioned_stop_count": 45,
+        "true_relative_residual": 6.303081059802226e-09,
+        "true_stop_count": 58
+      },
+      "gmres_J0": {
+        "converged": true,
         "iterations_run": 57,
         "operator": "J0",
         "preconditioned_relative_residual": 3.914725581430168e-12,
         "preconditioned_stop_count": 44,
         "true_relative_residual": 6.983109103264498e-09,
         "true_stop_count": 57
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 58,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 3.5481847817025636e-12,
+        "preconditioned_stop_count": 45,
+        "true_relative_residual": 6.303081059802226e-09,
+        "true_stop_count": 58
       },
       "inactive_count": 668,
       "m": 2,
@@ -8197,6 +8617,16 @@
           135.70696531623693,
           144.0657450213001
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 146.88815227048653,
+        "maximum_abs_imag": 0.17565805720169853,
+        "maximum_real": 146.88815227048653,
+        "minimum_abs": 0.7091356580390762,
+        "minimum_real": 0.6870353909680624,
+        "sigma_max": 146.88815956111208,
+        "sigma_min": 0.20625576793588954
       },
       "Y_certificate_ladder": [
         {
@@ -8457,7 +8887,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 118,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 9.135637466123467e-10,
+        "preconditioned_stop_count": 104,
+        "true_relative_residual": 9.740940715825008e-09,
+        "true_stop_count": 118
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 118,
         "operator": "J0",
+        "preconditioned_relative_residual": 9.135637466123467e-10,
+        "preconditioned_stop_count": 104,
+        "true_relative_residual": 9.740940715825008e-09,
+        "true_stop_count": 118
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 118,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 9.135637466123467e-10,
         "preconditioned_stop_count": 104,
         "true_relative_residual": 9.740940715825008e-09,
@@ -8712,6 +9160,16 @@
           6.248018298481817,
           6.334253281226443
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 2.7990243874933585,
+        "maximum_abs_imag": 0.9622693989849204,
+        "maximum_real": 2.7990090869153312,
+        "minimum_abs": 0.7646916420552625,
+        "minimum_real": 0.7503680036654863,
+        "sigma_max": 9.775168061467866,
+        "sigma_min": 0.23685408311609848
       },
       "Y_certificate_ladder": [
         {
@@ -8979,10 +9437,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 19,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 2.106270527547275e-10,
+        "preconditioned_stop_count": 17,
+        "true_relative_residual": 6.392462489782217e-09,
+        "true_stop_count": 19
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 19,
         "operator": "J0",
         "preconditioned_relative_residual": 2.101751483940284e-10,
         "preconditioned_stop_count": 17,
         "true_relative_residual": 6.3510387316548935e-09,
+        "true_stop_count": 19
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 19,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 2.106270527547275e-10,
+        "preconditioned_stop_count": 17,
+        "true_relative_residual": 6.392462489782217e-09,
         "true_stop_count": 19
       },
       "inactive_count": 668,
@@ -9234,6 +9710,16 @@
           1.0417614484494524,
           1.0931487337552606
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0000000000052574,
+        "maximum_abs_imag": 3.7238012298709097e-16,
+        "maximum_real": 1.0000000000052574,
+        "minimum_abs": 0.0035745661663515328,
+        "minimum_real": 0.0035745661663515328,
+        "sigma_max": 1.218860881557412,
+        "sigma_min": 0.0030177331966428217
       },
       "Y_certificate_ladder": [
         {
@@ -9543,10 +10029,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 78,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 4.0500953690363986e-12,
+        "preconditioned_stop_count": 65,
+        "true_relative_residual": 8.485692664912378e-09,
+        "true_stop_count": 78
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 78,
         "operator": "J0",
         "preconditioned_relative_residual": 4.0500960493066575e-12,
         "preconditioned_stop_count": 65,
         "true_relative_residual": 8.485861428124028e-09,
+        "true_stop_count": 78
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 78,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 4.0500953690363986e-12,
+        "preconditioned_stop_count": 65,
+        "true_relative_residual": 8.485692664912378e-09,
         "true_stop_count": 78
       },
       "inactive_count": 538,
@@ -9796,6 +10300,16 @@
           32.108191583096875,
           34.08587400563555
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 34.753652770999224,
+        "maximum_abs_imag": 1.0213460935152159,
+        "maximum_real": 34.753652770999224,
+        "minimum_abs": 0.642680000863213,
+        "minimum_real": 0.6172095372360085,
+        "sigma_max": 34.75365564436241,
+        "sigma_min": 0.14690147141395768
       },
       "Y_certificate_ladder": [
         {
@@ -10105,10 +10619,28 @@
       "gmres": {
         "converged": true,
         "iterations_run": 67,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 1.5336809143630174e-10,
+        "preconditioned_stop_count": 55,
+        "true_relative_residual": 8.092318687781108e-09,
+        "true_stop_count": 67
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 67,
         "operator": "J0",
         "preconditioned_relative_residual": 1.5336790243743829e-10,
         "preconditioned_stop_count": 55,
         "true_relative_residual": 8.092100826344094e-09,
+        "true_stop_count": 67
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 67,
+        "operator": "regularized_J",
+        "preconditioned_relative_residual": 1.5336809143630174e-10,
+        "preconditioned_stop_count": 55,
+        "true_relative_residual": 8.092318687781108e-09,
         "true_stop_count": 67
       },
       "inactive_count": 538,
@@ -10360,6 +10892,16 @@
           2.995465114481552,
           3.030003460087933
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": true,
+        "maximum_abs": 1.0000000000002143,
+        "maximum_abs_imag": 1.590254296635631e-14,
+        "maximum_real": 1.0000000000002143,
+        "minimum_abs": 0.006071279158424117,
+        "minimum_real": 0.006071279158424117,
+        "sigma_max": 5.054914577348658,
+        "sigma_min": 0.0019989159109438685
       },
       "Y_certificate_ladder": [
         {
@@ -10669,7 +11211,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 84,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 3.444138092317879e-12,
+        "preconditioned_stop_count": 69,
+        "true_relative_residual": 7.79315840902734e-09,
+        "true_stop_count": 84
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 84,
         "operator": "J0",
+        "preconditioned_relative_residual": 3.444138092317879e-12,
+        "preconditioned_stop_count": 69,
+        "true_relative_residual": 7.79315840902734e-09,
+        "true_stop_count": 84
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 84,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 3.444138092317879e-12,
         "preconditioned_stop_count": 69,
         "true_relative_residual": 7.79315840902734e-09,
@@ -10922,6 +11482,16 @@
           12.394132306752168,
           13.142703414609658
         ]
+      },
+      "MJ_spectrum": {
+        "all_real_to_1e-10": false,
+        "maximum_abs": 13.311186986367995,
+        "maximum_abs_imag": 2.2861601651226673,
+        "maximum_real": 13.311186986367995,
+        "minimum_abs": 0.729079547107097,
+        "minimum_real": 0.699944209713014,
+        "sigma_max": 13.395959581034418,
+        "sigma_min": 0.11469641780545148
       },
       "Y_certificate_ladder": [
         {
@@ -11189,7 +11759,25 @@
       "gmres": {
         "converged": true,
         "iterations_run": 38,
+        "operator": "regularized_J (headline)",
+        "preconditioned_relative_residual": 2.5900382326559986e-10,
+        "preconditioned_stop_count": 33,
+        "true_relative_residual": 8.368772404821363e-09,
+        "true_stop_count": 38
+      },
+      "gmres_J0": {
+        "converged": true,
+        "iterations_run": 38,
         "operator": "J0",
+        "preconditioned_relative_residual": 2.5900382326559986e-10,
+        "preconditioned_stop_count": 33,
+        "true_relative_residual": 8.368772404821363e-09,
+        "true_stop_count": 38
+      },
+      "gmres_regularized": {
+        "converged": true,
+        "iterations_run": 38,
+        "operator": "regularized_J",
         "preconditioned_relative_residual": 2.5900382326559986e-10,
         "preconditioned_stop_count": 33,
         "true_relative_residual": 8.368772404821363e-09,
@@ -11234,11 +11822,29 @@
   ],
   "configuration": {
     "case_cap_seconds": 14400.0,
+    "certificate_changes": [
+      {
+        "change": "centred derivative enclosure and numerical-range domain fallback",
+        "commit": "61fa907"
+      },
+      {
+        "change": "Horner floating-point evaluation allowance",
+        "commit": "a7d6dae"
+      },
+      {
+        "change": "soundness and monotonicity validation for the tightened certificate",
+        "commit": "c9c4a8e"
+      }
+    ],
     "certificate_matrix_dtype": "complex128",
     "epsilon_samples": 6,
     "fov_directions": 32,
     "full_operator_selected_grid_N128": 565,
-    "gmres_operator": "J0",
+    "gmres_headline_operator": "regularized_J",
+    "gmres_operators": [
+      "J0",
+      "regularized_J"
+    ],
     "grid_ladder": [
       121,
       241,
@@ -11256,8 +11862,25 @@
       36,
       40
     ],
+    "rate_tie_threshold": 0.05,
+    "rewrite_base_revision": "ad478fc",
     "target_tolerance": 1e-08,
     "true_residual_protocol": "physical Newton RHS, unrestarted, tolerance 1e-8"
+  },
+  "decision_summary": {
+    "Y_certified_count": 15,
+    "case_count": 21,
+    "disk_adequate_count": 2,
+    "disk_nonpositive_categories": [
+      "provisional",
+      "investigate",
+      "indeterminate"
+    ],
+    "disk_positive_categories": [
+      "adequate"
+    ],
+    "union_certified_count": 15,
+    "union_positive_rule": "Y certificate is certified OR merged dense-disk policy verdict is adequate"
   },
   "direct_regularized_full_MJ_certificates": [
     {
@@ -11513,7 +12136,7 @@
   ],
   "provenance": {
     "backend": "gpu",
-    "git_commit": "8f66efddbab61da15eb13736ba2ef83a71fa4681",
+    "git_commit": "3ef3a63f047eae53320e9f1b240c86c367004185",
     "jax": "0.11.2",
     "jaxlib": "0.11.2",
     "numpy": "2.5.2",
@@ -11521,8 +12144,8 @@
     "python": "3.12.13 | packaged by Anaconda, Inc. | (main, Jul  9 2026, 14:38:16) [GCC 14.3.0]",
     "scipy": "1.18.0",
     "script": "benchmarks/tau_blend_active_block.py",
-    "script_sha256": "19ad2388df8c7c8f78df60e0a69e161a6af6c3ca1fb4be1d1565244e38befdc3",
-    "wall_seconds": 4941.630544455722
+    "script_sha256": "7b464975109b16076b8ca368c0648931d38d8186ee1ac2adfacc6ed7a08d8013",
+    "wall_seconds": 12.839249735698104
   },
   "schema": "tau_blend_active_block_v1"
 }
