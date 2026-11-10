@@ -6,9 +6,12 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
+from argparse import ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from time import perf_counter
 from typing import Any
 
 import jax
@@ -258,3 +261,125 @@ __all__ = [
     "source_state_artifact",
     "state_identity",
 ]
+
+
+def _comparison_fields(new: dict[str, Any], old: dict[str, Any], fields: tuple[str, ...]):
+    """Return explicit field-by-field parity for one regenerated row."""
+    return {
+        field: {
+            "regenerated": new.get(field),
+            "delivered": old.get(field),
+            "equal": new.get(field) == old.get(field),
+        }
+        for field in fields
+    }
+
+
+def _run_reproducibility(output: Path) -> None:
+    """Regenerate the requested mask and E3 subsets and record their parity."""
+    from benchmarks.tau_blend_benchmark_support import benchmark_provenance, write_json
+    from benchmarks.tau_blend_cfl_fidelity import (
+        CflFidelityConfig,
+        make_case,
+        run_e3,
+    )
+    from benchmarks.tau_blend_mask_analysis import (
+        MaskAnalysisConfig,
+        analyze_state,
+    )
+
+    started = perf_counter()
+    mask_delivered = json.loads(Path("benchmarks/results/tau_blend_mask_analysis.json").read_text())
+    mask_index = {(row["nx"], row["m"], row["case"]): row for row in mask_delivered["cases"]}
+    mask_rows = []
+    mask_config = MaskAnalysisConfig(nx=(512,), m=(4, 8))
+    for m in mask_config.m:
+        _, regenerated = analyze_state(512, m, mask_config)
+        for row in regenerated:
+            old = mask_index[(512, m, row["case"])]
+            fields = (
+                "gmres_preconditioned",
+                "gmres_true",
+                "eigenvalues_below_0p1",
+                "identity_input_count",
+            )
+            mask_rows.append(
+                {
+                    "nx": 512,
+                    "m": m,
+                    "case": row["case"],
+                    "fields": _comparison_fields(row, old, fields),
+                    "all_equal": all(row.get(field) == old.get(field) for field in fields),
+                }
+            )
+
+    fidelity_delivered = json.loads(
+        Path("benchmarks/results/tau_blend_cfl_fidelity.json").read_text()
+    )
+    fidelity_index = {
+        (row["nx"], row["m"], row["dt"], row["kind"], row["side"], row["forcing"]): row
+        for row in fidelity_delivered["e3"]
+    }
+    fidelity_rows = []
+    fidelity_config = CflFidelityConfig(
+        parts=("e3",),
+        nx=512,
+        m=(4, 8),
+        e3_dts=(0.02, 0.2),
+    )
+    for m in fidelity_config.m:
+        summaries, _ = run_e3(make_case(512, m, fidelity_config), fidelity_config)
+        for row in summaries:
+            key = (512, m, row["dt"], row["kind"], row["side"], row["forcing"])
+            old = fidelity_index[key]
+            fields = (
+                "steps_converged",
+                "line_search_failures",
+                "newton_total",
+                "linear_iterations_total",
+            )
+            fidelity_rows.append(
+                {
+                    "nx": 512,
+                    "m": m,
+                    "dt": row["dt"],
+                    "kind": row["kind"],
+                    "side": row["side"],
+                    "forcing": row["forcing"],
+                    "fields": _comparison_fields(row, old, fields),
+                    "all_equal": all(row.get(field) == old.get(field) for field in fields),
+                }
+            )
+    payload = {
+        "schema": "tau_blend_reproducibility_v1",
+        "delivery_provenance": {
+            "mask_analysis": mask_delivered.get("provenance"),
+            "cfl_fidelity": fidelity_delivered.get("provenance"),
+        },
+        "current_environment_note": (
+            "This run records the current host beside the delivery provenance; "
+            "timings are not compared."
+        ),
+        "mask_analysis_subset": mask_rows,
+        "drifted_E3_subset": fidelity_rows,
+        "all_discrete_counts_match": all(row["all_equal"] for row in mask_rows + fidelity_rows),
+        "provenance": benchmark_provenance(__file__, perf_counter() - started),
+    }
+    write_json(output, payload)
+
+
+def _main() -> None:
+    parser = ArgumentParser(description="Regenerate the tau-blend reproducibility subset")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("benchmarks/results/tau_blend_reproducibility.json"),
+    )
+    args = parser.parse_args()
+    _run_reproducibility(args.output)
+
+
+if __name__ == "__main__":
+    if str(Path(__file__).resolve().parents[1]) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    _main()

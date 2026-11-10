@@ -1,0 +1,4433 @@
+{
+  "all_discrete_counts_match": false,
+  "current_environment_note": "This run records the current host beside the delivery provenance; timings are not compared.",
+  "delivery_provenance": {
+    "cfl_fidelity": {
+      "base_revision": "v1.2.1",
+      "base_revision_source": "describe-tags",
+      "command_line": [
+        "/home/gogip/MOL-FFT-JAX/venv/bin/python",
+        "benchmarks/tau_blend_cfl_fidelity.py"
+      ],
+      "config": {
+        "e1_dts": [
+          2e-07,
+          2e-06,
+          2e-05,
+          0.0002,
+          0.002,
+          0.02,
+          0.2,
+          2.0
+        ],
+        "e1_etas": [
+          0.001,
+          0.01,
+          0.1,
+          0.3,
+          1.0,
+          3.0,
+          10.0,
+          30.0,
+          100.0
+        ],
+        "e1_gmres_max": 600,
+        "e3_armijo": 0.0001,
+        "e3_backtracks": 30,
+        "e3_dts": [
+          0.002,
+          0.02,
+          0.2
+        ],
+        "e3_eta": 0.1,
+        "e3_forcings": [
+          0.1,
+          0.01,
+          0.0001
+        ],
+        "e3_front_level": 0.001,
+        "e3_linear_max": 600,
+        "e3_max_newton": 60,
+        "e3_newton_tol": 1e-08,
+        "e3_reference_max_newton": 200,
+        "e3_reference_tol": 1e-10,
+        "e3_sides": [
+          "left",
+          "right"
+        ],
+        "e3_steps": 5,
+        "e4_tolerances": [
+          0.1,
+          0.01,
+          0.0001,
+          1e-08
+        ],
+        "epsilon": 1e-05,
+        "floor_dt": 0.02,
+        "floor_etas": [
+          0.1,
+          0.3,
+          1.0
+        ],
+        "floor_gmres_max": 300,
+        "floor_m": 2,
+        "floor_nx": 2048,
+        "gmres_tol": 1e-08,
+        "halfwidth": 3.0,
+        "m": [
+          2,
+          4,
+          8
+        ],
+        "nx": 512,
+        "output": "benchmarks/results/tau_blend_cfl_fidelity.json",
+        "parts": [
+          "e1",
+          "floor",
+          "e3"
+        ],
+        "t0": 0.1,
+        "x_max": 4.0,
+        "x_min": -4.0
+      },
+      "jax": "0.11.2",
+      "jax_backend": "cpu",
+      "jax_enable_x64": true,
+      "numpy": "2.5.3",
+      "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "repository_head": "d21489cece45f00a493adcd05727eec9edb548b5",
+      "working_tree_clean": false
+    },
+    "mask_analysis": {
+      "base_revision": "v1.2.1",
+      "base_revision_source": "describe-tags",
+      "command_line": [
+        "/home/gogip/MOL-FFT-JAX/venv/bin/python",
+        "benchmarks/tau_blend_mask_analysis.py"
+      ],
+      "config": {
+        "dt": 0.02,
+        "epsilon": 1e-05,
+        "eta": 0.1,
+        "frame_extra_eta": [
+          1.0
+        ],
+        "gmres_max": 1200,
+        "gmres_tol": 1e-08,
+        "halfwidth": 3.0,
+        "m": [
+          2,
+          4,
+          8
+        ],
+        "mask_rule": "chi_j = 4 dt D_j / h^2 <= eta",
+        "mask_rule_change": "The private study A9 masked node j when dt D_j lambda_max <= 0.1, with lambda_max = (4/h^2) cos^2(pi/(2(N+1))). This script masks node j when 4 dt D_j / h^2 <= eta. The two rules differ by the factor cos^2(pi/(2(N+1))) in the cutoff.",
+        "nx": [
+          512,
+          1024
+        ],
+        "output": "benchmarks/results/tau_blend_mask_analysis.json",
+        "probe_seed": 20261025,
+        "reference_counts": [
+          2,
+          5,
+          9
+        ],
+        "t0": 0.1,
+        "x_max": 4.0,
+        "x_min": -4.0
+      },
+      "jax": "0.11.2",
+      "jax_backend": "cpu",
+      "jax_enable_x64": true,
+      "numpy": "2.5.3",
+      "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "repository_head": "d21489cece45f00a493adcd05727eec9edb548b5",
+      "working_tree_clean": true
+    }
+  },
+  "drifted_E3_subset": [
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "newton_total": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": false,
+          "regenerated": 1
+        },
+        "linear_iterations_total": {
+          "delivered": 623,
+          "equal": false,
+          "regenerated": 486
+        },
+        "newton_total": {
+          "delivered": 69,
+          "equal": false,
+          "regenerated": 58
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": false,
+          "regenerated": 4
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 25,
+          "equal": true,
+          "regenerated": 25
+        },
+        "newton_total": {
+          "delivered": 7,
+          "equal": true,
+          "regenerated": 7
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 14,
+          "equal": true,
+          "regenerated": 14
+        },
+        "newton_total": {
+          "delivered": 9,
+          "equal": true,
+          "regenerated": 9
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 96,
+          "equal": true,
+          "regenerated": 96
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 685,
+          "equal": false,
+          "regenerated": 659
+        },
+        "newton_total": {
+          "delivered": 50,
+          "equal": false,
+          "regenerated": 49
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 2,
+          "equal": true,
+          "regenerated": 2
+        },
+        "linear_iterations_total": {
+          "delivered": 802,
+          "equal": true,
+          "regenerated": 802
+        },
+        "newton_total": {
+          "delivered": 43,
+          "equal": true,
+          "regenerated": 43
+        },
+        "steps_converged": {
+          "delivered": 3,
+          "equal": true,
+          "regenerated": 3
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 100,
+          "equal": false,
+          "regenerated": 105
+        },
+        "newton_total": {
+          "delivered": 23,
+          "equal": true,
+          "regenerated": 23
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 4840,
+          "equal": false,
+          "regenerated": 4844
+        },
+        "newton_total": {
+          "delivered": 41,
+          "equal": true,
+          "regenerated": 41
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 965,
+          "equal": false,
+          "regenerated": 963
+        },
+        "newton_total": {
+          "delivered": 44,
+          "equal": true,
+          "regenerated": 44
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1729,
+          "equal": true,
+          "regenerated": 1729
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 482,
+          "equal": false,
+          "regenerated": 474
+        },
+        "newton_total": {
+          "delivered": 46,
+          "equal": false,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 3744,
+          "equal": true,
+          "regenerated": 3744
+        },
+        "newton_total": {
+          "delivered": 60,
+          "equal": true,
+          "regenerated": 60
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 527,
+          "equal": false,
+          "regenerated": 528
+        },
+        "newton_total": {
+          "delivered": 60,
+          "equal": true,
+          "regenerated": 60
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1881,
+          "equal": true,
+          "regenerated": 1881
+        },
+        "newton_total": {
+          "delivered": 61,
+          "equal": true,
+          "regenerated": 61
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 455,
+          "equal": false,
+          "regenerated": 466
+        },
+        "newton_total": {
+          "delivered": 55,
+          "equal": true,
+          "regenerated": 55
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 5206,
+          "equal": false,
+          "regenerated": 5204
+        },
+        "newton_total": {
+          "delivered": 48,
+          "equal": true,
+          "regenerated": 48
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 667,
+          "equal": true,
+          "regenerated": 667
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1917,
+          "equal": true,
+          "regenerated": 1917
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 479,
+          "equal": false,
+          "regenerated": 480
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 7876,
+          "equal": false,
+          "regenerated": 7885
+        },
+        "newton_total": {
+          "delivered": 41,
+          "equal": true,
+          "regenerated": 41
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1023,
+          "equal": false,
+          "regenerated": 1022
+        },
+        "newton_total": {
+          "delivered": 41,
+          "equal": true,
+          "regenerated": 41
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 2152,
+          "equal": true,
+          "regenerated": 2152
+        },
+        "newton_total": {
+          "delivered": 41,
+          "equal": true,
+          "regenerated": 41
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 593,
+          "equal": false,
+          "regenerated": 590
+        },
+        "newton_total": {
+          "delivered": 41,
+          "equal": true,
+          "regenerated": 41
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "newton_total": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1848,
+          "equal": false,
+          "regenerated": 1832
+        },
+        "newton_total": {
+          "delivered": 126,
+          "equal": true,
+          "regenerated": 126
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 11,
+          "equal": true,
+          "regenerated": 11
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 34,
+          "equal": true,
+          "regenerated": 34
+        },
+        "newton_total": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 90,
+          "equal": true,
+          "regenerated": 90
+        },
+        "newton_total": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1936,
+          "equal": false,
+          "regenerated": 1929
+        },
+        "newton_total": {
+          "delivered": 102,
+          "equal": true,
+          "regenerated": 102
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 106,
+          "equal": true,
+          "regenerated": 106
+        },
+        "newton_total": {
+          "delivered": 11,
+          "equal": true,
+          "regenerated": 11
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 313,
+          "equal": false,
+          "regenerated": 294
+        },
+        "newton_total": {
+          "delivered": 19,
+          "equal": false,
+          "regenerated": 22
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 11629,
+          "equal": false,
+          "regenerated": 11708
+        },
+        "newton_total": {
+          "delivered": 86,
+          "equal": false,
+          "regenerated": 87
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 2769,
+          "equal": false,
+          "regenerated": 2760
+        },
+        "newton_total": {
+          "delivered": 97,
+          "equal": true,
+          "regenerated": 97
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 5065,
+          "equal": true,
+          "regenerated": 5065
+        },
+        "newton_total": {
+          "delivered": 101,
+          "equal": true,
+          "regenerated": 101
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1281,
+          "equal": false,
+          "regenerated": 1294
+        },
+        "newton_total": {
+          "delivered": 102,
+          "equal": true,
+          "regenerated": 102
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 12634,
+          "equal": false,
+          "regenerated": 12818
+        },
+        "newton_total": {
+          "delivered": 106,
+          "equal": false,
+          "regenerated": 107
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1614,
+          "equal": false,
+          "regenerated": 1618
+        },
+        "newton_total": {
+          "delivered": 114,
+          "equal": true,
+          "regenerated": 114
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 6481,
+          "equal": true,
+          "regenerated": 6481
+        },
+        "newton_total": {
+          "delivered": 115,
+          "equal": true,
+          "regenerated": 115
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1144,
+          "equal": false,
+          "regenerated": 1149
+        },
+        "newton_total": {
+          "delivered": 110,
+          "equal": true,
+          "regenerated": 110
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 21687,
+          "equal": false,
+          "regenerated": 21713
+        },
+        "newton_total": {
+          "delivered": 99,
+          "equal": true,
+          "regenerated": 99
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 2043,
+          "equal": false,
+          "regenerated": 2045
+        },
+        "newton_total": {
+          "delivered": 100,
+          "equal": true,
+          "regenerated": 100
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 7460,
+          "equal": true,
+          "regenerated": 7460
+        },
+        "newton_total": {
+          "delivered": 99,
+          "equal": true,
+          "regenerated": 99
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1305,
+          "equal": false,
+          "regenerated": 1282
+        },
+        "newton_total": {
+          "delivered": 99,
+          "equal": false,
+          "regenerated": 98
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 30395,
+          "equal": false,
+          "regenerated": 30403
+        },
+        "newton_total": {
+          "delivered": 97,
+          "equal": true,
+          "regenerated": 97
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 3142,
+          "equal": false,
+          "regenerated": 3141
+        },
+        "newton_total": {
+          "delivered": 97,
+          "equal": true,
+          "regenerated": 97
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 9213,
+          "equal": true,
+          "regenerated": 9213
+        },
+        "newton_total": {
+          "delivered": 97,
+          "equal": true,
+          "regenerated": 97
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1655,
+          "equal": false,
+          "regenerated": 1654
+        },
+        "newton_total": {
+          "delivered": 97,
+          "equal": true,
+          "regenerated": 97
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 4,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 20,
+          "equal": true,
+          "regenerated": 20
+        },
+        "newton_total": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 463,
+          "equal": false,
+          "regenerated": 461
+        },
+        "newton_total": {
+          "delivered": 61,
+          "equal": true,
+          "regenerated": 61
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 22,
+          "equal": true,
+          "regenerated": 22
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 113,
+          "equal": true,
+          "regenerated": 113
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 482,
+          "equal": true,
+          "regenerated": 482
+        },
+        "newton_total": {
+          "delivered": 47,
+          "equal": true,
+          "regenerated": 47
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 254,
+          "equal": false,
+          "regenerated": 278
+        },
+        "newton_total": {
+          "delivered": 43,
+          "equal": false,
+          "regenerated": 47
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 37,
+          "equal": true,
+          "regenerated": 37
+        },
+        "newton_total": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 6367,
+          "equal": false,
+          "regenerated": 6377
+        },
+        "newton_total": {
+          "delivered": 42,
+          "equal": true,
+          "regenerated": 42
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 705,
+          "equal": false,
+          "regenerated": 707
+        },
+        "newton_total": {
+          "delivered": 41,
+          "equal": true,
+          "regenerated": 41
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1582,
+          "equal": true,
+          "regenerated": 1582
+        },
+        "newton_total": {
+          "delivered": 44,
+          "equal": true,
+          "regenerated": 44
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 437,
+          "equal": true,
+          "regenerated": 437
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 5491,
+          "equal": true,
+          "regenerated": 5491
+        },
+        "newton_total": {
+          "delivered": 63,
+          "equal": true,
+          "regenerated": 63
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 436,
+          "equal": false,
+          "regenerated": 433
+        },
+        "newton_total": {
+          "delivered": 57,
+          "equal": true,
+          "regenerated": 57
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1818,
+          "equal": true,
+          "regenerated": 1818
+        },
+        "newton_total": {
+          "delivered": 61,
+          "equal": true,
+          "regenerated": 61
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 460,
+          "equal": true,
+          "regenerated": 460
+        },
+        "newton_total": {
+          "delivered": 56,
+          "equal": true,
+          "regenerated": 56
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 6433,
+          "equal": false,
+          "regenerated": 6428
+        },
+        "newton_total": {
+          "delivered": 46,
+          "equal": true,
+          "regenerated": 46
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 497,
+          "equal": false,
+          "regenerated": 496
+        },
+        "newton_total": {
+          "delivered": 44,
+          "equal": true,
+          "regenerated": 44
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1835,
+          "equal": true,
+          "regenerated": 1835
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 464,
+          "equal": true,
+          "regenerated": 464
+        },
+        "newton_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 9198,
+          "equal": false,
+          "regenerated": 9191
+        },
+        "newton_total": {
+          "delivered": 40,
+          "equal": true,
+          "regenerated": 40
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 774,
+          "equal": true,
+          "regenerated": 774
+        },
+        "newton_total": {
+          "delivered": 40,
+          "equal": true,
+          "regenerated": 40
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 2011,
+          "equal": true,
+          "regenerated": 2011
+        },
+        "newton_total": {
+          "delivered": 40,
+          "equal": true,
+          "regenerated": 40
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.02,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 553,
+          "equal": false,
+          "regenerated": 556
+        },
+        "newton_total": {
+          "delivered": 40,
+          "equal": true,
+          "regenerated": 40
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "newton_total": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 3,
+          "equal": true,
+          "regenerated": 3
+        },
+        "linear_iterations_total": {
+          "delivered": 1611,
+          "equal": false,
+          "regenerated": 1467
+        },
+        "newton_total": {
+          "delivered": 94,
+          "equal": true,
+          "regenerated": 94
+        },
+        "steps_converged": {
+          "delivered": 2,
+          "equal": true,
+          "regenerated": 2
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "newton_total": {
+          "delivered": 14,
+          "equal": true,
+          "regenerated": 14
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 113,
+          "equal": true,
+          "regenerated": 113
+        },
+        "newton_total": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 2305,
+          "equal": false,
+          "regenerated": 2308
+        },
+        "newton_total": {
+          "delivered": 102,
+          "equal": true,
+          "regenerated": 102
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 151,
+          "equal": true,
+          "regenerated": 151
+        },
+        "newton_total": {
+          "delivered": 7,
+          "equal": true,
+          "regenerated": 7
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        },
+        "linear_iterations_total": {
+          "delivered": 45,
+          "equal": true,
+          "regenerated": 45
+        },
+        "newton_total": {
+          "delivered": 13,
+          "equal": true,
+          "regenerated": 13
+        },
+        "steps_converged": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 15640,
+          "equal": false,
+          "regenerated": 15643
+        },
+        "newton_total": {
+          "delivered": 88,
+          "equal": true,
+          "regenerated": 88
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 3442,
+          "equal": false,
+          "regenerated": 3441
+        },
+        "newton_total": {
+          "delivered": 95,
+          "equal": true,
+          "regenerated": 95
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 5431,
+          "equal": true,
+          "regenerated": 5431
+        },
+        "newton_total": {
+          "delivered": 93,
+          "equal": true,
+          "regenerated": 93
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 1,
+          "equal": true,
+          "regenerated": 1
+        },
+        "linear_iterations_total": {
+          "delivered": 1189,
+          "equal": false,
+          "regenerated": 1218
+        },
+        "newton_total": {
+          "delivered": 89,
+          "equal": false,
+          "regenerated": 91
+        },
+        "steps_converged": {
+          "delivered": 4,
+          "equal": true,
+          "regenerated": 4
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "left"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 17290,
+          "equal": false,
+          "regenerated": 17129
+        },
+        "newton_total": {
+          "delivered": 111,
+          "equal": false,
+          "regenerated": 110
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1995,
+          "equal": false,
+          "regenerated": 1938
+        },
+        "newton_total": {
+          "delivered": 112,
+          "equal": false,
+          "regenerated": 109
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 6312,
+          "equal": true,
+          "regenerated": 6312
+        },
+        "newton_total": {
+          "delivered": 106,
+          "equal": true,
+          "regenerated": 106
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1356,
+          "equal": false,
+          "regenerated": 1389
+        },
+        "newton_total": {
+          "delivered": 111,
+          "equal": false,
+          "regenerated": 113
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.1,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 23137,
+          "equal": false,
+          "regenerated": 23124
+        },
+        "newton_total": {
+          "delivered": 95,
+          "equal": true,
+          "regenerated": 95
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 2421,
+          "equal": true,
+          "regenerated": 2421
+        },
+        "newton_total": {
+          "delivered": 100,
+          "equal": true,
+          "regenerated": 100
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 6926,
+          "equal": true,
+          "regenerated": 6926
+        },
+        "newton_total": {
+          "delivered": 95,
+          "equal": true,
+          "regenerated": 95
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1411,
+          "equal": true,
+          "regenerated": 1411
+        },
+        "newton_total": {
+          "delivered": 94,
+          "equal": true,
+          "regenerated": 94
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.01,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 29301,
+          "equal": false,
+          "regenerated": 29275
+        },
+        "newton_total": {
+          "delivered": 93,
+          "equal": true,
+          "regenerated": 93
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "S",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 3849,
+          "equal": true,
+          "regenerated": 3849
+        },
+        "newton_total": {
+          "delivered": 93,
+          "equal": true,
+          "regenerated": 93
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "B3",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": true,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 7688,
+          "equal": true,
+          "regenerated": 7688
+        },
+        "newton_total": {
+          "delivered": 93,
+          "equal": true,
+          "regenerated": 93
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Z1",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    },
+    {
+      "all_equal": false,
+      "dt": 0.2,
+      "fields": {
+        "line_search_failures": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "linear_iterations_total": {
+          "delivered": 1738,
+          "equal": false,
+          "regenerated": 1727
+        },
+        "newton_total": {
+          "delivered": 93,
+          "equal": true,
+          "regenerated": 93
+        },
+        "steps_converged": {
+          "delivered": 5,
+          "equal": true,
+          "regenerated": 5
+        }
+      },
+      "forcing": 0.0001,
+      "kind": "Zf",
+      "m": 8,
+      "nx": 512,
+      "side": "right"
+    }
+  ],
+  "mask_analysis_subset": [
+    {
+      "all_equal": false,
+      "case": "scalar_max",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 272,
+          "equal": true,
+          "regenerated": 272
+        },
+        "gmres_preconditioned": {
+          "delivered": 247,
+          "equal": false,
+          "regenerated": 246
+        },
+        "gmres_true": {
+          "delivered": 297,
+          "equal": true,
+          "regenerated": 297
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "scalar_median",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 268,
+          "equal": true,
+          "regenerated": 268
+        },
+        "gmres_preconditioned": {
+          "delivered": 251,
+          "equal": true,
+          "regenerated": 251
+        },
+        "gmres_true": {
+          "delivered": 299,
+          "equal": true,
+          "regenerated": 299
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": false,
+      "case": "scalar_geomean",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 264,
+          "equal": true,
+          "regenerated": 264
+        },
+        "gmres_preconditioned": {
+          "delivered": 256,
+          "equal": true,
+          "regenerated": 256
+        },
+        "gmres_true": {
+          "delivered": 299,
+          "equal": false,
+          "regenerated": 300
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_one_inverse_max",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 10,
+          "equal": true,
+          "regenerated": 10
+        },
+        "gmres_preconditioned": {
+          "delivered": 37,
+          "equal": true,
+          "regenerated": 37
+        },
+        "gmres_true": {
+          "delivered": 47,
+          "equal": true,
+          "regenerated": 47
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_one_inverse_median",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "gmres_preconditioned": {
+          "delivered": 37,
+          "equal": true,
+          "regenerated": 37
+        },
+        "gmres_true": {
+          "delivered": 47,
+          "equal": true,
+          "regenerated": 47
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_one_inverse_geomean",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 4,
+          "equal": true,
+          "regenerated": 4
+        },
+        "gmres_preconditioned": {
+          "delivered": 37,
+          "equal": true,
+          "regenerated": 37
+        },
+        "gmres_true": {
+          "delivered": 46,
+          "equal": true,
+          "regenerated": 46
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "gmres_true": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3_hard",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 26,
+          "equal": true,
+          "regenerated": 26
+        },
+        "gmres_true": {
+          "delivered": 36,
+          "equal": true,
+          "regenerated": 36
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B2",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 28,
+          "equal": true,
+          "regenerated": 28
+        },
+        "gmres_true": {
+          "delivered": 34,
+          "equal": true,
+          "regenerated": 34
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B5",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 23,
+          "equal": true,
+          "regenerated": 23
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B9",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "gmres_true": {
+          "delivered": 20,
+          "equal": true,
+          "regenerated": 20
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3_logspaced",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 13,
+          "equal": true,
+          "regenerated": 13
+        },
+        "gmres_true": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "gmres_true": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B3_hard",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 26,
+          "equal": true,
+          "regenerated": 26
+        },
+        "gmres_true": {
+          "delivered": 36,
+          "equal": true,
+          "regenerated": 36
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B2",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 28,
+          "equal": true,
+          "regenerated": 28
+        },
+        "gmres_true": {
+          "delivered": 34,
+          "equal": true,
+          "regenerated": 34
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B5",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 23,
+          "equal": true,
+          "regenerated": 23
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B9",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "gmres_true": {
+          "delivered": 20,
+          "equal": true,
+          "regenerated": 20
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B3_logspaced",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 13,
+          "equal": true,
+          "regenerated": 13
+        },
+        "gmres_true": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": false,
+      "case": "repo_blend_B3_no_mask",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 196,
+          "equal": true,
+          "regenerated": 196
+        },
+        "gmres_preconditioned": {
+          "delivered": 89,
+          "equal": false,
+          "regenerated": 88
+        },
+        "gmres_true": {
+          "delivered": 101,
+          "equal": true,
+          "regenerated": 101
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_repo_refs_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 15,
+          "equal": true,
+          "regenerated": 15
+        },
+        "gmres_true": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": false,
+      "case": "cfl_refs_no_mask_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 196,
+          "equal": true,
+          "regenerated": 196
+        },
+        "gmres_preconditioned": {
+          "delivered": 89,
+          "equal": false,
+          "regenerated": 88
+        },
+        "gmres_true": {
+          "delivered": 101,
+          "equal": true,
+          "regenerated": 101
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_frame",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 12,
+          "equal": true,
+          "regenerated": 12
+        },
+        "gmres_true": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_frame_eta1",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 12,
+          "equal": true,
+          "regenerated": 12
+        },
+        "gmres_true": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "identity_input_count": {
+          "delivered": 270,
+          "equal": true,
+          "regenerated": 270
+        }
+      },
+      "m": 4,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "scalar_max",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 224,
+          "equal": true,
+          "regenerated": 224
+        },
+        "gmres_preconditioned": {
+          "delivered": 279,
+          "equal": true,
+          "regenerated": 279
+        },
+        "gmres_true": {
+          "delivered": 331,
+          "equal": true,
+          "regenerated": 331
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "scalar_median",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 220,
+          "equal": true,
+          "regenerated": 220
+        },
+        "gmres_preconditioned": {
+          "delivered": 283,
+          "equal": true,
+          "regenerated": 283
+        },
+        "gmres_true": {
+          "delivered": 332,
+          "equal": true,
+          "regenerated": 332
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "scalar_geomean",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 216,
+          "equal": true,
+          "regenerated": 216
+        },
+        "gmres_preconditioned": {
+          "delivered": 284,
+          "equal": true,
+          "regenerated": 284
+        },
+        "gmres_true": {
+          "delivered": 333,
+          "equal": true,
+          "regenerated": 333
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_one_inverse_max",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 14,
+          "equal": true,
+          "regenerated": 14
+        },
+        "gmres_preconditioned": {
+          "delivered": 44,
+          "equal": true,
+          "regenerated": 44
+        },
+        "gmres_true": {
+          "delivered": 55,
+          "equal": true,
+          "regenerated": 55
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_one_inverse_median",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 10,
+          "equal": true,
+          "regenerated": 10
+        },
+        "gmres_preconditioned": {
+          "delivered": 44,
+          "equal": true,
+          "regenerated": 44
+        },
+        "gmres_true": {
+          "delivered": 55,
+          "equal": true,
+          "regenerated": 55
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_one_inverse_geomean",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 6,
+          "equal": true,
+          "regenerated": 6
+        },
+        "gmres_preconditioned": {
+          "delivered": 44,
+          "equal": true,
+          "regenerated": 44
+        },
+        "gmres_true": {
+          "delivered": 54,
+          "equal": true,
+          "regenerated": 54
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 20,
+          "equal": true,
+          "regenerated": 20
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3_hard",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 28,
+          "equal": true,
+          "regenerated": 28
+        },
+        "gmres_true": {
+          "delivered": 40,
+          "equal": true,
+          "regenerated": 40
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B2",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 43,
+          "equal": true,
+          "regenerated": 43
+        },
+        "gmres_true": {
+          "delivered": 49,
+          "equal": true,
+          "regenerated": 49
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B5",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 19,
+          "equal": true,
+          "regenerated": 19
+        },
+        "gmres_true": {
+          "delivered": 28,
+          "equal": true,
+          "regenerated": 28
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B9",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 25,
+          "equal": true,
+          "regenerated": 25
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3_logspaced",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "gmres_true": {
+          "delivered": 19,
+          "equal": true,
+          "regenerated": 19
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 20,
+          "equal": true,
+          "regenerated": 20
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B3_hard",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 28,
+          "equal": true,
+          "regenerated": 28
+        },
+        "gmres_true": {
+          "delivered": 40,
+          "equal": true,
+          "regenerated": 40
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B2",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 43,
+          "equal": true,
+          "regenerated": 43
+        },
+        "gmres_true": {
+          "delivered": 49,
+          "equal": true,
+          "regenerated": 49
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B5",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 19,
+          "equal": true,
+          "regenerated": 19
+        },
+        "gmres_true": {
+          "delivered": 28,
+          "equal": true,
+          "regenerated": 28
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B9",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 25,
+          "equal": true,
+          "regenerated": 25
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_blend_B3_logspaced",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 16,
+          "equal": true,
+          "regenerated": 16
+        },
+        "gmres_true": {
+          "delivered": 19,
+          "equal": true,
+          "regenerated": 19
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "repo_blend_B3_no_mask",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 148,
+          "equal": true,
+          "regenerated": 148
+        },
+        "gmres_preconditioned": {
+          "delivered": 99,
+          "equal": true,
+          "regenerated": 99
+        },
+        "gmres_true": {
+          "delivered": 112,
+          "equal": true,
+          "regenerated": 112
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_repo_refs_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 17,
+          "equal": true,
+          "regenerated": 17
+        },
+        "gmres_true": {
+          "delivered": 20,
+          "equal": true,
+          "regenerated": 20
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_refs_no_mask_B3",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 148,
+          "equal": true,
+          "regenerated": 148
+        },
+        "gmres_preconditioned": {
+          "delivered": 99,
+          "equal": true,
+          "regenerated": 99
+        },
+        "gmres_true": {
+          "delivered": 112,
+          "equal": true,
+          "regenerated": 112
+        },
+        "identity_input_count": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_frame",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 14,
+          "equal": true,
+          "regenerated": 14
+        },
+        "gmres_true": {
+          "delivered": 18,
+          "equal": true,
+          "regenerated": 18
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    },
+    {
+      "all_equal": true,
+      "case": "cfl_mask_frame_eta1",
+      "fields": {
+        "eigenvalues_below_0p1": {
+          "delivered": 0,
+          "equal": true,
+          "regenerated": 0
+        },
+        "gmres_preconditioned": {
+          "delivered": 14,
+          "equal": true,
+          "regenerated": 14
+        },
+        "gmres_true": {
+          "delivered": 18,
+          "equal": true,
+          "regenerated": 18
+        },
+        "identity_input_count": {
+          "delivered": 214,
+          "equal": true,
+          "regenerated": 214
+        }
+      },
+      "m": 8,
+      "nx": 512
+    }
+  ],
+  "provenance": {
+    "backend": "cpu",
+    "git_commit": "de02d1ecf1707005cd9982947a6ea41aff5f6b5d",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "numpy": "2.5.2",
+    "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35",
+    "python": "3.12.13 | packaged by Anaconda, Inc. | (main, Jul  9 2026, 14:38:16) [GCC 14.3.0]",
+    "scipy": "1.18.0",
+    "script": "benchmarks/tau_blend_reproducibility.py",
+    "script_sha256": "997380c635ed8f744c4a9292f9a82684ebe0db3b779ad58b26b57d854465ec0b",
+    "wall_seconds": 97.1249390207231
+  },
+  "schema": "tau_blend_reproducibility_v1"
+}
