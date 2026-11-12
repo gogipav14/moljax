@@ -213,7 +213,7 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
                 lemma6_rows,
             ),
             "",
-            f"Minimum margin: {facts.derived(min_margin, 'lemma', '/lemma6', 'minimum margin')}. ",
+            f"Minimum margin: {facts.derived(min_margin, 'lemma', '/lemma6', 'minimum margin')}.",
             f"Bound/measured range: {facts.derived(min(ratios), 'lemma', '/lemma6', 'minimum ratio')} "
             f"to {facts.derived(max(ratios), 'lemma', '/lemma6', 'maximum ratio')}.",
             "",
@@ -764,7 +764,10 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
         ]
     )
     facts.validate()
-    return "\n".join(lines), tuple(sorted(facts.references))
+    # Renderers must not create whitespace-only diffs in generated evidence.
+    # Normalize every line at the final boundary so future prose additions
+    # cannot accidentally reintroduce trailing spaces.
+    return "\n".join(line.rstrip() for line in lines), tuple(sorted(facts.references))
 
 
 def main() -> None:

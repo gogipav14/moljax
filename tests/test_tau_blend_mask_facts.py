@@ -14,6 +14,7 @@ def test_tau_blend_mask_facts_are_deterministic_and_current() -> None:
     assert first == second
     assert first_references == second_references
     assert first_references
+    assert all(line == line.rstrip() for line in first.splitlines())
     assert OUTPUT.read_text(encoding="utf-8") == first
 
 

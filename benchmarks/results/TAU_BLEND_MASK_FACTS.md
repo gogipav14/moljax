@@ -39,7 +39,7 @@ Rewrite base: ad478fc ⟦`tau_blend_active_block.json#/configuration/rewrite_bas
 | 1024 ⟦`tau_blend_lemma_checks.json#/lemma6/16/nx`⟧ | 8 ⟦`tau_blend_lemma_checks.json#/lemma6/16/m`⟧ | scalar_median ⟦`tau_blend_lemma_checks.json#/lemma6/16/case`⟧ | 415 ⟦`tau_blend_lemma_checks.json#/lemma6/16/lower_bound`⟧ | 446 ⟦`tau_blend_lemma_checks.json#/lemma6/16/measured_below_0p1`⟧ | 31 ⟦`tau_blend_lemma_checks.json#/lemma6/16/margin`⟧ | 0.93049327 ⟦`tau_blend_lemma_checks.json#/lemma6/16`; derived: lower_bound / measured⟧ | true ⟦`tau_blend_lemma_checks.json#/lemma6/16/passes`⟧ |
 | 1024 ⟦`tau_blend_lemma_checks.json#/lemma6/17/nx`⟧ | 8 ⟦`tau_blend_lemma_checks.json#/lemma6/17/m`⟧ | scalar_geomean ⟦`tau_blend_lemma_checks.json#/lemma6/17/case`⟧ | 412 ⟦`tau_blend_lemma_checks.json#/lemma6/17/lower_bound`⟧ | 438 ⟦`tau_blend_lemma_checks.json#/lemma6/17/measured_below_0p1`⟧ | 26 ⟦`tau_blend_lemma_checks.json#/lemma6/17/margin`⟧ | 0.94063927 ⟦`tau_blend_lemma_checks.json#/lemma6/17`; derived: lower_bound / measured⟧ | true ⟦`tau_blend_lemma_checks.json#/lemma6/17/passes`⟧ |
 
-Minimum margin: 16 ⟦`tau_blend_lemma_checks.json#/lemma6`; derived: minimum margin⟧. 
+Minimum margin: 16 ⟦`tau_blend_lemma_checks.json#/lemma6`; derived: minimum margin⟧.
 Bound/measured range: 0.90625 ⟦`tau_blend_lemma_checks.json#/lemma6`; derived: minimum ratio⟧ to 0.96615385 ⟦`tau_blend_lemma_checks.json#/lemma6`; derived: maximum ratio⟧.
 
 ## F3 — m=2 masks and regularized work
