@@ -1,298 +1,557 @@
-# PME DST/tau-blend experimental report
+# PME DST/tau-blend: mask analysis and certified preconditioner decisions
 
-> **Stale.** This report was rendered from the results of the previous coefficient
-> formula. The JSONs in this directory were regenerated in 78925c5 with the
-> residual's coefficient `D = m (u^2 + eps^2)^((m-1)/2)`, on different hardware.
-> Of the numbers below, only the `m = 4, 8` dense spectral results (condition
-> numbers, near-zero eigenvalue counts, disk rates) are confirmed, except the
-> geometric-mean baseline. Every timing, the GPU batching audit and the
-> certificate's predicted counts changed and must be read from the JSONs. For
-> `m = 2` the spectral results changed too: the blend measures `kappa_2 = 132.6`
-> and 50 GMRES iterations, the dense certificate abstains, and on the initial
-> state at tolerance `1e-8` the GMRES oracle selects the floor `d0* = 2e-5`.
-> `make_tau_blend_readme.py` therefore refuses to render; the `m = 2` claims need
-> to be restated before this file is regenerated.
+This report replaces the stale-flagged version of this file, whose numbers
+predated the corrected diffusion coefficient. The earlier text remains in git
+history. Part I covers the mask analysis and the certified decision procedure.
+Part II, the single-reference baseline study, is being restated against the
+JSONs regenerated with the corrected coefficient.
 
-## Scope and claim discipline
+The lemmas cited below are stated and proved in `TAU_BLEND_MASK_LEMMAS.md`
+(G. Pavlov). `TAU_BLEND_MASK_CLAIMS.md` (G. Pavlov) maps the numbers of the
+earlier mask study to their scripts. `TAU_BLEND_MASK_FACTS.md` prints every
+number in Part I with its source file and JSON pointer, and is regenerated from
+the committed JSONs by `benchmarks/make_tau_blend_mask_facts.py`.
 
-This is a measurement report for Newton--Krylov preconditioning of the
-node-centred one-dimensional porous-medium equation (PME), using backward Euler
-for the linear-solve study and Crank--Nicolson/backward-Euler-compatible residual
-and preconditioner machinery. It does **not** apply to IMEX--Strang or ETDRK4:
-those methods avoid Newton solves and are unaffected by this work (moljax paper,
-Sec. 6.1.3). The experiments use `N=512/1024`, PME exponents
-`m in {2,4,8}`, one wide-front backward-Euler linearization for the main
-work--precision comparison, and node-centred homogeneous Dirichlet boundaries.
+# Part I. Mask analysis and certified decisions
 
-There is no multigrid baseline. Accordingly this report makes **no performance
-claim** against the relevant solver state of the art. Wall times below are
-capability measurements on this machine, not a recommendation to replace a
-multigrid method or moljax's default preconditioner.
+## 1. Scope and limits
 
-## Motivation: where the classical constant reference stops being graceful
+- **Problem.** The one-dimensional, node-centred porous-medium equation with
+  homogeneous Dirichlet boundaries on `[-4, 4]` and the
+  regularized coefficient `D = m (u^2 + eps^2)^((m-1)/2)`,
+  `eps = 1e-5`. One backward-Euler linearization per state, with
+  `dt = 0.02`. The active-block study uses `N = 128, 512, 1024` and
+  `m = 2, 4, 8`.
+- **Time integration.** All trajectory evidence uses backward Euler. One bounded
+  Crank--Nicolson replay is reported in Section 8, and it is not a general claim
+  about Crank--Nicolson.
+- **Not covered.** IMEX--Strang and ETDRK4 avoid Newton solves and are not affected
+  by this work. There is no multigrid baseline, so this report makes no performance
+  claim against the solver state of the art. Part I reports iteration counts only,
+  no wall times.
+- **Counts.** All GMRES counts in Sections 3 to 7 are unrestarted GMRES stopped on
+  the true relative residual `||b - J x_k|| <= 1e-8 ||b||`, on the regularized
+  operator unless stated otherwise. Section 8 compares them with the
+  preconditioned-residual convention. Exact counts can differ by one or a few
+  iterations between hosts (Section 9).
 
-Constant-coefficient FFT/DST preconditioning for a variable-coefficient diffusion
-operator is classical. QSC/FFT solvers, the variable-coefficient disk solver, and
-fast sine-transform analyses obtain mesh-independent or spectrally equivalent
-preconditioners when the coefficient is positive and has bounded contrast. The
-moljax paper says variable coefficients should "degrade performance gracefully"
-(Sec. 6.4, limitation 2). Degenerate PME diffusion is outside that contract:
-`D(u)` vanishes on a set of positive measure, so the literal contrast is unbounded.
+Source: `tau_blend_mask_analysis.json`, `/provenance/config`; `tau_blend_active_block.json`,
+`/configuration` [F1, F6].
 
-The tested fixed operator is
+### Preconditioners compared
 
-`P_tau^-1 r = W0 r + sum_w H(d_w) (W_w r)`,
+All have the form `M = Q + sum_w H(d_w) W_w` of Pavlov's lemma setting, with
+`H(d) = (I + dt d T)^-1` the DST-I Helmholtz inverse, `Q` the projector onto the
+masked set `Z`, and diagonal input weights `W_w` that vanish on `Z`.
 
-where the active-support weights form a partition of unity and each `H(d_w)` is a
-constant-coefficient DST-I Helmholtz inverse. This is an incremental experimental
-remedy, not a claim to a new preconditioner class. Partition-of-unity
-preconditioning is established in RBF-PUM and SORAS, while MPGMRES already uses
-multiple preconditioners by enlarging the Krylov search space. Unlike MPGMRES, this
-blend is one fixed linear operator and retains ordinary GMRES; it does not incur
-the multipreconditioned Krylov-space orthogonalisation growth.
+| Name | Mask | Helmholtz references |
+|---|---|---|
+| `repository_blend_B3` | repository rule `D <= max(1e-14, 1e-6 max(D))` | 3 active-support quantiles with Gaussian log-coefficient weights |
+| `cfl_reference_blend_B3` | CFL mask `chi_j = 4 dt d_j / h^2 <= eta`, `eta = 0.3` at `m = 2` and `0.1` otherwise | 3 quantiles of the CFL-active coefficients with the same weights |
+| `one_inverse_cfl_mask` | the same CFL mask | one inverse at the active maximum |
 
-## Primary result: the spectral-equivalence boundary
+At `m = 4` and `m = 8` the repository blend and the CFL blend select the same
+nodes and references in the committed cross-checks, so the study has 21
+unique cases: the two CFL methods at all nine `(N, m)` pairs, and the repository
+blend at `m = 2`.
 
-The decisive observation is not that the arithmetic mean was chosen poorly. Every
-effective nonzero scalar Helmholtz reference tested here--arithmetic mean, bulk mean,
-constant one, geometric mean, harmonic mean, and the per-case GMRES oracle
-`d0*`--retains a large near-zero spectral tail. At `m=2/4/8`, their condition numbers
-span only `1.06e+03--1.07e+03/3.54e+03--3.59e+03/6.9e+03--7e+03`, with respective
-within-exponent spreads of 1.14%/1.50%/1.49%, and with 170--322 eigenvalues below
-magnitude 0.1. The oracle `d0*` is spectrally the worst of that group: it has the
-largest condition number and smallest `min|lambda|` at every measured exponent. The
-near-zero `floor` reference and identity do not manufacture the tail, but they also
-provide essentially no useful conditioning and have still larger condition numbers. Thus
-"effective scalar reference" means a non-degenerate scalar that actually preconditions:
-identity and the near-zero floor are controls that avoid the tail only by forgoing
-effective conditioning. The 3-reference blend removes the tail: zero eigenvalues below
-0.1, with `kappa_2=11.1/54.8/51.4` at `m=2/4/8`.
+Source: `tau_blend_mask_analysis.json`, `/states/*/repository_checks`;
+`tau_blend_active_block.json`, `/cases/*` [F3, F6].
 
-| m | method | kappa_2 | count abs(lambda)<0.1 | min abs(lambda) | spectral abscissa | numerical abscissa | gap | disk rate |
-|---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 2 | identity | 1.77e+03 | 0 | 1 | 1.06e+03 | 1.06e+03 | 9.33e-05 | 1.0003 |
-| 2 | mean | 1.06e+03 | 294 | 0.00406 | 4.29 | 4.29 | 1.52e-10 | 0.9981 |
-| 2 | bulk | 1.06e+03 | 320 | 0.00103 | 1.09 | 1.09 | 5.33e-10 | 0.9981 |
-| 2 | floor | 1.76e+03 | 0 | 1 | 1.05e+03 | 1.05e+03 | 9.18e-05 | 0.9981 |
-| 2 | const | 1.06e+03 | 300 | 0.00305 | 3.22 | 3.22 | 8.5e-11 | 0.9981 |
-| 2 | geometric | 1.06e+03 | 280 | 0.00707 | 7.47 | 7.47 | 5.2e-10 | 0.9981 |
-| 2 | harmonic | 1.06e+03 | 302 | 0.00292 | 3.09 | 3.09 | 7.81e-11 | 0.9981 |
-| 2 | oracle d0* | 1.07e+03 | 322 | 0.000946 | 1 | 1.01 | 0.0107 | 0.9981 |
-| 2 | blend | 11.1 | 0 | 0.799 | 2.02 | 3.25 | 1.23 | 1.4749 |
-| 4 | identity | 8.3e+03 | 0 | 1 | 3.52e+03 | 3.52e+03 | 0.000124 | 0.9994 |
-| 4 | mean | 3.54e+03 | 236 | 0.00444 | 15.7 | 15.7 | 2.05e-10 | 0.9994 |
-| 4 | bulk | 3.54e+03 | 272 | 0.000296 | 1.05 | 1.05 | 4.04e-09 | 0.9994 |
-| 4 | floor | 8.3e+03 | 0 | 1 | 3.52e+03 | 3.52e+03 | 0.000124 | 0.9994 |
-| 4 | const | 3.54e+03 | 242 | 0.00303 | 10.7 | 10.7 | 8.42e-11 | 0.9994 |
-| 4 | geometric | 3.54e+03 | 246 | 0.00235 | 8.3 | 8.3 | 4.7e-11 | 0.9994 |
-| 4 | harmonic | 3.54e+03 | 258 | 0.000891 | 3.15 | 3.15 | 6.29e-12 | 0.9994 |
-| 4 | oracle d0* | 3.59e+03 | 272 | 0.000283 | 1 | 1.01 | 0.014 | 0.9994 |
-| 4 | blend | 54.8 | 0 | 0.848 | 2.32 | 7.36 | 5.04 | 3.3735 |
-| 8 | identity | 1.86e+04 | 0 | 1 | 6.88e+03 | 6.88e+03 | 0.000131 | 0.9997 |
-| 8 | mean | 6.9e+03 | 170 | 0.0112 | 77.1 | 77.1 | 1.91e-09 | 0.9997 |
-| 8 | bulk | 6.9e+03 | 224 | 0.000149 | 1.03 | 1.03 | 7.35e-09 | 0.9997 |
-| 8 | floor | 1.86e+04 | 0 | 1 | 6.88e+03 | 6.88e+03 | 0.000131 | 0.9997 |
-| 8 | const | 6.9e+03 | 192 | 0.00303 | 20.9 | 20.9 | 8.23e-11 | 0.9997 |
-| 8 | geometric | 6.9e+03 | 198 | 0.00186 | 12.9 | 12.9 | 2.64e-11 | 0.9997 |
-| 8 | harmonic | 6.9e+03 | 208 | 0.000575 | 3.96 | 3.96 | 2.08e-12 | 0.9997 |
-| 8 | oracle d0* | 7e+03 | 224 | 0.000145 | 1 | 1.01 | 0.0135 | 0.9997 |
-| 8 | blend | 51.4 | 0 | 0.833 | 3.5 | 6.15 | 2.66 | 2.8932 |
+## 2. Why a scalar reference leaves a tail (Lemma 6)
 
-This is the boundary of the classical bounded-contrast argument in these data:
-effective single-reference preconditioning loses spectral equivalence when the
-coefficient has a positive-measure zero set; the partitioned blend restores a
-zero-free spectrum for the tested states.
+Lemma 6 bounds the number of small eigenvalues of `H(d) J` from below, for any
+scalar reference `d`, in terms of the modal CFL numbers of the region where the
+coefficient sits at its floor:
 
-## Linear-solve measurements
+`#{lambda(H(d) J) < a} >= #{beta_k < a} - s`, with
+`beta_k = (1 + dt f mu_k) / (1 + dt d mu_k)`.
 
-Each cell is `counted GMRES iterations; median +/- IQR seconds`. Timings exclude 2
-warmups, synchronize with `jax.block_until_ready`, and include fresh
-linearization/preconditioner construction plus the solve. `cap` means the target was not
-reached within the configured budget. Pavlov identified that the inherited counter
-reports 401 at a budget of 400 and explicitly deferred changing that convention because
-doing so would shift recorded counts; this study preserves that known item.
+At level `a = 0.1` the bound holds on all 18 scalar-reference records,
+with a minimum margin of 16 eigenvalues. The bound accounts for
+90.6% to 96.6% of the measured
+tail (bound/measured from 0.90625 to
+0.96615385). The tail is therefore structural: it is forced by
+the floor region and the CFL numbers, not by a poor choice of `d`.
 
-| N | m | tol | identity | mean | bulk | floor | const | geometric | harmonic | oracle d0* | blend |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 512 | 2 | 1e-2 | 29; 0.155 +/- 0.013 s | 13; 0.126 +/- 0.012 s | 7; 0.114 +/- 0.015 s | 29; 0.202 +/- 0.006 s | 11; 0.113 +/- 0.028 s | 16; 0.142 +/- 0.028 s | 11; 0.122 +/- 0.018 s | 7; 0.118 +/- 0.013 s | 4; 0.130 +/- 0.005 s |
-| 512 | 2 | 1e-5 | 111; 1.251 +/- 0.061 s | 111; 1.322 +/- 0.058 s | 101; 1.094 +/- 0.040 s | 96; 0.996 +/- 0.049 s | 109; 1.278 +/- 0.018 s | 114; 1.376 +/- 0.057 s | 109; 1.274 +/- 0.037 s | 99; 1.060 +/- 0.043 s | 10; 0.146 +/- 0.020 s |
-| 512 | 2 | 1e-8 | 121; 1.413 +/- 0.049 s | 182; 3.202 +/- 0.063 s | 166; 2.707 +/- 0.068 s | 111; 1.276 +/- 0.096 s | 178; 3.058 +/- 0.098 s | 190; 3.471 +/- 0.062 s | 178; 3.089 +/- 0.079 s | 166; 2.711 +/- 0.048 s | 14; 0.169 +/- 0.020 s |
-| 512 | 4 | 1e-2 | 82; 0.729 +/- 0.031 s | 48; 0.349 +/- 0.018 s | 16; 0.148 +/- 0.016 s | 82; 0.757 +/- 0.017 s | 41; 0.291 +/- 0.024 s | 37; 0.252 +/- 0.012 s | 25; 0.180 +/- 0.004 s | 16; 0.143 +/- 0.038 s | 4; 0.154 +/- 0.026 s |
-| 512 | 4 | 1e-5 | 150; 2.184 +/- 0.073 s | 184; 3.329 +/- 0.145 s | 143; 2.034 +/- 0.026 s | 150; 2.277 +/- 0.083 s | 176; 3.051 +/- 0.094 s | 169; 2.856 +/- 0.107 s | 153; 2.314 +/- 0.087 s | 142; 2.003 +/- 0.041 s | 11; 0.176 +/- 0.024 s |
-| 512 | 4 | 1e-8 | 156; 2.542 +/- 0.022 s | 284; 8.125 +/- 0.207 s | 245; 6.122 +/- 0.101 s | 156; 2.609 +/- 0.138 s | 278; 7.908 +/- 0.204 s | 273; 7.584 +/- 0.120 s | 261; 6.912 +/- 0.049 s | 245; 6.071 +/- 0.089 s | 15; 0.169 +/- 0.023 s |
-| 512 | 8 | 1e-2 | 102; 1.158 +/- 0.056 s | 84; 0.885 +/- 0.021 s | 18; 0.174 +/- 0.016 s | 102; 1.236 +/- 0.043 s | 63; 0.545 +/- 0.068 s | 52; 0.424 +/- 0.012 s | 32; 0.233 +/- 0.017 s | 17; 0.161 +/- 0.016 s | 5; 0.158 +/- 0.018 s |
-| 512 | 8 | 1e-5 | 190; 3.687 +/- 0.055 s | 253; 6.305 +/- 0.427 s | 170; 2.855 +/- 0.062 s | 190; 3.587 +/- 0.074 s | 228; 4.941 +/- 0.040 s | 216; 4.503 +/- 0.175 s | 194; 3.627 +/- 0.100 s | 170; 2.844 +/- 0.099 s | 13; 0.196 +/- 0.029 s |
-| 512 | 8 | 1e-8 | 197; 3.706 +/- 0.176 s | 334; 10.426 +/- 0.143 s | 278; 7.352 +/- 0.113 s | 197; 3.736 +/- 0.147 s | 317; 9.539 +/- 0.161 s | 310; 9.095 +/- 0.164 s | 292; 8.082 +/- 0.094 s | 277; 7.270 +/- 0.120 s | 17; 0.189 +/- 0.007 s |
-| 1024 | 2 | 1e-2 | 50; 0.329 +/- 0.006 s | 12; 0.130 +/- 0.026 s | 7; 0.120 +/- 0.014 s | 48; 0.363 +/- 0.053 s | 11; 0.121 +/- 0.016 s | 20; 0.149 +/- 0.005 s | 11; 0.124 +/- 0.030 s | 7; 0.114 +/- 0.010 s | 5; 0.137 +/- 0.007 s |
-| 1024 | 2 | 1e-5 | 213; 4.503 +/- 0.133 s | 188; 3.488 +/- 0.037 s | 165; 2.739 +/- 0.223 s | 176; 3.135 +/- 0.135 s | 183; 3.367 +/- 0.075 s | 201; 4.100 +/- 0.064 s | 185; 3.453 +/- 0.075 s | 164; 2.831 +/- 0.247 s | 12; 0.153 +/- 0.008 s |
-| 1024 | 2 | 1e-8 | 253; 6.164 +/- 0.226 s | 352; 11.989 +/- 0.119 s | 318; 9.835 +/- 0.154 s | 228; 5.132 +/- 0.223 s | 342; 11.229 +/- 0.302 s | 369; 13.146 +/- 0.147 s | 343; 11.374 +/- 0.313 s | 317; 9.759 +/- 0.111 s | 17; 0.181 +/- 0.033 s |
-| 1024 | 4 | 1e-2 | 196; 3.807 +/- 0.087 s | 47; 0.344 +/- 0.032 s | 15; 0.142 +/- 0.004 s | 196; 3.828 +/- 0.130 s | 41; 0.304 +/- 0.064 s | 74; 0.691 +/- 0.004 s | 55; 0.454 +/- 0.009 s | 15; 0.142 +/- 0.017 s | 11; 0.161 +/- 0.017 s |
-| 1024 | 4 | 1e-5 | 322; 10.132 +/- 0.086 s | 303; 8.967 +/- 0.006 s | 216; 4.714 +/- 0.100 s | 322; 9.985 +/- 0.259 s | 290; 8.164 +/- 0.152 s | 357; 12.163 +/- 0.206 s | 319; 9.896 +/- 0.023 s | 215; 4.572 +/- 0.044 s | 33; 0.256 +/- 0.009 s |
-| 1024 | 4 | 1e-8 | 330; 10.584 +/- 0.392 s | 401 cap; 15.336 +/- 0.236 s | 401 cap; 15.415 +/- 0.222 s | 330; 10.453 +/- 0.403 s | 401 cap; 15.244 +/- 0.260 s | 401 cap; 15.345 +/- 0.218 s | 401 cap; 15.411 +/- 0.186 s | 401 cap; 15.270 +/- 0.261 s | 55; 0.456 +/- 0.015 s |
-| 1024 | 8 | 1e-2 | 170; 2.951 +/- 0.047 s | 119; 1.555 +/- 0.011 s | 19; 0.162 +/- 0.003 s | 170; 2.929 +/- 0.048 s | 67; 0.584 +/- 0.022 s | 89; 0.931 +/- 0.045 s | 40; 0.298 +/- 0.025 s | 18; 0.199 +/- 0.034 s | 8; 0.155 +/- 0.041 s |
-| 1024 | 8 | 1e-5 | 387; 14.359 +/- 0.323 s | 401 cap; 15.430 +/- 0.146 s | 296; 8.674 +/- 0.193 s | 387; 14.326 +/- 0.340 s | 394; 14.901 +/- 0.320 s | 401 cap; 15.491 +/- 0.451 s | 364; 13.070 +/- 0.133 s | 293; 8.425 +/- 0.126 s | 21; 0.221 +/- 0.010 s |
-| 1024 | 8 | 1e-8 | 401 cap; 15.328 +/- 0.327 s | 401 cap; 15.501 +/- 0.170 s | 401 cap; 15.398 +/- 0.088 s | 401 cap; 16.978 +/- 1.482 s | 401 cap; 16.476 +/- 0.205 s | 401 cap; 16.625 +/- 0.167 s | 401 cap; 16.739 +/- 0.077 s | 401 cap; 16.385 +/- 0.181 s | 33; 0.286 +/- 0.020 s |
+| N | m | reference | lower bound | measured below 0.1 |
+|---:|---|---|---|---|
+| 512 | 2 | max | 304 | 322 |
+| 512 | 2 | median | 300 | 318 |
+| 512 | 2 | geometric mean | 294 | 312 |
+| 512 | 4 | max | 254 | 272 |
+| 512 | 4 | median | 251 | 268 |
+| 512 | 4 | geometric mean | 248 | 264 |
+| 512 | 8 | max | 203 | 224 |
+| 512 | 8 | median | 201 | 220 |
+| 512 | 8 | geometric mean | 198 | 216 |
+| 1024 | 2 | max | 638 | 666 |
+| 1024 | 2 | median | 634 | 658 |
+| 1024 | 2 | geometric mean | 628 | 650 |
+| 1024 | 4 | max | 522 | 554 |
+| 1024 | 4 | median | 519 | 548 |
+| 1024 | 4 | geometric mean | 516 | 540 |
+| 1024 | 8 | max | 417 | 454 |
+| 1024 | 8 | median | 415 | 446 |
+| 1024 | 8 | geometric mean | 412 | 438 |
 
-### Tight tolerance (`1e-8`)
+Source: `tau_blend_lemma_checks.json`, `/lemma6/*` [F2].
 
-| N | m | oracle d0* | blend | active-oracle/blend time | fastest converged comparator | fastest-comparator/blend time |
-|---:|---:|---:|---:|---:|---|---:|
-| 512 | 2 | 166; 2.711 +/- 0.048 s | 14; 0.169 +/- 0.020 s | 16.0x | floor: 111; 1.276 +/- 0.096 s | 7.5x |
-| 512 | 4 | 245; 6.071 +/- 0.089 s | 15; 0.169 +/- 0.023 s | 35.9x | identity: 156; 2.542 +/- 0.022 s | 15.0x |
-| 512 | 8 | 277; 7.270 +/- 0.120 s | 17; 0.189 +/- 0.007 s | 38.5x | identity: 197; 3.706 +/- 0.176 s | 19.6x |
-| 1024 | 2 | 317; 9.759 +/- 0.111 s | 17; 0.181 +/- 0.033 s | 54.0x | floor: 228; 5.132 +/- 0.223 s | 28.4x |
-| 1024 | 4 | 401 cap; 15.270 +/- 0.261 s | 55; 0.456 +/- 0.015 s | oracle capped | floor: 330; 10.453 +/- 0.403 s | 22.9x |
-| 1024 | 8 | 401 cap; 16.385 +/- 0.181 s | 33; 0.286 +/- 0.020 s | oracle capped | none converged | -- |
+## 3. The mask at m = 2 under the corrected coefficient
 
-The active-support oracle scan uses 51 logarithmically spaced values between
-`D_min(active)` and `D_max(active)` for every case: 26 independent scans and 1326
-candidate solves across the main and contrast studies. On the clean post-`d8d4432`
-replay, the blend is 16.0x--54.0x faster than the converged active-range oracle in the 4
-cases where that oracle reaches tolerance. At `N=1024,m=4`, no effective active-range
-scalar reaches tolerance, while the identity and floor controls do (330 iterations
-each); the blend takes 55 iterations and about 0.456 s versus about 10.45 s for floor,
-the fastest control. At `N=1024,m=8`, no effective active-range scalar reaches
-tolerance, nor do identity or floor; the blend takes 33 iterations and about 0.286 s.
+Lemma 5 gives every node the floor CFL number
+`chi_floor = 4 dt m eps^(m-1) / h^2`. With the corrected coefficient,
+`D >= 2e-5`
+at `m = 2`, which lies above the repository threshold `D <= max(1e-14, 1e-6 max(D))`, so the
+repository mask selects **no** node at `m = 2`. The CFL mask selects
+334 and
+668 nodes at `N = 512`
+and `N = 1024`, exactly the floor nodes.
 
-These replayed values supersede the preliminary scratch timing headline:
-iteration counts for the active oracle mostly reproduce, but the merged GMRES
-counter, independent rerun, and current timing samples yield the ratios above.
-The committed JSON is authoritative.
+| N | method | masked nodes | chi_floor | max Re sigma(Y) | GMRES |
+|---:|---|---|---|---|---|
+| 512 | `repository_blend_B3` | 0 | 0.006579225 | 38.190625 | 57 |
+| 512 | `one_inverse_cfl_mask` | 334 | 0.006579225 | 1 | 40 |
+| 512 | `cfl_reference_blend_B3` | 334 | 0.006579225 | 2.0195094 | 15 |
+| 1024 | `repository_blend_B3` | 0 | 0.026265625 | 146.88815 | 118 |
+| 1024 | `one_inverse_cfl_mask` | 668 | 0.026265625 | 1 | 58 |
+| 1024 | `cfl_reference_blend_B3` | 668 | 0.026265625 | 2.7989895 | 19 |
 
-### Loose tolerance (`1e-2`)
+Source: `tau_blend_active_block.json`, `/cases/*`;
+`tau_blend_mask_analysis.json`, `/states/*` [F3].
 
-| N | m | fastest scalar | scalar time | blend time | blend delta |
-|---:|---:|---|---:|---:|---:|
-| 512 | 2 | const | 0.113 +/- 0.028 s | 0.130 +/- 0.005 s | +15.1% |
-| 512 | 4 | oracle d0* | 0.143 +/- 0.038 s | 0.154 +/- 0.026 s | +7.3% |
-| 512 | 8 | oracle d0* | 0.161 +/- 0.016 s | 0.158 +/- 0.018 s | -1.6% |
-| 1024 | 2 | oracle d0* | 0.114 +/- 0.010 s | 0.137 +/- 0.007 s | +19.7% |
-| 1024 | 4 | bulk | 0.142 +/- 0.004 s | 0.161 +/- 0.017 s | +13.4% |
-| 1024 | 8 | bulk | 0.162 +/- 0.003 s | 0.155 +/- 0.041 s | -3.9% |
+Without a mask, the repository blend's active-block spectrum spreads to maximum
+real parts 38.2
+and 146.9,
+and GMRES needs 57
+and 118
+iterations. The CFL blend restores a compact spectrum (maximum real parts
+2.02
+and 2.80)
+and needs 15
+and 19
+iterations. At `N = 128` the counts are
+15
+(repository) and
+10
+(CFL blend).
 
-The result is regime-dependent: the blend is 15.1--19.7% slower at `m=2`, 7.3--13.4%
-slower at `m=4`, 1.6--3.9% faster at `m=8` on this replay. These timing separations must
-be read alongside the table's IQRs. 6 cases are not a basis for a dispatch rule, and
-none is proposed; an earlier resolution-aware-dispatch exploration was closed as a
-negative result.
+**Limit (Lemma 5).** At fixed `dt`, `chi_floor` grows as `h^-2`, so any fixed
+cutoff `eta` eventually loses the mask under refinement. Pavlov's floor case
+shows this: at `m = 2`, `N = 2048`,
+`dt = 0.02`, `chi_floor = 0.104960025`
+exceeds `eta = 0.1`, the mask is empty, and the
+one-inverse solve does not reach tolerance within 300
+iterations; at `eta = 0.3` or
+`1` the mask holds 1334 nodes.
+A mesh-robust cutoff rule is not proposed here.
 
-## Contrast and degeneracy
+Source: `tau_blend_cfl_fidelity.json`, `/floor/*` [F13].
 
-| m | step | D95/D05 | degeneracy fraction | d0*/Dmax(active) | d0* empirical rank | oracle iterations | blend iterations | oracle/blend |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2 | 0 | 9.548 | 0.652 | 1.000 | 1.000 | 111 | 14 | 7.93x |
-| 2 | 2 | 34.877 | 0.609 | 1.000 | 1.000 | 130 | 32 | 4.06x |
-| 2 | 5 | 42.535 | 0.578 | 1.000 | 1.000 | 133 | 34 | 3.91x |
-| 2 | 8 | 32.326 | 0.555 | 1.000 | 1.000 | 135 | 30 | 4.50x |
-| 8 | 0 | 10.228 | 0.418 | 1.000 | 1.000 | 197 | 17 | 11.59x |
-| 8 | 2 | 10.845 | 0.406 | 0.891 | 0.671 | 210 | 20 | 10.50x |
-| 8 | 5 | 10.961 | 0.391 | 0.877 | 0.654 | 216 | 26 | 8.31x |
-| 8 | 8 | 10.477 | 0.379 | 1.000 | 1.000 | 219 | 22 | 9.95x |
+## 4. Exact deflation and its regularized perturbation (Lemmas 1, 2 and 5)
 
-The iteration advantage shrinks as compact support fills in but does not vanish: the
-measured oracle/blend ratio falls from 7.93x to 3.91--4.50x for `m=2`, and from 11.59x
-to 8.31--10.50x for `m=8`. It tracks the zero-set/degeneracy fraction more coherently
-than `D95/D05`. The oracle selects the active-support maximum for all 18
-initial-wide-front cases and 6 of 8 contrast states. The remaining 2 are still high in
-the active range (`0.877` and `0.891` of the active maximum), not means. This explains
-why `frozen_bulk` is generally the strongest shipped nontrivial scalar and `frozen_mean`
-the weakest in these states. It does not by itself justify changing moljax's default.
+In the node order `(Z, A)`, write `M J = [[I + E, X], [F, Y]]`. For `J_0`,
+which sets the coefficient to zero on `Z`, Lemma 1 gives `E = F = 0` exactly;
+the measurements confirm `E_0 = F_0 = 0` in all 21 cases. The active
+block `Y` is byte-identical between `J_0` and the regularized `J` in all
+21 cases.
 
-## Batched implementation audit
+For the regularized `J`, the identity block deviates by the floor CFL term. The
+measured maximum deviation equals `2 dt d_floor / h^2` to
+`7.3e-17` at `N = 512,
+m = 2`, and to `4.3e-18` at
+`N = 512, m = 4`. It scales with `(N + 1)^2`: at `m = 2`
+it is
+`2.080125e-4`, `3.2896125e-3` and
+`1.3132813e-2` at `N = 128, 512, 1024`,
+and the ratio between the last two is 3.992, equal to
+`((1024 + 1)/(512 + 1))^2 = 3.992`. At
+`m = 8` the predicted deviation is `1e-32`,
+below the double-precision resolution of the unit diagonal; the measured maximum
+is then about half the prediction, consistent with an off-diagonal entry surviving
+while the diagonal increment rounds away (an interpretation, not a separate
+measurement).
 
-The production `l=3` application was already batched through `jax.vmap over the static
-reference axis`. StableHLO confirms a single Helmholtz call over the full static `3 x N`
-reference tensor rather than a per-reference Python loop. The batched and
-forced-sequential actions agree to `1.01e-16` relative error, and all solve iteration
-sets are identical. On GPU, batching speeds up the application itself by 1.70--1.98x;
-the end-to-end solve speedup is only 0.918--1.079x because the application is not the
-bottleneck at these sizes. Therefore the loose-tolerance deficit is not a hidden
-sequential-transform bug. The `(l,N)` Helmholtz denominator is still formed inside each
-application; hoisting it is an identified, unimplemented optimization.
+Lemma 2 bounds `||J - J_0||_p <= eta_Z`. Over 216 records there
+are no violations; the worst excess is `3.6e-15` in the 1-norm and
+`8.2e-17` in the infinity norm, which is round-off. In several
+records `||J - J_0||_1` equals `eta_Z` to rounding, so the 1-norm bound is attained
+on these states.
 
-## Pseudospectral criterion
+Source: `tau_blend_active_block.json`, `/cases/*/J0_blocks`,
+`/cases/*/regularized_blocks`; `tau_blend_lemma_checks.json`, `/lemma2`,
+`/identity_block_deviation` [F4, F10].
 
-The dense criterion is mathematically sound for these validation-sized operators. Its
-Trefethen resolvent-contour prefactor is exactly `L(Gamma_epsilon)/(2*pi*epsilon)`; no
-Crouzeix spectral-set constant belongs in that bound. It certifies the tested
-origin-enclosed blend cases, but certification is offline: the matrix-free runtime
-estimator costs 58.0--73.9x the corresponding solve, a fundamental evidence floor rather
-than an omitted batching optimization. As a rejection gate it can be cheap: rejecting
-the inadequate `m=8` frozen-mean reference costs 0.32x its solve. Sparse matrix-free
-Ritz/path mode remains provisional and records `rate_bound_available=false`, because
-reduced Ritz values do not prove full spectrum coverage and sparse paths do not provide
-a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope surrogate
-with separate real and imaginary linear constraints. The reported sampled maximum
-modulus and effective rate are measured from the fitted polynomial itself, so the
-surrogate can make the search suboptimal but cannot make the reported rate optimistic.
+## 5. From the active block to a GMRES bound (Lemma 1', ours)
 
-## Honest limits
+**Statement.** Let `M J_0 = [[I, X], [0, Y]]` and let `q` be any polynomial with
+`q(0) = 1`. Then `p(z) = (1 - z) q(z)` satisfies `p(0) = 1` and
 
-- No multigrid baseline; therefore no performance claim.
-- One-dimensional, node-centred, homogeneous-Dirichlet PME only, at `N=512/1024`.
-- The main linear study measures one backward-Euler step; inexact-Newton traces
-  are supporting evidence, not a full time-to-solution application benchmark.
-- Loose-tolerance behavior is regime-dependent, and no switching heuristic is
-  proposed.
-- The advantage shrinks as the zero set fills in, although it does not vanish in
-  the measured contrast sweep.
-- A two-dimensional extension is a major build: moljax's `Grid2D` is cell-centred,
-  there is no matching 2-D DST-I path, the flux-form linearization differs, and a
-  PME front is curve-shaped. It was not attempted here.
-- The dense pseudospectral certificate is intentionally offline at
-  `N=512`; its sparse matrix-free approximation is a
-  provisional diagnostic only.
+`p(M J_0) = [[0, -X q(Y)], [0, (I - Y) q(Y)]]`,
 
-## Reproduction and provenance
+so for every right-hand side, GMRES on `M J_0` satisfies
 
-Run the benchmark entry points with `PYTHONPATH="$PWD"` and Python x64 enabled.
-The canonical tables come from
-`benchmarks/pme_dst_tau_blend_single_reference_baselines.py`; the batching audit,
-dense/sparse pseudospectral studies, validation, spectral analysis, and
-inexact-Newton scripts provide the supporting JSONs. Source states use a
-generation fingerprint, relocatable cache-relative path, and SHA256 identity;
-foreign or damaged artifacts fail closed. Provenance resolves
-`merge-base upstream/main -> git describe --tags -> HEAD -> unavailable` and
-labels the source. Reassessment reconstructs the stored grid, state, solver, and
-preconditioner configuration before accepting an artifact.
+`||r_{k+1}|| / ||r_0|| <= C min_{q(0)=1, deg q <= k} ||q(Y)||_2`, with
+`C = ||[X; I - Y]||_2`.
 
-Figures are regenerated from the JSONs only:
+**Proof.** `I - M J_0 = [[0, -X], [0, I - Y]]`, and `q(M J_0)` is block upper
+triangular with diagonal blocks `q(1) I` and `q(Y)`. Multiplying gives the
+displayed form. GMRES minimizes over all residual polynomials of degree `k + 1`,
+so its residual is at most `||p(M J_0)|| ||r_0||` for this `p`.
 
-```bash
-PYTHONPATH="$PWD" conda run -n moljax python benchmarks/make_tau_blend_figures.py
-```
+The bound is a worst-case (ideal-GMRES) bound: it holds for every right-hand side
+and can be pessimistic for a particular one. It is exact for `J_0` only; for the
+regularized `J` this report certifies the full operator directly (Section 6). The
+block identity is checked numerically for random `q` in
+`tests/test_tau_blend_active_block.py`.
 
-## References (DOI verified)
+| N | m | method | sigma_min(Y) | C |
+|---:|---|---|---|---|
+| 128 | 2 | `one_inverse_cfl_mask` | 0.16473036 | 1.413918 |
+| 128 | 2 | `repository_blend_B3` | 0.4569388 | 2.3281802 |
+| 128 | 2 | `cfl_reference_blend_B3` | 0.81876371 | 0.96643866 |
+| 128 | 4 | `one_inverse_cfl_mask` | 0.03346387 | 0.96936701 |
+| 128 | 4 | `cfl_reference_blend_B3` | 0.35099138 | 2.8029638 |
+| 128 | 8 | `one_inverse_cfl_mask` | 0.08703789 | 5.309951 |
+| 128 | 8 | `cfl_reference_blend_B3` | 0.79943021 | 4.5974814 |
+| 512 | 2 | `one_inverse_cfl_mask` | 0.033845096 | 4.6464368 |
+| 512 | 2 | `repository_blend_B3` | 0.28807928 | 37.190639 |
+| 512 | 2 | `cfl_reference_blend_B3` | 0.71781984 | 3.8700658 |
+| 512 | 4 | `one_inverse_cfl_mask` | 0.023444946 | 12.628915 |
+| 512 | 4 | `cfl_reference_blend_B3` | 0.73753625 | 11.402013 |
+| 512 | 8 | `one_inverse_cfl_mask` | 0.014298407 | 10.322216 |
+| 512 | 8 | `cfl_reference_blend_B3` | 0.70463794 | 9.1562358 |
+| 1024 | 2 | `one_inverse_cfl_mask` | 0.016596978 | 10.706432 |
+| 1024 | 2 | `repository_blend_B3` | 0.20625577 | 145.88816 |
+| 1024 | 2 | `cfl_reference_blend_B3` | 0.68563241 | 9.5460263 |
+| 1024 | 4 | `one_inverse_cfl_mask` | 0.0035150634 | 1.2116194 |
+| 1024 | 4 | `cfl_reference_blend_B3` | 0.17762823 | 33.753656 |
+| 1024 | 8 | `one_inverse_cfl_mask` | 0.0049181136 | 5.0481582 |
+| 1024 | 8 | `cfl_reference_blend_B3` | 0.46277392 | 12.395966 |
 
-1. G. Pavlov, "moljax: GPU-accelerated method of lines for
-   stiff reaction-diffusion PDEs with FFT preconditioning," *Computer Physics
+Source: `tau_blend_active_block.json`, `/cases/*` [F5].
+
+When the mask is empty (the repository blend at `m = 2`), `Y = M J` and
+`C = ||I - M J||_2`.
+
+## 6. Decision procedure: disk test plus pseudospectral certificate
+
+### The certificate
+
+For a closed contour `Gamma` that encloses `sigma(A)` and excludes the origin
+(the boundary of the grid cells of a connected epsilon-pseudospectral component),
+let `s_Gamma` be a proven lower bound for `sigma_min(zI - A)` on `Gamma` and
+`M_Gamma` a proven upper bound for `|p|` on `Gamma`, for a polynomial `p` of
+degree `d` with `p(0) = 1`. The Cauchy integral gives
+`||p(A)^j|| <= L(Gamma) / (2 pi s_Gamma) * M_Gamma^j` [Trefethen--Embree]. The
+certified rate is `rho = M_Gamma^(1/d)`, and the prefactor is
+`L(Gamma) / (2 pi s_Gamma)`.
+
+`s_Gamma` comes from the grid samples of `sigma_min`, its 1-Lipschitz property
+along each edge, and an SVD backward-error margin. `M_Gamma` is the sampled
+maximum of `|p|` plus three allowances: a derivative enclosure times half the
+sample spacing, the floating-point error of evaluating `p`, and, when a centred
+basis is used, the error of translating the coefficients. Three changes on this
+branch tighten or correct the bound:
+
+1. **Centred derivative enclosure** (61fa907).
+   The enclosure is the minimum of the origin-centred
+   `sum_j j |a_j| R^(j-1)` and the same sum in powers of `z - c`, with `c` the
+   centre of the spectral bounding box. The sample points are unchanged, so the
+   bound can only decrease.
+2. **Search-domain fallback** (61fa907).
+   If a level set touches the edge of the search box, the box is enlarged once
+   to an outer rectangle of `W(A) + D(0, eps)`, which contains the
+   epsilon-pseudospectrum because `sigma_min(zI - A) >= dist(z, W(A))`. The grid
+   spacing does not increase.
+3. **Floating-point evaluation of `p`** (a7d6dae).
+   The previous bound covered the variation between samples but not the rounding
+   error of the sampled values. The Horner allowance
+   `gamma_{2n} sum_i |a_i| |z|^i` [Higham] is now added, evaluated in whichever
+   of the origin and centred bases gives the tighter valid bound. The term grows
+   with the degree and the size of the coefficients; a degree-40 regression test
+   with large coefficients exercises a case where it dominates.
+
+Monotonicity and validity are tested in
+c9c4a8e:
+the derivative bound is never below the sampled `max |p'|`; the new contour bound
+never exceeds the old one; `sigma_min(zI - A) >= dist(z, W(A))` holds on random
+non-normal matrices. The study settings differ from the public defaults: grids
+121, 241, 481; degrees 4, 8, 12, 16, 20, 24, 28, 32, 36, 40; 6 epsilon
+samples; target `1e-8`. The public defaults are grid
+61, domain-padding fraction 0.75, degrees
+4, 8, 12, 16, 20, 6 epsilon samples and target
+`1e-8`.
+
+Source: `tau_blend_active_block.json`, `/configuration` [F6].
+
+### The merged decision
+
+A case counts as certified if the active-block (`Y`) certificate certifies, or if
+the merged dense disk policy returns `adequate`. Only `adequate` counts from the
+disk policy; `provisional`, `investigate` and `indeterminate` do not.
+
+| N | m | method | disk verdict | Y certificate | grid / degree | rho | prefactor | Lemma 1' bound | GMRES `J_0` | GMRES `J` |
+|---:|---|---|---|---|---|---|---|---|---|---|
+| 128 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 4 | 0.6689927 | 7.8016507 | 53 | 17 | 17 |
+| 128 | 2 | `repository_blend_B3` | adequate | certified | 121 / 8 | 0.66373192 | 14.415351 | 57 | 15 | 15 |
+| 128 | 2 | `cfl_reference_blend_B3` | adequate | certified | 121 / 12 | 0.41734583 | 4.1834557 | 25 | 10 | 10 |
+| 128 | 4 | `one_inverse_cfl_mask` | investigate | abstains: connectivity | 481 / -- | -- | -- | -- | 24 | 24 |
+| 128 | 4 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 4 | 0.67363048 | 22.173878 | 61 | 17 | 17 |
+| 128 | 8 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 8 | 0.75423384 | 16.893764 | 89 | 24 | 24 |
+| 128 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 12 | 0.56008177 | 6.6467845 | 49 | 11 | 11 |
+| 512 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 8 | 0.93941072 | 47.660579 | 385 | 40 | 40 |
+| 512 | 2 | `repository_blend_B3` | indeterminate | abstains: no polynomial | 481 / -- | -- | -- | -- | 57 | 57 |
+| 512 | 2 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 4 | 0.6146668 | 9.6238488 | 49 | 15 | 15 |
+| 512 | 4 | `one_inverse_cfl_mask` | indeterminate | certified | 241 / 8 | 0.91228692 | 66.783082 | 281 | 47 | 47 |
+| 512 | 4 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 8 | 0.67927653 | 10.191672 | 65 | 17 | 17 |
+| 512 | 8 | `one_inverse_cfl_mask` | indeterminate | certified | 481 / 8 | 0.94249057 | 68.797227 | 425 | 55 | 55 |
+| 512 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 16 | 0.78009837 | 12.768788 | 97 | 20 | 20 |
+| 1024 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 241 / 8 | 0.95708509 | 105.1185 | 585 | 57 | 58 |
+| 1024 | 2 | `repository_blend_B3` | indeterminate | abstains: compute cap | 241 / -- | -- | -- | -- | 118 | 118 |
+| 1024 | 2 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 8 | 0.68121869 | 12.266603 | 65 | 19 | 19 |
+| 1024 | 4 | `one_inverse_cfl_mask` | indeterminate | abstains: connectivity | 481 / -- | -- | -- | -- | 78 | 78 |
+| 1024 | 4 | `cfl_reference_blend_B3` | indeterminate | abstains: no polynomial | 481 / -- | -- | -- | -- | 67 | 67 |
+| 1024 | 8 | `one_inverse_cfl_mask` | indeterminate | abstains: connectivity | 481 / -- | -- | -- | -- | 84 | 84 |
+| 1024 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 8 | 0.95518159 | 77.995915 | 553 | 38 | 38 |
+
+Source: `tau_blend_active_block.json`, `/cases/*`, `/decision_summary` [F6].
+
+Abstention reasons: "connectivity" means the pseudospectral component that encloses
+the spectrum reaches the origin-exclusion threshold; "no polynomial" means the
+connected window has no polynomial with a proven contour bound below one; "compute
+cap" means the estimated cumulative cost of the next grid exceeds the
+4-hour per-case cap.
+
+**Counts.** The `Y` certificate certifies
+15 of the 21 cases. The
+disk policy returns `adequate` for 2,
+both already certified, so the merged procedure also certifies
+15 of 21. By method:
+6 of 9 for the one-inverse mask,
+8 of 9 for the CFL blend, and
+1 of 3 for the repository blend at `m = 2`.
+The 6 abstentions are 3 for connectivity,
+2 for no polynomial and
+1 for the compute cap.
+
+**Ordering.** In every `(N, m)` group with at least one certified method, the
+method with the fewest GMRES iterations is certified, and no certified method is
+slower than an abstaining one. Where two or more methods certify, the smaller
+certified rate belongs to the method with fewer iterations; at `N = 128, m = 2`
+the rates of the repository blend and the one-inverse mask differ by
+0.005,
+a tie under the 0.05 tie rule. At `N = 1024,
+m = 4` no method certifies.
+
+**Conservatism.** The Lemma 1' bound is `1 + d j*`, with `j*` the smallest
+integer for which `C * prefactor * rho^(d j) <= 1e-8`. Against the measured
+`J_0` counts, it exceeds them by a factor of 2.5
+(`N = 128, m = 2`, CFL blend:
+25 against
+10) to 14.6
+(`N = 1024, m = 8`, CFL blend:
+553 against
+38). The bounds are valid and
+conservative; they separate the methods in the measured order.
+
+### Direct certificates for the regularized operator
+
+Lemma 1' is exact for `J_0` only. For the CFL blend at `m = 2`, the full
+regularized operator `M J` is certified directly:
+
+| N | grid | degree | rho | prefactor | GMRES `J` |
+|---:|---|---|---|---|---|
+| 128 | 565 | 12 | 0.42515174 | 5.2538931 | 10 |
+| 512 | 121 | 12 | 0.62776353 | 21.425118 | 15 |
+| 1024 | 121 | 8 | 0.72943227 | 55.105304 | 19 |
+
+Source: `tau_blend_active_block.json`, `/direct_regularized_full_MJ_certificates/*` [F6].
+
+At `N = 128` the domain fallback produced the selected grid
+565, with the grid spacing kept or
+reduced. The committed JSON does not record a distinct pre-fallback starting grid.
+
+## 7. Limits of the result
+
+- **Mesh dependence.** The CFL blend's counts grow under refinement:
+  10,
+  15,
+  19
+  at `m = 2`;
+  17,
+  17,
+  67
+  at `m = 4`; and
+  11,
+  20,
+  38
+  at `m = 8`, for `N = 128, 512, 1024`. At `N = 1024, m = 4` nothing certifies.
+- **Certified is not fast.** The one-inverse mask certifies at rates
+  0.912
+  to 0.957
+  at `N >= 512`, with
+  40
+  to 58 iterations; the CFL blend certifies at
+  0.615
+  to 0.780
+  at `N = 512`, with
+  15
+  to 20 iterations. The procedure decides whether a preconditioner is guaranteed to work and ranks the certified ones; it does not make a slow one fast.
+- **Reference count.** For the CFL blend, three references give the fewest
+  iterations at `N = 512` (17
+  at `m = 4`, 20 at `m = 8`).
+  At `N = 1024` four references give
+  33 at `m = 4` and
+  33 at `m = 8`, against
+  67 and
+  38 for three, and five or
+  six references are worse than four. The dependence is not monotone, and no rule
+  for choosing the count is proposed.
+
+| N | m | references | sigma_min(Y) | GMRES (true) | GMRES (preconditioned) | certificate |
+|---:|---|---|---|---|---|---|
+| 512 | 4 | 3 | 0.73753625 | 17 | 15 | certified |
+| 512 | 4 | 4 | 0.43273641 | 20 | 16 | certified |
+| 512 | 4 | 5 | 0.29830289 | 23 | 17 | certified |
+| 512 | 4 | 6 | 0.2319451 | 24 | 17 | certified |
+| 512 | 8 | 3 | 0.70463794 | 20 | 17 | certified |
+| 512 | 8 | 4 | 0.3835468 | 23 | 18 | certified |
+| 512 | 8 | 5 | 0.23062782 | 28 | 19 | not run |
+| 512 | 8 | 6 | 0.1645761 | 28 | 18 | not run |
+| 1024 | 4 | 3 | 0.17762823 | 67 | 55 | not run |
+| 1024 | 4 | 4 | 0.08497409 | 33 | 27 | not run |
+| 1024 | 4 | 5 | 0.047392477 | 38 | 28 | not run |
+| 1024 | 4 | 6 | 0.033333995 | 46 | 32 | not run |
+| 1024 | 8 | 3 | 0.46277392 | 38 | 33 | not run |
+| 1024 | 8 | 4 | 0.22945654 | 33 | 26 | not run |
+| 1024 | 8 | 5 | 0.12636897 | 36 | 27 | not run |
+| 1024 | 8 | 6 | 0.079412583 | 40 | 28 | not run |
+
+Source: `tau_blend_reference_count.json`, `/rows/*` [F7].
+
+- **Dimension and baselines.** One-dimensional only; no multigrid comparison;
+  backward Euler only for trajectories.
+
+## 8. Fidelity: what the counts and trajectories mean (Lemmas 3 and 4)
+
+**Stopping convention (Lemma 4).** A test on the left-preconditioned residual
+bounds the true residual only up to `kappa(M)`. At `N = 512`, `dt = 0.02`:
+
+| m | scalar (S) | repository blend (B3) | mask, one inverse (Z1) | mask with frame (Zf) |
+|---:|---|---|---|---|
+| 2 | 1053.5444 | 28.931565 | 1121.5069 | 8914.9531 |
+| 4 | 3423.3855 | 2108.3833 | 3735.1013 | 27737.091 |
+| 8 | 6483.5385 | 2763.9588 | 7277.271 | 95755.909 |
+
+`kappa_2(M)`; source: `tau_blend_lemma_checks.json`, `/lemma4/*` [F9]. The `Z1`
+and `Zf` rows use `eta = 0.1`; at `m = 2` the values at
+`eta = 0.3` are identical.
+
+In all 21 active-block cases the true-residual count exceeds the
+preconditioned-residual count, by 1 to
+15 iterations; for example
+118
+against
+104
+for the repository blend at `N = 1024, m = 2`, and
+47
+against
+37
+for the one-inverse mask at `N = 512, m = 4`. The preconditioned counts of the
+CFL blend at `m = 2` (
+14
+and
+17
+at `N = 512, 1024`) equal those of Pavlov's mask analysis.
+
+Source: `tau_blend_active_block.json`, `/cases/*/gmres_regularized` [F9].
+
+**A posteriori trajectory bound (Lemma 3).** Backward Euler for the PME is
+nonexpansive in the 1-norm, so
+`||v^n - u^n||_1 <= ||v^0 - u^0||_1 + sum_k ||rho^k||_1` holds for every
+preconditioner and cutoff. It holds on all 216 trajectories,
+including the 40 that contain failed
+Newton steps, with no violation and a minimum margin of
+`2.1e-12`.
+
+Source: `tau_blend_lemma_checks.json`, `/lemma3` [F8].
+
+**Crank--Nicolson replay.** One bounded replay at `N = 512`,
+`dt = 0.02`, 5 steps. The CN
+active set is smaller than the BE one by
+8 nodes at `m = 2` and
+2 at `m = 4`, at every step. Both integrators
+converge.
+
+| m | BE Newton | BE GMRES | CN Newton | CN GMRES |
+|---:|---|---|---|---|
+| 2 | 38 | 1802 | 35 | 1210 |
+| 4 | 41 | 2152 | 38 | 1471 |
+
+Source: `tau_blend_cn_replay.json`, `/steps`, `/summaries` [F11]. This replay
+supports no general statement about CN; all trajectory evidence elsewhere is
+backward Euler.
+
+## 9. Reproducibility on a second host
+
+Pavlov's delivery (`research/tau-blend-repro` at
+ad478fc) was re-run on a second host with the
+same JAX version (0.11.2). Convergence outcomes are preserved
+except in one row; exact counts move slightly.
+
+- Mask analysis: 4 of 46 rows
+  differ, each by one GMRES iteration.
+- E3 trajectories: 48 of 96 rows differ
+  in at least one Newton or linear total.
+- One convergence-status change: `m = 4`, `N = 512`,
+  `dt = 0.02`, repository blend, left preconditioning,
+  forcing 0.1. The delivery converges
+  5 steps
+  (69 Newton,
+  623 linear iterations);
+  this host converges 4, with one
+  line-search failure (58 Newton,
+  486 linear).
+
+Source: `tau_blend_reproducibility.json`, `/mask_analysis_subset`,
+`/drifted_E3_subset` [F12].
+
+## 10. Cost of the certificate, and a corrected claim
+
+The dense certificate is an offline tool. The provisional matrix-free runtime
+estimator records these ratios to the corresponding solve: `m = 2`: 13.9x, `m = 4`: 45.2x, `m = 8`: 41.6x. An
+earlier version of this report called the range a "fundamental evidence floor".
+That claim is withdrawn: no result here establishes a lower bound on the cost of
+certification, and an abstention is only the failure of a sufficient test. The
+cost is a measured property of that implementation, not a dense-certificate
+complexity bound.
+
+Source: `pme_dst_tau_blend_pseudospectral_runtime_estimator.json`, `/records/*/cost`
+[Part II runtime evidence].
+
+On the active-block study, the estimated cost of the next grid exceeded the
+4-hour per-case cap once (`N = 1024, m = 2`, repository
+blend), which is reported as an abstention.
+
+# Part II. Single-reference baseline study (being restated)
+
+The previous version of this file reported a single-reference baseline study:
+spectra and work--precision of scalar Helmholtz references against the blend,
+contrast and degeneracy, a batching audit and the pseudospectral criterion. Its
+JSONs were regenerated with the corrected coefficient, and several of its claims,
+in particular those at `m = 2`, no longer hold. The claims are being audited
+against the regenerated JSONs and will be restated here. Until then the previous
+text is available in git history; the regenerated JSONs are in this directory.
+
+## References
+
+1. G. Pavlov, "moljax: GPU-accelerated method of lines for stiff
+   reaction-diffusion PDEs with FFT preconditioning," *Computer Physics
    Communications* 326 (2026) 110205. DOI `10.1016/j.cpc.2026.110205`.
-2. C. C. Christara and K. S. Ng, "Fast Fourier Transform Solvers and
-   Preconditioners for Quadratic Spline Collocation," *BIT Numerical
-   Mathematics* 42(4) (2002) 702--739. DOI `10.1023/A:1021944218806`.
-3. M.-C. Lai and Y.-H. Tseng, "A fast iterative solver for the variable
-   coefficient diffusion equation on a disk," *Journal of Computational Physics*
-   208 (2005) 196--205. DOI `10.1016/j.jcp.2005.02.005`.
-4. P. De Luca, "Fast Sine-Transform Preconditioning for Global-in-Time
-   Fractional Diffusion," *Fractal and Fractional* 10(8) (2026) 573. DOI
-   `10.3390/fractalfract10080573`.
-5. X. Lin, C. Li, and S. Y. Hon, "Absolute-value based preconditioner for
-   complex-shifted Laplacian systems," arXiv:2408.00488 (2024). DOI
-   `10.48550/arXiv.2408.00488`.
-6. T. Bakhos, P. K. Kitanidis, S. Ladenheim, A. K. Saibaba, and D. B. Szyld,
-   "Multipreconditioned GMRES for Shifted Systems," *SIAM Journal on Scientific
-   Computing* 39(5) (2017) S222--S247. DOI `10.1137/16M1068694`; preprint DOI
-   `10.48550/arXiv.1603.08970`.
-7. A. Heryudono, E. Larsson, A. Ramage, and L. von Sydow, "Preconditioning for
-   Radial Basis Function Partition of Unity Methods," *Journal of Scientific
-   Computing* 67 (2016) 1089--1109. DOI `10.1007/s10915-015-0120-6`.
-8. M. Bonazzoli, X. Claeys, F. Nataf, and P.-H. Tournier, "Analysis of the SORAS
-   domain decomposition preconditioner for non-self-adjoint or indefinite
-   problems," *Journal of Scientific Computing* 89 (2021) 19. DOI
-   `10.1007/s10915-021-01631-8`.
-9. L. N. Trefethen and M. Embree, *Spectra and Pseudospectra* (Princeton, 2005).
-   DOI `10.1515/9780691213101`.
-10. M. Embree, "How Descriptive are GMRES Convergence Bounds?", corrected and
-    extended from Oxford Technical Report 99/08, arXiv:2209.01231. DOI
-    `10.48550/arXiv.2209.01231`. There is no SIAM J. Matrix Analysis and
-    Applications version.
+2. L. N. Trefethen and M. Embree, *Spectra and Pseudospectra* (Princeton,
+   2005). DOI `10.1515/9780691213101`.
+3. M. Embree, "How Descriptive are GMRES Convergence Bounds?",
+   arXiv:2209.01231. DOI `10.48550/arXiv.2209.01231`.
+4. N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed.
+   (SIAM, 2002). DOI `10.1137/1.9780898718027`.

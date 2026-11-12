@@ -1,736 +1,1029 @@
 #!/usr/bin/env python3
-"""Regenerate the tau-blend measurement README from committed JSON files."""
+"""Render the tau-blend mask-analysis report from committed JSON evidence."""
 
 from __future__ import annotations
 
+import inspect
 import json
-import math
 from pathlib import Path
-from textwrap import fill
 from typing import Any
+
+try:
+    from benchmarks.tau_blend_mask_analysis import (
+        REPOSITORY_ACTIVE_ABSOLUTE,
+        REPOSITORY_ACTIVE_RELATIVE,
+    )
+except ModuleNotFoundError:  # Direct ``python benchmarks/...`` execution.
+    from tau_blend_mask_analysis import REPOSITORY_ACTIVE_ABSOLUTE, REPOSITORY_ACTIVE_RELATIVE
+from moljax.experimental.pseudospectral_criterion import assess_dense_pseudospectral_criterion
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = REPOSITORY_ROOT / "benchmarks" / "results"
 OUTPUT = RESULTS_DIR / "TAU_BLEND_README.md"
-METHODS = (
-    "identity",
-    "frozen_mean",
-    "frozen_bulk",
-    "floor",
-    "const",
-    "geometric_mean",
-    "harmonic_mean",
-    "optimized_d0",
-    "tau_blend",
-)
-EFFECTIVE_SCALAR_METHODS = (
-    "frozen_mean",
-    "frozen_bulk",
-    "const",
-    "geometric_mean",
-    "harmonic_mean",
-    "optimized_d0",
-)
-# The result schema names ``near_zero_eigenvalue_count`` but does not carry the
-# threshold itself. Keep this renderer constant synchronized with the benchmark.
-NEAR_ZERO_THRESHOLD = 0.1
-SHORT = {
-    "identity": "identity",
-    "frozen_mean": "mean",
-    "frozen_bulk": "bulk",
-    "floor": "floor",
-    "const": "const",
-    "geometric_mean": "geometric",
-    "harmonic_mean": "harmonic",
-    "optimized_d0": "oracle d0*",
-    "tau_blend": "blend",
+
+FILES = {
+    "active": "tau_blend_active_block.json",
+    "cfl": "tau_blend_cfl_fidelity.json",
+    "cn": "tau_blend_cn_replay.json",
+    "lemma": "tau_blend_lemma_checks.json",
+    "mask": "tau_blend_mask_analysis.json",
+    "reference": "tau_blend_reference_count.json",
+    "repro": "tau_blend_reproducibility.json",
+    "runtime": "pme_dst_tau_blend_pseudospectral_runtime_estimator.json",
 }
 
 
-def _load(filename: str) -> dict[str, Any]:
-    return json.loads((RESULTS_DIR / filename).read_text())
-
-
-def _iterations(values: dict[str, Any]) -> int:
-    iterations = values["iterations"]
-    return int(iterations[0] if isinstance(iterations, list) else iterations)
-
-
-def _scientific(value: float) -> str:
-    """Format one significant digit without a zero-padded exponent."""
-    return f"{value:.0e}".replace("e-0", "e-").replace("e+0", "e+")
-
-
-def _wrap(text: str) -> str:
-    """Wrap one generated prose paragraph deterministically."""
-    return fill(
-        " ".join(text.split()),
-        width=88,
-        break_long_words=False,
-        break_on_hyphens=False,
-    )
-
-
-def _measurement_cell(values: dict[str, Any]) -> str:
-    marker = "" if values["all_converged"] else " cap"
-    return (
-        f"{_iterations(values)}{marker}; "
-        f"{values['median_seconds']:.3f} +/- {values['iqr_seconds']:.3f} s"
-    )
-
-
-def _work_table(baseline: dict[str, Any]) -> str:
-    header = "| N | m | tol | " + " | ".join(SHORT[method] for method in METHODS) + " |"
-    rule = "|---:|---:|---:|" + "---:|" * len(METHODS)
-    rows = [header, rule]
-    for record in baseline["work_precision_records"]:
-        cells = [_measurement_cell(record["methods"][method]) for method in METHODS]
-        rows.append(
-            f"| {record['nx']} | {record['m']} | "
-            f"{_scientific(record['requested_relative_residual'])} | " + " | ".join(cells) + " |"
-        )
-    return "\n".join(rows)
-
-
-def _spectral_table(baseline: dict[str, Any]) -> str:
-    rows = [
-        f"| m | method | kappa_2 | count abs(lambda)<{NEAR_ZERO_THRESHOLD:g} | "
-        "min abs(lambda) | "
-        "spectral abscissa | numerical abscissa | gap | disk rate |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|",
-    ]
-    for record in baseline["spectral_records"]:
-        spectrum = record["spectrum"]
-        rows.append(
-            f"| {record['m']} | {SHORT[record['method']]} | "
-            f"{spectrum['condition_number_2']:.3g} | "
-            f"{spectrum['near_zero_eigenvalue_count']} | "
-            f"{spectrum['minimum_eigenvalue_modulus']:.3g} | "
-            f"{spectrum['spectral_abscissa']:.3g} | "
-            f"{spectrum['numerical_abscissa']:.3g} | "
-            f"{spectrum['non_normality_gap']:.3g} | "
-            f"{record['field_of_values']['disk_rate']:.4f} |"
-        )
-    return "\n".join(rows)
-
-
-def _contrast_table(baseline: dict[str, Any]) -> str:
-    rows = [
-        "| m | step | D95/D05 | degeneracy fraction | d0*/Dmax(active) | "
-        "d0* empirical rank | oracle iterations | blend iterations | oracle/blend |",
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-    ]
-    summaries = baseline["summaries"]["contrast"]
-    for record in baseline["contrast_records"]:
-        summary = next(
-            row for row in summaries if row["m"] == record["m"] and row["step"] == record["step"]
-        )
-        scan = record["optimized_d0_scan"]
-        ratio = summary["best_single_iterations"] / summary["tau_iterations"]
-        rows.append(
-            f"| {record['m']} | {record['step']} | "
-            f"{record['coefficient']['active_d95_over_d05']:.3f} | "
-            f"{record['coefficient']['degeneracy_fraction']:.3f} | "
-            f"{scan['ratio_to_active_maximum']:.3f} | "
-            f"{scan['active_empirical_quantile_rank']:.3f} | "
-            f"{summary['best_single_iterations']} | {summary['tau_iterations']} | "
-            f"{ratio:.2f}x |"
-        )
-    return "\n".join(rows)
-
-
-def _tight_table(baseline: dict[str, Any]) -> str:
-    rows = [
-        "| N | m | oracle d0* | blend | active-oracle/blend time | "
-        "fastest converged comparator | fastest-comparator/blend time |",
-        "|---:|---:|---:|---:|---:|---|---:|",
-    ]
-    tight_tolerance = min(baseline["config"]["work_tolerances"])
-    for record in baseline["work_precision_records"]:
-        if record["requested_relative_residual"] != tight_tolerance:
-            continue
-        methods = record["methods"]
-        oracle = methods["optimized_d0"]
-        blend = methods["tau_blend"]
-        converged = {
-            name: values
-            for name, values in methods.items()
-            if name != "tau_blend" and values["all_converged"]
-        }
-        fastest_name = (
-            min(converged, key=lambda name: converged[name]["median_seconds"])
-            if converged
-            else None
-        )
-        oracle_ratio = (
-            f"{oracle['median_seconds'] / blend['median_seconds']:.1f}x"
-            if oracle["all_converged"]
-            else "oracle capped"
-        )
-        if fastest_name is None:
-            fastest_cell = "none converged"
-            fastest_ratio = "--"
-        else:
-            fastest = converged[fastest_name]
-            fastest_cell = f"{SHORT[fastest_name]}: {_measurement_cell(fastest)}"
-            fastest_ratio = f"{fastest['median_seconds'] / blend['median_seconds']:.1f}x"
-        rows.append(
-            f"| {record['nx']} | {record['m']} | {_measurement_cell(oracle)} | "
-            f"{_measurement_cell(blend)} | {oracle_ratio} | {fastest_cell} | "
-            f"{fastest_ratio} |"
-        )
-    return "\n".join(rows)
-
-
-def _loose_table(baseline: dict[str, Any]) -> str:
-    rows = [
-        "| N | m | fastest scalar | scalar time | blend time | blend delta |",
-        "|---:|---:|---|---:|---:|---:|",
-    ]
-    loose_tolerance = max(baseline["config"]["work_tolerances"])
-    for record in baseline["work_precision_records"]:
-        if record["requested_relative_residual"] != loose_tolerance:
-            continue
-        methods = record["methods"]
-        scalars = {
-            name: values
-            for name, values in methods.items()
-            if name not in {"identity", "tau_blend"} and values["all_converged"]
-        }
-        best_name = min(scalars, key=lambda name: scalars[name]["median_seconds"])
-        best = scalars[best_name]
-        blend = methods["tau_blend"]
-        delta = 100.0 * (blend["median_seconds"] / best["median_seconds"] - 1.0)
-        rows.append(
-            f"| {record['nx']} | {record['m']} | {SHORT[best_name]} | "
-            f"{best['median_seconds']:.3f} +/- {best['iqr_seconds']:.3f} s | "
-            f"{blend['median_seconds']:.3f} +/- {blend['iqr_seconds']:.3f} s | "
-            f"{delta:+.1f}% |"
-        )
-    return "\n".join(rows)
-
-
-def _batching_summary(batch: dict[str, Any]) -> tuple[float, float, float, float]:
-    speedups = [
-        row["timing"]["speedup_batched_over_forced_sequential"] for row in batch["apply_records"]
-    ]
-    full = [
-        row["full_solve_speedup_batched_over_forced_sequential"] for row in batch["solve_records"]
-    ]
-    return min(speedups), max(speedups), min(full), max(full)
-
-
-def _criterion_summary(runtime: dict[str, Any]) -> tuple[float, float, float, int]:
-    tau = [record for record in runtime["records"] if record["method"] == "tau_blend"]
-    offline = [record["cost"]["runtime_estimate_time_over_gmres"] for record in tau]
-    rejection_record = next(
-        record for record in runtime["records"] if record["method"] == "frozen_mean"
-    )
-    return (
-        min(offline),
-        max(offline),
-        rejection_record["cost"]["runtime_estimate_time_over_gmres"],
-        rejection_record["m"],
-    )
-
-
-def _spectral_claims(baseline: dict[str, Any]) -> dict[str, Any]:
-    records = baseline["spectral_records"]
-    exponents = sorted({record["m"] for record in records})
-    effective = {
-        m: [
-            record
-            for record in records
-            if record["m"] == m and record["method"] in EFFECTIVE_SCALAR_METHODS
-        ]
-        for m in exponents
-    }
-    condition_ranges = []
-    spreads = []
-    for m in exponents:
-        values = [record["spectrum"]["condition_number_2"] for record in effective[m]]
-        lower, upper = min(values), max(values)
-        condition_ranges.append(f"{lower:.3g}--{upper:.3g}")
-        spreads.append(100.0 * (upper / lower - 1.0))
-    near_zero = [
-        record["spectrum"]["near_zero_eigenvalue_count"]
-        for rows in effective.values()
-        for record in rows
-    ]
-    blend = [
-        next(record for record in records if record["m"] == m and record["method"] == "tau_blend")
-        for m in exponents
-    ]
-    oracle_is_worst = all(
-        next(record for record in effective[m] if record["method"] == "optimized_d0")["spectrum"][
-            "condition_number_2"
-        ]
-        == max(record["spectrum"]["condition_number_2"] for record in effective[m])
-        and next(record for record in effective[m] if record["method"] == "optimized_d0")[
-            "spectrum"
-        ]["minimum_eigenvalue_modulus"]
-        == min(record["spectrum"]["minimum_eigenvalue_modulus"] for record in effective[m])
-        for m in exponents
-    )
-    if not oracle_is_worst:
-        raise RuntimeError("oracle is no longer spectrally worst among effective scalars")
+def _load(results_dir: Path) -> dict[str, dict[str, Any]]:
     return {
-        "exponents": "/".join(str(value) for value in exponents),
-        "condition_ranges": "/".join(condition_ranges),
-        "condition_spreads_percent": "/".join(f"{spread:.2f}%" for spread in spreads),
-        "near_zero_minimum": min(near_zero),
-        "near_zero_maximum": max(near_zero),
-        "blend_near_zero_maximum": max(
-            record["spectrum"]["near_zero_eigenvalue_count"] for record in blend
-        ),
-        "blend_condition_numbers": "/".join(
-            f"{record['spectrum']['condition_number_2']:.3g}" for record in blend
-        ),
+        name: json.loads((results_dir / filename).read_text(encoding="utf-8"))
+        for name, filename in FILES.items()
     }
 
 
-def _tight_claims(baseline: dict[str, Any]) -> tuple[str, str]:
-    tight_tolerance = min(baseline["config"]["work_tolerances"])
-    records = [
-        record
-        for record in baseline["work_precision_records"]
-        if record["requested_relative_residual"] == tight_tolerance
-    ]
-    ratios = [
-        record["methods"]["optimized_d0"]["median_seconds"]
-        / record["methods"]["tau_blend"]["median_seconds"]
-        for record in records
-        if record["methods"]["optimized_d0"]["all_converged"]
-    ]
-    overview = (
-        f"On the clean post-`{baseline['provenance']['base_revision'][:7]}` replay, "
-        f"the blend is {min(ratios):.1f}x--{max(ratios):.1f}x faster than the "
-        f"converged active-range oracle in the {len(ratios)} cases where that oracle "
-        "reaches tolerance."
+def _fmt(value: Any) -> str:
+    if value is None:
+        return "--"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:.8g}".replace("e-0", "e-").replace("e+0", "e+")
+    return str(value)
+
+
+def _sci(value: float, significant_digits: int) -> str:
+    mantissa, exponent = f"{value:.{significant_digits - 1}e}".split("e")
+    return f"{mantissa.rstrip('0').rstrip('.')}e{int(exponent)}"
+
+
+def _table(headers: tuple[str, ...], rows: list[tuple[Any, ...]]) -> str:
+    return "\n".join(
+        [
+            "| " + " | ".join(headers) + " |",
+            "|" + "|".join("---:" if index == 0 else "---" for index in range(len(headers))) + "|",
+            *("| " + " | ".join(_fmt(value) for value in row) + " |" for row in rows),
+        ]
     )
-    capped = []
-    for record in records:
-        methods = record["methods"]
-        if methods["optimized_d0"]["all_converged"]:
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
+
+
+def _selected(case: dict[str, Any]) -> dict[str, Any]:
+    return case["Y_certificate_selected"]
+
+
+def _abstention_label(reason: str) -> str:
+    if "connectivity" in reason:
+        return "connectivity"
+    if "no polynomial" in reason:
+        return "no polynomial"
+    if "compute" in reason:
+        return "compute cap"
+    raise RuntimeError(f"unknown certificate abstention reason: {reason}")
+
+
+def _assert_evidence(data: dict[str, dict[str, Any]]) -> None:
+    active = data["active"]
+    cases = active["cases"]
+    lemma = data["lemma"]
+    mask = data["mask"]
+
+    _require(
+        all(row["passes"] and row["margin"] >= 0 for row in lemma["lemma6"]),
+        "Lemma 6 lower-bound evidence contains a failure or negative margin",
+    )
+    _require(
+        not any(not row["passes"] for row in lemma["lemma2"]),
+        "Lemma 2 evidence contains a norm-bound violation",
+    )
+    _require(
+        lemma["lemma3"]["violations"] == 0
+        and not any(not row["passes"] for row in lemma["lemma3"]["rows"]),
+        "Lemma 3 evidence contains a trajectory-bound violation",
+    )
+    _require(
+        all(
+            row["J0_blocks"]["max_abs_E"] == 0.0
+            and row["J0_blocks"]["max_abs_F"] == 0.0
+            and row["regularized_blocks"]["Y_byte_identical_to_J0"]
+            for row in cases
+        ),
+        "active-block evidence violates E0 = F0 = 0 or Y identity",
+    )
+    _require(
+        all(
+            row["inactive_count"] == 0
+            for row in cases
+            if row["m"] == 2 and row["method"] == "repository_blend_B3"
+        ),
+        "repository mask is non-empty at m = 2",
+    )
+    _require(
+        all(row["repository_masked_count"] == 0 for row in mask["states"] if row["m"] == 2),
+        "delivery repository mask is non-empty at m = 2",
+    )
+    for row in mask["states"]:
+        if row["m"] not in {4, 8}:
             continue
-        blend = methods["tau_blend"]
-        effective_capped = all(
-            not methods[name]["all_converged"] for name in EFFECTIVE_SCALAR_METHODS
+        check = row["repository_checks"]["repo_blend_B3"]
+        _require(
+            row["repository_masked_count"] == row["cfl_masked_count"]
+            and check["inactive_count_repository"] == row["cfl_masked_count"]
+            and check["reference_max_relative_difference"] == 0.0,
+            f"repository and CFL blends differ at N={row['nx']}, m={row['m']}",
         )
-        if not effective_capped:
-            raise RuntimeError("capped oracle has another converged effective scalar")
-        controls = {
-            name: methods[name] for name in ("identity", "floor") if methods[name]["all_converged"]
+
+    summary = active["decision_summary"]
+    certified = [row for row in cases if _selected(row)["certified"]]
+    disk_adequate = [row for row in cases if row["merged_policy"]["verdict"] == "adequate"]
+    union = [row for row in cases if row["union"] == "certified"]
+    _require(
+        len(cases) == 21
+        and len(certified) == summary["Y_certified_count"] == 15
+        and len(union) == summary["union_certified_count"] == 15
+        and len(disk_adequate) == summary["disk_adequate_count"] == 2,
+        "decision counts are not 15 Y-certified, 15 union-certified and 2 disk-adequate of 21",
+    )
+    method_counts = {
+        method: sum(row["method"] == method for row in certified)
+        for method in {
+            "one_inverse_cfl_mask",
+            "cfl_reference_blend_B3",
+            "repository_blend_B3",
         }
-        prefix = (
-            f"At `N={record['nx']},m={record['m']}`, no effective active-range scalar "
-            "reaches tolerance"
+    }
+    _require(
+        method_counts
+        == {
+            "one_inverse_cfl_mask": 6,
+            "cfl_reference_blend_B3": 8,
+            "repository_blend_B3": 1,
+        },
+        "Y-certificate method counts are not 6/8/1",
+    )
+    reason_counts: dict[str, int] = {}
+    for row in cases:
+        selected = _selected(row)
+        if selected["certified"]:
+            continue
+        label = _abstention_label(selected["reason"])
+        reason_counts[label] = reason_counts.get(label, 0) + 1
+    _require(
+        reason_counts == {"connectivity": 3, "no polynomial": 2, "compute cap": 1},
+        "certificate abstention counts are not 3/2/1",
+    )
+
+    target = active["configuration"]["target_tolerance"]
+    for row in certified:
+        selected = _selected(row)
+        degree = selected["degree"]
+        rho = selected["rho"]
+        product = row["J0_blocks"]["lemma1_constant"] * selected["prefactor"]
+        j_star = 0
+        while product * rho ** (degree * j_star) > target:
+            j_star += 1
+        recomputed = 1 + degree * j_star
+        _require(
+            recomputed == selected["lemma1_full_operator_iteration_bound"],
+            "Lemma 1' bound does not recompute for "
+            f"N={row['nx']}, m={row['m']}, method={row['method']}",
         )
-        if controls:
-            control_names = list(controls)
-            control_iterations = {_iterations(values) for values in controls.values()}
-            joined_names = " and ".join(control_names)
-            if len(control_iterations) == 1:
-                control_iteration = next(iter(control_iterations))
-                control_noun = "controls do" if len(control_names) > 1 else "control does"
-                control_clause = (
-                    f"the {joined_names} {control_noun} ({control_iteration} iterations"
-                    f"{' each' if len(control_names) > 1 else ''})"
-                )
-            else:
-                details = ", ".join(
-                    f"{name} {_iterations(values)}" for name, values in controls.items()
-                )
-                control_clause = f"the {joined_names} controls do ({details} iterations)"
-            fastest_name = min(controls, key=lambda name: controls[name]["median_seconds"])
-            fastest = controls[fastest_name]
-            capped.append(
-                f"{prefix}, while {control_clause}; the blend takes "
-                f"{_iterations(blend)} iterations and about {blend['median_seconds']:.3f} s "
-                f"versus about {fastest['median_seconds']:.2f} s for {fastest_name}, "
-                "the fastest control."
+
+    groups: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for row in cases:
+        groups.setdefault((row["nx"], row["m"]), []).append(row)
+    for (nx, m), rows in groups.items():
+        positive = [row for row in rows if row["union"] == "certified"]
+        negative = [row for row in rows if row["union"] != "certified"]
+        if not positive:
+            continue
+        if negative:
+            _require(
+                max(row["gmres_regularized"]["true_stop_count"] for row in positive)
+                <= min(row["gmres_regularized"]["true_stop_count"] for row in negative),
+                f"certified method is slower than an abstaining method at N={nx}, m={m}",
             )
-        else:
-            capped.append(
-                f"{prefix}, nor do identity or floor; the blend takes "
-                f"{_iterations(blend)} iterations and about {blend['median_seconds']:.3f} s."
-            )
-    return overview, " ".join(capped)
+        fastest = min(row["gmres_regularized"]["true_stop_count"] for row in rows)
+        _require(
+            any(row["gmres_regularized"]["true_stop_count"] == fastest for row in positive),
+            f"fastest method is not certified at N={nx}, m={m}",
+        )
+    _require(
+        all(
+            row["gmres_regularized"]["true_stop_count"]
+            > row["gmres_regularized"]["preconditioned_stop_count"]
+            for row in cases
+        ),
+        "a true-residual stop count is not greater than its preconditioned stop count",
+    )
+
+    repro = data["repro"]
+    mask_rows = repro["mask_analysis_subset"]
+    e3_rows = repro["drifted_E3_subset"]
+    _require(
+        len(mask_rows) == 46 and sum(not row["all_equal"] for row in mask_rows) == 4,
+        "mask reproducibility count is not 4 of 46",
+    )
+    _require(
+        len(e3_rows) == 96 and sum(not row["all_equal"] for row in e3_rows) == 48,
+        "E3 reproducibility count is not 48 of 96",
+    )
 
 
-def _loose_claims(baseline: dict[str, Any]) -> tuple[str, int]:
-    loose_tolerance = max(baseline["config"]["work_tolerances"])
-    records = [
-        record
-        for record in baseline["work_precision_records"]
-        if record["requested_relative_residual"] == loose_tolerance
+def _lemma6_table(rows: list[dict[str, Any]]) -> str:
+    names = {"max": "max", "median": "median", "geomean": "geometric mean"}
+    return _table(
+        ("N", "m", "reference", "lower bound", "measured below 0.1"),
+        [
+            (
+                row["nx"],
+                row["m"],
+                names[row["case"].removeprefix("scalar_")],
+                row["lower_bound"],
+                row["measured_below_0p1"],
+            )
+            for row in rows
+        ],
+    )
+
+
+def _m2_table(cases: list[dict[str, Any]], mask: dict[str, Any]) -> str:
+    floor_by_n = {row["nx"]: row["floor_cfl"] for row in mask["states"] if row["m"] == 2}
+    order = {"repository_blend_B3": 0, "one_inverse_cfl_mask": 1, "cfl_reference_blend_B3": 2}
+    rows = sorted(
+        (row for row in cases if row["m"] == 2 and row["nx"] in floor_by_n),
+        key=lambda row: (row["nx"], order[row["method"]]),
+    )
+    return _table(
+        ("N", "method", "masked nodes", "chi_floor", "max Re sigma(Y)", "GMRES"),
+        [
+            (
+                row["nx"],
+                f"`{row['method']}`",
+                row["inactive_count"],
+                floor_by_n[row["nx"]],
+                row["Y_spectrum"]["maximum_real"],
+                row["gmres_regularized"]["true_stop_count"],
+            )
+            for row in rows
+        ],
+    )
+
+
+def _active_geometry_table(cases: list[dict[str, Any]]) -> str:
+    return _table(
+        ("N", "m", "method", "sigma_min(Y)", "C"),
+        [
+            (
+                row["nx"],
+                row["m"],
+                f"`{row['method']}`",
+                row["Y_spectrum"]["sigma_min"],
+                row["J0_blocks"]["lemma1_constant"],
+            )
+            for row in cases
+        ],
+    )
+
+
+def _decision_table(cases: list[dict[str, Any]]) -> str:
+    rows = []
+    for row in cases:
+        selected = _selected(row)
+        certificate = (
+            "certified"
+            if selected["certified"]
+            else f"abstains: {_abstention_label(selected['reason'])}"
+        )
+        rows.append(
+            (
+                row["nx"],
+                row["m"],
+                f"`{row['method']}`",
+                row["merged_policy"]["verdict"],
+                certificate,
+                f"{selected['grid']} / {_fmt(selected.get('degree'))}",
+                selected.get("rho"),
+                selected.get("prefactor"),
+                selected.get("lemma1_full_operator_iteration_bound"),
+                row["gmres_J0"]["true_stop_count"],
+                row["gmres_regularized"]["true_stop_count"],
+            )
+        )
+    return _table(
+        (
+            "N",
+            "m",
+            "method",
+            "disk verdict",
+            "Y certificate",
+            "grid / degree",
+            "rho",
+            "prefactor",
+            "Lemma 1' bound",
+            "GMRES `J_0`",
+            "GMRES `J`",
+        ),
+        rows,
+    )
+
+
+def _direct_table(active: dict[str, Any]) -> str:
+    gmres = {
+        (row["nx"], row["m"], row["method"]): row["gmres_regularized"]["true_stop_count"]
+        for row in active["cases"]
+    }
+    rows = []
+    for row in active["direct_regularized_full_MJ_certificates"]:
+        selected = next(item for item in row["certificate_ladder"] if item["certified"])
+        rows.append(
+            (
+                row["nx"],
+                selected["grid"],
+                selected["degree"],
+                selected["rho"],
+                selected["prefactor"],
+                gmres[(row["nx"], row["m"], row["method"])],
+            )
+        )
+    return _table(("N", "grid", "degree", "rho", "prefactor", "GMRES `J`"), rows)
+
+
+def _reference_table(rows: list[dict[str, Any]]) -> str:
+    return _table(
+        (
+            "N",
+            "m",
+            "references",
+            "sigma_min(Y)",
+            "GMRES (true)",
+            "GMRES (preconditioned)",
+            "certificate",
+        ),
+        [
+            (
+                row["nx"],
+                row["m"],
+                row["reference_count"],
+                row["sigma_min"],
+                row["gmres"]["true_stop_count"],
+                row["gmres"]["preconditioned_stop_count"],
+                (
+                    "certified"
+                    if row["Y_criterion"] is not None and row["Y_criterion"]["certified"]
+                    else "not run"
+                ),
+            )
+            for row in rows
+        ],
+    )
+
+
+def _lemma4_table(rows: list[dict[str, Any]]) -> str:
+    kind_order = {"S": 0, "B3": 1, "Z1": 2, "Zf": 3}
+    selected = [
+        row
+        for row in rows
+        if row["dt"] == 0.02
+        and (row["eta"] is None or row["eta"] == (0.3 if row["m"] == 2 else 0.1))
     ]
-    clauses = []
-    for m in sorted({record["m"] for record in records}):
-        deltas = []
-        for record in records:
-            if record["m"] != m:
-                continue
-            scalars = {
-                name: values
-                for name, values in record["methods"].items()
-                if name not in {"identity", "tau_blend"} and values["all_converged"]
-            }
-            best = min(scalars.values(), key=lambda values: values["median_seconds"])
-            blend = record["methods"]["tau_blend"]
-            deltas.append(100.0 * (blend["median_seconds"] / best["median_seconds"] - 1.0))
-        if all(delta >= 0.0 for delta in deltas):
-            clauses.append(f"{min(deltas):.1f}--{max(deltas):.1f}% slower at `m={m}`")
-        elif all(delta <= 0.0 for delta in deltas):
-            advantages = [-delta for delta in deltas]
-            clauses.append(f"{min(advantages):.1f}--{max(advantages):.1f}% faster at `m={m}`")
-        else:
-            clauses.append(f"mixed ({min(deltas):+.1f}% to {max(deltas):+.1f}%) at `m={m}`")
-    return ", ".join(clauses), len(records)
-
-
-def _contrast_claims(baseline: dict[str, Any]) -> tuple[str, str]:
-    rows = baseline["summaries"]["contrast"]
-    ratio_clauses = []
-    for m in sorted({row["m"] for row in rows}):
-        subset = sorted((row for row in rows if row["m"] == m), key=lambda row: row["step"])
-        ratios = [row["best_single_iterations"] / row["tau_iterations"] for row in subset]
-        ratio_clauses.append(
-            f"from {ratios[0]:.2f}x to {min(ratios[1:]):.2f}--{max(ratios[1:]):.2f}x for `m={m}`"
-        )
-    work = baseline["work_precision_records"]
-    contrast = baseline["contrast_records"]
-    work_at_max = sum(
-        math.isclose(record["optimized_d0_scan"]["ratio_to_active_maximum"], 1.0) for record in work
+    selected.sort(key=lambda row: (row["m"], kind_order[row["kind"]]))
+    by_m = {m: {row["kind"]: row for row in selected if row["m"] == m} for m in (2, 4, 8)}
+    return _table(
+        (
+            "m",
+            "scalar (S)",
+            "repository blend (B3)",
+            "mask, one inverse (Z1)",
+            "mask with frame (Zf)",
+        ),
+        [
+            (
+                m,
+                by_m[m]["S"]["kappa2_M"],
+                by_m[m]["B3"]["kappa2_M"],
+                by_m[m]["Z1"]["kappa2_M"],
+                by_m[m]["Zf"]["kappa2_M"],
+            )
+            for m in (2, 4, 8)
+        ],
     )
-    contrast_at_max = sum(
-        math.isclose(record["optimized_d0_scan"]["ratio_to_active_maximum"], 1.0)
-        for record in contrast
+
+
+def _cn_table(rows: list[dict[str, Any]]) -> str:
+    return _table(
+        ("m", "BE Newton", "BE GMRES", "CN Newton", "CN GMRES"),
+        [
+            (
+                row["m"],
+                row["BE"]["newton_total"],
+                row["BE"]["gmres_total"],
+                row["CN"]["newton_total"],
+                row["CN"]["gmres_total"],
+            )
+            for row in rows
+        ],
     )
-    exceptions = sorted(
-        record["optimized_d0_scan"]["ratio_to_active_maximum"]
-        for record in contrast
-        if not math.isclose(record["optimized_d0_scan"]["ratio_to_active_maximum"], 1.0)
+
+
+def render(results_dir: Path = RESULTS_DIR) -> str:
+    """Render Part I after fail-closed validation of all quoted evidence."""
+    data = _load(results_dir)
+    _assert_evidence(data)
+    active = data["active"]
+    cases = active["cases"]
+    cfl = data["cfl"]
+    cn = data["cn"]
+    lemma = data["lemma"]
+    mask = data["mask"]
+    reference = data["reference"]
+    repro = data["repro"]
+    runtime = data["runtime"]
+
+    delivery_config = mask["provenance"]["config"]
+    dt = delivery_config["dt"]
+    epsilon = delivery_config["epsilon"]
+    x_min = delivery_config["x_min"]
+    x_max = delivery_config["x_max"]
+    nx_values = sorted({row["nx"] for row in cases})
+    m_values = sorted({row["m"] for row in cases})
+    case_count = len(cases)
+    reference_count = len(next(row for row in cases if row["method"].endswith("B3"))["references"])
+    eta_m2 = next(row["eta"] for row in cases if row["m"] == 2)
+    eta_other = next(row["eta"] for row in cases if row["m"] == 4)
+
+    lemma6 = lemma["lemma6"]
+    lemma6_ratios = [row["lower_bound"] / row["measured_below_0p1"] for row in lemma6]
+    lemma6_min_margin = min(row["margin"] for row in lemma6)
+    lemma2_worst_1 = max(max(-row["margin_1"], 0.0) for row in lemma["lemma2"])
+    lemma2_worst_inf = max(max(-row["margin_inf"], 0.0) for row in lemma["lemma2"])
+    lemma3_rows = lemma["lemma3"]["rows"]
+    lemma3_min_margin = min(row["minimum_margin"] for row in lemma3_rows)
+
+    m2_cases = {(row["nx"], row["method"]): row for row in cases if row["m"] == 2}
+    floor_records = cfl["floor"]
+    floor_failed = next(row for row in floor_records if row["kind"] == "Z1" and row["eta"] == 0.1)
+    floor_masked = [row for row in floor_records if row["kind"] == "Z1" and row["eta"] > 0.1]
+
+    identity_rows = {row["m"]: row for row in lemma["identity_block_deviation"]}
+    m2_deviations = [
+        row["regularized_blocks"]["max_abs_E"]
+        for row in cases
+        if row["m"] == 2 and row["method"] == "one_inverse_cfl_mask"
+    ]
+    m2_sizes = [
+        row["nx"] for row in cases if row["m"] == 2 and row["method"] == "one_inverse_cfl_mask"
+    ]
+    m2_scale_ratio = m2_deviations[-1] / m2_deviations[-2]
+    m2_expected_ratio = ((m2_sizes[-1] + 1) / (m2_sizes[-2] + 1)) ** 2
+
+    certified = [row for row in cases if _selected(row)["certified"]]
+    bounds_to_measured = [
+        _selected(row)["lemma1_full_operator_iteration_bound"] / row["gmres_J0"]["true_stop_count"]
+        for row in certified
+    ]
+    min_factor_row = certified[bounds_to_measured.index(min(bounds_to_measured))]
+    max_factor_row = certified[bounds_to_measured.index(max(bounds_to_measured))]
+
+    configs = active["configuration"]
+    public = inspect.signature(assess_dense_pseudospectral_criterion).parameters
+    public_grid = public["grid_points_per_axis"].default
+    public_padding = public["domain_padding_fraction"].default
+    public_degrees = public["polynomial_degrees"].default
+    public_epsilon_samples = public["epsilon_samples"].default
+    public_target = public["target_tolerance"].default
+    changes = {row["change"]: row["commit"] for row in configs["certificate_changes"]}
+
+    method_counts = {
+        method: sum(row["method"] == method and _selected(row)["certified"] for row in cases)
+        for method in {"one_inverse_cfl_mask", "cfl_reference_blend_B3", "repository_blend_B3"}
+    }
+    reason_counts = {"connectivity": 0, "no polynomial": 0, "compute cap": 0}
+    for row in cases:
+        if not _selected(row)["certified"]:
+            reason_counts[_abstention_label(_selected(row)["reason"])] += 1
+
+    reference_rows = reference["rows"]
+    by_reference = {(row["nx"], row["m"], row["reference_count"]): row for row in reference_rows}
+    true_differences = [
+        row["gmres_regularized"]["true_stop_count"]
+        - row["gmres_regularized"]["preconditioned_stop_count"]
+        for row in cases
+    ]
+
+    cn_mask_differences = {
+        m: {row["operator_mask_symmetric_difference"] for row in cn["steps"] if row["m"] == m}
+        for m in m_values
+        if any(row["m"] == m for row in cn["steps"])
+    }
+    _require(
+        all(len(values) == 1 for values in cn_mask_differences.values()),
+        "CN mask difference is not constant across replay steps",
     )
-    work_count = f"all {len(work)}" if work_at_max == len(work) else f"{work_at_max} of {len(work)}"
-    contrast_count = (
-        f"all {len(contrast)}"
-        if contrast_at_max == len(contrast)
-        else f"{contrast_at_max} of {len(contrast)}"
+
+    mask_differences = sum(not row["all_equal"] for row in repro["mask_analysis_subset"])
+    e3_differences = sum(not row["all_equal"] for row in repro["drifted_E3_subset"])
+    status_changes = [
+        row for row in repro["drifted_E3_subset"] if not row["fields"]["steps_converged"]["equal"]
+    ]
+    _require(len(status_changes) == 1, "expected exactly one convergence-status change")
+    status = status_changes[0]
+
+    runtime_rows = [row for row in runtime["records"] if row["method"] == "tau_blend"]
+    runtime_rows.sort(key=lambda row: row["m"])
+    runtime_ratios = ", ".join(
+        f"`m = {row['m']}`: {row['cost']['runtime_estimate_time_over_gmres']:.1f}x"
+        for row in runtime_rows
     )
-    selection = (
-        f"The oracle selects the active-support maximum for {work_count} "
-        f"initial-wide-front cases and {contrast_count} contrast states."
+
+    lemma6_table = _lemma6_table(lemma6)
+    m2_table = _m2_table(cases, mask)
+    geometry_table = _active_geometry_table(cases)
+    decision_table = _decision_table(cases)
+    direct_table = _direct_table(active)
+    reference_table = _reference_table(reference_rows)
+    lemma4_table = _lemma4_table(lemma["lemma4"])
+    cn_table = _cn_table(cn["summaries"])
+
+    nx_text = ", ".join(str(value) for value in nx_values)
+    m_text = ", ".join(str(value) for value in m_values)
+    public_degree_text = ", ".join(str(value) for value in public_degrees)
+    study_degree_text = ", ".join(str(value) for value in configs["polynomial_degrees"])
+    grid_text = ", ".join(str(value) for value in configs["grid_ladder"])
+    mask_rule = (
+        f"`D <= max({_fmt(REPOSITORY_ACTIVE_ABSOLUTE)}, "
+        f"{_fmt(REPOSITORY_ACTIVE_RELATIVE)} max(D))`"
     )
-    if exceptions:
-        selection += (
-            f" The remaining {len(exceptions)} are still high in the active range ("
-            + " and ".join(f"`{value:.3f}`" for value in exceptions)
-            + " of the active maximum), not means."
-        )
-    return ", and ".join(ratio_clauses), selection
+    four_hour_cap = configs["case_cap_seconds"] / (60 * 60)
+    abstention_count = case_count - len(certified)
 
+    return f"""# PME DST/tau-blend: mask analysis and certified preconditioner decisions
 
-def render() -> str:
-    """Render the report after validating that every required input is complete."""
-    baseline = _load("pme_dst_tau_blend_single_reference_baselines.json")
-    batching = _load("pme_dst_tau_blend_batching_audit_gpu.json")
-    criterion = _load("pme_dst_tau_blend_pseudospectral_criterion.json")
-    runtime = _load("pme_dst_tau_blend_pseudospectral_runtime_estimator.json")
-    for report in (baseline, criterion, runtime):
-        if not report.get("complete", False):
-            raise RuntimeError(f"incomplete report: {report.get('schema')}")
-    apply_min, apply_max, solve_min, solve_max = _batching_summary(batching)
-    offline_min, offline_max, rejection, rejection_m = _criterion_summary(runtime)
-    spectral = _spectral_claims(baseline)
-    tight_overview, tight_capped = _tight_claims(baseline)
-    loose_summary, loose_case_count = _loose_claims(baseline)
-    contrast_ratios, oracle_selection = _contrast_claims(baseline)
-    config = baseline["config"]
-    nx_values = "/".join(str(value) for value in config["work_nx_values"])
-    m_values = ",".join(str(value) for value in config["work_m_values"])
-    tight_tolerance = min(config["work_tolerances"])
-    loose_tolerance = max(config["work_tolerances"])
-    reference_count = batching["reference_count_static_shape"]
-    oracle_scan_count = len(baseline["work_precision_records"]) + len(baseline["contrast_records"])
-    oracle_candidate_count = oracle_scan_count * config["oracle_scan_points"]
-    blend_tail_count = spectral["blend_near_zero_maximum"]
-    blend_tail_description = (
-        "zero eigenvalues" if blend_tail_count == 0 else f"at most {blend_tail_count} eigenvalues"
-    )
-    spectral_paragraph = _wrap(
-        f"""The decisive observation is not that the arithmetic mean was chosen poorly.
-        Every effective nonzero scalar Helmholtz reference tested here--arithmetic mean,
-        bulk mean, constant one, geometric mean, harmonic mean, and the per-case GMRES
-        oracle `d0*`--retains a large near-zero spectral tail. At
-        `m={spectral["exponents"]}`, their condition numbers span only
-        `{spectral["condition_ranges"]}`, with respective within-exponent spreads of
-        {spectral["condition_spreads_percent"]}, and with
-        {spectral["near_zero_minimum"]}--{spectral["near_zero_maximum"]} eigenvalues below
-        magnitude {NEAR_ZERO_THRESHOLD:g}. The oracle `d0*` is spectrally the worst of
-        that group: it has the largest condition number and smallest `min|lambda|` at
-        every measured exponent. The near-zero `floor` reference and identity do not
-        manufacture the tail, but they also provide essentially no useful conditioning
-        and have still larger condition numbers. Thus "effective scalar reference"
-        means a non-degenerate scalar that actually preconditions: identity and the
-        near-zero floor are controls that avoid the tail only by forgoing effective
-        conditioning. The {reference_count}-reference blend removes the tail:
-        {blend_tail_description} below
-        {NEAR_ZERO_THRESHOLD:g}, with `kappa_2={spectral["blend_condition_numbers"]}` at
-        `m={spectral["exponents"]}`. For a frozen reference `D0`, the identity
-        `P0^-1 J = I + K (diag(D) - D0 I)` with `K` symmetric positive definite
-        explains the tail: where `D` is negligible the operator acts approximately
-        as `I - D0 K`, whose eigenvalues `1/(1 + D0 g)`, with `g` an eigenvalue of
-        `-dt L`, approach zero at high frequency, so for fixed `D0 > 0` the tail
-        deepens under mesh refinement. The identity does not single out an optimal scalar;
-        where the oracle lands is an empirical observation below, not a consequence
-        of the identity."""
-    )
-    counter_paragraph = _wrap(
-        f"""Each cell is `counted GMRES iterations; median +/- IQR seconds`. Timings
-        exclude {config["timing_warmups"]} warmups, synchronize with
-        `jax.block_until_ready`, and include fresh linearization/preconditioner
-        construction plus the solve. `cap` means the target was not reached within the
-        configured budget. Pavlov identified that the inherited counter reports
-        {config["max_krylov_iters"] + 1} at a budget of
-        {config["max_krylov_iters"]} and explicitly deferred changing that convention
-        because doing so would shift recorded counts; this study preserves that known
-        item."""
-    )
-    tight_paragraph = _wrap(f"""The active-support oracle scan uses {config["oracle_scan_points"]}
-        logarithmically spaced values between `D_min(active)` and `D_max(active)` for
-        every case: {oracle_scan_count} independent scans and {oracle_candidate_count}
-        candidate solves across the main and contrast studies. {tight_overview}
-        {tight_capped}""")
-    loose_paragraph = _wrap(
-        f"""The result is regime-dependent: the blend is {loose_summary} on this replay.
-        These timing separations must be read alongside the table's IQRs.
-        {loose_case_count} cases are not a basis for a dispatch rule, and none is
-        proposed; an earlier resolution-aware-dispatch exploration was closed as a
-        negative result."""
-    )
-    contrast_paragraph = _wrap(
-        f"""The iteration advantage shrinks as compact support fills in but does not
-        vanish: the measured oracle/blend ratio falls {contrast_ratios}. It tracks the
-        near-zero (degeneracy) fraction more coherently than `D95/D05`.
-        {oracle_selection} This explains why `frozen_bulk` is generally the strongest
-        shipped nontrivial scalar and `frozen_mean` the weakest in these states. It does
-        not by itself justify changing moljax's default."""
-    )
-    batching_paragraph = _wrap(
-        f"""The production `l={reference_count}` application was already batched through
-        `{batching["production_path"]}`. StableHLO confirms a single Helmholtz call over
-        the full static `{reference_count} x N` reference tensor rather than a
-        per-reference Python loop. The batched and forced-sequential actions agree to
-        `{batching["maximum_relative_action_difference"]:.2e}` relative error, and all
-        solve iteration sets are identical. On GPU, batching speeds up the application
-        itself by {apply_min:.2f}--{apply_max:.2f}x; the end-to-end solve speedup is only
-        {solve_min:.3f}--{solve_max:.3f}x because the application is not the bottleneck at
-        these sizes. Therefore the loose-tolerance deficit is not a hidden
-        sequential-transform bug. The `(l,N)` Helmholtz denominator is still formed
-        inside each application; hoisting it is an identified, unimplemented
-        optimization."""
-    )
-    criterion_paragraph = _wrap(
-        f"""The dense criterion evaluates the bound on an explicit closed contour
-        `Gamma`: the boundary of the grid cells of the selected pseudospectral
-        component, which encloses every eigenvalue. On every edge of `Gamma`, the
-        1-Lipschitz property of `sigma_min(zI - A)` and the true grid samples give a
-        proven resolvent floor `s_Gamma`, and a Lipschitz bound on the polynomial
-        covers the points between polynomial samples to give `M_Gamma`. The Cauchy
-        integral then gives `||p(A)^k|| <= L(Gamma)/(2*pi*s_Gamma) * M_Gamma^k`; no
-        Crouzeix spectral-set constant belongs in that bound. Apart from
-        floating-point rounding (an explicit SVD backward-error margin is
-        subtracted), this is a certificate, not interval arithmetic. Certification is
-        offline: the matrix-free runtime estimator costs
-        {offline_min:.1f}--{offline_max:.1f}x the corresponding solve, a fundamental
-        evidence floor rather than an omitted batching optimization. As a rejection
-        gate it can be cheap: rejecting the inadequate `m={rejection_m}` frozen-mean
-        reference costs {rejection:.2f}x its solve. Sparse matrix-free Ritz/path mode
-        remains provisional and records `rate_bound_available=false`, because reduced
-        Ritz values do not prove full spectrum coverage and sparse paths do not provide
-        a closed-contour arc length. `_fit_polynomial` minimizes a square-envelope
-        surrogate with separate real and imaginary linear constraints. Its sampled
-        maximum is only a search heuristic, since a polynomial can be small at every
-        sample and larger between them; the reported effective rate is
-        `M_Gamma^(1/degree)` from the continuous contour bound, so the surrogate can
-        make the search suboptimal but cannot make the reported rate optimistic."""
-    )
-    matrix_free_rate_available = all(
-        not record["fully_matrix_free_runtime_estimate"]["rate_bound_available"]
-        for record in runtime["records"]
-    )
-    if not matrix_free_rate_available:
-        raise RuntimeError("matrix-free sparse-path records unexpectedly expose a rate bound")
+This report replaces the stale-flagged version of this file, whose numbers
+predated the corrected diffusion coefficient. The earlier text remains in git
+history. Part I covers the mask analysis and the certified decision procedure.
+Part II, the single-reference baseline study, is being restated against the
+JSONs regenerated with the corrected coefficient.
 
-    return f"""# PME DST/tau-blend experimental report
+The lemmas cited below are stated and proved in `TAU_BLEND_MASK_LEMMAS.md`
+(G. Pavlov). `TAU_BLEND_MASK_CLAIMS.md` (G. Pavlov) maps the numbers of the
+earlier mask study to their scripts. `TAU_BLEND_MASK_FACTS.md` prints every
+number in Part I with its source file and JSON pointer, and is regenerated from
+the committed JSONs by `benchmarks/make_tau_blend_mask_facts.py`.
 
-## Scope and claim discipline
+# Part I. Mask analysis and certified decisions
 
-This is a measurement report for Newton--Krylov preconditioning of the
-node-centred one-dimensional porous-medium equation (PME), using backward Euler
-for the linear-solve study and Crank--Nicolson/backward-Euler-compatible residual
-and preconditioner machinery. It does **not** apply to IMEX--Strang or ETDRK4:
-those methods avoid Newton solves and are unaffected by this work (moljax paper,
-Sec. 6.1.3). The experiments use `N={nx_values}`, PME exponents
-`m in {{{m_values}}}`, one wide-front backward-Euler linearization for the main
-work--precision comparison, and node-centred homogeneous Dirichlet boundaries.
+## 1. Scope and limits
 
-There is no multigrid baseline. Accordingly this report makes **no performance
-claim** against the relevant solver state of the art. Wall times below are
-capability measurements on this machine, not a recommendation to replace a
-multigrid method or moljax's default preconditioner.
+- **Problem.** The one-dimensional, node-centred porous-medium equation with
+  homogeneous Dirichlet boundaries on `[{_fmt(x_min)}, {_fmt(x_max)}]` and the
+  regularized coefficient `D = m (u^2 + eps^2)^((m-1)/2)`,
+  `eps = {_fmt(epsilon)}`. One backward-Euler linearization per state, with
+  `dt = {_fmt(dt)}`. The active-block study uses `N = {nx_text}` and
+  `m = {m_text}`.
+- **Time integration.** All trajectory evidence uses backward Euler. One bounded
+  Crank--Nicolson replay is reported in Section 8, and it is not a general claim
+  about Crank--Nicolson.
+- **Not covered.** IMEX--Strang and ETDRK4 avoid Newton solves and are not affected
+  by this work. There is no multigrid baseline, so this report makes no performance
+  claim against the solver state of the art. Part I reports iteration counts only,
+  no wall times.
+- **Counts.** All GMRES counts in Sections 3 to 7 are unrestarted GMRES stopped on
+  the true relative residual `||b - J x_k|| <= 1e-8 ||b||`, on the regularized
+  operator unless stated otherwise. Section 8 compares them with the
+  preconditioned-residual convention. Exact counts can differ by one or a few
+  iterations between hosts (Section 9).
 
-## Motivation: where the classical constant reference stops being graceful
+Source: `tau_blend_mask_analysis.json`, `/provenance/config`; `tau_blend_active_block.json`,
+`/configuration` [F1, F6].
 
-Constant-coefficient FFT/DST preconditioning for a variable-coefficient diffusion
-operator is classical. QSC/FFT solvers, the variable-coefficient disk solver, and
-fast sine-transform analyses obtain mesh-independent or spectrally equivalent
-preconditioners when the coefficient is positive and has bounded contrast. The
-moljax paper says variable coefficients should "degrade performance gracefully"
-(Sec. 6.4, limitation 2). Degenerate PME diffusion is outside that contract:
-`D(u)` vanishes on a set of positive measure, so the literal contrast is unbounded.
+### Preconditioners compared
 
-The tested fixed operator is
+All have the form `M = Q + sum_w H(d_w) W_w` of Pavlov's lemma setting, with
+`H(d) = (I + dt d T)^-1` the DST-I Helmholtz inverse, `Q` the projector onto the
+masked set `Z`, and diagonal input weights `W_w` that vanish on `Z`.
 
-`P_tau^-1 r = W0 r + sum_w H(d_w) (W_w r)`,
+| Name | Mask | Helmholtz references |
+|---|---|---|
+| `repository_blend_B3` | repository rule {mask_rule} | {reference_count} active-support quantiles with Gaussian log-coefficient weights |
+| `cfl_reference_blend_B3` | CFL mask `chi_j = 4 dt d_j / h^2 <= eta`, `eta = {_fmt(eta_m2)}` at `m = 2` and `{_fmt(eta_other)}` otherwise | {reference_count} quantiles of the CFL-active coefficients with the same weights |
+| `one_inverse_cfl_mask` | the same CFL mask | one inverse at the active maximum |
 
-where the active-support weights form a partition of unity and each `H(d_w)` is a
-constant-coefficient DST-I Helmholtz inverse. This is an incremental experimental
-remedy, not a claim to a new preconditioner class. Partition-of-unity
-preconditioning is established in RBF-PUM and SORAS, while MPGMRES already uses
-multiple preconditioners by enlarging the Krylov search space. Unlike MPGMRES, this
-blend is one fixed linear operator and retains ordinary GMRES; it does not incur
-the multipreconditioned Krylov-space orthogonalisation growth.
+At `m = 4` and `m = 8` the repository blend and the CFL blend select the same
+nodes and references in the committed cross-checks, so the study has {case_count}
+unique cases: the two CFL methods at all nine `(N, m)` pairs, and the repository
+blend at `m = 2`.
 
-## Primary result: the spectral-equivalence boundary
+Source: `tau_blend_mask_analysis.json`, `/states/*/repository_checks`;
+`tau_blend_active_block.json`, `/cases/*` [F3, F6].
 
-{spectral_paragraph}
+## 2. Why a scalar reference leaves a tail (Lemma 6)
 
-{_spectral_table(baseline)}
+Lemma 6 bounds the number of small eigenvalues of `H(d) J` from below, for any
+scalar reference `d`, in terms of the modal CFL numbers of the region where the
+coefficient sits at its floor:
 
-This is the boundary of the classical bounded-contrast argument in these data:
-effective single-reference preconditioning loses spectral equivalence when the
-coefficient is negligible on a set of positive measure; the partitioned blend
-restores a zero-free spectrum for the tested states. The regularized coefficient
-`D = m (u^2 + epsilon^2)^((m-1)/2)` has no exact zero set: its floor is
-`m epsilon^(m-1)`. At `m=2` with `epsilon=1e-5` that floor (`2e-5`) lies above
-the active threshold, so every node is active; at larger `m` the floor lies below
-it and the inactive nodes are the near-zero set.
+`#{{lambda(H(d) J) < a}} >= #{{beta_k < a}} - s`, with
+`beta_k = (1 + dt f mu_k) / (1 + dt d mu_k)`.
 
-## Linear-solve measurements
+At level `a = 0.1` the bound holds on all {len(lemma6)} scalar-reference records,
+with a minimum margin of {lemma6_min_margin} eigenvalues. The bound accounts for
+{100 * min(lemma6_ratios):.1f}% to {100 * max(lemma6_ratios):.1f}% of the measured
+tail (bound/measured from {_fmt(min(lemma6_ratios))} to
+{_fmt(max(lemma6_ratios))}). The tail is therefore structural: it is forced by
+the floor region and the CFL numbers, not by a poor choice of `d`.
 
-{counter_paragraph}
+{lemma6_table}
 
-{_work_table(baseline)}
+Source: `tau_blend_lemma_checks.json`, `/lemma6/*` [F2].
 
-### Tight tolerance (`{_scientific(tight_tolerance)}`)
+## 3. The mask at m = 2 under the corrected coefficient
 
-{_tight_table(baseline)}
+Lemma 5 gives every node the floor CFL number
+`chi_floor = 4 dt m eps^(m-1) / h^2`. With the corrected coefficient,
+`D >= {_fmt(next(row['diffusivity_floor'] for row in lemma6 if row['m'] == 2))}`
+at `m = 2`, which lies above the repository threshold {mask_rule}, so the
+repository mask selects **no** node at `m = 2`. The CFL mask selects
+{m2_cases[(512, 'one_inverse_cfl_mask')]['inactive_count']} and
+{m2_cases[(1024, 'one_inverse_cfl_mask')]['inactive_count']} nodes at `N = 512`
+and `N = 1024`, exactly the floor nodes.
 
-{tight_paragraph}
+{m2_table}
 
-These replayed values supersede the preliminary scratch timing headline:
-iteration counts for the active oracle mostly reproduce, but the merged GMRES
-counter, independent rerun, and current timing samples yield the ratios above.
-The committed JSON is authoritative.
+Source: `tau_blend_active_block.json`, `/cases/*`;
+`tau_blend_mask_analysis.json`, `/states/*` [F3].
 
-### Loose tolerance (`{_scientific(loose_tolerance)}`)
+Without a mask, the repository blend's active-block spectrum spreads to maximum
+real parts {m2_cases[(512, 'repository_blend_B3')]['Y_spectrum']['maximum_real']:.1f}
+and {m2_cases[(1024, 'repository_blend_B3')]['Y_spectrum']['maximum_real']:.1f},
+and GMRES needs {m2_cases[(512, 'repository_blend_B3')]['gmres_regularized']['true_stop_count']}
+and {m2_cases[(1024, 'repository_blend_B3')]['gmres_regularized']['true_stop_count']}
+iterations. The CFL blend restores a compact spectrum (maximum real parts
+{m2_cases[(512, 'cfl_reference_blend_B3')]['Y_spectrum']['maximum_real']:.2f}
+and {m2_cases[(1024, 'cfl_reference_blend_B3')]['Y_spectrum']['maximum_real']:.2f})
+and needs {m2_cases[(512, 'cfl_reference_blend_B3')]['gmres_regularized']['true_stop_count']}
+and {m2_cases[(1024, 'cfl_reference_blend_B3')]['gmres_regularized']['true_stop_count']}
+iterations. At `N = 128` the counts are
+{m2_cases[(128, 'repository_blend_B3')]['gmres_regularized']['true_stop_count']}
+(repository) and
+{m2_cases[(128, 'cfl_reference_blend_B3')]['gmres_regularized']['true_stop_count']}
+(CFL blend).
 
-{_loose_table(baseline)}
+**Limit (Lemma 5).** At fixed `dt`, `chi_floor` grows as `h^-2`, so any fixed
+cutoff `eta` eventually loses the mask under refinement. Pavlov's floor case
+shows this: at `m = {floor_failed['m']}`, `N = {floor_failed['nx']}`,
+`dt = {_fmt(floor_failed['dt'])}`, `chi_floor = {floor_failed['floor_cfl']:.9g}`
+exceeds `eta = {_fmt(floor_failed['eta'])}`, the mask is empty, and the
+one-inverse solve does not reach tolerance within {floor_failed['gmres_max']}
+iterations; at `eta = {_fmt(floor_masked[0]['eta'])}` or
+`{_fmt(floor_masked[-1]['eta'])}` the mask holds {floor_masked[0]['masked']} nodes.
+A mesh-robust cutoff rule is not proposed here.
 
-{loose_paragraph}
+Source: `tau_blend_cfl_fidelity.json`, `/floor/*` [F13].
 
-## Contrast and degeneracy
+## 4. Exact deflation and its regularized perturbation (Lemmas 1, 2 and 5)
 
-{_contrast_table(baseline)}
+In the node order `(Z, A)`, write `M J = [[I + E, X], [F, Y]]`. For `J_0`,
+which sets the coefficient to zero on `Z`, Lemma 1 gives `E = F = 0` exactly;
+the measurements confirm `E_0 = F_0 = 0` in all {case_count} cases. The active
+block `Y` is byte-identical between `J_0` and the regularized `J` in all
+{case_count} cases.
 
-{contrast_paragraph}
+For the regularized `J`, the identity block deviates by the floor CFL term. The
+measured maximum deviation equals `2 dt d_floor / h^2` to
+`{identity_rows[2]['absolute_difference']:.2g}` at `N = {identity_rows[2]['nx']},
+m = 2`, and to `{identity_rows[4]['absolute_difference']:.2g}` at
+`N = {identity_rows[4]['nx']}, m = 4`. It scales with `(N + 1)^2`: at `m = 2`
+it is
+`{_sci(m2_deviations[0], 8)}`, `{_sci(m2_deviations[1], 8)}` and
+`{_sci(m2_deviations[2], 8)}` at `N = {m2_sizes[0]}, {m2_sizes[1]}, {m2_sizes[2]}`,
+and the ratio between the last two is {m2_scale_ratio:.3f}, equal to
+`(({m2_sizes[-1]} + 1)/({m2_sizes[-2]} + 1))^2 = {m2_expected_ratio:.3f}`. At
+`m = 8` the predicted deviation is `{_sci(identity_rows[8]['expected_2_dt_floor_over_h2'], 1)}`,
+below the double-precision resolution of the unit diagonal; the measured maximum
+is then about half the prediction, consistent with an off-diagonal entry surviving
+while the diagonal increment rounds away (an interpretation, not a separate
+measurement).
 
-## Batched implementation audit
+Lemma 2 bounds `||J - J_0||_p <= eta_Z`. Over {len(lemma['lemma2'])} records there
+are no violations; the worst excess is `{lemma2_worst_1:.2g}` in the 1-norm and
+`{lemma2_worst_inf:.2g}` in the infinity norm, which is round-off. In several
+records `||J - J_0||_1` equals `eta_Z` to rounding, so the 1-norm bound is attained
+on these states.
 
-{batching_paragraph}
+Source: `tau_blend_active_block.json`, `/cases/*/J0_blocks`,
+`/cases/*/regularized_blocks`; `tau_blend_lemma_checks.json`, `/lemma2`,
+`/identity_block_deviation` [F4, F10].
 
-## Pseudospectral criterion
+## 5. From the active block to a GMRES bound (Lemma 1', ours)
 
-{criterion_paragraph}
+**Statement.** Let `M J_0 = [[I, X], [0, Y]]` and let `q` be any polynomial with
+`q(0) = 1`. Then `p(z) = (1 - z) q(z)` satisfies `p(0) = 1` and
 
-## Honest limits
+`p(M J_0) = [[0, -X q(Y)], [0, (I - Y) q(Y)]]`,
 
-- No multigrid baseline; therefore no performance claim.
-- One-dimensional, node-centred, homogeneous-Dirichlet PME only, at `N={nx_values}`.
-- The main linear study measures one backward-Euler step; inexact-Newton traces
-  are supporting evidence, not a full time-to-solution application benchmark.
-- Loose-tolerance behavior is regime-dependent, and no switching heuristic is
-  proposed.
-- The advantage shrinks as the near-zero set fills in, although it does not vanish in
-  the measured contrast sweep.
-- A two-dimensional extension is a major build: moljax's `Grid2D` is cell-centred,
-  there is no matching 2-D DST-I path, the flux-form linearization differs, and a
-  PME front is curve-shaped. It was not attempted here.
-- The dense pseudospectral certificate is intentionally offline at
-  `N={runtime["config"]["nx"]}`; its sparse matrix-free approximation is a
-  provisional diagnostic only.
+so for every right-hand side, GMRES on `M J_0` satisfies
 
-## Reproduction and provenance
+`||r_{{k+1}}|| / ||r_0|| <= C min_{{q(0)=1, deg q <= k}} ||q(Y)||_2`, with
+`C = ||[X; I - Y]||_2`.
 
-Run the benchmark entry points with `PYTHONPATH="$PWD"` and Python x64 enabled.
-The canonical tables come from
-`benchmarks/pme_dst_tau_blend_single_reference_baselines.py`; the batching audit,
-dense/sparse pseudospectral studies, validation, spectral analysis, and
-inexact-Newton scripts provide the supporting JSONs. Source states use a
-generation fingerprint, relocatable cache-relative path, and SHA256 identity;
-foreign or damaged artifacts fail closed. Provenance resolves
-`merge-base upstream/main -> git describe --tags -> HEAD -> unavailable` and
-labels the source. Reassessment reconstructs the stored grid, state, solver, and
-preconditioner configuration before accepting an artifact.
+**Proof.** `I - M J_0 = [[0, -X], [0, I - Y]]`, and `q(M J_0)` is block upper
+triangular with diagonal blocks `q(1) I` and `q(Y)`. Multiplying gives the
+displayed form. GMRES minimizes over all residual polynomials of degree `k + 1`,
+so its residual is at most `||p(M J_0)|| ||r_0||` for this `p`.
 
-Figures are regenerated from the JSONs only:
+The bound is a worst-case (ideal-GMRES) bound: it holds for every right-hand side
+and can be pessimistic for a particular one. It is exact for `J_0` only; for the
+regularized `J` this report certifies the full operator directly (Section 6). The
+block identity is checked numerically for random `q` in
+`tests/test_tau_blend_active_block.py`.
 
-```bash
-PYTHONPATH="$PWD" conda run -n moljax python benchmarks/make_tau_blend_figures.py
-```
+{geometry_table}
 
-## References (DOI verified)
+Source: `tau_blend_active_block.json`, `/cases/*` [F5].
 
-1. G. Pavlov, "moljax: GPU-accelerated method of lines for
-   stiff reaction-diffusion PDEs with FFT preconditioning," *Computer Physics
+When the mask is empty (the repository blend at `m = 2`), `Y = M J` and
+`C = ||I - M J||_2`.
+
+## 6. Decision procedure: disk test plus pseudospectral certificate
+
+### The certificate
+
+For a closed contour `Gamma` that encloses `sigma(A)` and excludes the origin
+(the boundary of the grid cells of a connected epsilon-pseudospectral component),
+let `s_Gamma` be a proven lower bound for `sigma_min(zI - A)` on `Gamma` and
+`M_Gamma` a proven upper bound for `|p|` on `Gamma`, for a polynomial `p` of
+degree `d` with `p(0) = 1`. The Cauchy integral gives
+`||p(A)^j|| <= L(Gamma) / (2 pi s_Gamma) * M_Gamma^j` [Trefethen--Embree]. The
+certified rate is `rho = M_Gamma^(1/d)`, and the prefactor is
+`L(Gamma) / (2 pi s_Gamma)`.
+
+`s_Gamma` comes from the grid samples of `sigma_min`, its 1-Lipschitz property
+along each edge, and an SVD backward-error margin. `M_Gamma` is the sampled
+maximum of `|p|` plus three allowances: a derivative enclosure times half the
+sample spacing, the floating-point error of evaluating `p`, and, when a centred
+basis is used, the error of translating the coefficients. Three changes on this
+branch tighten or correct the bound:
+
+1. **Centred derivative enclosure** ({changes['centred derivative enclosure and numerical-range domain fallback']}).
+   The enclosure is the minimum of the origin-centred
+   `sum_j j |a_j| R^(j-1)` and the same sum in powers of `z - c`, with `c` the
+   centre of the spectral bounding box. The sample points are unchanged, so the
+   bound can only decrease.
+2. **Search-domain fallback** ({changes['centred derivative enclosure and numerical-range domain fallback']}).
+   If a level set touches the edge of the search box, the box is enlarged once
+   to an outer rectangle of `W(A) + D(0, eps)`, which contains the
+   epsilon-pseudospectrum because `sigma_min(zI - A) >= dist(z, W(A))`. The grid
+   spacing does not increase.
+3. **Floating-point evaluation of `p`** ({changes['Horner floating-point evaluation allowance']}).
+   The previous bound covered the variation between samples but not the rounding
+   error of the sampled values. The Horner allowance
+   `gamma_{{2n}} sum_i |a_i| |z|^i` [Higham] is now added, evaluated in whichever
+   of the origin and centred bases gives the tighter valid bound. The term grows
+   with the degree and the size of the coefficients; a degree-40 regression test
+   with large coefficients exercises a case where it dominates.
+
+Monotonicity and validity are tested in
+{changes['soundness and monotonicity validation for the tightened certificate']}:
+the derivative bound is never below the sampled `max |p'|`; the new contour bound
+never exceeds the old one; `sigma_min(zI - A) >= dist(z, W(A))` holds on random
+non-normal matrices. The study settings differ from the public defaults: grids
+{grid_text}; degrees {study_degree_text}; {configs['epsilon_samples']} epsilon
+samples; target `{_fmt(configs['target_tolerance'])}`. The public defaults are grid
+{public_grid}, domain-padding fraction {_fmt(public_padding)}, degrees
+{public_degree_text}, {public_epsilon_samples} epsilon samples and target
+`{_fmt(public_target)}`.
+
+Source: `tau_blend_active_block.json`, `/configuration` [F6].
+
+### The merged decision
+
+A case counts as certified if the active-block (`Y`) certificate certifies, or if
+the merged dense disk policy returns `adequate`. Only `adequate` counts from the
+disk policy; `provisional`, `investigate` and `indeterminate` do not.
+
+{decision_table}
+
+Source: `tau_blend_active_block.json`, `/cases/*`, `/decision_summary` [F6].
+
+Abstention reasons: "connectivity" means the pseudospectral component that encloses
+the spectrum reaches the origin-exclusion threshold; "no polynomial" means the
+connected window has no polynomial with a proven contour bound below one; "compute
+cap" means the estimated cumulative cost of the next grid exceeds the
+{_fmt(four_hour_cap)}-hour per-case cap.
+
+**Counts.** The `Y` certificate certifies
+{active['decision_summary']['Y_certified_count']} of the {case_count} cases. The
+disk policy returns `adequate` for {active['decision_summary']['disk_adequate_count']},
+both already certified, so the merged procedure also certifies
+{active['decision_summary']['union_certified_count']} of {case_count}. By method:
+{method_counts['one_inverse_cfl_mask']} of 9 for the one-inverse mask,
+{method_counts['cfl_reference_blend_B3']} of 9 for the CFL blend, and
+{method_counts['repository_blend_B3']} of 3 for the repository blend at `m = 2`.
+The {abstention_count} abstentions are {reason_counts['connectivity']} for connectivity,
+{reason_counts['no polynomial']} for no polynomial and
+{reason_counts['compute cap']} for the compute cap.
+
+**Ordering.** In every `(N, m)` group with at least one certified method, the
+method with the fewest GMRES iterations is certified, and no certified method is
+slower than an abstaining one. Where two or more methods certify, the smaller
+certified rate belongs to the method with fewer iterations; at `N = 128, m = 2`
+the rates of the repository blend and the one-inverse mask differ by
+{abs(_selected(m2_cases[(128, 'repository_blend_B3')])['rho'] - _selected(m2_cases[(128, 'one_inverse_cfl_mask')])['rho']):.3f},
+a tie under the {_fmt(configs['rate_tie_threshold'])} tie rule. At `N = 1024,
+m = 4` no method certifies.
+
+**Conservatism.** The Lemma 1' bound is `1 + d j*`, with `j*` the smallest
+integer for which `C * prefactor * rho^(d j) <= 1e-8`. Against the measured
+`J_0` counts, it exceeds them by a factor of {min(bounds_to_measured):.1f}
+(`N = {min_factor_row['nx']}, m = {min_factor_row['m']}`, CFL blend:
+{_selected(min_factor_row)['lemma1_full_operator_iteration_bound']} against
+{min_factor_row['gmres_J0']['true_stop_count']}) to {max(bounds_to_measured):.1f}
+(`N = {max_factor_row['nx']}, m = {max_factor_row['m']}`, CFL blend:
+{_selected(max_factor_row)['lemma1_full_operator_iteration_bound']} against
+{max_factor_row['gmres_J0']['true_stop_count']}). The bounds are valid and
+conservative; they separate the methods in the measured order.
+
+### Direct certificates for the regularized operator
+
+Lemma 1' is exact for `J_0` only. For the CFL blend at `m = 2`, the full
+regularized operator `M J` is certified directly:
+
+{direct_table}
+
+Source: `tau_blend_active_block.json`, `/direct_regularized_full_MJ_certificates/*` [F6].
+
+At `N = 128` the domain fallback produced the selected grid
+{configs['full_operator_selected_grid_N128']}, with the grid spacing kept or
+reduced. The committed JSON does not record a distinct pre-fallback starting grid.
+
+## 7. Limits of the result
+
+- **Mesh dependence.** The CFL blend's counts grow under refinement:
+  {m2_cases[(128, 'cfl_reference_blend_B3')]['gmres_regularized']['true_stop_count']},
+  {m2_cases[(512, 'cfl_reference_blend_B3')]['gmres_regularized']['true_stop_count']},
+  {m2_cases[(1024, 'cfl_reference_blend_B3')]['gmres_regularized']['true_stop_count']}
+  at `m = 2`;
+  {next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 128 and row['m'] == 4 and row['method'] == 'cfl_reference_blend_B3')},
+  {next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 512 and row['m'] == 4 and row['method'] == 'cfl_reference_blend_B3')},
+  {next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 1024 and row['m'] == 4 and row['method'] == 'cfl_reference_blend_B3')}
+  at `m = 4`; and
+  {next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 128 and row['m'] == 8 and row['method'] == 'cfl_reference_blend_B3')},
+  {next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 512 and row['m'] == 8 and row['method'] == 'cfl_reference_blend_B3')},
+  {next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 1024 and row['m'] == 8 and row['method'] == 'cfl_reference_blend_B3')}
+  at `m = 8`, for `N = {nx_text}`. At `N = 1024, m = 4` nothing certifies.
+- **Certified is not fast.** The one-inverse mask certifies at rates
+  {min(_selected(row)['rho'] for row in certified if row['method'] == 'one_inverse_cfl_mask' and row['nx'] >= 512):.3f}
+  to {max(_selected(row)['rho'] for row in certified if row['method'] == 'one_inverse_cfl_mask' and row['nx'] >= 512):.3f}
+  at `N >= 512`, with
+  {min(row['gmres_regularized']['true_stop_count'] for row in certified if row['method'] == 'one_inverse_cfl_mask' and row['nx'] >= 512)}
+  to {max(row['gmres_regularized']['true_stop_count'] for row in certified if row['method'] == 'one_inverse_cfl_mask' and row['nx'] >= 512)} iterations; the CFL blend certifies at
+  {min(_selected(row)['rho'] for row in certified if row['method'] == 'cfl_reference_blend_B3' and row['nx'] == 512):.3f}
+  to {max(_selected(row)['rho'] for row in certified if row['method'] == 'cfl_reference_blend_B3' and row['nx'] == 512):.3f}
+  at `N = 512`, with
+  {min(row['gmres_regularized']['true_stop_count'] for row in certified if row['method'] == 'cfl_reference_blend_B3' and row['nx'] == 512)}
+  to {max(row['gmres_regularized']['true_stop_count'] for row in certified if row['method'] == 'cfl_reference_blend_B3' and row['nx'] == 512)} iterations. The procedure decides whether a preconditioner is guaranteed to work and ranks the certified ones; it does not make a slow one fast.
+- **Reference count.** For the CFL blend, three references give the fewest
+  iterations at `N = 512` ({by_reference[(512, 4, 3)]['gmres']['true_stop_count']}
+  at `m = 4`, {by_reference[(512, 8, 3)]['gmres']['true_stop_count']} at `m = 8`).
+  At `N = 1024` four references give
+  {by_reference[(1024, 4, 4)]['gmres']['true_stop_count']} at `m = 4` and
+  {by_reference[(1024, 8, 4)]['gmres']['true_stop_count']} at `m = 8`, against
+  {by_reference[(1024, 4, 3)]['gmres']['true_stop_count']} and
+  {by_reference[(1024, 8, 3)]['gmres']['true_stop_count']} for three, and five or
+  six references are worse than four. The dependence is not monotone, and no rule
+  for choosing the count is proposed.
+
+{reference_table}
+
+Source: `tau_blend_reference_count.json`, `/rows/*` [F7].
+
+- **Dimension and baselines.** One-dimensional only; no multigrid comparison;
+  backward Euler only for trajectories.
+
+## 8. Fidelity: what the counts and trajectories mean (Lemmas 3 and 4)
+
+**Stopping convention (Lemma 4).** A test on the left-preconditioned residual
+bounds the true residual only up to `kappa(M)`. At `N = 512`, `dt = {_fmt(dt)}`:
+
+{lemma4_table}
+
+`kappa_2(M)`; source: `tau_blend_lemma_checks.json`, `/lemma4/*` [F9]. The `Z1`
+and `Zf` rows use `eta = {_fmt(eta_other)}`; at `m = 2` the values at
+`eta = {_fmt(eta_m2)}` are identical.
+
+In all {case_count} active-block cases the true-residual count exceeds the
+preconditioned-residual count, by {min(true_differences)} to
+{max(true_differences)} iterations; for example
+{m2_cases[(1024, 'repository_blend_B3')]['gmres_regularized']['true_stop_count']}
+against
+{m2_cases[(1024, 'repository_blend_B3')]['gmres_regularized']['preconditioned_stop_count']}
+for the repository blend at `N = 1024, m = 2`, and
+{next(row['gmres_regularized']['true_stop_count'] for row in cases if row['nx'] == 512 and row['m'] == 4 and row['method'] == 'one_inverse_cfl_mask')}
+against
+{next(row['gmres_regularized']['preconditioned_stop_count'] for row in cases if row['nx'] == 512 and row['m'] == 4 and row['method'] == 'one_inverse_cfl_mask')}
+for the one-inverse mask at `N = 512, m = 4`. The preconditioned counts of the
+CFL blend at `m = 2` (
+{m2_cases[(512, 'cfl_reference_blend_B3')]['gmres_regularized']['preconditioned_stop_count']}
+and
+{m2_cases[(1024, 'cfl_reference_blend_B3')]['gmres_regularized']['preconditioned_stop_count']}
+at `N = 512, 1024`) equal those of Pavlov's mask analysis.
+
+Source: `tau_blend_active_block.json`, `/cases/*/gmres_regularized` [F9].
+
+**A posteriori trajectory bound (Lemma 3).** Backward Euler for the PME is
+nonexpansive in the 1-norm, so
+`||v^n - u^n||_1 <= ||v^0 - u^0||_1 + sum_k ||rho^k||_1` holds for every
+preconditioner and cutoff. It holds on all {len(lemma3_rows)} trajectories,
+including the {lemma['lemma3']['failed_step_trajectories']} that contain failed
+Newton steps, with no violation and a minimum margin of
+`{lemma3_min_margin:.2g}`.
+
+Source: `tau_blend_lemma_checks.json`, `/lemma3` [F8].
+
+**Crank--Nicolson replay.** One bounded replay at `N = {cn['summaries'][0]['nx']}`,
+`dt = {_fmt(cn['summaries'][0]['dt'])}`, {cn['protocol']['steps']} steps. The CN
+active set is smaller than the BE one by
+{next(iter(cn_mask_differences[2]))} nodes at `m = 2` and
+{next(iter(cn_mask_differences[4]))} at `m = 4`, at every step. Both integrators
+converge.
+
+{cn_table}
+
+Source: `tau_blend_cn_replay.json`, `/steps`, `/summaries` [F11]. This replay
+supports no general statement about CN; all trajectory evidence elsewhere is
+backward Euler.
+
+## 9. Reproducibility on a second host
+
+Pavlov's delivery (`research/tau-blend-repro` at
+{configs['rewrite_base_revision']}) was re-run on a second host with the
+same JAX version ({repro['provenance']['jax']}). Convergence outcomes are preserved
+except in one row; exact counts move slightly.
+
+- Mask analysis: {mask_differences} of {len(repro['mask_analysis_subset'])} rows
+  differ, each by one GMRES iteration.
+- E3 trajectories: {e3_differences} of {len(repro['drifted_E3_subset'])} rows differ
+  in at least one Newton or linear total.
+- One convergence-status change: `m = {status['m']}`, `N = {status['nx']}`,
+  `dt = {_fmt(status['dt'])}`, repository blend, {status['side']} preconditioning,
+  forcing {_fmt(status['forcing'])}. The delivery converges
+  {status['fields']['steps_converged']['delivered']} steps
+  ({status['fields']['newton_total']['delivered']} Newton,
+  {status['fields']['linear_iterations_total']['delivered']} linear iterations);
+  this host converges {status['fields']['steps_converged']['regenerated']}, with one
+  line-search failure ({status['fields']['newton_total']['regenerated']} Newton,
+  {status['fields']['linear_iterations_total']['regenerated']} linear).
+
+Source: `tau_blend_reproducibility.json`, `/mask_analysis_subset`,
+`/drifted_E3_subset` [F12].
+
+## 10. Cost of the certificate, and a corrected claim
+
+The dense certificate is an offline tool. The provisional matrix-free runtime
+estimator records these ratios to the corresponding solve: {runtime_ratios}. An
+earlier version of this report called the range a "fundamental evidence floor".
+That claim is withdrawn: no result here establishes a lower bound on the cost of
+certification, and an abstention is only the failure of a sufficient test. The
+cost is a measured property of that implementation, not a dense-certificate
+complexity bound.
+
+Source: `pme_dst_tau_blend_pseudospectral_runtime_estimator.json`, `/records/*/cost`
+[Part II runtime evidence].
+
+On the active-block study, the estimated cost of the next grid exceeded the
+{_fmt(four_hour_cap)}-hour per-case cap once (`N = 1024, m = 2`, repository
+blend), which is reported as an abstention.
+
+# Part II. Single-reference baseline study (being restated)
+
+The previous version of this file reported a single-reference baseline study:
+spectra and work--precision of scalar Helmholtz references against the blend,
+contrast and degeneracy, a batching audit and the pseudospectral criterion. Its
+JSONs were regenerated with the corrected coefficient, and several of its claims,
+in particular those at `m = 2`, no longer hold. The claims are being audited
+against the regenerated JSONs and will be restated here. Until then the previous
+text is available in git history; the regenerated JSONs are in this directory.
+
+## References
+
+1. G. Pavlov, "moljax: GPU-accelerated method of lines for stiff
+   reaction-diffusion PDEs with FFT preconditioning," *Computer Physics
    Communications* 326 (2026) 110205. DOI `10.1016/j.cpc.2026.110205`.
-2. C. C. Christara and K. S. Ng, "Fast Fourier Transform Solvers and
-   Preconditioners for Quadratic Spline Collocation," *BIT Numerical
-   Mathematics* 42(4) (2002) 702--739. DOI `10.1023/A:1021944218806`.
-3. M.-C. Lai and Y.-H. Tseng, "A fast iterative solver for the variable
-   coefficient diffusion equation on a disk," *Journal of Computational Physics*
-   208 (2005) 196--205. DOI `10.1016/j.jcp.2005.02.005`.
-4. P. De Luca, "Fast Sine-Transform Preconditioning for Global-in-Time
-   Fractional Diffusion," *Fractal and Fractional* 10(8) (2026) 573. DOI
-   `10.3390/fractalfract10080573`.
-5. X. Lin, C. Li, and S. Y. Hon, "Absolute-value based preconditioner for
-   complex-shifted Laplacian systems," arXiv:2408.00488 (2024). DOI
-   `10.48550/arXiv.2408.00488`.
-6. T. Bakhos, P. K. Kitanidis, S. Ladenheim, A. K. Saibaba, and D. B. Szyld,
-   "Multipreconditioned GMRES for Shifted Systems," *SIAM Journal on Scientific
-   Computing* 39(5) (2017) S222--S247. DOI `10.1137/16M1068694`; preprint DOI
-   `10.48550/arXiv.1603.08970`.
-7. A. Heryudono, E. Larsson, A. Ramage, and L. von Sydow, "Preconditioning for
-   Radial Basis Function Partition of Unity Methods," *Journal of Scientific
-   Computing* 67 (2016) 1089--1109. DOI `10.1007/s10915-015-0120-6`.
-8. M. Bonazzoli, X. Claeys, F. Nataf, and P.-H. Tournier, "Analysis of the SORAS
-   domain decomposition preconditioner for non-self-adjoint or indefinite
-   problems," *Journal of Scientific Computing* 89 (2021) 19. DOI
-   `10.1007/s10915-021-01631-8`.
-9. L. N. Trefethen and M. Embree, *Spectra and Pseudospectra* (Princeton, 2005).
-   DOI `10.1515/9780691213101`.
-10. M. Embree, "How Descriptive are GMRES Convergence Bounds?", corrected and
-    extended from Oxford Technical Report 99/08, arXiv:2209.01231. DOI
-    `10.48550/arXiv.2209.01231`. There is no SIAM J. Matrix Analysis and
-    Applications version.
+2. L. N. Trefethen and M. Embree, *Spectra and Pseudospectra* (Princeton,
+   2005). DOI `10.1515/9780691213101`.
+3. M. Embree, "How Descriptive are GMRES Convergence Bounds?",
+   arXiv:2209.01231. DOI `10.48550/arXiv.2209.01231`.
+4. N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed.
+   (SIAM, 2002). DOI `10.1137/1.9780898718027`.
 """
 
 
 def main() -> None:
     """Write the deterministic report from committed measurements."""
-    OUTPUT.write_text(render())
+    OUTPUT.write_text(render(), encoding="utf-8")
     print(OUTPUT.relative_to(REPOSITORY_ROOT))
 
 
