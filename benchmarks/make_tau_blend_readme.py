@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -56,13 +58,87 @@ def _sci(value: float, significant_digits: int) -> str:
 
 
 def _table(headers: tuple[str, ...], rows: list[tuple[Any, ...]]) -> str:
+    numeric = [
+        all(value is None or isinstance(value, (int, float)) for value in column)
+        for column in zip(*rows, strict=True)
+    ]
     return "\n".join(
         [
             "| " + " | ".join(headers) + " |",
-            "|" + "|".join("---:" if index == 0 else "---" for index in range(len(headers))) + "|",
+            "|" + "|".join("---:" if is_numeric else "---" for is_numeric in numeric) + "|",
             *("| " + " | ".join(_fmt(value) for value in row) + " |" for row in rows),
         ]
     )
+
+
+def _wrap(text: str, *, initial_indent: str = "", subsequent_indent: str = "") -> str:
+    """Wrap one prose paragraph after interpolation."""
+    protected = re.sub(
+        r"`[^`]+`",
+        lambda match: match.group(0).replace(" ", "\0"),
+        " ".join(text.split()).replace("( ", "("),
+    )
+    wrapped = textwrap.fill(
+        protected,
+        width=88,
+        initial_indent=initial_indent,
+        subsequent_indent=subsequent_indent,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    return wrapped.replace("\0", " ")
+
+
+def _wrap_markdown(text: str) -> str:
+    """Pass every prose paragraph through ``_wrap`` without changing Markdown tables."""
+    lines = text.strip().splitlines()
+    rendered: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            rendered.append("")
+            index += 1
+            continue
+        if line.startswith(("#", "|")):
+            rendered.append(line.rstrip())
+            index += 1
+            continue
+        marker = re.match(r"^(\s*(?:[-*]|\d+\.)\s+)(.*)$", line)
+        if marker:
+            prefix, first = marker.groups()
+            paragraph = [first]
+            index += 1
+            while index < len(lines):
+                candidate = lines[index]
+                if (
+                    not candidate.strip()
+                    or candidate.startswith(("#", "|"))
+                    or re.match(r"^\s*(?:[-*]|\d+\.)\s+", candidate)
+                ):
+                    break
+                paragraph.append(candidate.strip())
+                index += 1
+            rendered.append(
+                _wrap(
+                    " ".join(paragraph), initial_indent=prefix, subsequent_indent=" " * len(prefix)
+                )
+            )
+            continue
+        paragraph = [line.strip()]
+        index += 1
+        while index < len(lines):
+            candidate = lines[index]
+            if (
+                not candidate.strip()
+                or candidate.startswith(("#", "|"))
+                or re.match(r"^\s*(?:[-*]|\d+\.)\s+", candidate)
+            ):
+                break
+            paragraph.append(candidate.strip())
+            index += 1
+        rendered.append(_wrap(" ".join(paragraph)))
+    return "\n".join(rendered).rstrip() + "\n"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -559,7 +635,7 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
     four_hour_cap = configs["case_cap_seconds"] / (60 * 60)
     abstention_count = case_count - len(certified)
 
-    return f"""# PME DST/tau-blend: mask analysis and certified preconditioner decisions
+    rendered = f"""# PME DST/tau-blend: mask analysis and certified preconditioner decisions
 
 This report replaces the stale-flagged version of this file, whose numbers
 predated the corrected diffusion coefficient. The earlier text remains in git
@@ -648,7 +724,7 @@ at `m = 2`, which lies above the repository threshold {mask_rule}, so the
 repository mask selects **no** node at `m = 2`. The CFL mask selects
 {m2_cases[(512, 'one_inverse_cfl_mask')]['inactive_count']} and
 {m2_cases[(1024, 'one_inverse_cfl_mask')]['inactive_count']} nodes at `N = 512`
-and `N = 1024`, exactly the floor nodes.
+and `N = 1024`, exactly the floor nodes (claims map row D17).
 
 {m2_table}
 
@@ -679,7 +755,7 @@ exceeds `eta = {_fmt(floor_failed['eta'])}`, the mask is empty, and the
 one-inverse solve does not reach tolerance within {floor_failed['gmres_max']}
 iterations; at `eta = {_fmt(floor_masked[0]['eta'])}` or
 `{_fmt(floor_masked[-1]['eta'])}` the mask holds {floor_masked[0]['masked']} nodes.
-A mesh-robust cutoff rule is not proposed here.
+A mesh-robust cutoff rule is not proposed here (claims map rows C10 to C12).
 
 Source: `tau_blend_cfl_fidelity.json`, `/floor/*` [F13].
 
@@ -701,7 +777,8 @@ it is
 `{_sci(m2_deviations[2], 8)}` at `N = {m2_sizes[0]}, {m2_sizes[1]}, {m2_sizes[2]}`,
 and the ratio between the last two is {m2_scale_ratio:.3f}, equal to
 `(({m2_sizes[-1]} + 1)/({m2_sizes[-2]} + 1))^2 = {m2_expected_ratio:.3f}`. At
-`m = 8` the predicted deviation is `{_sci(identity_rows[8]['expected_2_dt_floor_over_h2'], 1)}`,
+`m = 8` the predicted deviation is of order
+`{_sci(identity_rows[8]['expected_2_dt_floor_over_h2'], 2)}`,
 below the double-precision resolution of the unit diagonal; the measured maximum
 is then about half the prediction, consistent with an off-diagonal entry surviving
 while the diagonal increment rounds away (an interpretation, not a separate
@@ -794,7 +871,9 @@ non-normal matrices. The study settings differ from the public defaults: grids
 samples; target `{_fmt(configs['target_tolerance'])}`. The public defaults are grid
 {public_grid}, domain-padding fraction {_fmt(public_padding)}, degrees
 {public_degree_text}, {public_epsilon_samples} epsilon samples and target
-`{_fmt(public_target)}`.
+`{_fmt(public_target)}` (source:
+`moljax/experimental/pseudospectral_criterion.py`,
+`assess_dense_pseudospectral_criterion` signature).
 
 Source: `tau_blend_active_block.json`, `/configuration` [F6].
 
@@ -929,7 +1008,7 @@ CFL blend at `m = 2` (
 {m2_cases[(512, 'cfl_reference_blend_B3')]['gmres_regularized']['preconditioned_stop_count']}
 and
 {m2_cases[(1024, 'cfl_reference_blend_B3')]['gmres_regularized']['preconditioned_stop_count']}
-at `N = 512, 1024`) equal those of Pavlov's mask analysis.
+at `N = 512, 1024`) equal those of Pavlov's mask analysis (claims map row D20).
 
 Source: `tau_blend_active_block.json`, `/cases/*/gmres_regularized` [F9].
 
@@ -982,8 +1061,9 @@ Source: `tau_blend_reproducibility.json`, `/mask_analysis_subset`,
 
 ## 10. Cost of the certificate, and a corrected claim
 
-The dense certificate is an offline tool. The provisional matrix-free runtime
-estimator records these ratios to the corresponding solve: {runtime_ratios}. An
+The provisional matrix-free runtime estimator (`rate_bound_available=false`)
+records these cost ratios relative to one GMRES solve: {runtime_ratios}. These
+are not dense-certificate costs. An
 earlier version of this report called the range a "fundamental evidence floor".
 That claim is withdrawn: no result here establishes a lower bound on the cost of
 certification, and an abstention is only the failure of a sufficient test. The
@@ -1019,6 +1099,7 @@ text is available in git history; the regenerated JSONs are in this directory.
 4. N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed.
    (SIAM, 2002). DOI `10.1137/1.9780898718027`.
 """
+    return _wrap_markdown(rendered)
 
 
 def main() -> None:
