@@ -155,6 +155,7 @@ preconditioned/physical counts are `11/12`, `57/58`, and `29/30` for developed s
 1, 10, and 20. Exact `kappa_2(P)` is recorded from the Fourier blocks for FFT and the
 mean-field probe. It is unavailable from per-mode blocks for the split composition,
 which combines a Fourier-diagonal inverse with a spatially varying pointwise inverse.
+
 Over the 200 cells, `kappa_2(P)` for the FFT preconditioner rises with `dt` from 2.31 to
 53.4 on the Hopf states and from 7.55 to 263 on the Turing states; for the mean-field
 probe it ranges from 9.25 to 3.62e4. These values bound the gap between the two criteria
@@ -169,9 +170,9 @@ criterion. Its physical-stop median at `dt = 1` is 45.5 against FFT's 31, so it 
 fails D3.
 
 Source: `brusselator_dt_sweep_true_residual.json`, `/decision_true_stop`,
-`/decision_comparison`, and `/cells/*`; `BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md` gives
-all 200 cells. The check took `354.167` CPU seconds; this is diagnostic laptop timing
-only; `brusselator_dt_sweep_posthoc.json#/true_residual_descriptive`.
+`/decision_comparison`, and `/cells/*`; `brusselator_dt_sweep_posthoc.json`,
+`/true_residual_descriptive`. `BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md` gives all 200
+cells. The check took `354.167` CPU seconds; this is diagnostic laptop timing only.
 
 ## 6. Exploratory (post hoc): reaction variation and mean-field block conditioning
 
@@ -260,7 +261,6 @@ Both runs used JAX and jaxlib 0.11.2; the GPU run used Python 3.12.13 and NumPy 
 the CPU run Python 3.12.3 and NumPy 2.5.4. The two `fixed256` states were neither
 regenerated nor committed: their rows in Sections 2 and 4 rest on the original GPU run
 alone, and they do not enter D1 to D3.
-
 All 200 GMRES iteration counts and convergence flags match the GPU result. D1,
 D2 and D3 remain PASS: the developed-state median degradation ratio is
 `4.2375`, the `dt = 1` FFT median is `30`, and mean-field coupled FFT reduces

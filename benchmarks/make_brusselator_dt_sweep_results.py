@@ -100,7 +100,13 @@ def render(payload: dict[str, Any]) -> str:
             ]
         )
     lines.extend(
-        [_table(["cell", "iterations", "final true relative residual"], nonconverged_rows), ""]
+        [
+            _table(
+                ["cell", "iterations", "final left-preconditioned relative residual"],
+                nonconverged_rows,
+            ),
+            "",
+        ]
     )
 
     lines.extend(["### FoV unresolved at the top rung", ""])

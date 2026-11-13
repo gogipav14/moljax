@@ -18,7 +18,7 @@ The source-state loader required a converged source record and verified its v4 f
 
 ### Non-converged GMRES cells
 
-| cell | iterations | final true relative residual |
+| cell | iterations | final left-preconditioned relative residual |
 | --- | --- | --- |
 | main|developed64:hopf:10|dt=1.5|fft_diffusion ⟦`brusselator_dt_sweep.json#/analysis/completeness/nonconverged_gmres/0/cell_key`⟧ | 101 ⟦`brusselator_dt_sweep.json#/analysis/completeness/nonconverged_gmres/0/iterations`⟧ | 3.711336767e-07 ⟦`brusselator_dt_sweep.json#/analysis/completeness/nonconverged_gmres/0/final_relative_residual`⟧ |
 | main|developed64:hopf:10|dt=1.5|identity ⟦`brusselator_dt_sweep.json#/analysis/completeness/nonconverged_gmres/1/cell_key`⟧ | 101 ⟦`brusselator_dt_sweep.json#/analysis/completeness/nonconverged_gmres/1/iterations`⟧ | 0.003612658314 ⟦`brusselator_dt_sweep.json#/analysis/completeness/nonconverged_gmres/1/final_relative_residual`⟧ |
