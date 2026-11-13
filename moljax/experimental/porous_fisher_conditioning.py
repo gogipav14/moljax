@@ -144,7 +144,7 @@ def measure_porous_fisher_gmres_iterations(
     max_iters: int,
     const_value: float = 1.0,
 ) -> dict[str, Any]:
-    """Return the true residual-history GMRES count for one fixed PF system."""
+    """Return the left-preconditioned GMRES count for one fixed PF system (see ``_counted_gmres``)."""
     linearization = build_porous_fisher_linearization(
         u_prev,
         grid,

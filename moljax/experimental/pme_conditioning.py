@@ -236,7 +236,7 @@ def _counted_gmres(
     tol: float,
     max_iters: int,
 ) -> dict[str, Any]:
-    """Run unrestarted matrix-free GMRES and retain its true residual history.
+    """Run unrestarted matrix-free GMRES on ``A x = b`` and count its iterations.
 
     This small experimental implementation applies Givens rotations to the
     Arnoldi Hessenberg columns.  The final rotated right-hand-side entry is
@@ -268,6 +268,12 @@ def _counted_gmres(
     GMRES residual like every other converged return; one that misses it is a
     breakdown, reported with the measured residual.  Exhausting ``max_iters``
     without meeting ``tol`` is non-convergence, not breakdown.
+
+    Every residual here, estimated or measured, is a residual of the supplied
+    system.  The experimental conditioning callers supply the left-preconditioned
+    system ``P^-1 J x = P^-1 b``, so their counts stop on
+    ``||P^-1 (b - J x)|| <= tol ||P^-1 b||``; only with ``P = I`` is that the
+    physical residual ``||b - J x||``.
     """
     if tol <= 0.0:
         raise ValueError("tol must be positive")
@@ -424,9 +430,13 @@ def measure_gmres_iterations(
 ) -> dict[str, Any]:
     """Measure the actual GMRES count for one preconditioned PME Newton system.
 
-    The fixed system is ``P^-1 J delta = P^-1 (-R(u_prev))``.  Its count is
-    determined from the true relative residual, unlike ``NKStats.lin_iters``
-    which records only the configured budget in the current core solver.
+    The fixed system is ``P^-1 J delta = P^-1 (-R(u_prev))``.  Its count is the
+    first iteration at which both the GMRES residual estimate and the measured
+    relative residual of that system,
+    ``||P^-1 (-R - J delta)|| / ||P^-1 R||``, meet ``tol``.  This is the
+    left-preconditioned residual, not the physical
+    ``||-R - J delta|| / ||R||``.  ``NKStats.lin_iters``, by contrast, records
+    only the configured budget in the current core solver.
     """
     linearization = build_pme_linearization(
         u_prev,

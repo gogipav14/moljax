@@ -322,7 +322,7 @@ def measure_pme_tau_blend_gmres_iterations(
     active_relative: float = 1.0e-6,
     active_absolute: float = 1.0e-14,
 ) -> dict[str, float | int | bool]:
-    """Measure a true residual-history GMRES count for the DST/tau blend."""
+    """Measure a left-preconditioned GMRES count for the DST/tau blend (see ``_counted_gmres``)."""
     require_x64("PME DST/tau-blend GMRES measurement")
     linearization = build_pme_tau_blend_linearization(
         u_prev,
