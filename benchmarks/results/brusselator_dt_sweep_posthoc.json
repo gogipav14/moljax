@@ -1,0 +1,318 @@
+{
+  "analysis_label": "exploratory post hoc; hypothesis formed after seeing sweep results",
+  "provenance": {
+    "backend": "cpu",
+    "cpu_replication_sha256": "7f7448c462dfc0059853854b25e4cabcb8f60558e5aca467fd639c295a917530",
+    "git_commit": "33e044c24ac0c2251dbe39166845b27727081905",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "numpy": "2.5.4",
+    "python": "3.12.3",
+    "script_sha256": "ddb1e58f5425153f74fbb1e6e171d81bfb5e769dcffc29073a054fa5340f8953",
+    "true_residual_check_sha256": "0dbcbf2c8e9f090b3028e6ca646cac42656a21c134668780f31bcf12451d2505",
+    "x64_enabled": true
+  },
+  "schema": "brusselator_dt_sweep_posthoc_v1",
+  "spearman_at_dt_1": {
+    "max_reaction_jacobian_2_norm": {
+      "fft_diffusion": {
+        "preconditioned_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.2898765820773254,
+          "rho": 0.3719581343246535
+        },
+        "true_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.12102739408380088,
+          "rho": 0.5227987675648555
+        }
+      },
+      "mean_field_coupled_fft": {
+        "preconditioned_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.006934950283190737,
+          "rho": 0.7867238667180843
+        },
+        "true_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.006934950283190737,
+          "rho": 0.7867238667180843
+        }
+      }
+    },
+    "max_reaction_variation_2_norm": {
+      "fft_diffusion": {
+        "preconditioned_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.6741752533023248,
+          "rho": 0.15244185832977605
+        },
+        "true_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.3932011151432979,
+          "rho": 0.3039527718400323
+        }
+      },
+      "mean_field_coupled_fft": {
+        "preconditioned_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.0013295207084523457,
+          "rho": 0.8622493579230204
+        },
+        "true_stop": {
+          "iteration_ties": true,
+          "n": 10,
+          "predictor_ties": false,
+          "pvalue": 0.0013295207084523457,
+          "rho": 0.8622493579230204
+        }
+      }
+    }
+  },
+  "states": [
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 37,
+          "true_stop": 38
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 5,
+          "true_stop": 5
+        }
+      },
+      "max_reaction_jacobian_2_norm": 4.416512390936971,
+      "max_reaction_variation_2_norm": 0.02719517656677086,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.5498346988243548,
+        "dt=1": 0.11693540690761757,
+        "dt=2": 0.001613961596541552
+      },
+      "mean_reaction_variation_2_norm": 0.0059373083502935586,
+      "regime": "hopf",
+      "source_state_sha256": "0d8fa6b8b5a168ffd0393ce3bfa06239ff381493b051733ffbe484d7bd58be6d",
+      "state": "developed64:hopf:1"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 50,
+          "true_stop": 51
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 23,
+          "true_stop": 23
+        }
+      },
+      "max_reaction_jacobian_2_norm": 8.802537214949854,
+      "max_reaction_variation_2_norm": 4.987039335470752,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.6487282523445375,
+        "dt=1": 0.3400938308173446,
+        "dt=2": 0.3895192147440464
+      },
+      "mean_reaction_variation_2_norm": 1.8452755105887617,
+      "regime": "hopf",
+      "source_state_sha256": "f9de0786d9fb095bfa10ea0bba1e15fc4cad88d559a1f997cff51c8ee6ee81ac",
+      "state": "developed64:hopf:10"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 39,
+          "true_stop": 41
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 18,
+          "true_stop": 18
+        }
+      },
+      "max_reaction_jacobian_2_norm": 9.879838486809604,
+      "max_reaction_variation_2_norm": 6.4299633194354255,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.7038846410633905,
+        "dt=1": 0.47033064999313845,
+        "dt=2": 0.631036455505784
+      },
+      "mean_reaction_variation_2_norm": 2.454155748644068,
+      "regime": "hopf",
+      "source_state_sha256": "ba23750f93758b36642972a8b8aa890a77c430b8ed236651486b5bffc8b7cf2a",
+      "state": "developed64:hopf:20"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 18,
+          "true_stop": 19
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 5,
+          "true_stop": 5
+        }
+      },
+      "max_reaction_jacobian_2_norm": 2.4683456630776512,
+      "max_reaction_variation_2_norm": 0.08564558007049945,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.860779054518367,
+        "dt=1": 0.7543580076483744,
+        "dt=2": 0.7135721826736092
+      },
+      "mean_reaction_variation_2_norm": 0.023824262815981267,
+      "regime": "turing",
+      "source_state_sha256": "fbe76bc78dc64377f67ccdeda05acae590e31552112a32bdbab65f371fea2b4d",
+      "state": "developed64:turing:80"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 23,
+          "true_stop": 24
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 10,
+          "true_stop": 11
+        }
+      },
+      "max_reaction_jacobian_2_norm": 4.931484223765289,
+      "max_reaction_variation_2_norm": 2.6114325271308036,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.8651093212959915,
+        "dt=1": 0.7704659833101609,
+        "dt=2": 0.7449899118684135
+      },
+      "mean_reaction_variation_2_norm": 0.31919793372326855,
+      "regime": "turing",
+      "source_state_sha256": "b1b7e7e2c7045d49f15a6562ac5bd99a81c68e005695ec569e2e33ce8b8a69bf",
+      "state": "developed64:turing:120"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 20,
+          "true_stop": 21
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 10,
+          "true_stop": 11
+        }
+      },
+      "max_reaction_jacobian_2_norm": 16.538064306799704,
+      "max_reaction_variation_2_norm": 14.387459113653893,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.9928331238246009,
+        "dt=1": 1.2641817032876101,
+        "dt=2": 1.713736583316811
+      },
+      "mean_reaction_variation_2_norm": 2.2316539190370523,
+      "regime": "turing",
+      "source_state_sha256": "31b75af35cae86713c43076293807a2a4d58a3ab5fe04f6c77f22a290ca379fd",
+      "state": "developed64:turing:200"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 35,
+          "true_stop": 34
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 4,
+          "true_stop": 4
+        }
+      },
+      "max_reaction_jacobian_2_norm": 4.417209441146725,
+      "max_reaction_variation_2_norm": 0.02811973168590958,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.5498585506028694,
+        "dt=1": 0.11695218493674786,
+        "dt=2": 0.001544779208579242
+      },
+      "mean_reaction_variation_2_norm": 0.00590850666610542,
+      "regime": "hopf",
+      "source_state_sha256": "aa54b8deeb413ba4164e04eb4ec04603c62d8076e0202e2db7138eb4fcac0097",
+      "state": "screen64:hopf:0"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 37,
+          "true_stop": 35
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 4,
+          "true_stop": 4
+        }
+      },
+      "max_reaction_jacobian_2_norm": 4.410943506182225,
+      "max_reaction_variation_2_norm": 0.021766390803999728,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.5498594662931306,
+        "dt=1": 0.11695276641520284,
+        "dt=2": 0.0015422226948481699
+      },
+      "mean_reaction_variation_2_norm": 0.004788155443943292,
+      "regime": "hopf",
+      "source_state_sha256": "ba0e461d34b1460eda4b23418582070b9fd7f1e748ec29e6978e41c86b1b7ff5",
+      "state": "screen64:hopf:1"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 22,
+          "true_stop": 20
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 4,
+          "true_stop": 4
+        }
+      },
+      "max_reaction_jacobian_2_norm": 2.406399910333861,
+      "max_reaction_variation_2_norm": 0.01849947379620057,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.8607505439731383,
+        "dt=1": 0.7542578257211192,
+        "dt=2": 0.71337156122145
+      },
+      "mean_reaction_variation_2_norm": 0.0032022581133984,
+      "regime": "turing",
+      "source_state_sha256": "6584e5ecd91f766394fc5515e1f9656839624078f7a62714098e3aea4a95729f",
+      "state": "screen64:turing:0"
+    },
+    {
+      "iterations_at_dt_1": {
+        "fft_diffusion": {
+          "preconditioned_stop": 22,
+          "true_stop": 21
+        },
+        "mean_field_coupled_fft": {
+          "preconditioned_stop": 4,
+          "true_stop": 4
+        }
+      },
+      "max_reaction_jacobian_2_norm": 2.4012831320864367,
+      "max_reaction_variation_2_norm": 0.013212681147021703,
+      "mean_field_fourier_block_minimum_singular_value": {
+        "dt=0.2": 0.8607511268404672,
+        "dt=1": 0.754259884505144,
+        "dt=2": 0.7133756736032557
+      },
+      "mean_reaction_variation_2_norm": 0.0023435255540592524,
+      "regime": "turing",
+      "source_state_sha256": "fa571f810254baaa5429a0ce86fefeb5451d98dfe78545a5b606a2a6fe42e0a6",
+      "state": "screen64:turing:1"
+    }
+  ]
+}

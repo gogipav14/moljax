@@ -128,26 +128,71 @@ The split probe's failure is not caused by singular pointwise blocks: the minimu
 Source: `BRUSSELATOR_DT_SWEEP_RESULTS.md`, "Disk/FoV ordering",
 "Split-probe determinant diagnostic".
 
-## 5. Interpretation (ours, informal, not tested here)
+## 5. The decision is robust to the physical true-residual convention
 
-For the mean-field preconditioner `P_mf = I - dt (D Delta + Jbar_R)`, which is
-block-diagonal in Fourier space, the same algebra as the premise check gives
+A pre-registered CPU follow-up continued each of the same 200 Krylov sequences until
+both stopping criteria were resolved. Every preconditioned-stop count equals its
+committed replication value. Under the physical criterion
+`||b - J x|| <= 1e-8 ||b||`, D1 still passes with median ratio `4.4625` and all six
+states above two; D2 still passes with median `31`; and D3 still passes because the
+mean-field probe lowers that median to `11`, a `64.5%` reduction, with all runs
+converged and all six disk rates lower. The decision remains **BUILD**.
+
+The mean-field Hopf cells at `dt = 2` illustrate the small count shift: the
+preconditioned/physical counts are `11/12`, `57/58`, and `29/30` for developed steps
+1, 10, and 20. Exact `kappa_2(P)` is recorded from the Fourier blocks for FFT and the
+mean-field probe. It is unavailable from per-mode blocks for the split composition,
+which combines a Fourier-diagonal inverse with a spatially varying pointwise inverse.
+
+Source: `brusselator_dt_sweep_true_residual.json`, `/decision_true_stop`,
+`/decision_comparison`, and `/cells/*`;
+`BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md` gives all 200 cells. The check took `354.167`
+CPU seconds; this is diagnostic laptop timing only.
+
+## 6. Exploratory (post hoc): reaction variation and mean-field block conditioning
+
+This hypothesis was formed after seeing the sweep results and is not part of the
+pre-registered decision. For
+`P_mf = I - dt (D Delta + Jbar_R)`, the exact periodic-grid identity is
 
 `P_mf^-1 J - I = -dt P_mf^-1 (J_R(x) - Jbar_R)`.
 
-Its departure from the identity is therefore driven by the *spatial variation* of the
-reaction Jacobian, not by its size. This is consistent with the table in Section 4: the
-near-homogeneous early states (`screen64`, `fixed256:turing:1`) need 3 to 4 iterations
-at `dt = 1`, while the developed Hopf states, which carry the most spatial structure,
-need 18 to 23. It would also explain why `max ||J_R||` predicts FFT poorly. The sweep
-did not record `max_x ||J_R(x) - Jbar_R||`, so this explanation is untested.
+The regenerated-state reaction-variation measurements are:
 
-Two cautions follow from the same expression. First, `P_mf` can itself be nearly
-singular: a Fourier block `I - dt (D lambda_k + Jbar_R)` is singular when
-`D lambda_k + Jbar_R` has the real eigenvalue `1/dt`, which the Turing-unstable modes
-make possible. A shipped version must check the smallest singular value over the
-blocks. Second, the identity depends on the FFT diagonalizing the diffusion operator
-exactly, so it holds for periodic boundaries only.
+| state | max variation | mean variation | block min, dt=0.2 | dt=1 | dt=2 |
+|---|---:|---:|---:|---:|---:|
+| `developed64:hopf:1` | 0.0271952 | 0.00593731 | 0.549835 | 0.116935 | 0.00161396 |
+| `developed64:hopf:10` | 4.98704 | 1.84528 | 0.648728 | 0.340094 | 0.389519 |
+| `developed64:hopf:20` | 6.42996 | 2.45416 | 0.703885 | 0.470331 | 0.631036 |
+| `developed64:turing:80` | 0.0856456 | 0.0238243 | 0.860779 | 0.754358 | 0.713572 |
+| `developed64:turing:120` | 2.61143 | 0.319198 | 0.865109 | 0.770466 | 0.74499 |
+| `developed64:turing:200` | 14.3875 | 2.23165 | 0.992833 | 1.26418 | 1.71374 |
+| `screen64:hopf:0` | 0.0281197 | 0.00590851 | 0.549859 | 0.116952 | 0.00154478 |
+| `screen64:hopf:1` | 0.0217664 | 0.00478816 | 0.549859 | 0.116953 | 0.00154222 |
+| `screen64:turing:0` | 0.0184995 | 0.00320226 | 0.860751 | 0.754258 | 0.713372 |
+| `screen64:turing:1` | 0.0132127 | 0.00234353 | 0.860751 | 0.75426 | 0.713376 |
+
+At `dt = 1`, the Spearman correlations over the ten states are:
+
+| predictor | iterations | preconditioned stop | physical stop |
+|---|---|---:|---:|
+| `max ||J_R||_2` | FFT | 0.371958 | 0.522799 |
+| `max ||J_R||_2` | mean-field | 0.786724 | 0.786724 |
+| `max ||J_R - Jbar_R||_2` | FFT | 0.152442 | 0.303953 |
+| `max ||J_R - Jbar_R||_2` | mean-field | 0.862249 | 0.862249 |
+
+The sample is only `n = 10`; iteration counts contain ties, so these correlations are
+descriptive. Spatial variation orders the mean-field counts better than the raw
+reaction maximum, but it does not explain the FFT counts well.
+
+The nearly singular mean-field Fourier blocks occur on the near-homogeneous Hopf
+states at `dt = 2`, with minimum singular values about `1.5e-3`. Every Turing block
+minimum stays above `0.71`. A prospective shipped implementation would therefore need
+to check these blocks, but this post-hoc observation is not a performance claim.
+The identity above also relies on periodic FFT diagonalisation.
+
+Source: `brusselator_dt_sweep_posthoc.json`, `/states/*` and
+`/spearman_at_dt_1/*`.
 
 ## Scope and limits
 
@@ -205,6 +250,14 @@ JAX_PLATFORMS=cpu JAX_ENABLE_X64=true PYTHONPATH="$PWD" \
   --source-state-dir benchmarks/results/brusselator_dt_sweep_cpu_states \
   --output benchmarks/results/brusselator_dt_sweep_cpu_replication.json \
   --markdown-output benchmarks/results/BRUSSELATOR_DT_SWEEP_CPU_REPLICATION.md
+
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=true PYTHONPATH="$PWD" \
+.venv/bin/python benchmarks/brusselator_dt_sweep_true_residual.py \
+  --source-state-dir benchmarks/results/brusselator_dt_sweep_cpu_states
+
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=true PYTHONPATH="$PWD" \
+.venv/bin/python benchmarks/brusselator_dt_sweep_posthoc.py \
+  --source-state-dir benchmarks/results/brusselator_dt_sweep_cpu_states
 ```
 
 The original GPU sweep used the following entry points and explicit paths:
