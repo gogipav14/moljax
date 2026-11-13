@@ -1,0 +1,1319 @@
+{
+  "host_label": "georgios-vourvachakis-82K2",
+  "identity_scope": "host-labelled regenerated realisations; not Stage-3 identities",
+  "provenance": {
+    "backend": "cpu",
+    "git_commit": "6bb2c0f6e249ff90f247a127158cf287140c1875",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "numpy": "2.5.4",
+    "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "x64_enabled": true
+  },
+  "records": {
+    "developed64:hopf:1": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          10,
+          20
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "original_stage3": {
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "1618afdf56ffd65a28965e2849377f263fbce12ddd8aeffb3ac4c248ba968eda"
+        }
+      },
+      "regenerated": {
+        "relative_path": "hopf-189229f1eaae9326-georgios-vourvachakis-82K2.npz",
+        "sample_position": 0,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "0d8fa6b8b5a168ffd0393ce3bfa06239ff381493b051733ffbe484d7bd58be6d"
+        }
+      },
+      "source_report": "brusselator_conditioning_developed.json",
+      "state": "developed64:hopf:1"
+    },
+    "developed64:hopf:10": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          10,
+          20
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "original_stage3": {
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "9d8fd152c4c339f78c522a4a0951149f04488bac9036bda96a369d22ac2b9a1d"
+        }
+      },
+      "regenerated": {
+        "relative_path": "hopf-189229f1eaae9326-georgios-vourvachakis-82K2.npz",
+        "sample_position": 1,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "f9de0786d9fb095bfa10ea0bba1e15fc4cad88d559a1f997cff51c8ee6ee81ac"
+        }
+      },
+      "source_report": "brusselator_conditioning_developed.json",
+      "state": "developed64:hopf:10"
+    },
+    "developed64:hopf:20": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          10,
+          20
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "original_stage3": {
+        "relative_path": "hopf-189229f1eaae9326.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "d1990975ef82a2523bde340d3a584dc053c1221c1ba368a80ce5a10962ee9936"
+        }
+      },
+      "regenerated": {
+        "relative_path": "hopf-189229f1eaae9326-georgios-vourvachakis-82K2.npz",
+        "sample_position": 2,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "ba23750f93758b36642972a8b8aa890a77c430b8ed236651486b5bffc8b7cf2a"
+        }
+      },
+      "source_report": "brusselator_conditioning_developed.json",
+      "state": "developed64:hopf:20"
+    },
+    "developed64:turing:120": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          80,
+          120,
+          200
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260823,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "original_stage3": {
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "aa4467cf30d25c6c6ea760292ee652ee4ae5f5918e0a5814fc1da744ad7102fa"
+        }
+      },
+      "regenerated": {
+        "relative_path": "turing-5adcb64342f0d404-georgios-vourvachakis-82K2.npz",
+        "sample_position": 1,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "b1b7e7e2c7045d49f15a6562ac5bd99a81c68e005695ec569e2e33ce8b8a69bf"
+        }
+      },
+      "source_report": "brusselator_conditioning_developed.json",
+      "state": "developed64:turing:120"
+    },
+    "developed64:turing:200": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          80,
+          120,
+          200
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260823,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "original_stage3": {
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "baf60b3333d7ad311d147ca9250553679de4bad6e2b12a7173cccc4c7d9e4194"
+        }
+      },
+      "regenerated": {
+        "relative_path": "turing-5adcb64342f0d404-georgios-vourvachakis-82K2.npz",
+        "sample_position": 2,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "31b75af35cae86713c43076293807a2a4d58a3ab5fe04f6c77f22a290ca379fd"
+        }
+      },
+      "source_report": "brusselator_conditioning_developed.json",
+      "state": "developed64:turing:200"
+    },
+    "developed64:turing:80": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          80,
+          120,
+          200
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260823,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "original_stage3": {
+        "relative_path": "turing-5adcb64342f0d404.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "8e57337527efbb55189667e61f3bc359ddbac1a2eeeaf916a7839eb54cd10ef2"
+        }
+      },
+      "regenerated": {
+        "relative_path": "turing-5adcb64342f0d404-georgios-vourvachakis-82K2.npz",
+        "sample_position": 0,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "fbe76bc78dc64377f67ccdeda05acae590e31552112a32bdbab65f371fea2b4d"
+        }
+      },
+      "source_report": "brusselator_conditioning_developed.json",
+      "state": "developed64:turing:80"
+    },
+    "screen64:hopf:0": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          2
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260821,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 80,
+          "max_newton_iters": 10,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 0.1
+      },
+      "original_stage3": {
+        "relative_path": "hopf-44b4c6b42988d682.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "7ed80cdcff80171a85027bce2d35d9a2fa5d56c3c1591623c29271a0f2822e50"
+        }
+      },
+      "regenerated": {
+        "relative_path": "hopf-44b4c6b42988d682-georgios-vourvachakis-82K2.npz",
+        "sample_position": 0,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "aa54b8deeb413ba4164e04eb4ec04603c62d8076e0202e2db7138eb4fcac0097"
+        }
+      },
+      "source_report": "brusselator_conditioning.json",
+      "state": "screen64:hopf:0"
+    },
+    "screen64:hopf:1": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          2
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260821,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 80,
+          "max_newton_iters": 10,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 0.1
+      },
+      "original_stage3": {
+        "relative_path": "hopf-44b4c6b42988d682.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "97c6db45c857f93975f0c9ba4b253ac8541082b35fd20df0d95da6457f95159f"
+        }
+      },
+      "regenerated": {
+        "relative_path": "hopf-44b4c6b42988d682-georgios-vourvachakis-82K2.npz",
+        "sample_position": 1,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "ba0e461d34b1460eda4b23418582070b9fd7f1e748ec29e6978e41c86b1b7ff5"
+        }
+      },
+      "source_report": "brusselator_conditioning.json",
+      "state": "screen64:hopf:1"
+    },
+    "screen64:turing:0": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          1,
+          2
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 80,
+          "max_newton_iters": 10,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 0.1
+      },
+      "original_stage3": {
+        "relative_path": "turing-c50a7896b6a14f73.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "6545903bf9179cf2d608f70221c02e47d178af47b2b9cca153c7c07525236c8f"
+        }
+      },
+      "regenerated": {
+        "relative_path": "turing-c50a7896b6a14f73-georgios-vourvachakis-82K2.npz",
+        "sample_position": 0,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "6584e5ecd91f766394fc5515e1f9656839624078f7a62714098e3aea4a95729f"
+        }
+      },
+      "source_report": "brusselator_conditioning.json",
+      "state": "screen64:turing:0"
+    },
+    "screen64:turing:1": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          1,
+          2
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 80,
+          "max_newton_iters": 10,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 0.1
+      },
+      "original_stage3": {
+        "relative_path": "turing-c50a7896b6a14f73.npz",
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "81704394c7007b7263449ef320ee373c92f3472227e8d157284585035223c714"
+        }
+      },
+      "regenerated": {
+        "relative_path": "turing-c50a7896b6a14f73-georgios-vourvachakis-82K2.npz",
+        "sample_position": 1,
+        "source_state_identity": {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "fa571f810254baaa5429a0ce86fefeb5451d98dfe78545a5b606a2a6fe42e0a6"
+        }
+      },
+      "source_report": "brusselator_conditioning.json",
+      "state": "screen64:turing:1"
+    }
+  },
+  "schema": "brusselator_dt_sweep_regenerated_source_states_v1",
+  "trajectories": {
+    "189229f1eaae9326": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          10,
+          20
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "npz_sha256": "1f71542b3e01cc704a126fd78c9f09fc947b07b17a46d5e5a8381bb1b81ac62c",
+      "regenerated_state_identities": [
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "0d8fa6b8b5a168ffd0393ce3bfa06239ff381493b051733ffbe484d7bd58be6d"
+        },
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "f9de0786d9fb095bfa10ea0bba1e15fc4cad88d559a1f997cff51c8ee6ee81ac"
+        },
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "ba23750f93758b36642972a8b8aa890a77c430b8ed236651486b5bffc8b7cf2a"
+        }
+      ],
+      "relative_path": "hopf-189229f1eaae9326-georgios-vourvachakis-82K2.npz"
+    },
+    "44b4c6b42988d682": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 3.4,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.02,
+          "name": "hopf",
+          "reference_final_time": 50.0
+        },
+        "sample_steps": [
+          1,
+          2
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260821,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 80,
+          "max_newton_iters": 10,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 0.1
+      },
+      "npz_sha256": "e31192994f89ec4d3848d42a3e2735dfa05671367e3e542833a2d5ebeb984bce",
+      "regenerated_state_identities": [
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "aa54b8deeb413ba4164e04eb4ec04603c62d8076e0202e2db7138eb4fcac0097"
+        },
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "ba0e461d34b1460eda4b23418582070b9fd7f1e748ec29e6978e41c86b1b7ff5"
+        }
+      ],
+      "relative_path": "hopf-44b4c6b42988d682-georgios-vourvachakis-82K2.npz"
+    },
+    "5adcb64342f0d404": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          80,
+          120,
+          200
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260823,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 100,
+          "max_newton_iters": 15,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 1.0
+      },
+      "npz_sha256": "a12ff59549b75615cb51e49097fd46e11f5fa539b8a57fd4636957e29207008a",
+      "regenerated_state_identities": [
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "fbe76bc78dc64377f67ccdeda05acae590e31552112a32bdbab65f371fea2b4d"
+        },
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "b1b7e7e2c7045d49f15a6562ac5bd99a81c68e005695ec569e2e33ce8b8a69bf"
+        },
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "31b75af35cae86713c43076293807a2a4d58a3ab5fe04f6c77f22a290ca379fd"
+        }
+      ],
+      "relative_path": "turing-5adcb64342f0d404-georgios-vourvachakis-82K2.npz"
+    },
+    "c50a7896b6a14f73": {
+      "generation_fingerprint": {
+        "domain": {
+          "x": [
+            0.0,
+            5.0
+          ],
+          "y": [
+            0.0,
+            5.0
+          ]
+        },
+        "grid": {
+          "n_ghost": 1,
+          "nx": 64,
+          "ny": 64
+        },
+        "model_version": "brusselator_periodic_fft_be_v1",
+        "perturbation": 0.001,
+        "regime": {
+          "a": 1.0,
+          "b": 1.8,
+          "domain_length": 5.0,
+          "du": 0.01,
+          "dv": 0.1,
+          "name": "turing",
+          "reference_final_time": 200.0
+        },
+        "sample_steps": [
+          1,
+          2
+        ],
+        "schema": "brusselator_conditioning_source_state_v4",
+        "seed": 20260822,
+        "solver": {
+          "krylov_tol": 1e-08,
+          "max_backtrack": "NKParams-default-8",
+          "max_krylov_iters": 80,
+          "max_newton_iters": 10,
+          "newton_tol": 1e-08
+        },
+        "state_dt": 0.1
+      },
+      "npz_sha256": "9db9278c0cf216490988b18f0652da2d34cde456c8f519f9793ea44b6e115171",
+      "regenerated_state_identities": [
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "6584e5ecd91f766394fc5515e1f9656839624078f7a62714098e3aea4a95729f"
+        },
+        {
+          "fields": {
+            "u": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            },
+            "v": {
+              "dtype": "<f8",
+              "shape": [
+                66,
+                66
+              ]
+            }
+          },
+          "sha256": "fa571f810254baaa5429a0ce86fefeb5451d98dfe78545a5b606a2a6fe42e0a6"
+        }
+      ],
+      "relative_path": "turing-c50a7896b6a14f73-georgios-vourvachakis-82K2.npz"
+    }
+  }
+}
