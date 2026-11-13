@@ -86,13 +86,25 @@ Source: `BRUSSELATOR_DT_SWEEP_RESULTS.md`, "Within-state monotonicity",
 
 ## 3. Reaction magnitude predicts poorly; regime predicts well
 
-Across the ten 64x64 states at `dt = 1`, the Spearman correlation between FFT
-iterations and `max_x ||J_R(x)||_2` is 0.372. The two `screen64` Hopf states have
-`max ||J_R|| = 4.41` and need 35 and 37 iterations; `developed64:turing:200` has
-`max ||J_R|| = 16.54` and needs 20. The Hopf states are consistently harder than the
-Turing states at comparable or smaller reaction magnitude.
+Across the ten 64x64 states at `dt = 1`, the Spearman correlation between FFT iterations
+and `max_x ||J_R(x)||_2` is 0.372, and 0.523 when the same Krylov sequences are stopped
+on the physical residual (Section 5). The two `screen64` Hopf states have `max ||J_R|| =
+4.41` and need 35 and 37 iterations; `developed64:turing:200` has `max ||J_R|| = 16.54`
+and needs 20. Regime separates the counts completely: at `dt = 1` every Hopf state needs
+35 to 50 FFT iterations and every Turing state 18 to 23 (34 to 51 and 19 to 24 under the
+physical criterion). The two regimes also differ in their reaction parameters and
+diffusion scaling (`kappa_2(P_FFT) - 1` is five times larger on the Turing states at
+every `dt`), so the separation does not identify a mechanism.
 
-Source: `BRUSSELATOR_DT_SWEEP_RESULTS.md`, "Cross-state reaction correlation".
+The ten states are fewer than ten independent observations. `developed64:hopf:1` and the
+two `screen64` Hopf states are near-identical near-homogeneous states (`max ||J_R||`
+4.411 to 4.417, maximum reaction variation 0.022 to 0.028), and so are the two
+`screen64` Turing states. The correlations here and in Section 6 are descriptive.
+
+Source: `BRUSSELATOR_DT_SWEEP_RESULTS.md`, "Cross-state reaction correlation";
+`brusselator_dt_sweep_posthoc.json`,
+`/spearman_at_dt_1/max_reaction_jacobian_2_norm/fft_diffusion/true_stop`,
+`/true_residual_descriptive`, `/states/*`.
 
 ## 4. The mean-field probe helps everywhere it was measured
 
@@ -143,11 +155,23 @@ preconditioned/physical counts are `11/12`, `57/58`, and `29/30` for developed s
 1, 10, and 20. Exact `kappa_2(P)` is recorded from the Fourier blocks for FFT and the
 mean-field probe. It is unavailable from per-mode blocks for the split composition,
 which combines a Fourier-diagonal inverse with a spatially varying pointwise inverse.
+Over the 200 cells, `kappa_2(P)` for the FFT preconditioner rises with `dt` from 2.31 to
+53.4 on the Hopf states and from 7.55 to 263 on the Turing states; for the mean-field
+probe it ranges from 9.25 to 3.62e4. These values bound the gap between the two criteria
+only loosely. Among converged cells, the physical relative residual at the
+preconditioned stop never exceeds 3.9e-8 for FFT or 2.7e-8 for the mean-field probe,
+including the three `dt = 2` Hopf cells where `kappa_2(P_mf)` is 3.5e4 to 3.6e4. The
+split probe's own norm is the least faithful: at its preconditioned stop the physical
+residual reaches 7.1e-6 (`developed64:turing:200`, `dt = 2`), its physical stop comes up
+to 29 iterations later, and `developed64:hopf:20` at `dt = 1`, which converges in 88
+iterations under its own norm, does not converge within 100 under the physical
+criterion. Its physical-stop median at `dt = 1` is 45.5 against FFT's 31, so it still
+fails D3.
 
 Source: `brusselator_dt_sweep_true_residual.json`, `/decision_true_stop`,
-`/decision_comparison`, and `/cells/*`;
-`BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md` gives all 200 cells. The check took `354.167`
-CPU seconds; this is diagnostic laptop timing only.
+`/decision_comparison`, and `/cells/*`; `BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md` gives
+all 200 cells. The check took `354.167` CPU seconds; this is diagnostic laptop timing
+only; `brusselator_dt_sweep_posthoc.json#/true_residual_descriptive`.
 
 ## 6. Exploratory (post hoc): reaction variation and mean-field block conditioning
 
@@ -174,16 +198,21 @@ The regenerated-state reaction-variation measurements are:
 
 At `dt = 1`, the Spearman correlations over the ten states are:
 
-| predictor | iterations | preconditioned stop | physical stop |
+| predictor | preconditioner | preconditioned stop | physical stop |
 |---|---|---:|---:|
 | `max ||J_R||_2` | FFT | 0.371958 | 0.522799 |
 | `max ||J_R||_2` | mean-field | 0.786724 | 0.786724 |
 | `max ||J_R - Jbar_R||_2` | FFT | 0.152442 | 0.303953 |
 | `max ||J_R - Jbar_R||_2` | mean-field | 0.862249 | 0.862249 |
 
-The sample is only `n = 10`; iteration counts contain ties, so these correlations are
-descriptive. Spatial variation orders the mean-field counts better than the raw
-reaction maximum, but it does not explain the FFT counts well.
+The sample is only `n = 10`, with the near-duplicate states noted in Section 3, and the
+iteration counts contain ties, so these correlations are descriptive. The two predictors
+are themselves rank-correlated at 0.927 over these states, so 0.862 against 0.787 does
+not distinguish them. The observation consistent with the identity is narrower: on the
+three near-homogeneous Hopf states `max ||J_R||` is about 4.41 and FFT needs 35 to 37
+iterations at `dt = 1` (34 to 38 under the physical criterion), while the maximum
+reaction variation is at most 0.028 and the mean-field probe needs 4 or 5. Testing
+variation as a predictor would need states chosen for that purpose.
 
 The nearly singular mean-field Fourier blocks occur on the near-homogeneous Hopf
 states at `dt = 2`, with minimum singular values about `1.5e-3`. Every Turing block
@@ -192,7 +221,7 @@ to check these blocks, but this post-hoc observation is not a performance claim.
 The identity above also relies on periodic FFT diagonalisation.
 
 Source: `brusselator_dt_sweep_posthoc.json`, `/states/*` and
-`/spearman_at_dt_1/*`.
+`/spearman_at_dt_1/*`, `/spearman_between_predictors`.
 
 ## Scope and limits
 
@@ -227,6 +256,11 @@ host-labelled identities. Although every regenerated SHA-256 differs from the
 original, the maximum relative difference in `max_x ||J_R(x)||_2` is
 `3.6182827810178155e-12`, below the pre-registered `1e-6` threshold. The run is
 therefore classified as a **reproduction** on that state-similarity criterion.
+Both runs used JAX and jaxlib 0.11.2; the GPU run used Python 3.12.13 and NumPy 2.5.2,
+the CPU run Python 3.12.3 and NumPy 2.5.4. The two `fixed256` states were neither
+regenerated nor committed: their rows in Sections 2 and 4 rest on the original GPU run
+alone, and they do not enter D1 to D3.
+
 All 200 GMRES iteration counts and convergence flags match the GPU result. D1,
 D2 and D3 remain PASS: the developed-state median degradation ratio is
 `4.2375`, the `dt = 1` FFT median is `30`, and mean-field coupled FFT reduces

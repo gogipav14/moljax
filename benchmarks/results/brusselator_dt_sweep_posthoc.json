@@ -3,12 +3,12 @@
   "provenance": {
     "backend": "cpu",
     "cpu_replication_sha256": "7f7448c462dfc0059853854b25e4cabcb8f60558e5aca467fd639c295a917530",
-    "git_commit": "33e044c24ac0c2251dbe39166845b27727081905",
+    "git_commit": "a1e25f19d08964bacfceeec7eb459639c830cc5f",
     "jax": "0.11.2",
     "jaxlib": "0.11.2",
     "numpy": "2.5.4",
     "python": "3.12.3",
-    "script_sha256": "ddb1e58f5425153f74fbb1e6e171d81bfb5e769dcffc29073a054fa5340f8953",
+    "script_sha256": "3870b7cb3860b9c820325d3f5dbadf85888a590b048f2ae1e86833bb5efb1274",
     "true_residual_check_sha256": "0dbcbf2c8e9f090b3028e6ca646cac42656a21c134668780f31bcf12451d2505",
     "x64_enabled": true
   },
@@ -81,6 +81,15 @@
           "rho": 0.8622493579230204
         }
       }
+    }
+  },
+  "spearman_between_predictors": {
+    "max_reaction_jacobian_vs_max_variation": {
+      "first_predictor_ties": false,
+      "n": 10,
+      "pvalue": 0.00011203450639397586,
+      "rho": 0.9272727272727272,
+      "second_predictor_ties": false
     }
   },
   "states": [
@@ -314,5 +323,273 @@
       "source_state_sha256": "fa571f810254baaa5429a0ce86fefeb5451d98dfe78545a5b606a2a6fe42e0a6",
       "state": "screen64:turing:1"
     }
-  ]
+  ],
+  "true_residual_descriptive": {
+    "cell_count": 200,
+    "condition_number_2": {
+      "fft_diffusion": {
+        "by_regime": {
+          "hopf": {
+            "maximum": 53.4288,
+            "minimum": 2.31072
+          },
+          "turing": {
+            "maximum": 263.144,
+            "minimum": 7.553600000000001
+          }
+        },
+        "maximum": 263.144,
+        "method": "exact Fourier diagonal",
+        "minimum": 2.31072,
+        "turing_to_hopf_kappa_minus_one_by_dt": [
+          {
+            "dt": 0.05,
+            "hopf": 1.3107199999999999,
+            "ratio": 5.000000000000002,
+            "turing": 6.553600000000001
+          },
+          {
+            "dt": 0.1,
+            "hopf": 2.62144,
+            "ratio": 5.000000000000001,
+            "turing": 13.107200000000002
+          },
+          {
+            "dt": 0.2,
+            "hopf": 5.24288,
+            "ratio": 5.000000000000001,
+            "turing": 26.214400000000005
+          },
+          {
+            "dt": 0.5,
+            "hopf": 13.1072,
+            "ratio": 5.0,
+            "turing": 65.536
+          },
+          {
+            "dt": 1.0,
+            "hopf": 26.2144,
+            "ratio": 5.0,
+            "turing": 131.072
+          },
+          {
+            "dt": 1.5,
+            "hopf": 39.3216,
+            "ratio": 5.000000000000001,
+            "turing": 196.60800000000003
+          },
+          {
+            "dt": 2.0,
+            "hopf": 52.4288,
+            "ratio": 5.0,
+            "turing": 262.144
+          }
+        ]
+      },
+      "identity": {
+        "maximum": 1.0,
+        "method": "identity",
+        "minimum": 1.0
+      },
+      "mean_field_coupled_fft": {
+        "hopf_dt2": {
+          "cells": 3,
+          "maximum": 36214.10214416501,
+          "minimum": 34604.58679981792
+        },
+        "maximum": 36214.10214416501,
+        "method": "exact Fourier 2x2 blocks",
+        "minimum": 9.249342113247982
+      },
+      "split_reaction_after_diffusion": {
+        "maximum": null,
+        "method": "unavailable: split composition is not block diagonal in one basis",
+        "minimum": null
+      }
+    },
+    "cpu_wall_seconds": 354.16671872138977,
+    "fft_dt1_ranges": {
+      "hopf": {
+        "preconditioned_stop": {
+          "maximum": 50,
+          "minimum": 35
+        },
+        "true_stop": {
+          "maximum": 51,
+          "minimum": 34
+        }
+      },
+      "turing": {
+        "preconditioned_stop": {
+          "maximum": 23,
+          "minimum": 18
+        },
+        "true_stop": {
+          "maximum": 24,
+          "minimum": 19
+        }
+      }
+    },
+    "note": "descriptive summary of the pre-registered true-residual cells; not a post hoc hypothesis",
+    "physical_relative_residual_at_preconditioned_stop": {
+      "fft_diffusion": {
+        "argmax_cell": {
+          "dt": 2.0,
+          "preconditioner": "fft_diffusion",
+          "state": "developed64:turing:120"
+        },
+        "cells": 61,
+        "maximum": 3.8995848672277165e-08
+      },
+      "identity": {
+        "argmax_cell": {
+          "dt": 0.5,
+          "preconditioner": "identity",
+          "state": "developed64:turing:120"
+        },
+        "cells": 44,
+        "maximum": 9.962995044080438e-09
+      },
+      "mean_field_coupled_fft": {
+        "argmax_cell": {
+          "dt": 2.0,
+          "preconditioner": "mean_field_coupled_fft",
+          "state": "developed64:turing:200"
+        },
+        "cells": 30,
+        "maximum": 2.6690959746470427e-08
+      },
+      "split_reaction_after_diffusion": {
+        "argmax_cell": {
+          "dt": 2.0,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:turing:200"
+        },
+        "cells": 24,
+        "maximum": 7.081398415170268e-06
+      }
+    },
+    "reproduction_environment": {
+      "cpu": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "numpy": "2.5.4",
+        "python": "3.12.3"
+      },
+      "excluded_original_states": [
+        "fixed256:turing:1",
+        "fixed256:turing:1000"
+      ],
+      "gpu": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "numpy": "2.5.2",
+        "python": "3.12.13"
+      },
+      "regenerated_states": [
+        "developed64:hopf:1",
+        "developed64:hopf:10",
+        "developed64:hopf:20",
+        "developed64:turing:80",
+        "developed64:turing:120",
+        "developed64:turing:200",
+        "screen64:hopf:0",
+        "screen64:hopf:1",
+        "screen64:turing:0",
+        "screen64:turing:1"
+      ]
+    },
+    "split_dt1_developed64": {
+      "fft_true_stop_median": 31.0,
+      "states": [
+        {
+          "dt": 1.0,
+          "preconditioned_stop_count": 42,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:hopf:1",
+          "true_converged": true,
+          "true_stop_count": 47
+        },
+        {
+          "dt": 1.0,
+          "preconditioned_stop_count": 101,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:hopf:10",
+          "true_converged": false,
+          "true_stop_count": 101
+        },
+        {
+          "dt": 1.0,
+          "preconditioned_stop_count": 88,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:hopf:20",
+          "true_converged": false,
+          "true_stop_count": 101
+        },
+        {
+          "dt": 1.0,
+          "preconditioned_stop_count": 28,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:turing:120",
+          "true_converged": true,
+          "true_stop_count": 35
+        },
+        {
+          "dt": 1.0,
+          "preconditioned_stop_count": 31,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:turing:200",
+          "true_converged": true,
+          "true_stop_count": 44
+        },
+        {
+          "dt": 1.0,
+          "preconditioned_stop_count": 13,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:turing:80",
+          "true_converged": true,
+          "true_stop_count": 16
+        }
+      ],
+      "true_stop_median": 45.5
+    },
+    "stop_count_difference": {
+      "fft_diffusion": {
+        "argmax_cell": {
+          "dt": 1.5,
+          "preconditioner": "fft_diffusion",
+          "state": "developed64:hopf:20"
+        },
+        "maximum_true_minus_preconditioned": 5,
+        "negative_cells": 12
+      },
+      "identity": {
+        "argmax_cell": {
+          "dt": 0.05,
+          "preconditioner": "identity",
+          "state": "developed64:hopf:10"
+        },
+        "maximum_true_minus_preconditioned": 0,
+        "negative_cells": 0
+      },
+      "mean_field_coupled_fft": {
+        "argmax_cell": {
+          "dt": 2.0,
+          "preconditioner": "mean_field_coupled_fft",
+          "state": "developed64:hopf:10"
+        },
+        "maximum_true_minus_preconditioned": 1,
+        "negative_cells": 0
+      },
+      "split_reaction_after_diffusion": {
+        "argmax_cell": {
+          "dt": 2.0,
+          "preconditioner": "split_reaction_after_diffusion",
+          "state": "developed64:turing:200"
+        },
+        "maximum_true_minus_preconditioned": 29,
+        "negative_cells": 0
+      }
+    }
+  }
 }
