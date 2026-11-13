@@ -32,6 +32,34 @@ FILES = {
     "reference": "tau_blend_reference_count.json",
     "repro": "tau_blend_reproducibility.json",
     "runtime": "pme_dst_tau_blend_pseudospectral_runtime_estimator.json",
+    "baseline": "pme_dst_tau_blend_single_reference_baselines.json",
+    "batch_cpu": "pme_dst_tau_blend_batching_audit_cpu.json",
+    "batch_gpu": "pme_dst_tau_blend_batching_audit_gpu.json",
+    "criterion_legacy": "pme_dst_tau_blend_pseudospectral_criterion.json",
+    "criterion_current": "pme_dst_tau_blend_pseudospectral_criterion_current.json",
+}
+
+PART_II_METHODS = (
+    "identity",
+    "frozen_mean",
+    "frozen_bulk",
+    "floor",
+    "const",
+    "geometric_mean",
+    "harmonic_mean",
+    "optimized_d0",
+    "tau_blend",
+)
+PART_II_LABELS = {
+    "identity": "identity",
+    "frozen_mean": "mean",
+    "frozen_bulk": "bulk",
+    "floor": "floor",
+    "const": "const",
+    "geometric_mean": "geometric",
+    "harmonic_mean": "harmonic",
+    "optimized_d0": "oracle",
+    "tau_blend": "blend",
 }
 
 
@@ -307,6 +335,119 @@ def _assert_evidence(data: dict[str, dict[str, Any]]) -> None:
         "E3 reproducibility count is not 48 of 96",
     )
 
+    baseline = data["baseline"]
+    spectral = baseline["spectral_records"]
+    epsilon = float(baseline["config"]["epsilon"])
+    m_values = sorted({int(row["m"]) for row in spectral})
+    low_m = m_values[0]
+    for m in m_values[1:]:
+        active_scale = [
+            row
+            for row in spectral
+            if int(row["m"]) == m
+            and row["d0"] is not None
+            and float(row["d0"]) / float(row["coefficient"]["active_maximum"]) >= 0.01
+        ]
+        _require(
+            active_scale
+            and all(row["spectrum"]["near_zero_eigenvalue_count"] > 0 for row in active_scale),
+            f"an active-scale scalar lacks a near-zero tail at m = {m}",
+        )
+        oracle = next(row for row in active_scale if row["method"] == "optimized_d0")
+        _require(
+            oracle["spectrum"]["condition_number_2"]
+            == max(row["spectrum"]["condition_number_2"] for row in active_scale)
+            and oracle["spectrum"]["minimum_eigenvalue_modulus"]
+            == min(row["spectrum"]["minimum_eigenvalue_modulus"] for row in active_scale),
+            f"the oracle is not spectrally worst among active-scale scalars at m = {m}",
+        )
+
+    low_records = [row for row in spectral if int(row["m"]) == low_m and row["d0"] is not None]
+    for row in low_records:
+        floor = low_m * epsilon ** (low_m - 1)
+        ratio = float(row["d0"]) / floor
+        if ratio <= 100:
+            _require(
+                row["spectrum"]["near_zero_eigenvalue_count"] == 0,
+                "an m = 2 near-floor reference has a near-zero tail",
+            )
+        if ratio >= 1.0e4:
+            _require(
+                row["spectrum"]["near_zero_eigenvalue_count"] > 0,
+                "an m = 2 far-from-floor reference lacks a near-zero tail",
+            )
+
+    blend_rows = [row for row in spectral if row["method"] == "tau_blend"]
+    _require(
+        len(blend_rows) == len(m_values)
+        and all(row["spectrum"]["near_zero_eigenvalue_count"] == 0 for row in blend_rows),
+        "the blend has a near-zero eigenvalue in the baseline spectral table",
+    )
+    low_blend = next(row for row in blend_rows if int(row["m"]) == low_m)
+    part_i_low = next(
+        row
+        for row in cases
+        if row["nx"] == baseline["config"]["spectral_nx"]
+        and row["m"] == low_m
+        and row["method"] == "repository_blend_B3"
+    )
+    _require(
+        abs(low_blend["spectrum"]["spectral_abscissa"] - part_i_low["Y_spectrum"]["maximum_real"])
+        <= 1.0e-6 * abs(part_i_low["Y_spectrum"]["maximum_real"]),
+        "the m = 2 blend spectral abscissa does not match Part I",
+    )
+
+    loose_tolerance = max(float(value) for value in baseline["config"]["work_tolerances"])
+    loose = [
+        row
+        for row in baseline["work_precision_records"]
+        if float(row["requested_relative_residual"]) == loose_tolerance
+    ]
+    loose_percentages = []
+    for row in loose:
+        scalars = [
+            values
+            for method, values in row["methods"].items()
+            if method not in {"identity", "tau_blend"} and values["all_converged"]
+        ]
+        fastest = min(scalars, key=lambda values: values["median_seconds"])
+        loose_percentages.append(
+            100.0
+            * (row["methods"]["tau_blend"]["median_seconds"] / fastest["median_seconds"] - 1.0)
+        )
+    _require(
+        len(loose_percentages)
+        == len(baseline["config"]["work_nx_values"]) * len(baseline["config"]["work_m_values"])
+        and all(value > 0.0 for value in loose_percentages),
+        "the blend is not slower than the fastest scalar in every loose-tolerance case",
+    )
+
+    mismatches = [
+        row for row in data["batch_gpu"]["solve_records"] if not row["iteration_sets_identical"]
+    ]
+    _require(len(mismatches) == 1, "the batching audit does not contain exactly one mismatch")
+    legacy_low = next(row for row in data["criterion_legacy"]["records"] if int(row["m"]) == low_m)
+    current_low = next(
+        row for row in data["criterion_current"]["records"] if int(row["m"]) == low_m
+    )
+    _require(
+        not legacy_low["pseudospectral_criterion"]["certified"]
+        and not current_low["pseudospectral_criterion"]["certified"],
+        "the dense criterion unexpectedly certifies m = 2",
+    )
+    legacy_verdicts = {
+        int(row["m"]): bool(row["pseudospectral_criterion"]["certified"])
+        for row in data["criterion_legacy"]["records"]
+    }
+    current_verdicts = {
+        int(row["m"]): bool(row["pseudospectral_criterion"]["certified"])
+        for row in data["criterion_current"]["records"]
+    }
+    _require(
+        legacy_verdicts == current_verdicts,
+        "the current dense-criterion rerun changes a committed verdict",
+    )
+
 
 def _lemma6_table(rows: list[dict[str, Any]]) -> str:
     names = {"max": "max", "median": "median", "geomean": "geometric mean"}
@@ -504,6 +645,504 @@ def _cn_table(rows: list[dict[str, Any]]) -> str:
     )
 
 
+def _part_ii_spectral_table(baseline: dict[str, Any]) -> str:
+    m_values = sorted({int(row["m"]) for row in baseline["spectral_records"]})
+    low_m = m_values[0]
+    order = {method: index for index, method in enumerate(PART_II_METHODS)}
+    records = sorted(
+        (
+            row
+            for row in baseline["spectral_records"]
+            if not (row["method"] == "floor" and int(row["m"]) != low_m)
+        ),
+        key=lambda row: (int(row["m"]), order[row["method"]]),
+    )
+    epsilon = float(baseline["config"]["epsilon"])
+    rows = []
+    for row in records:
+        m = int(row["m"])
+        d0 = row["d0"]
+        ratios = (None, None)
+        if d0 is not None and row["method"] != "identity":
+            ratios = (
+                float(d0) / (m * epsilon ** (m - 1)),
+                float(d0) / float(row["coefficient"]["active_maximum"]),
+            )
+        rows.append(
+            (
+                m,
+                PART_II_LABELS[row["method"]],
+                *ratios,
+                row["spectrum"]["condition_number_2"],
+                row["spectrum"]["near_zero_eigenvalue_count"],
+                row["spectrum"]["minimum_eigenvalue_modulus"],
+            )
+        )
+    return _table(
+        (
+            "m",
+            "reference",
+            "d / floor",
+            "d / active max",
+            "kappa_2",
+            "count below 0.1",
+            "min abs(lambda)",
+        ),
+        rows,
+    )
+
+
+def _part_ii_work_tables(baseline: dict[str, Any]) -> tuple[str, str]:
+    records = sorted(
+        baseline["work_precision_records"],
+        key=lambda row: (
+            int(row["nx"]),
+            int(row["m"]),
+            -float(row["requested_relative_residual"]),
+        ),
+    )
+    iteration_rows = []
+    timing_rows = []
+    for row in records:
+        prefix = (row["nx"], row["m"], row["requested_relative_residual"])
+        iteration_rows.append(
+            (
+                *prefix,
+                *(
+                    values["iterations"][0] if values["all_converged"] else "cap"
+                    for values in (row["methods"][method] for method in PART_II_METHODS)
+                ),
+            )
+        )
+        timing_rows.append(
+            (
+                *prefix,
+                *(
+                    f"{_fmt(values['median_seconds'])} [{_fmt(values['iqr_seconds'])}]"
+                    for values in (row["methods"][method] for method in PART_II_METHODS)
+                ),
+            )
+        )
+    headers = (
+        "N",
+        "m",
+        "tol",
+        *(PART_II_LABELS[method] for method in PART_II_METHODS),
+    )
+    return _table(headers, iteration_rows), _table(headers, timing_rows)
+
+
+def _part_ii_contrast_table(
+    baseline: dict[str, Any],
+) -> tuple[str, list[tuple[dict[str, Any], str, int, int]]]:
+    order = {method: index for index, method in enumerate(PART_II_METHODS)}
+    selected = []
+    rows = []
+    for row in sorted(baseline["contrast_records"], key=lambda item: (item["m"], item["step"])):
+        candidates = {
+            method: values
+            for method, values in row["methods"].items()
+            if method != "tau_blend" and values["converged"]
+        }
+        best_method = min(
+            candidates,
+            key=lambda method: (candidates[method]["iterations"], order[method]),
+        )
+        best_count = int(candidates[best_method]["iterations"])
+        blend_count = int(row["methods"]["tau_blend"]["iterations"])
+        selected.append((row, best_method, best_count, blend_count))
+        rows.append(
+            (
+                row["m"],
+                row["step"],
+                row["coefficient"]["degeneracy_fraction"],
+                f"{PART_II_LABELS[best_method]} ({best_count})",
+                blend_count,
+                best_count / blend_count,
+            )
+        )
+    return (
+        _table(
+            ("m", "step", "degeneracy fraction", "best single", "blend", "ratio"),
+            rows,
+        ),
+        selected,
+    )
+
+
+def _render_part_ii(data: dict[str, dict[str, Any]]) -> str:
+    baseline = data["baseline"]
+    config = baseline["config"]
+    spectral = baseline["spectral_records"]
+    m_values = sorted({int(row["m"]) for row in spectral})
+    low_m, middle_m, high_m = m_values
+    work_n = sorted(int(value) for value in config["work_nx_values"])
+    spectral_n = int(config["spectral_nx"])
+    criterion_n = int(data["criterion_legacy"]["config"]["nx"])
+    tolerances = sorted(float(value) for value in config["work_tolerances"])
+    tight_tolerance = tolerances[0]
+    loose_tolerance = tolerances[-1]
+    max_iterations = int(config["max_krylov_iters"])
+    capped_count = max_iterations + 1
+    epsilon = float(config["epsilon"])
+    later_state_count = len(config["evolved_sample_steps"])
+    certificate_change_count = len(data["active"]["configuration"]["certificate_changes"])
+
+    spectral_table = _part_ii_spectral_table(baseline)
+    work_table, timing_table = _part_ii_work_tables(baseline)
+    contrast_table, contrast = _part_ii_contrast_table(baseline)
+
+    by_spectral = {(int(row["m"]), row["method"]): row for row in spectral}
+    active_ranges = {}
+    for m in (middle_m, high_m):
+        rows = [
+            row
+            for row in spectral
+            if int(row["m"]) == m
+            and row["d0"] is not None
+            and float(row["d0"]) / float(row["coefficient"]["active_maximum"]) >= 0.01
+        ]
+        active_ranges[m] = {
+            "ratio": (
+                min(float(row["d0"]) / float(row["coefficient"]["active_maximum"]) for row in rows),
+                max(float(row["d0"]) / float(row["coefficient"]["active_maximum"]) for row in rows),
+            ),
+            "count": (
+                min(row["spectrum"]["near_zero_eigenvalue_count"] for row in rows),
+                max(row["spectrum"]["near_zero_eigenvalue_count"] for row in rows),
+            ),
+            "kappa": [row["spectrum"]["condition_number_2"] for row in rows],
+        }
+
+    low_rows = [
+        row
+        for row in spectral
+        if int(row["m"]) == low_m and row["d0"] is not None and row["method"] != "identity"
+    ]
+    low_floor = low_m * epsilon ** (low_m - 1)
+    low_far = [row for row in low_rows if float(row["d0"]) / low_floor >= 1.0e4]
+    low_near = [row for row in low_rows if float(row["d0"]) / low_floor <= 100]
+    blend_kappa = [
+        by_spectral[(m, "tau_blend")]["spectrum"]["condition_number_2"] for m in m_values
+    ]
+
+    work = {
+        (int(row["nx"]), int(row["m"]), float(row["requested_relative_residual"])): row
+        for row in baseline["work_precision_records"]
+    }
+    tight = [work[(nx, m, tight_tolerance)] for nx in work_n for m in m_values]
+    active_scale_methods = ("frozen_mean", "frozen_bulk", "const")
+    active_scale_slower_count = sum(
+        all(
+            row["methods"][method]["iterations"][0] > row["methods"]["identity"]["iterations"][0]
+            for method in active_scale_methods
+        )
+        for row in tight
+    )
+    blend_counts = {
+        nx: [
+            work[(nx, m, tight_tolerance)]["methods"]["tau_blend"]["iterations"][0]
+            for m in m_values
+        ]
+        for nx in work_n
+    }
+    oracle_time_ratios = []
+    for row in tight:
+        oracle = row["methods"]["optimized_d0"]
+        if oracle["all_converged"]:
+            oracle_time_ratios.append(
+                oracle["median_seconds"] / row["methods"]["tau_blend"]["median_seconds"]
+            )
+    middle_large = work[(work_n[-1], middle_m, tight_tolerance)]
+    middle_identity_ratio = (
+        middle_large["methods"]["identity"]["median_seconds"]
+        / middle_large["methods"]["tau_blend"]["median_seconds"]
+    )
+
+    loose_percentages = []
+    loose_rows = []
+    for nx in work_n:
+        for m in m_values:
+            row = work[(nx, m, loose_tolerance)]
+            scalars = {
+                method: values
+                for method, values in row["methods"].items()
+                if method not in {"identity", "tau_blend"} and values["all_converged"]
+            }
+            fastest = min(scalars, key=lambda method: scalars[method]["median_seconds"])
+            blend = row["methods"]["tau_blend"]
+            percentage = 100.0 * (
+                blend["median_seconds"] / scalars[fastest]["median_seconds"] - 1.0
+            )
+            loose_percentages.append(percentage)
+            loose_rows.append((row, fastest))
+    loose_active_rows = [
+        (row, method) for row, method in loose_rows if int(row["m"]) in {middle_m, high_m}
+    ]
+    loose_active_scalar_counts = [
+        row["methods"][method]["iterations"][0] for row, method in loose_active_rows
+    ]
+    loose_active_blend_counts = [
+        row["methods"]["tau_blend"]["iterations"][0] for row, _ in loose_active_rows
+    ]
+
+    high_contrast = [item for item in contrast if int(item[0]["m"]) == high_m]
+    low_contrast = [item for item in contrast if int(item[0]["m"]) == low_m]
+    high_ratios = [best / blend for _, _, best, blend in high_contrast]
+    low_ratios = [best / blend for _, _, best, blend in low_contrast]
+    contrast_values = {
+        m: [
+            float(row[0]["coefficient"]["active_d95_over_d05"])
+            for row in contrast
+            if row[0]["m"] == m
+        ]
+        for m in (low_m, high_m)
+    }
+    oracle_locations = [
+        (
+            float(row[0]["optimized_d0_scan"]["ratio_to_active_maximum"]),
+            float(row[0]["optimized_d0_scan"]["ratio_to_active_minimum"]),
+        )
+        for row in contrast
+    ]
+
+    gpu = data["batch_gpu"]
+    cpu = data["batch_cpu"]
+    gpu_apply = [
+        row["timing"]["speedup_batched_over_forced_sequential"] for row in gpu["apply_records"]
+    ]
+    gpu_solve = [
+        row["full_solve_speedup_batched_over_forced_sequential"] for row in gpu["solve_records"]
+    ]
+    cpu_apply = [
+        row["timing"]["speedup_batched_over_forced_sequential"] for row in cpu["apply_records"]
+    ]
+    mismatch = next(row for row in gpu["solve_records"] if not row["iteration_sets_identical"])
+    batched_mismatch_count = mismatch["phase0_batched"]["iterations"][0]
+    sequential_mismatch_count = mismatch["forced_sequential"]["iterations"][0]
+
+    legacy = {int(row["m"]): row for row in data["criterion_legacy"]["records"]}
+    current = {int(row["m"]): row for row in data["criterion_current"]["records"]}
+    criterion_rows = []
+    for m in m_values:
+        row = legacy[m]
+        criterion = row["pseudospectral_criterion"]
+        criterion_rows.append(
+            (
+                m,
+                "yes" if criterion["certified"] else "no",
+                criterion["polynomial_effective_rate"],
+                criterion["predicted_iterations"],
+                row["actual_counted_gmres"]["iterations"],
+            )
+        )
+    criterion_table = _table(
+        ("m", "certified", "rate", "predicted iterations", "GMRES"), criterion_rows
+    )
+    current_comparison = "; ".join(
+        f"`m = {m}`: {_fmt(legacy[m]['pseudospectral_criterion']['polynomial_effective_rate'])} / "
+        f"{_fmt(legacy[m]['pseudospectral_criterion']['predicted_iterations'])} to "
+        f"{_fmt(current[m]['pseudospectral_criterion']['polynomial_effective_rate'])} / "
+        f"{_fmt(current[m]['pseudospectral_criterion']['predicted_iterations'])}"
+        for m in m_values
+    )
+
+    result = f"""# Part II. Single-reference baseline study (corrected coefficient)
+
+This part restates the earlier single-reference study against its JSONs, regenerated
+with the corrected coefficient. Section II.6 lists what changed from the previous
+version.
+
+**Scope.** The same one-dimensional problem as Part I, at one wide-front
+backward-Euler linearization of the initial state (and, in II.3,
+{later_state_count} later states),
+`m = {', '.join(str(m) for m in m_values)}`, `N = {', '.join(str(n) for n in work_n)}`.
+The dense spectral table uses `N = {spectral_n}` and the dense criterion uses
+`N = {criterion_n}`. The blend in this part is the repository blend with the
+repository mask, so at `m = {low_m}` it has no mask (Part I, Section 3); its
+`m = {low_m}` spectrum is the one Part I reports for `repository_blend_B3` at
+`N = {spectral_n}`.
+
+**Counts and timings.** The benchmark calls `_counted_gmres`, which claims convergence
+only after the measured true relative residual `||b - A x|| / ||b||` reaches the
+requested tolerance. Its stopping convention therefore matches Part I's true-residual
+convention. The JSONs were generated at
+`{baseline['provenance']['repository_head']}` (base
+`{baseline['provenance']['base_revision']}`) and committed in the correction delivery;
+they record no host, device model or library versions, so all timings in this part are
+indicative only.
+
+Source: the Part II JSONs, `/provenance` [P1].
+
+## II.1 Scalar references and the Lemma 6 boundary
+
+{spectral_table}
+
+Source: `pme_dst_tau_blend_single_reference_baselines.json`, `/spectral_records/*`
+[P2]. At `m = {middle_m}` and `{high_m}` the floor reference
+(`{_fmt(middle_m * epsilon ** (middle_m - 1))}`,
+`{_fmt(high_m * epsilon ** (high_m - 1))}`) coincides with identity and is omitted.
+
+Lemma 6 explains every row. With `beta_k = (1 + dt f mu_k) / (1 + dt d mu_k)`, a
+reference `d` far above the floor value `f` leaves the floor-region modes near `f/d`,
+a tail of small eigenvalues; a reference near the floor gives `beta_k` near one and no
+tail, but then it barely preconditions the active part.
+
+- **m = {middle_m} and m = {high_m}.** Every scalar reference at the active scale
+  (`d` from {_fmt(active_ranges[high_m]['ratio'][0])} to
+  {_fmt(active_ranges[middle_m]['ratio'][1])} times the active maximum) keeps a tail:
+  {active_ranges[middle_m]['count'][0]} to {active_ranges[middle_m]['count'][1]}
+  eigenvalues below `0.1` at `m = {middle_m}`, and
+  {active_ranges[high_m]['count'][0]} to {active_ranges[high_m]['count'][1]} at
+  `m = {high_m}`. Their condition numbers lie within
+  {_fmt(100 * max((max(values['kappa']) - min(values['kappa'])) / min(values['kappa']) for values in active_ranges.values()))}%
+  of each other, and the GMRES-optimal oracle is spectrally the worst: the largest
+  `kappa_2` and the smallest `min |lambda|`.
+- **m = {low_m}.** The references split by distance from the floor. The
+  {len(low_far)} at {_fmt(min(float(row['d0']) / low_floor for row in low_far))} to
+  {_fmt(max(float(row['d0']) / low_floor for row in low_far))} times the floor keep
+  {min(row['spectrum']['near_zero_eigenvalue_count'] for row in low_far)} to
+  {max(row['spectrum']['near_zero_eigenvalue_count'] for row in low_far)} small
+  eigenvalues. The {len(low_near)} within
+  {_fmt(max(float(row['d0']) / low_floor for row in low_near))} times the floor have
+  none, but their condition numbers,
+  {_fmt(min(row['spectrum']['condition_number_2'] for row in low_near))} to
+  {_fmt(max(row['spectrum']['condition_number_2'] for row in low_near))}, are close to
+  identity's {_fmt(by_spectral[(low_m, 'identity')]['spectrum']['condition_number_2'])}.
+  The geometric and harmonic means land near the floor because the corrected
+  repository rule treats every node as active, so the floor nodes enter the means.
+- **The blend** has no eigenvalue below `0.1` at any `m`, with `kappa_2`
+  {', '.join(_fmt(value) for value in blend_kappa)}. At `m = {low_m}` its larger
+  condition number is that of an empty mask; Part I shows that the CFL mask repairs it.
+
+## II.2 Linear-solve work at one linearization
+
+GMRES iterations; `cap` means {max_iterations} iterations without convergence
+(reported as {capped_count}, the inherited counter convention).
+
+{work_table}
+
+Median [IQR] seconds, with the unrecorded-environment caveat above:
+
+{timing_table}
+
+Source: `pme_dst_tau_blend_single_reference_baselines.json`,
+`/work_precision_records/*` [P3].
+
+**Tight tolerance (`{_fmt(tight_tolerance)}`).** The tail costs more than it saves.
+In {active_scale_slower_count} of the {len(tight)} cases, every active-scale scalar
+needs more iterations than no preconditioner at all; at `N = {work_n[-1]},
+`m = {high_m}` every single reference caps. The blend needs
+{', '.join(str(value) for value in blend_counts[work_n[0]])}
+iterations at `N = {work_n[0]}` and
+{', '.join(str(value) for value in blend_counts[work_n[-1]])} at `N = {work_n[-1]}`.
+Against the converged oracle, its time is
+{', '.join(_fmt(value) for value in oracle_time_ratios[:3])} times smaller at
+`N = {work_n[0]}` and {_fmt(oracle_time_ratios[-1])} times smaller at
+`N = {work_n[-1]}, m = {low_m}`; at `N = {work_n[-1]}, m = {middle_m}` the oracle
+caps and the fastest converged comparator, identity, takes
+{_fmt(middle_identity_ratio)} times longer.
+
+**Loose tolerance (`{_fmt(loose_tolerance)}`).** The blend is slower than the fastest
+converged scalar in all {len(loose_percentages)} cases, by
+{_fmt(min(loose_percentages))}% to {_fmt(max(loose_percentages))}%. At
+`m = {middle_m}` and `{high_m}` it needs {min(loose_active_blend_counts)} to
+{max(loose_active_blend_counts)} iterations against
+{min(loose_active_scalar_counts)} to {max(loose_active_scalar_counts)} for the
+fastest scalars, but applies {config['reference_count']} Helmholtz inverses per
+iteration; at `m = {low_m}` it also needs more iterations in the
+`N = {work_n[-1]}` case.
+
+Source: `pme_dst_tau_blend_single_reference_baselines.json` [P4, P5].
+
+## II.3 Later states (contrast sweep)
+
+{contrast_table}
+
+GMRES iterations at `{_fmt(config['contrast_tolerance'])}`, `N =
+{config['contrast_nx']}`. "Best single" is the minimum converged iteration count over
+the {len(PART_II_METHODS) - 1} non-blend comparators, with the selected method named.
+Source: `pme_dst_tau_blend_single_reference_baselines.json`, `/contrast_records/*`
+[P6].
+
+At `m = {high_m}` the best single reference is identity or the floor in every state,
+and the blend's advantage ({', '.join(_fmt(value) for value in high_ratios)}) narrows
+as the front fills in, without vanishing. At `m = {low_m}` the repository rule marks
+no node as degenerate, and the advantage is
+{_fmt(min(low_ratios))} to {_fmt(max(low_ratios))}. The oracle sits at the floor in
+the initial `m = {low_m}` state and at the active maximum in the other
+{sum(location[0] == 1.0 for location in oracle_locations)} states. The
+coefficient-contrast ratio `D95/D05` (about
+`{_fmt(max(contrast_values[low_m]))}` at `m = {low_m}` and
+`{_fmt(min(contrast_values[high_m]))}` to `{_fmt(max(contrast_values[high_m]))}` at
+`m = {high_m}`) does not order these results.
+
+## II.4 Batching audit
+
+The production blend applies its {config['reference_count']} references in one batched
+Helmholtz call. On the GPU the batched and sequential actions agree to
+`{_fmt(gpu['maximum_relative_action_difference'])}` relative; the batched application
+is {_fmt(min(gpu_apply))} to {_fmt(max(gpu_apply))} times faster, and the full solve
+{_fmt(min(gpu_solve))} to {_fmt(max(gpu_solve))} times. The iteration counts agree in
+{sum(row['iteration_sets_identical'] for row in gpu['solve_records'])} of
+{len(gpu['solve_records'])} solves; at `N = {mismatch['nx']}, m = {mismatch['m']}`,
+`{_fmt(mismatch['requested_relative_residual'])}`, the batched solve takes
+{batched_mismatch_count} iterations and the sequential one
+{sequential_mismatch_count}, a difference at the stopping threshold
+that we attribute to round-off (an interpretation). On the CPU the batched application
+is {_fmt(min(cpu_apply))} to {_fmt(max(cpu_apply))} times as fast. Batching therefore
+neither helps nor hurts the end-to-end solve at these sizes.
+
+Source: `pme_dst_tau_blend_batching_audit_{{gpu,cpu}}.json` [P7].
+
+## II.5 Dense criterion and runtime estimator
+
+The legacy dense criterion used the public defaults on code that predates the
+{certificate_change_count} certificate changes of Part I. It and the current rerun
+both use `N = {criterion_n}`.
+
+{criterion_table}
+
+Source: `pme_dst_tau_blend_pseudospectral_criterion.json` [P8].
+
+The current-code rerun preserves every verdict. Old rate/predicted count to current
+rate/predicted count: {current_comparison}. Source:
+`pme_dst_tau_blend_pseudospectral_criterion_current.json`, `/records/*`.
+
+At `m = {low_m}` the criterion abstains on the unmasked blend, as Part I's active-block
+certificate does. At `m = {middle_m}` and `{high_m}` it certifies. The provisional
+sparse estimator's costs are given in Part I, Section 10; none of its modes provides a
+rate bound. Its non-certification of the frozen mean at `m = {high_m}`, at
+{_fmt(next(row['cost']['runtime_estimate_time_over_gmres'] for row in data['runtime']['records'] if row['method'] == 'frozen_mean'))}
+times the cost of a solve, is the failure of a sufficient test, not evidence that
+GMRES is slow.
+
+## II.6 What changed from the previous version
+
+- At `m = {low_m}` the regularized coefficient never vanishes
+  (`D >= {_fmt(low_floor)}`); the previous statement that it vanishes on a set of
+  positive measure holds only for the unregularized equation.
+- "Every effective scalar keeps a tail" now holds at `m = {middle_m}` and
+  `{high_m}` only; at `m = {low_m}`, references near the floor avoid the tail by not
+  preconditioning.
+- "The oracle is spectrally worst" holds at `m = {middle_m}` and `{high_m}` only;
+  at `m = {low_m}` the oracle selects the floor.
+- The blend's `kappa_2` at `m = {low_m}` is {_fmt(blend_kappa[0])}, the empty-mask
+  value.
+- The tight-tolerance time ratios are {_fmt(min(oracle_time_ratios))} to
+  {_fmt(max(oracle_time_ratios))}, not the previous range.
+- At loose tolerance the blend is slower at every `m`, including `m = {high_m}`.
+- The batching speed-up is {_fmt(min(gpu_apply))} to {_fmt(max(gpu_apply))} on the
+  GPU, not the previous range, and the iteration counts agree in
+  {sum(row['iteration_sets_identical'] for row in gpu['solve_records'])} of
+  {len(gpu['solve_records'])} solves, not all.
+- The runtime estimator's cost is not a floor (Part I, Section 10).
+
+The previous values are in git history.
+"""
+    return _wrap_markdown(result).rstrip()
+
+
 def render(results_dir: Path = RESULTS_DIR) -> str:
     """Render Part I after fail-closed validation of all quoted evidence."""
     data = _load(results_dir)
@@ -622,6 +1261,7 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
     reference_table = _reference_table(reference_rows)
     lemma4_table = _lemma4_table(lemma["lemma4"])
     cn_table = _cn_table(cn["summaries"])
+    part_ii = _render_part_ii(data)
 
     nx_text = ", ".join(str(value) for value in nx_values)
     m_text = ", ".join(str(value) for value in m_values)
@@ -640,8 +1280,8 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
 This report replaces the stale-flagged version of this file, whose numbers
 predated the corrected diffusion coefficient. The earlier text remains in git
 history. Part I covers the mask analysis and the certified decision procedure.
-Part II, the single-reference baseline study, is being restated against the
-JSONs regenerated with the corrected coefficient.
+Part II restates the single-reference baseline study against the JSONs regenerated
+with the corrected coefficient.
 
 The lemmas cited below are stated and proved in `TAU_BLEND_MASK_LEMMAS.md`
 (G. Pavlov). `TAU_BLEND_MASK_CLAIMS.md` (G. Pavlov) maps the numbers of the
@@ -1071,21 +1711,13 @@ cost is a measured property of that implementation, not a dense-certificate
 complexity bound.
 
 Source: `pme_dst_tau_blend_pseudospectral_runtime_estimator.json`, `/records/*/cost`
-[Part II runtime evidence].
+[II.5].
 
 On the active-block study, the estimated cost of the next grid exceeded the
 {_fmt(four_hour_cap)}-hour per-case cap once (`N = 1024, m = 2`, repository
 blend), which is reported as an abstention.
 
-# Part II. Single-reference baseline study (being restated)
-
-The previous version of this file reported a single-reference baseline study:
-spectra and work--precision of scalar Helmholtz references against the blend,
-contrast and degeneracy, a batching audit and the pseudospectral criterion. Its
-JSONs were regenerated with the corrected coefficient, and several of its claims,
-in particular those at `m = 2`, no longer hold. The claims are being audited
-against the regenerated JSONs and will be restated here. Until then the previous
-text is available in git history; the regenerated JSONs are in this directory.
+{part_ii}
 
 ## References
 

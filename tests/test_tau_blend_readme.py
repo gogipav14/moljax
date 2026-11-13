@@ -83,6 +83,36 @@ def test_nonempty_m2_repository_mask_is_rejected(tmp_path: Path) -> None:
         render(tmp_path)
 
 
+def test_baseline_blend_near_zero_tail_is_rejected(tmp_path: Path) -> None:
+    """Part II cannot claim a zero-free blend after a spectral regression."""
+    _copy_results(tmp_path)
+
+    def add_tail(document: dict) -> None:
+        row = next(item for item in document["spectral_records"] if item["method"] == "tau_blend")
+        row["spectrum"]["near_zero_eigenvalue_count"] = 1
+
+    _mutate(tmp_path, FILES["baseline"], add_tail)
+    with pytest.raises(RuntimeError, match="blend has a near-zero eigenvalue"):
+        render(tmp_path)
+
+
+def test_loose_tolerance_speed_claim_is_rejected(tmp_path: Path) -> None:
+    """Part II fails closed if the blend becomes faster in a loose-tolerance case."""
+    _copy_results(tmp_path)
+
+    def make_blend_fast(document: dict) -> None:
+        row = next(
+            item
+            for item in document["work_precision_records"]
+            if item["nx"] == 512 and item["m"] == 2 and item["requested_relative_residual"] == 0.01
+        )
+        row["methods"]["tau_blend"]["median_seconds"] = 0.0
+
+    _mutate(tmp_path, FILES["baseline"], make_blend_fast)
+    with pytest.raises(RuntimeError, match="not slower than the fastest scalar"):
+        render(tmp_path)
+
+
 def test_key_values_match_the_facts_renderer() -> None:
     """Representative Part-I values are shared with the facts sheet evidence."""
     readme = render()
