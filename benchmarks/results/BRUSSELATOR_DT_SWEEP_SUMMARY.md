@@ -165,6 +165,13 @@ exactly, so it holds for periodic boundaries only.
 
 ## Reproduction
 
+The original v4 source states existed only in workstation scratch and were
+deleted during the workstation migration. CPU regeneration from the recorded
+generation fingerprints does not reproduce their SHA-256 identities; stored
+state identities are therefore host-specific. The commands below remain the
+record of the original GPU run and continue to fail closed if supplied states
+do not match those original identities.
+
 The original GPU sweep used the following entry points and explicit paths:
 
 ```bash

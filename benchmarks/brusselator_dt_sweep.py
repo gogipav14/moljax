@@ -1,9 +1,11 @@
 """Checkpointed fixed-state Brusselator backward-Euler ``dt`` sweep.
 
 The benchmark measures the shipped identity and FFT-diffusion
-preconditioners, then two diagnostic-only reaction-aware probes.  It never
-regenerates a trajectory: every source state is loaded from the v4 Stage-3
-cache and checked against both its manifest and record-level SHA256 identity.
+preconditioners, then two diagnostic-only reaction-aware probes.  Its default
+sweep never regenerates a trajectory: every source state is loaded from the
+v4 Stage-3 cache and checked against both its manifest and record-level SHA256
+identity.  The explicit ``--regenerate-source-states`` repair mode instead
+writes separately labelled host artefacts and never replaces a Stage-3 cache.
 
 See ``benchmarks/BRUSSELATOR_DT_SWEEP_PROTOCOL.md`` for the pre-registered
 states, execution order, measurements, budget, and decision rule.
@@ -38,13 +40,14 @@ from moljax.conditioning import (
     ritz_values,
 )
 from moljax.core.grid import Grid2D
-from moljax.core.newton_krylov import create_implicit_residual
+from moljax.core.newton_krylov import NKParams, create_implicit_residual
 from moljax.core.preconditioners import PrecondContext, create_fft_preconditioner
 from moljax.experimental.brusselator_conditioning import (
     BrusselatorLinearization,
     BrusselatorRegime,
     build_brusselator_linearization,
     build_brusselator_system,
+    sampled_visited_states,
 )
 from moljax.experimental.pme_conditioning import _counted_gmres
 
@@ -52,6 +55,7 @@ jax.config.update("jax_enable_x64", True)
 
 SCHEMA = "brusselator_fixed_state_dt_sweep_v1"
 SOURCE_SCHEMA = "brusselator_conditioning_source_state_v4"
+REGENERATED_SOURCE_SCHEMA = "brusselator_dt_sweep_regenerated_source_states_v1"
 DT_GRID = (0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0)
 PROBE_DT_GRID = (0.2, 1.0, 2.0)
 V0_DT_GRID = (0.2, 1.0)
@@ -109,6 +113,7 @@ STATE_SPECS = (
     StateSpec("screen64", "brusselator_conditioning.json", "turing", "state_index", 0),
     StateSpec("screen64", "brusselator_conditioning.json", "turing", "state_index", 1),
 )
+CPU_STATE_SPECS = tuple(spec for spec in STATE_SPECS if spec.family != "fixed256")
 
 
 def _sha256(path: Path) -> str:
@@ -136,6 +141,19 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
+        temporary = Path(handle.name)
+    os.replace(temporary, path)
+
+
+def _atomic_write_states(path: Path, states: list[dict[str, jax.Array]]) -> None:
+    payload = {
+        f"{field}_{index}": np.asarray(jax.device_get(state[field]), dtype=np.float64)
+        for index, state in enumerate(states)
+        for field in ("u", "v")
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile("wb", suffix=".npz", dir=path.parent, delete=False) as handle:
+        np.savez_compressed(handle, **payload)
         temporary = Path(handle.name)
     os.replace(temporary, path)
 
@@ -209,6 +227,175 @@ def _find_record(repository: Path, spec: StateSpec) -> dict[str, Any]:
     if not record["source_state_artifact"].get("converged", False):
         raise RuntimeError(f"source state did not converge: {spec.identifier}")
     return record
+
+
+def _fingerprint_key(fingerprint: dict[str, Any]) -> str:
+    encoded = json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def _generate_fingerprint_states(
+    fingerprint: dict[str, Any],
+) -> list[dict[str, jax.Array]]:
+    """Regenerate one trajectory from its recorded v4 generation contract."""
+    if fingerprint.get("schema") != SOURCE_SCHEMA:
+        raise RuntimeError("source generation fingerprint schema mismatch")
+    if fingerprint.get("model_version") != "brusselator_periodic_fft_be_v1":
+        raise RuntimeError("unsupported source generation model version")
+    grid_config = fingerprint["grid"]
+    domain = fingerprint["domain"]
+    if domain["x"] != domain["y"]:
+        raise RuntimeError("the recorded Brusselator source domain must be square")
+    grid = Grid2D.uniform(
+        int(grid_config["nx"]),
+        int(grid_config["ny"]),
+        float(domain["x"][0]),
+        float(domain["x"][1]),
+        float(domain["y"][0]),
+        float(domain["y"][1]),
+        n_ghost=int(grid_config["n_ghost"]),
+    )
+    solver = fingerprint["solver"]
+    if solver.get("max_backtrack") != "NKParams-default-8":
+        raise RuntimeError("unsupported recorded Newton backtracking contract")
+    samples = sampled_visited_states(
+        BrusselatorRegime(**fingerprint["regime"]),
+        grid=grid,
+        sample_steps=tuple(int(step) for step in fingerprint["sample_steps"]),
+        dt=float(fingerprint["state_dt"]),
+        perturbation=float(fingerprint["perturbation"]),
+        seed=int(fingerprint["seed"]),
+        nk_params=NKParams(
+            max_newton_iters=int(solver["max_newton_iters"]),
+            max_krylov_iters=int(solver["max_krylov_iters"]),
+            newton_tol=float(solver["newton_tol"]),
+            krylov_tol=float(solver["krylov_tol"]),
+        ),
+    )
+    return [sample.state for sample in samples]
+
+
+def _regenerate_source_states(repository: Path, output_dir: Path) -> Path:
+    """Write new host-labelled 64-square states without replacing Stage-3 identities."""
+    if output_dir.exists():
+        raise FileExistsError(f"regeneration output already exists: {output_dir}")
+    output_dir.mkdir(parents=True)
+    host = platform.node() or "unknown-host"
+    host_label = "".join(character if character.isalnum() else "-" for character in host)
+    grouped: dict[str, list[tuple[StateSpec, dict[str, Any]]]] = {}
+    fingerprints: dict[str, dict[str, Any]] = {}
+    for spec in CPU_STATE_SPECS:
+        record = _find_record(repository, spec)
+        fingerprint = record["record_config"]["source_state_fingerprint"]
+        key = _fingerprint_key(fingerprint)
+        grouped.setdefault(key, []).append((spec, record))
+        fingerprints[key] = fingerprint
+
+    manifest_records: dict[str, Any] = {}
+    trajectories: dict[str, Any] = {}
+    for key, members in sorted(grouped.items()):
+        fingerprint = fingerprints[key]
+        states = _generate_fingerprint_states(fingerprint)
+        identities = [_state_identity(state) for state in states]
+        regime_name = str(fingerprint["regime"]["name"])
+        relative = Path(f"{regime_name}-{key}-{host_label}.npz")
+        array_path = output_dir / relative
+        _atomic_write_states(array_path, states)
+        trajectories[key] = {
+            "relative_path": str(relative),
+            "npz_sha256": _sha256(array_path),
+            "generation_fingerprint": fingerprint,
+            "regenerated_state_identities": identities,
+        }
+        for spec, record in members:
+            artifact = record["source_state_artifact"]
+            position = int(artifact["sample_position"])
+            if position >= len(states):
+                raise RuntimeError(f"regenerated trajectory is incomplete: {spec.identifier}")
+            manifest_records[spec.identifier] = {
+                "state": spec.identifier,
+                "source_report": spec.result_name,
+                "original_stage3": {
+                    "relative_path": artifact["relative_path"],
+                    "source_state_identity": artifact["source_state_identity"],
+                },
+                "regenerated": {
+                    "relative_path": str(relative),
+                    "sample_position": position,
+                    "source_state_identity": identities[position],
+                },
+                "generation_fingerprint": fingerprint,
+            }
+
+    manifest_path = output_dir / "regenerated_source_states_manifest.json"
+    _atomic_write_json(
+        manifest_path,
+        {
+            "schema": REGENERATED_SOURCE_SCHEMA,
+            "identity_scope": "host-labelled regenerated realisations; not Stage-3 identities",
+            "host_label": host,
+            "provenance": {
+                "python": platform.python_version(),
+                "jax": jax.__version__,
+                "jaxlib": jax.lib.__version__,
+                "numpy": np.__version__,
+                "platform": platform.platform(),
+                "backend": jax.default_backend(),
+                "x64_enabled": bool(jax.config.x64_enabled),
+                "git_commit": _git("rev-parse", "HEAD"),
+            },
+            "trajectories": trajectories,
+            "records": manifest_records,
+        },
+    )
+    return manifest_path
+
+
+def _load_regenerated_state(
+    cache_root: Path, spec: StateSpec, record: dict[str, Any]
+) -> tuple[dict[str, jax.Array], dict[str, Any]]:
+    """Load a host-labelled state while retaining its distinct identity."""
+    manifest_path = cache_root / "regenerated_source_states_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != REGENERATED_SOURCE_SCHEMA:
+        raise RuntimeError("regenerated source-state manifest schema mismatch")
+    entry = manifest.get("records", {}).get(spec.identifier)
+    if entry is None:
+        raise RuntimeError(f"regenerated source state is missing: {spec.identifier}")
+    fingerprint = record["record_config"]["source_state_fingerprint"]
+    if entry.get("generation_fingerprint") != fingerprint:
+        raise RuntimeError(f"regenerated source fingerprint mismatch: {spec.identifier}")
+    regenerated = entry["regenerated"]
+    relative = Path(regenerated["relative_path"])
+    if relative.is_absolute() or len(relative.parts) != 1 or ".." in relative.parts:
+        raise RuntimeError("regenerated artifact path must be a single cache-relative file name")
+    array_path = cache_root / relative
+    key = _fingerprint_key(fingerprint)
+    trajectory = manifest["trajectories"][key]
+    if _sha256(array_path) != trajectory["npz_sha256"]:
+        raise RuntimeError(f"regenerated trajectory SHA256 mismatch: {array_path}")
+    position = int(regenerated["sample_position"])
+    with np.load(array_path, allow_pickle=False) as arrays:
+        state = {
+            field: jax.block_until_ready(
+                jnp.asarray(arrays[f"{field}_{position}"], dtype=jnp.float64)
+            )
+            for field in ("u", "v")
+        }
+    observed = _state_identity(state)
+    if observed != regenerated["source_state_identity"]:
+        raise RuntimeError(f"regenerated source-state identity mismatch: {array_path}")
+    return state, {
+        "identity_scope": manifest["identity_scope"],
+        "host_label": manifest["host_label"],
+        "relative_path": str(relative),
+        "npz_sha256": trajectory["npz_sha256"],
+        "manifest_sha256": _sha256(manifest_path),
+        "state_identity": observed,
+        "original_stage3_identity": entry["original_stage3"]["source_state_identity"],
+        "sample_position": position,
+        "generation_fingerprint": fingerprint,
+    }
 
 
 def _load_state(
@@ -457,12 +644,7 @@ def _diagnose(
 ) -> tuple[dict[str, Any], dict[str, float]]:
     timings: dict[str, float] = {}
     started = time.perf_counter()
-    gmres = _counted_gmres(
-        linearization.operator.matvec,
-        linearization.rhs,
-        tol=GMRES_TOLERANCE,
-        max_iters=GMRES_MAX_ITERS,
-    )
+    gmres = _measure_gmres(linearization)
     timings["gmres_seconds"] = time.perf_counter() - started
 
     started = time.perf_counter()
@@ -538,6 +720,64 @@ def _diagnose(
         "fov_attempts": attempts,
     }
     return result, timings
+
+
+def _measure_gmres(linearization: BrusselatorLinearization) -> dict[str, Any]:
+    """Run the sweep's counted-GMRES protocol without other diagnostics."""
+    return _counted_gmres(
+        linearization.operator.matvec,
+        linearization.rhs,
+        tol=GMRES_TOLERANCE,
+        max_iters=GMRES_MAX_ITERS,
+    )
+
+
+def _measure_disk(linearization: BrusselatorLinearization, seed: int) -> dict[str, Any]:
+    """Run only the pre-registered FoV ladder and return its disk evidence."""
+    attempts: list[dict[str, Any]] = []
+    field_of_values = None
+    started = time.perf_counter()
+    for n_angles, max_iters, n_restarts in FOV_LADDER:
+        attempt_started = time.perf_counter()
+        field_of_values = numerical_range(
+            linearization.operator.matvec,
+            linearization.operator.matvec_adjoint,
+            linearization.operator.n,
+            n_angles=n_angles,
+            max_iters=max_iters,
+            residual_tolerance=FOV_RESIDUAL_TOLERANCE,
+            n_restarts=n_restarts,
+            operator_key=jax.random.PRNGKey(seed + 1),
+        )
+        jax.block_until_ready(field_of_values.boundary)
+        attempts.append(
+            {
+                "n_angles": n_angles,
+                "fov_max_iters": max_iters,
+                "n_restarts": n_restarts,
+                "wall_seconds": time.perf_counter() - attempt_started,
+                "disk_rate": float(field_of_values.disk_rate),
+                "origin_enclosed": bool(field_of_values.origin_enclosed),
+                "max_support_residual": float(field_of_values.max_support_residual),
+                "supports_converged": bool(field_of_values.supports_converged),
+                "supports_corroborated": bool(field_of_values.supports_corroborated),
+                "supports_consistent": bool(field_of_values.supports_consistent),
+            }
+        )
+        if field_of_values.supports_consistent:
+            break
+    if field_of_values is None:
+        raise AssertionError("the FOV ladder is empty")
+    return {
+        "disk_rate": float(field_of_values.disk_rate),
+        "origin_enclosed": bool(field_of_values.origin_enclosed),
+        "max_support_residual": float(field_of_values.max_support_residual),
+        "supports_converged": bool(field_of_values.supports_converged),
+        "supports_corroborated": bool(field_of_values.supports_corroborated),
+        "supports_consistent": bool(field_of_values.supports_consistent),
+        "fov_attempts": attempts,
+        "fov_seconds": time.perf_counter() - started,
+    }
 
 
 def _reaction_jvp(
@@ -739,10 +979,25 @@ def main() -> None:
     )
     parser.add_argument("--output", default="/tmp/moljax-brusselator-dt-sweep.json")
     parser.add_argument("--list-plan", action="store_true")
+    parser.add_argument(
+        "--regenerate-source-states",
+        metavar="DIR",
+        help="regenerate the ten tracked 64-square states with new host-labelled identities",
+    )
     arguments = parser.parse_args()
 
     if arguments.list_plan:
         print(json.dumps(_plan(), indent=2, sort_keys=True))
+        return
+    script = Path(__file__).resolve()
+    repository = script.parents[1]
+    if arguments.regenerate_source_states:
+        if not jax.config.x64_enabled:
+            raise RuntimeError("source-state regeneration requires JAX x64")
+        manifest = _regenerate_source_states(
+            repository, Path(arguments.regenerate_source_states).resolve()
+        )
+        print(manifest)
         return
     if os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", "").lower() != "false":
         raise RuntimeError("set XLA_PYTHON_CLIENT_PREALLOCATE=false before the sweep")
@@ -751,8 +1006,6 @@ def main() -> None:
     if not jax.config.x64_enabled:
         raise RuntimeError("the pre-registered sweep requires JAX x64")
 
-    script = Path(__file__).resolve()
-    repository = script.parents[1]
     protocol = repository / "benchmarks" / "BRUSSELATOR_DT_SWEEP_PROTOCOL.md"
     output = Path(arguments.output).resolve()
     cache_root = Path(arguments.source_state_cache_dir).resolve()
