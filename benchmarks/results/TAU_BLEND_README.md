@@ -565,12 +565,11 @@ Source: `pme_dst_tau_blend_single_reference_baselines.json`, `/work_precision_re
 
 **Tight tolerance (`1e-8`).** The tail costs more than it saves. In 5 of the 6 cases,
 every active-scale scalar needs more iterations than no preconditioner at all; at
-`N = 1024, `m =
-8` every single reference caps. The blend needs 50, 15, 17 iterations at `N =
-512` and 105, 55, 33 at `N =
-1024`. Against the converged oracle, its time is 2.3360162, 22.146636, 36.537458 times smaller at `N
-= 512` and 4.1349772 times smaller at `N = 1024, m = 2`; at `N = 1024, m = 4` the oracle
-caps and the fastest converged comparator, identity, takes 15.164867 times longer.
+`N = 1024, m = 8` every single reference caps. The blend needs 50, 15, 17 iterations at
+`N = 512` and 105, 55, 33 at `N = 1024`. Against the converged oracle, its time is
+2.3360162, 22.146636, 36.537458 times smaller at `N = 512` and 4.1349772 times smaller
+at `N = 1024, m = 2`; at `N = 1024, m = 4` the oracle caps and the fastest converged
+comparator, identity, takes 15.164867 times longer.
 
 **Loose tolerance (`0.01`).** The blend is slower than the fastest converged scalar in
 all 6 cases, by 20.589209% to 63.816267%. At `m = 4` and `8` it needs 4 to 11 iterations

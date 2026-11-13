@@ -33,6 +33,7 @@ def test_readme_is_deterministic_current_and_whitespace_clean() -> None:
     assert all(line == line.rstrip() for line in first.splitlines())
     assert "[RENDERER:" not in first
     assert "<!--" not in first
+    assert "`N = 1024, m = 8` every single reference caps" in first
     assert OUTPUT.read_text(encoding="utf-8") == first
 
 

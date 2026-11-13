@@ -1031,8 +1031,8 @@ Source: `pme_dst_tau_blend_single_reference_baselines.json`,
 
 **Tight tolerance (`{_fmt(tight_tolerance)}`).** The tail costs more than it saves.
 In {active_scale_slower_count} of the {len(tight)} cases, every active-scale scalar
-needs more iterations than no preconditioner at all; at `N = {work_n[-1]},
-`m = {high_m}` every single reference caps. The blend needs
+needs more iterations than no preconditioner at all; at
+`N = {work_n[-1]}, m = {high_m}` every single reference caps. The blend needs
 {', '.join(str(value) for value in blend_counts[work_n[0]])}
 iterations at `N = {work_n[0]}` and
 {', '.join(str(value) for value in blend_counts[work_n[-1]])} at `N = {work_n[-1]}`.
