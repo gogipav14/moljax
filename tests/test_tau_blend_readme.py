@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from benchmarks.make_tau_blend_mask_facts import render_facts
 from benchmarks.make_tau_blend_readme import FILES, OUTPUT, _fmt, render
+from benchmarks.tau_blend_mask_analysis import build_state
 
 
 def _copy_results(destination: Path) -> None:
@@ -111,6 +114,73 @@ def test_loose_tolerance_speed_claim_is_rejected(tmp_path: Path) -> None:
 
     _mutate(tmp_path, FILES["baseline"], make_blend_fast)
     with pytest.raises(RuntimeError, match="not slower than the fastest scalar"):
+        render(tmp_path)
+
+
+def test_shared_part_i_part_ii_states_and_stopping_counts_match() -> None:
+    """The two studies share states and their left-preconditioned counts."""
+    active = json.loads((OUTPUT.parent / FILES["active"]).read_text(encoding="utf-8"))
+    baseline = json.loads((OUTPUT.parent / FILES["baseline"]).read_text(encoding="utf-8"))
+    config = baseline["config"]
+    tight = min(config["work_tolerances"])
+    work = {
+        (row["nx"], row["m"]): row
+        for row in baseline["work_precision_records"]
+        if row["requested_relative_residual"] == tight
+    }
+    shared = (
+        (512, 2, "repository_blend_B3", 0),
+        (1024, 2, "repository_blend_B3", 1),
+        (512, 4, "cfl_reference_blend_B3", 0),
+        (512, 8, "cfl_reference_blend_B3", 0),
+        (1024, 4, "cfl_reference_blend_B3", 0),
+        (1024, 8, "cfl_reference_blend_B3", 0),
+    )
+    for nx, m, method, allowance in shared:
+        part_i = next(
+            row
+            for row in active["cases"]
+            if row["nx"] == nx and row["m"] == m and row["method"] == method
+        )
+        part_i_state = build_state(
+            nx,
+            m,
+            config["analysis_dt"],
+            SimpleNamespace(
+                x_min=config["x_min"],
+                x_max=config["x_max"],
+                t0=config["t0"],
+                halfwidth=config["halfwidth"],
+                epsilon=config["epsilon"],
+            ),
+        )["u"]
+        nonnegative = np.maximum(part_i_state, 0.0)
+        cutoff = max(
+            config["positivity_absolute_floor"],
+            config["positivity_relative_floor"] * np.max(nonnegative),
+        )
+        part_ii_state = np.where(nonnegative >= cutoff, nonnegative, 0.0)
+        assert np.array_equal(part_i_state, np.asarray(part_ii_state))
+        part_ii = work[(nx, m)]["methods"]["tau_blend"]["iterations"][0]
+        assert abs(part_ii - part_i["gmres_regularized"]["preconditioned_stop_count"]) <= allowance
+
+
+def test_shared_stopping_count_mismatch_is_rejected(tmp_path: Path) -> None:
+    """A Part-II blend count outside the recorded one-step mismatch fails closed."""
+    _copy_results(tmp_path)
+
+    def change_count(document: dict) -> None:
+        row = next(
+            item
+            for item in document["work_precision_records"]
+            if item["nx"] == 512
+            and item["m"] == 2
+            and item["requested_relative_residual"] == 1.0e-8
+        )
+        row["methods"]["tau_blend"]["iterations"][0] += 1
+
+    _mutate(tmp_path, FILES["baseline"], change_count)
+    with pytest.raises(RuntimeError, match="Part I/II blend stopping counts disagree"):
         render(tmp_path)
 
 
