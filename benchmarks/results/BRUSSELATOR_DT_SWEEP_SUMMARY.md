@@ -172,6 +172,36 @@ state identities are therefore host-specific. The commands below remain the
 record of the original GPU run and continue to fail closed if supplied states
 do not match those original identities.
 
+The pre-registered CPU check regenerated the ten `64 x 64` states under new,
+host-labelled identities. Although every regenerated SHA-256 differs from the
+original, the maximum relative difference in `max_x ||J_R(x)||_2` is
+`3.6182827810178155e-12`, below the pre-registered `1e-6` threshold. The run is
+therefore classified as a **reproduction** on that state-similarity criterion.
+All 200 GMRES iteration counts and convergence flags match the GPU result. D1,
+D2 and D3 remain PASS: the developed-state median degradation ratio is
+`4.2375`, the `dt = 1` FFT median is `30`, and mean-field coupled FFT reduces
+that median to `10` while lowering all six corroborated disk rates. The CPU
+decision is consequently still **BUILD**. The recorded end-to-end CPU time is
+`1741.084510564804` seconds, including an interrupted-and-resumed checkpoint;
+it is diagnostic only and is not comparable with the original GPU timing.
+These values are recorded in
+`benchmarks/results/brusselator_dt_sweep_cpu_replication.json` and rendered
+cell by cell in `benchmarks/results/BRUSSELATOR_DT_SWEEP_CPU_REPLICATION.md`.
+
+The CPU replication entry points are:
+
+```bash
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=true PYTHONPATH="$PWD" \
+.venv/bin/python benchmarks/brusselator_dt_sweep.py \
+  --regenerate-source-states benchmarks/results/brusselator_dt_sweep_cpu_states
+
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=true PYTHONPATH="$PWD" \
+.venv/bin/python benchmarks/brusselator_dt_sweep_cpu_replication.py \
+  --source-state-dir benchmarks/results/brusselator_dt_sweep_cpu_states \
+  --output benchmarks/results/brusselator_dt_sweep_cpu_replication.json \
+  --markdown-output benchmarks/results/BRUSSELATOR_DT_SWEEP_CPU_REPLICATION.md
+```
+
 The original GPU sweep used the following entry points and explicit paths:
 
 ```bash
