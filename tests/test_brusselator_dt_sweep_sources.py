@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -9,6 +10,14 @@ import numpy as np
 import pytest
 
 from benchmarks import brusselator_dt_sweep as sweep
+from benchmarks import brusselator_dt_sweep_cpu_replication as cpu_replication
+
+
+def test_cpu_replication_cell_key_accepts_a_spec_or_identifier() -> None:
+    spec = sweep.CPU_STATE_SPECS[0]
+    expected = f"main|{spec.identifier}|dt=1|fft_diffusion"
+    assert cpu_replication._cell_key("main", spec, 1.0, "fft_diffusion") == expected
+    assert cpu_replication._cell_key("main", spec.identifier, 1.0, "fft_diffusion") == expected
 
 
 def test_regenerated_loader_keeps_a_distinct_host_identity(tmp_path: Path) -> None:
@@ -68,3 +77,21 @@ def test_regeneration_refuses_to_overwrite_an_existing_directory(tmp_path: Path)
     repository = Path(__file__).resolve().parents[1]
     with pytest.raises(FileExistsError, match="already exists"):
         sweep._regenerate_source_states(repository, tmp_path)
+
+
+def test_cpu_replication_report_is_current_and_reproduces_the_decision() -> None:
+    repository = Path(__file__).resolve().parents[1]
+    result = repository / "benchmarks/results/brusselator_dt_sweep_cpu_replication.json"
+    report = repository / "benchmarks/results/BRUSSELATOR_DT_SWEEP_CPU_REPLICATION.md"
+    payload = json.loads(result.read_text(encoding="utf-8"))
+
+    assert len(payload["cells"]) == 200
+    assert payload["similarity_classification"]["label"] == "reproduction"
+    assert payload["success_criterion_met"]
+    assert all(row["matches"] for row in payload["decision_comparison"].values())
+    assert all(
+        cell["gpu"]["gmres"]["iterations"] == cell["cpu"]["gmres"]["iterations"]
+        and cell["gpu"]["gmres"]["converged"] == cell["cpu"]["gmres"]["converged"]
+        for cell in payload["cells"].values()
+    )
+    assert report.read_text(encoding="utf-8") == cpu_replication.render(payload)

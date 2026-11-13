@@ -41,6 +41,11 @@ def _median(values: list[int | float]) -> float:
     return float(statistics.median(values))
 
 
+def _cell_key(arm: str, state: str | sweep.StateSpec, dt: float, preconditioner: str) -> str:
+    identifier = state.identifier if isinstance(state, sweep.StateSpec) else state
+    return f"{arm}|{identifier}|dt={dt:g}|{preconditioner}"
+
+
 def _cell_specs() -> list[tuple[str, sweep.StateSpec, float, str]]:
     cells: list[tuple[str, sweep.StateSpec, float, str]] = []
     for spec in sweep.CPU_STATE_SPECS:
@@ -65,8 +70,8 @@ def _decision(cells: dict[str, dict[str, Any]]) -> dict[str, Any]:
     states = sorted({cell["state"] for cell in cells.values() if cell["family"] == DEVELOPED})
     d1_rows = []
     for state in states:
-        low_keys = [sweep._cell_key("main", state, dt, "fft_diffusion") for dt in (0.05, 0.1, 0.2)]
-        dt1_key = sweep._cell_key("main", state, 1.0, "fft_diffusion")
+        low_keys = [_cell_key("main", state, dt, "fft_diffusion") for dt in (0.05, 0.1, 0.2)]
+        dt1_key = _cell_key("main", state, 1.0, "fft_diffusion")
         low = [int(cells[key]["cpu"]["gmres"]["iterations"]) for key in low_keys]
         dt1 = int(cells[dt1_key]["cpu"]["gmres"]["iterations"])
         converged = all(cells[key]["cpu"]["gmres"]["converged"] for key in (*low_keys, dt1_key))
@@ -111,8 +116,8 @@ def _decision(cells: dict[str, dict[str, Any]]) -> dict[str, Any]:
     for preconditioner in sweep.PROBE_PRECONDITIONERS:
         rows = []
         for state in states:
-            fft_key = sweep._cell_key("main", state, 1.0, "fft_diffusion")
-            probe_key = sweep._cell_key("probe", state, 1.0, preconditioner)
+            fft_key = _cell_key("main", state, 1.0, "fft_diffusion")
+            probe_key = _cell_key("probe", state, 1.0, preconditioner)
             fft = cells[fft_key]["cpu"]
             probe = cells[probe_key]["cpu"]
             geometry = fft.get("disk") and probe.get("disk")
@@ -234,7 +239,7 @@ def run(repository: Path, source_dir: Path, output: Path) -> dict[str, Any]:
         regenerated_strength = sweep._reaction_metadata(reaction_jacobian, 1.0)[
             "max_reaction_jacobian_2_norm"
         ]
-        gpu_key = sweep._cell_key("main", spec.identifier, 1.0, "fft_diffusion")
+        gpu_key = _cell_key("main", spec, 1.0, "fft_diffusion")
         gpu_strength = float(gpu["cells"][gpu_key]["reaction"]["max_reaction_jacobian_2_norm"])
         relative = abs(regenerated_strength - gpu_strength) / abs(gpu_strength)
         payload["similarity"][spec.identifier] = {
@@ -250,7 +255,7 @@ def run(repository: Path, source_dir: Path, output: Path) -> dict[str, Any]:
         for arm, planned_spec, dt, preconditioner in _cell_specs():
             if planned_spec != spec:
                 continue
-            key = sweep._cell_key(arm, spec.identifier, dt, preconditioner)
+            key = _cell_key(arm, spec, dt, preconditioner)
             if key in payload["cells"]:
                 continue
             started = time.perf_counter()
