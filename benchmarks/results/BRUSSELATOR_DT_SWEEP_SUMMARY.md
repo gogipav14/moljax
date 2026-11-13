@@ -23,9 +23,14 @@ the decision rule were committed before the run
      `I - dt diag(D_u lambda_k, D_v lambda_k) - dt Jbar_R`, where `Jbar_R` is the grid
      mean of the pointwise 2x2 reaction Jacobian.
   2. *Split*: the shipped FFT Helmholtz inverse, then `(I - dt J_R(x))^-1` pointwise.
-- **Measurement.** Unrestarted GMRES to a true relative residual of `1e-8`, capped at
-  100 iterations (a capped run is recorded as 101 and retained as non-converged
-  evidence); disk diagnostics on the ladder `32/120/2`, `64/180/2`, `96/240/2`.
+- **Measurement.** Unrestarted GMRES to the relative residual of the
+  left-preconditioned system,
+  `||P^-1 (b - J x)|| <= 1e-8 ||P^-1 b||`, capped at 100 iterations. Each
+  preconditioner therefore uses its own norm; for identity this is the true residual.
+  The protocol's phrase "true-relative-residual protocol" names this inherited
+  `_counted_gmres` check. A capped run is recorded as 101 and retained as
+  non-converged evidence; disk diagnostics use the ladder `32/120/2`, `64/180/2`,
+  `96/240/2`.
 - **Premise check.** With periodic boundaries the FFT preconditioner `P` inverts the
   diffusion part exactly, so `P^-1 J = I - dt P^-1 J_R`. All 72 checks hold, with a
   maximum relative defect of `3.518680569e-15` (threshold `1e-12`). Any degradation of
