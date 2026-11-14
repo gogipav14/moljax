@@ -343,14 +343,15 @@ Source: `BRUSSELATOR_DT_SWEEP_RESULTS.md`, "Cross-state reaction correlation";
         fails D3."""
     )
     source = _wrap(f"""Source: `brusselator_dt_sweep_true_residual.json`, `/decision_true_stop`,
-        `/decision_comparison`, and `/cells/*`; `BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md`
-        gives all {descriptive['cell_count']} cells. The check took
+        `/decision_comparison`, and `/cells/*`; `brusselator_dt_sweep_posthoc.json`,
+        `/true_residual_descriptive`. `BRUSSELATOR_DT_SWEEP_TRUE_RESIDUAL.md` gives all
+        {descriptive['cell_count']} cells. The check took
         `{descriptive['cpu_wall_seconds']:.3f}` CPU seconds; this is diagnostic
-        laptop timing only; `brusselator_dt_sweep_posthoc.json#/true_residual_descriptive`.""")
+        laptop timing only.""")
     summary = (
         summary[:section5_start]
         + section5.rstrip()
-        + "\n"
+        + "\n\n"
         + appended
         + "\n\n"
         + source
@@ -420,7 +421,7 @@ would need states chosen for that purpose."""
     )
     start = summary.index(marker)
     all_cells = summary.index("All 200 GMRES", start)
-    summary = summary[:start] + insertion + "\n\n" + summary[all_cells:]
+    summary = summary[:start] + insertion + "\n" + summary[all_cells:]
     return summary
 
 
@@ -528,10 +529,23 @@ def run(repository: Path, source_dir: Path, output: Path) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-state-dir", required=True)
+    parser.add_argument("--source-state-dir")
     parser.add_argument("--output", default="benchmarks/results/brusselator_dt_sweep_posthoc.json")
+    parser.add_argument("--render-summary-only", type=Path, metavar="OUTPUT")
+    parser.add_argument("--summary-input", type=Path)
     args = parser.parse_args()
     repository = Path(__file__).resolve().parents[1]
+    if args.render_summary_only is not None:
+        source = args.summary_input or repository / SUMMARY
+        payload = json.loads(
+            (repository / "benchmarks/results/brusselator_dt_sweep_posthoc.json").read_text()
+        )
+        args.render_summary_only.write_text(
+            _render_summary(source.read_text(encoding="utf-8"), payload), encoding="utf-8"
+        )
+        return
+    if args.source_state_dir is None:
+        parser.error("--source-state-dir is required unless --render-summary-only is used")
     run(repository, Path(args.source_state_dir).resolve(), Path(args.output).resolve())
 
 
