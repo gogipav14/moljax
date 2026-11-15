@@ -16,6 +16,7 @@ import pytest
 # The order and exactness tests resolve errors at 1e-6 and below.
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core import dt_policy
 from moljax.core.bc import BCType, FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
@@ -39,6 +40,7 @@ from moljax.core.operators import NonlinearOp, laplacian_2d
 from moljax.core.state import tree_add, tree_axpy, tree_zeros_like
 from moljax.core.stepping import (
     adaptive_integrate_imex,
+    clear_compiled_drivers,
     imex_euler_step,
     imex_ssprk2_step,
     imex_strang_step,
@@ -243,6 +245,36 @@ class TestIMEXDTPolicy:
 
 class TestIMEXAdaptive:
     """Test IMEX adaptive integration."""
+
+    def test_controller_receives_estimator_order(self, monkeypatch):
+        seen = []
+        original = dt_policy.propose_dt_imex
+
+        def recording_proposal(*args, **kwargs):
+            seen.append(kwargs["order"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(dt_policy, "propose_dt_imex", recording_proposal)
+        grid = Grid2D.uniform(8, 8, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        state = model.create_initial_state(fill_values={"u": 1.0, "v": 0.0})
+        clear_compiled_drivers()
+        for strang in (True, False):
+            result = adaptive_integrate_imex(
+                model,
+                state,
+                0.0,
+                0.01,
+                0.005,
+                cache,
+                diffusivities,
+                use_strang=strang,
+                max_steps=10,
+                save_every=10,
+            )
+            assert int(result.status) == 0
+        assert seen == [3, 2]
+        clear_compiled_drivers()
 
     def test_adaptive_imex_completes(self):
         """Adaptive IMEX should complete integration."""

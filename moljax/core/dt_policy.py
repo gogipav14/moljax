@@ -704,7 +704,7 @@ def propose_dt_imex(
         controller_state: Controller state
         cfl_params: CFL parameters
         pid_params: PID parameters
-        order: Power of h in the local error estimate
+        order: Power of h in this method's local error estimate
         accepted: The integrator's own accept/reject decision; see
             propose_dt. Defaults to err_ratio <= 1.0.
 

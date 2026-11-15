@@ -1955,8 +1955,10 @@ def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max
         # See adaptive_integrate: the clock does not follow the field's dtype.
         time_dtype = _time_dtype()
 
-        # Order for error estimation
-        order = 2 if use_strang else 1
+        # Power of h in this method's local error estimate.
+        order = compute_error_order(
+            IntegratorType.IMEX_STRANG if use_strang else IntegratorType.IMEX_EULER
+        )
 
         # Compute initial IMEX CFL-limited dt (no diffusion limit), in the
         # model's dtype so the loop carry keeps one dtype
