@@ -6,6 +6,29 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **The adaptive controller uses the power of h of the local error
+  estimate, not the order of the method.** `compute_error_order` returned
+  `[1, 3, 4, 1, 2, 2, 1, 2]` for Euler, SSPRK3, RK4, BE, CN, BDF2, IMEX
+  Euler and IMEX Strang. The estimates are step doubling (explicit and IMEX
+  methods) and a difference from the backward-Euler solution (BE, CN,
+  BDF2), so the correct values are `[2, 4, 5, 2, 2, 2, 2, 3]`. The adaptive
+  IMEX driver had its own values (1 and 2) and now uses the same table. With
+  the old exponents the controller proposed steps that were too large and
+  then rejected them. Accepted / rejected steps before and after:
+  adaptive IMEX-Strang on the 256 x 256 Gray-Scott pattern setup to
+  t = 10000 at rtol 1e-4, 10,855 / 5,422 and 7,631 / 0; adaptive backward
+  Euler on the cubic test model to t = 0.5, 95 / 94 and 55 / 1.
+- **A fast Newton solve does not enlarge the step proposal.**
+  `implicit_robustness_dt` multiplied the proposal of the error controller
+  by 1.2 after each fast solve. With the safety factor 0.9 this put the
+  steady state of the controller above the acceptance limit and gave a
+  rejection cycle. The factor is now capped at 1, and the default of
+  `growth_factor` is 1.0. A failed solve halves the step as before.
+- **An implicit adaptive run can use steps up to `PIDParams.dt_max`.**
+  `propose_dt` called the Newton limiter without the limits of the
+  controller, so the limiter used its own default `dt_max = 1.0`. The
+  largest step of an adaptive BE or CN run was 1.0 with
+  `PIDParams(dt_max=20)`; BDF2 uses the same path.
 - **The reaction-diffusion benchmark scripts now call the library solvers.**
   `benchmark_gray_scott.py`, `benchmark_schnakenberg.py`,
   `benchmark_brusselator.py`, the work-precision scripts and the two figure
@@ -29,6 +52,16 @@ All notable changes to moljax are documented here.
 
 ### Changed
 
+- **The step sequence of every adaptive run changes**, because the
+  controller exponent changes for all eight methods. Results agree with the
+  earlier ones within the tolerance of the controller, not bit for bit.
+  The `order` argument of `pid_controller_dt`, `handle_rejected_step`,
+  `propose_dt` and `propose_dt_imex` now means the power of h of the local
+  error estimate. A caller that passes a method order must add 1 for a
+  step-doubling estimate.
+- **An unknown method value raises `ValueError`** in `compute_error_order`,
+  `adaptive_integrate` and `integrate_fixed_dt`. Before, an IMEX value or an
+  out-of-range value ran as BDF2 with no message.
 - **`_gmres_solve` stops at the tolerance and counts its iterations.** The
   solver used `jax.scipy.sparse.linalg.gmres` in its default mode, which
   builds the complete Krylov space of the restart size in each cycle and
@@ -45,6 +78,12 @@ All notable changes to moljax are documented here.
 
 ### Added
 
+- **`benchmarks/controller_work_precision.py`** with its results: a
+  comparison of the old exponent, the new exponent and the new exponent
+  with the Newton cap on scalar test problems. The script has its own copy
+  of the controller. The library drivers are measured by
+  `benchmarks/benchmark_adaptive_gray_scott.py`; its results are in
+  `benchmarks/results/adaptive_gray_scott.json` and `.csv`.
 - **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
   with the Newton iteration total and the Krylov iteration total of the run.
   The default return value does not change.
