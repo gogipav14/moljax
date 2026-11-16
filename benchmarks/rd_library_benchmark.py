@@ -63,6 +63,28 @@ def field_summary(u, v) -> dict:
     return out
 
 
+CSV_KEYS = ["name", "dt", "steps", "time_s", "iqr_s", "nfe", "finite", "status",
+            "extrapolated", "state_is_at_t",
+            "newton_iters_per_step", "krylov_iters_per_step",
+            "u_min", "u_max", "u_mean", "u_std", "v_min", "v_max", "v_mean", "v_std"]
+
+
+def write_csv(methods: list, path) -> None:
+    """Write one CSV row for each method record.
+
+    ``extrapolated`` is true when the time is an extrapolation from a short
+    run. ``state_is_at_t`` is the time of the field statistics: the end of
+    the short run for an extrapolated row, t_final for all other rows.
+    """
+    with open(path, "w") as f:
+        f.write(",".join(CSV_KEYS) + "\n")
+        for m in methods:
+            row = dict(m)
+            row.setdefault("extrapolated", False)
+            row.setdefault("state_is_at_t", m.get("t_final"))
+            f.write(",".join("" if row.get(k) is None else str(row[k]) for k in CSV_KEYS) + "\n")
+
+
 def steps_for(t_final: float, dt: float) -> tuple[int, float]:
     """Step count and the step that divides t_final exactly."""
     n = int(np.ceil(t_final / dt - 1e-9))
@@ -260,7 +282,7 @@ def run_library_benchmark(
         extra = {"status": status_name, "valid": status_name == "SUCCESS",
                  "nk_params": nk_params._asdict(),
                  # Counted by the solver. On a failed run the totals stop at
-                 # the failed step, so the values for each step are too small.
+                 # the failed step.
                  "newton_iters_total": int(nk_totals.newton_iters),
                  "krylov_iters_total": int(nk_totals.lin_iters),
                  "newton_iters_per_step": int(nk_totals.newton_iters) / n_cn,
@@ -268,6 +290,12 @@ def run_library_benchmark(
         if status_name != "SUCCESS":
             print(f"   CN FAILED with status {status_name}. No time is recorded.", flush=True)
             extra["time_with_compile_to_failure_s"] = first
+            # The run did not complete all steps, so a value for each step
+            # has no meaning. The field statistics are those of the last
+            # state before the failed step; its time is not recorded.
+            extra["newton_iters_per_step"] = None
+            extra["krylov_iters_per_step"] = None
+            extra["state_is_at_t"] = None
             record("CN (Newton-Krylov)", dt, n_cn, None, None, *interior(y), None, extra)
         else:
             times = []
@@ -323,13 +351,7 @@ def run_library_benchmark(
     stem = system + tag
     with open(out_dir / f"{stem}.json", "w") as f:
         json.dump(results, f, indent=2, default=str)
-    keys = ["name", "dt", "steps", "time_s", "iqr_s", "nfe", "finite", "status",
-            "newton_iters_per_step", "krylov_iters_per_step",
-            "u_min", "u_max", "u_mean", "u_std", "v_min", "v_max", "v_mean", "v_std"]
-    with open(out_dir / f"{stem}.csv", "w") as f:
-        f.write(",".join(keys) + "\n")
-        for m in methods:
-            f.write(",".join("" if m.get(k) is None else str(m.get(k)) for k in keys) + "\n")
+    write_csv(methods, out_dir / f"{stem}.csv")
     for name, (u, v) in finals.items():
         short = name.split()[0].lower().replace("-", "_")
         np.save(out_dir / f"{stem}_u_final_{short}.npy", u)
@@ -346,3 +368,13 @@ def run_library_benchmark(
     print("=" * 96)
     print(f"Results saved to {out_dir / (stem + '.json')}")
     return results, finals
+
+
+if __name__ == "__main__":
+    # Write the CSV file of each given result JSON file again.
+    import sys
+
+    for json_path in map(Path, sys.argv[1:]):
+        with open(json_path) as f:
+            write_csv(json.load(f)["methods"], json_path.with_suffix(".csv"))
+        print(f"Wrote {json_path.with_suffix('.csv')}")
