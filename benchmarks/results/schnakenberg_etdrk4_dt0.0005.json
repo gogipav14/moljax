@@ -1,0 +1,41 @@
+{
+  "methods": [
+    {
+      "name": "ETDRK4",
+      "time_s": 255.97826669200003,
+      "iqr_s": 2.6692672640001547,
+      "steps": 200000,
+      "dt": 0.0005,
+      "t_final": 100.0,
+      "nfe": 800000,
+      "finite": true,
+      "u_min": 0.13478271000571948,
+      "u_max": 4.425265614554819,
+      "u_mean": 1.0,
+      "u_std": 1.0894395138241286,
+      "v_min": 0.280962319323708,
+      "v_max": 0.8318939971716389,
+      "v_mean": 0.637448040357969,
+      "v_std": 0.13400961282594454
+    }
+  ],
+  "config": {
+    "Du": 1.0,
+    "Dv": 40.0,
+    "a": 0.1,
+    "b": 0.9,
+    "gamma": 1000.0,
+    "system": "schnakenberg",
+    "N": 256,
+    "L": 1.0,
+    "t_final": 100.0,
+    "n_reps": 3,
+    "dtype": "float64",
+    "device": "cuda:0",
+    "jax_version": "0.11.2",
+    "moljax_version": "1.2.1",
+    "laplacian": "second-order central differences (moljax), periodic",
+    "solvers": "moljax library (integrate_fixed_dt, integrate_imex_fixed_dt, etd_integrate)",
+    "timing": "one full warm-up run, then n_reps timed runs; median and IQR"
+  }
+}

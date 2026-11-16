@@ -16,9 +16,12 @@ All notable changes to moljax are documented here.
   library solvers (`integrate_fixed_dt`, `integrate_imex_fixed_dt`,
   `etd_integrate`) did not have these errors. The scripts now use them
   through `benchmarks/rd_library_benchmark.py`, record the status of each
-  run, and write CSV files beside the JSON files. The result files in
-  `benchmarks/results/` are from the old scripts until they are generated
-  again.
+  run, and write CSV files beside the JSON files. `gray_scott.json`,
+  `brusselator.json` and `schnakenberg.json` (with two more Schnakenberg
+  files for ETDRK4 at dt = 0.0005 and Crank-Nicolson at dt = 0.002) are
+  generated again with the new scripts. The work-precision files
+  (`wp_*.json`, `work_precision_*.json`) and the stored `.npy` states are
+  from the old scripts.
 - **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
   No Newton solve converges at this step (the fastest Turing mode has the
   growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark
