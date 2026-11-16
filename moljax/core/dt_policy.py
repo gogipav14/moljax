@@ -369,7 +369,7 @@ def implicit_robustness_dt(
     nk_stats: NKStats,
     dt_min: float = 1e-12,
     dt_max: float = 1.0,
-    growth_factor: float = 1.2,
+    growth_factor: float = 1.0,
     shrink_factor: float = 0.5,
     fast_iters_threshold: int = 3
 ) -> jnp.ndarray:
@@ -381,21 +381,24 @@ def implicit_robustness_dt(
     regardless of its iteration count. ``growth_factor`` is retained for API
     compatibility but capped at 1, so it can request an additional
     restriction after a fast solve but can never enlarge the PI proposal.
+    A value above 1 has no effect. The default is 1.0 (it was 1.2 before the
+    cap).
 
     This separation matters for the inherited PI form. Under the asymptotic
     model ``err ∝ h**order``, if a post-controller factor ``g`` is applied
     after every fast solve, the shipped PI form has the steady-state fixed
     point ``e* = (safety * g)**(order / kI)``. Here ``kI`` is the un-normalized
     ``PIDParams.kI`` (0.7 by default); the controller itself divides it by
-    ``order``. The defaults give ``safety * g = 0.9 * 1.2 > 1``, placing ``e*``
-    above the acceptance boundary and creating a deterministic rejection cycle.
+    ``order``. The former default ``g = 1.2`` gave ``safety * g = 0.9 * 1.2 > 1``,
+    which placed ``e*`` above the acceptance boundary and created a
+    deterministic rejection cycle.
 
     Args:
         dt_old: Current time step
         nk_stats: Statistics from NK solver
         dt_min: Minimum dt
         dt_max: Maximum dt
-        growth_factor: Legacy fast-solve factor, capped at 1
+        growth_factor: Legacy fast-solve factor, capped at 1 (default 1.0)
         shrink_factor: Factor to shrink dt on failed convergence
         fast_iters_threshold: Threshold for "fast" convergence
 
@@ -520,7 +523,12 @@ def propose_dt(
     # For implicit methods with NK stats, apply robustness limiter
     if nk_stats is not None:
         is_implicit = method >= 3
-        dt_robust = implicit_robustness_dt(dt_final, nk_stats)
+        # The limiter must use the limits of the controller. Its own default
+        # dt_max is 1.0, which capped every implicit adaptive run at dt = 1
+        # whatever pid_params.dt_max was.
+        dt_robust = implicit_robustness_dt(
+            dt_final, nk_stats, dt_min=pid_params.dt_min, dt_max=pid_params.dt_max
+        )
         dt_final = lax.cond(
             is_implicit,
             lambda: dt_robust,

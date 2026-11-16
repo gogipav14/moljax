@@ -20,6 +20,7 @@ from moljax.core import dt_policy
 from moljax.core.bc import BCType, FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
+    PIDParams,
     heisenberg_cfl_dt,
     imex_cfl_dt,
 )
@@ -275,6 +276,32 @@ class TestIMEXAdaptive:
             assert int(result.status) == 0
         assert seen == [3, 2]
         clear_compiled_drivers()
+
+    @pytest.mark.parametrize("use_strang, rtol", [(False, 1e-4), (True, 1e-6)])
+    def test_adaptive_imex_has_no_rejection_cycle(self, use_strang, rtol):
+        """The rejected fraction is small when the controller has the estimator order.
+
+        With the method order (1 for Euler, 2 for Strang) the same runs
+        rejected 214 of 443 attempts (Euler) and 21 of 87 attempts (Strang).
+        """
+        grid = Grid2D.uniform(16, 16, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        rng = np.random.default_rng(0)
+        state = model.create_initial_state(fill_values={"u": 1.0, "v": 0.0})
+        sl = grid.interior_slice
+        u = np.asarray(state["u"]).copy()
+        v = np.asarray(state["v"]).copy()
+        u[sl] = 1.0 - 0.5 * rng.random(u[sl].shape)
+        v[sl] = 0.25 * rng.random(v[sl].shape)
+        state = model.apply_bcs({"u": jnp.asarray(u), "v": jnp.asarray(v)}, 0.0)
+        result = adaptive_integrate_imex(
+            model, state, 0.0, 20.0, 0.01, cache, diffusivities, use_strang=use_strang,
+            max_steps=4000, save_every=4000,
+            pid_params=PIDParams(rtol=rtol, atol=rtol * 1e-2),
+        )
+        assert int(result.status) == 0
+        accepted, rejected = int(result.n_accepted), int(result.n_rejected)
+        assert rejected <= 0.1 * (accepted + rejected)
 
     def test_adaptive_imex_completes(self):
         """Adaptive IMEX should complete integration."""

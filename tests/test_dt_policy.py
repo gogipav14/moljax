@@ -7,6 +7,8 @@ Verifies:
 - PID controller adjusts dt based on error
 """
 
+import inspect
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -204,6 +206,28 @@ class TestImplicitRobustnessLimiter:
         assert float(implicit_robustness_dt(dt, fast)) == pytest.approx(0.1)
         assert float(implicit_robustness_dt(dt, slow)) == pytest.approx(0.1)
         assert float(implicit_robustness_dt(dt, failed)) == pytest.approx(0.05)
+
+    def test_growth_factor_default_is_one_and_a_larger_value_has_no_effect(self):
+        default = inspect.signature(implicit_robustness_dt).parameters["growth_factor"].default
+        assert default == 1.0
+        dt = jnp.array(0.1)
+        fast = NKStats(
+            converged=jnp.array(True),
+            newton_iters=jnp.array(1, dtype=jnp.int32),
+            lin_iters=jnp.array(5, dtype=jnp.int32),
+            final_res_norm=jnp.array(1.0e-12),
+        )
+        assert float(implicit_robustness_dt(dt, fast, growth_factor=1.2)) == pytest.approx(0.1)
+        assert float(implicit_robustness_dt(dt, fast, growth_factor=0.5)) == pytest.approx(0.05)
+
+    def test_limiter_keeps_a_step_above_one_when_dt_max_allows_it(self):
+        fast = NKStats(
+            converged=jnp.array(True),
+            newton_iters=jnp.array(1, dtype=jnp.int32),
+            lin_iters=jnp.array(5, dtype=jnp.int32),
+            final_res_norm=jnp.array(1.0e-12),
+        )
+        assert float(implicit_robustness_dt(jnp.array(5.0), fast, dt_max=20.0)) == pytest.approx(5.0)
 
 
 class TestWaveCFL:
