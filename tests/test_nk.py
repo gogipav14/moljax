@@ -343,12 +343,12 @@ class TestNKRobustness:
         # Linear system should converge quickly (within a few iterations)
         assert int(result.stats.newton_iters) <= 5
 
-    def test_nk_lin_iters_is_the_krylov_budget(self):
-        """lin_iters counts the GMRES budget, max_krylov_iters per Newton step.
+    def test_nk_lin_iters_counts_the_krylov_iterations(self):
+        """lin_iters is the number of GMRES iterations that the solves used.
 
-        jax.scipy.sparse.linalg.gmres returns (x, info) with no iteration
-        count, so the statistic is the budget that was made available, not
-        the iterations spent. This pins the documented meaning.
+        The Jacobian here is a multiple of the identity (all components are
+        equal), so each GMRES solve needs exactly one iteration, far below
+        the budget of 7 for each Newton step.
         """
         grid = Grid1D.uniform(1, 0.0, 1.0)
 
@@ -363,7 +363,43 @@ class TestNKRobustness:
             nk_params=NKParams(newton_tol=1e-8, max_krylov_iters=7)
         )
 
-        assert int(result.stats.lin_iters) == 7 * int(result.stats.newton_iters)
+        assert bool(result.stats.converged)
+        assert int(result.stats.lin_iters) == int(result.stats.newton_iters)
+
+    def test_gmres_stops_at_the_tolerance_and_restarts(self):
+        """_gmres_solve: early stop, restart cycles, left preconditioner, count."""
+        from moljax.core.newton_krylov import _gmres_solve
+
+        rng = np.random.default_rng(0)
+        n = 40
+        A = jnp.asarray(np.eye(n) + 0.3 * rng.standard_normal((n, n)) / np.sqrt(n))
+        b = jnp.asarray(rng.standard_normal(n))
+        x_exact = jnp.linalg.solve(A, b)
+
+        x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros(n), tol=1e-10, max_iters=40, restart=40)
+        assert float(jnp.linalg.norm(A @ x - b)) <= 2e-10 * float(jnp.linalg.norm(b))
+        assert 1 < int(iters) < 40
+
+        # Restart cycles of 5 still reach the tolerance, with more iterations.
+        x_r, iters_r = _gmres_solve(lambda v: A @ v, b, jnp.zeros(n), tol=1e-10, max_iters=200, restart=5)
+        assert float(jnp.linalg.norm(x_r - x_exact)) < 1e-8
+        assert int(iters_r) >= int(iters)
+
+        # The exact inverse as preconditioner: one iteration.
+        Ainv = jnp.linalg.inv(A)
+        x_p, iters_p = _gmres_solve(lambda v: A @ v, b, jnp.zeros(n), tol=1e-10, max_iters=40,
+                                    restart=40, M=lambda v: Ainv @ v)
+        assert int(iters_p) == 1
+        assert float(jnp.linalg.norm(x_p - x_exact)) < 1e-9
+
+        # The budget is a ceiling: 3 iterations cannot reach 1e-10 here.
+        x_b, iters_b = _gmres_solve(lambda v: A @ v, b, jnp.zeros(n), tol=1e-10, max_iters=3, restart=3)
+        assert int(iters_b) == 3
+
+        # A right-hand side of zero needs no iteration.
+        x_0, iters_0 = _gmres_solve(lambda v: A @ v, jnp.zeros(n), jnp.zeros(n), tol=1e-10,
+                                    max_iters=40, restart=40)
+        assert int(iters_0) == 0 and float(jnp.linalg.norm(x_0)) == 0.0
 
     def test_nk_converged_on_last_allowed_iteration(self):
         """The flag describes the returned iterate, not the one before it.
@@ -791,3 +827,41 @@ class TestBDF2Residual:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_fixed_dt_returns_the_newton_krylov_totals():
+    """integrate_fixed_dt sums the counts of the single steps."""
+    from moljax.core.grid import Grid2D
+    from moljax.core.model import create_gray_scott_periodic_fft
+    from moljax.core.preconditioners import IdentityPreconditioner
+    from moljax.core.stepping import IntegratorType, cn_step, integrate_fixed_dt
+
+    grid = Grid2D.uniform(16, 16, 0.0, 1.0, 0.0, 1.0, n_ghost=1)
+    model, _, _ = create_gray_scott_periodic_fft(grid)
+    key = jax.random.PRNGKey(0)
+    shape = model.create_initial_state()["u"].shape
+    y0 = {"u": 1.0 - 0.3 * jax.random.uniform(key, shape, dtype=model.dtype),
+          "v": 0.3 * jax.random.uniform(jax.random.fold_in(key, 1), shape, dtype=model.dtype)}
+    y0 = model.apply_bcs(y0, 0.0)
+    nk = NKParams(max_newton_iters=10, max_krylov_iters=20, restart=20,
+                  newton_tol=1e-9, krylov_tol=1e-3)
+    dt, n_steps = 0.5, 4
+
+    y, newton, krylov = y0, 0, 0
+    for i in range(n_steps):
+        y, stats = cn_step(model, y, i * dt, dt, IdentityPreconditioner(), nk)
+        newton += int(stats.newton_iters)
+        krylov += int(stats.lin_iters)
+
+    out = integrate_fixed_dt(model, y0, 0.0, n_steps * dt, dt, method=IntegratorType.CN,
+                             nk_params=nk, return_status=True, return_stats=True)
+    assert len(out) == 5
+    totals = out[4]
+    assert newton > 0 and krylov > 0
+    assert int(totals.newton_iters) == newton
+    assert int(totals.lin_iters) == krylov
+
+    out = integrate_fixed_dt(model, y0, 0.0, n_steps * 1e-4, 1e-4, method=IntegratorType.RK4,
+                             return_stats=True)
+    assert len(out) == 4
+    assert int(out[3].newton_iters) == 0 and int(out[3].lin_iters) == 0

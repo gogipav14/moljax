@@ -4,6 +4,59 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The reaction-diffusion benchmark scripts now call the library solvers.**
+  `benchmark_gray_scott.py`, `benchmark_schnakenberg.py`,
+  `benchmark_brusselator.py`, the work-precision scripts and the two figure
+  scripts had hand-written steppers. Three of these steppers were not
+  correct: the Crank-Nicolson loop was a fixed-point iteration with a
+  constant count and no convergence check, the IMEX half steps were
+  first-order, and one ETDRK4 weight was too small by a factor of 2. The
+  library solvers (`integrate_fixed_dt`, `integrate_imex_fixed_dt`,
+  `etd_integrate`) did not have these errors. The scripts now use them
+  through `benchmarks/rd_library_benchmark.py`, record the status of each
+  run, and write CSV files beside the JSON files. `gray_scott.json`,
+  `brusselator.json` and `schnakenberg.json` (with two more Schnakenberg
+  files for ETDRK4 at dt = 0.0005 and Crank-Nicolson at dt = 0.002) are
+  generated again with the new scripts. The work-precision files
+  (`wp_*.json`, `work_precision_*.json`) and the stored `.npy` states are
+  from the old scripts.
+- **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
+  No Newton solve converges at this step (the fastest Turing mode has the
+  growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark
+  now reports `NK_FAILED` for this row and records no time.
+
+### Changed
+
+- **`_gmres_solve` stops at the tolerance and counts its iterations.** The
+  solver used `jax.scipy.sparse.linalg.gmres` in its default mode, which
+  builds the complete Krylov space of the restart size in each cycle and
+  returns no iteration count. The new solver is a restarted GMRES with
+  Givens rotations and an early stop. `NKStats.lin_iters` is now the number
+  of Krylov iterations used. A fixed-step Crank-Nicolson run on the
+  256 x 256 Brusselator and Gray-Scott benchmarks is 5 to 6 times faster.
+- **`integrate_imex_fixed_dt` with Strang splitting combines the diffusion
+  half steps of adjacent steps inside one saved block.** The result is equal
+  to that of repeated `imex_strang_step` calls to rounding. The models from
+  `create_gray_scott_periodic_fft`, `create_schnakenberg_periodic_fft` and
+  `create_brusselator_periodic_fft` also give their nonlinear part directly
+  as the explicit part. The Schnakenberg benchmark run is 3.5 times faster.
+
+### Added
+
+- **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
+  with the Newton iteration total and the Krylov iteration total of the run.
+  The default return value does not change.
+- **`benchmarks/rd_steppers.py`**: an independent implementation of RK4,
+  IMEX-Strang, ETDRK4 and Crank-Nicolson (Newton-GMRES) for two-species
+  periodic systems. `tests/test_rd_benchmark_steppers.py` uses it to verify
+  the convergence orders and to compare the library solvers with it.
+- **`benchmarks/benchmark_reactor_sensitivity.py`** and
+  **`benchmarks/benchmark_adaptive_gray_scott.py`**: scripts for the reactor
+  sensitivity with automatic differentiation (with an analytical check) and
+  for the step statistics of the adaptive integrators.
+
 ## [1.2.1] - 2026-09-20
 
 ### Added

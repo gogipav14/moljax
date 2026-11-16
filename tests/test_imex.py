@@ -501,7 +501,17 @@ class TestIMEXSSPRK2StageReuse:
             "moljax.core.fft_solvers.diffusion_rhs_fft", counting_diffusion_rhs_fft
         )
 
-        y_new = imex_ssprk2_step(model, y0, t, dt, fft_cache, diffusivities)
+        # The factory marks the model's linear part as exactly the split
+        # diffusion, and the explicit part then is model.nonlinear_rhs with
+        # no call of diffusion_rhs_fft. The stage reuse is a property of the
+        # subtraction path, so count on a copy of the model without the mark.
+        plain = MOLModel(
+            grid=model.grid, bc_spec=model.bc_spec, params=model.params,
+            linear_ops=model.linear_ops, nonlinear_ops=model.nonlinear_ops,
+            metadata={k: v for k, v in model.metadata.items()
+                      if k != "linear_ops_are_fft_diffusion"},
+        )
+        y_new = imex_ssprk2_step(plain, y0, t, dt, fft_cache, diffusivities)
 
         assert call_count["n"] == 2, (
             f"diffusion_rhs_fft was called {call_count['n']} times inside the step; "
@@ -510,6 +520,14 @@ class TestIMEXSSPRK2StageReuse:
         )
         for name in y_ref:
             max_diff = float(jnp.max(jnp.abs(y_new[name] - y_ref[name])))
+            assert max_diff < 1e-12, f"field {name}: max difference {max_diff:.3e}"
+
+        # The marked model: the direct path, with no call at all and the same step.
+        call_count["n"] = 0
+        y_direct = imex_ssprk2_step(model, y0, t, dt, fft_cache, diffusivities)
+        assert call_count["n"] == 0
+        for name in y_ref:
+            max_diff = float(jnp.max(jnp.abs(y_direct[name] - y_ref[name])))
             assert max_diff < 1e-12, f"field {name}: max difference {max_diff:.3e}"
 
 

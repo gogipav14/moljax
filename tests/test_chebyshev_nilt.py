@@ -148,7 +148,13 @@ class TestWeeksErrorEstimate:
     def test_estimate_exposes_an_unusable_parameter_choice(self):
         res = weeks_method(F_exp, 32, jnp.array([50.0]))
         true_error = abs(float(res.f[0]) - np.exp(-50.0))
-        assert true_error == pytest.approx(9.0057e4, rel=1e-3)
+        # The exact inverse is about 1.9e-22, so an error above 1e3 makes the
+        # result worthless. The exact 32-term sum gives about 8.85e4, and
+        # round-off adds a few percent that differs between platforms and JAX
+        # versions (89967 to 91861 observed), so the value is not pinned.
+        assert np.isfinite(float(res.f[0]))
+        assert np.isfinite(float(res.error_estimate))
+        assert 1e3 < true_error < 1e6
         # The estimate must at least admit that the answer is worthless.
         assert res.error_estimate >= true_error
         assert res.error_estimate >= abs(float(res.f[0]))

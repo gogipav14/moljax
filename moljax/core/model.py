@@ -916,6 +916,10 @@ def create_gray_scott_periodic_fft(
     metadata['fft_cache'] = fft_cache
     metadata['diffusivities'] = diffusivities
     metadata['supports_fft'] = True
+    # The linear operators are exactly D * Laplacian for these diffusivities,
+    # so the IMEX split can take the nonlinear part as its explicit part
+    # (see stepping._imex_explicit_rhs).
+    metadata['linear_ops_are_fft_diffusion'] = True
 
     # Create new model with updated metadata
     model_fft = MOLModel(
@@ -959,6 +963,10 @@ def create_schnakenberg_periodic_fft(
     metadata['fft_cache'] = fft_cache
     metadata['diffusivities'] = diffusivities
     metadata['supports_fft'] = True
+    # The linear operators are exactly D * Laplacian for these diffusivities,
+    # so the IMEX split can take the nonlinear part as its explicit part
+    # (see stepping._imex_explicit_rhs).
+    metadata['linear_ops_are_fft_diffusion'] = True
 
     model_fft = MOLModel(
         grid=model.grid,
@@ -1000,6 +1008,10 @@ def create_brusselator_periodic_fft(
     metadata['fft_cache'] = fft_cache
     metadata['diffusivities'] = diffusivities
     metadata['supports_fft'] = True
+    # The linear operators are exactly D * Laplacian for these diffusivities,
+    # so the IMEX split can take the nonlinear part as its explicit part
+    # (see stepping._imex_explicit_rhs).
+    metadata['linear_ops_are_fft_diffusion'] = True
 
     model_fft = MOLModel(
         grid=model.grid,
