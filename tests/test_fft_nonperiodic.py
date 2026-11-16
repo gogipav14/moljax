@@ -451,3 +451,12 @@ class TestNeumannGradients:
             for i in range(self.N)
         ])
         assert jnp.allclose(grad, fd, atol=1e-4), f"grad={grad} vs finite-difference={fd}"
+
+
+def test_dst_I_fast_keeps_float32_when_x64_is_on():
+    """A float32 input stays float32: the zero pads must not promote it to float64."""
+    jax.config.update("jax_enable_x64", True)
+    x = jnp.linspace(0.1, 1.0, 9, dtype=jnp.float32)
+    assert jax.eval_shape(dst_I_fast, x).dtype == jnp.float32
+    assert jax.eval_shape(idst_I_fast, x).dtype == jnp.float32
+    assert dst_I_fast(x).dtype == jnp.float32
