@@ -38,9 +38,9 @@ from moljax.core.state import StateDict
 #   RK4: the classical 4-stage, 4th-order method's stability function is
 #       1 + z + z^2/2 + z^3/6 + z^4/24; its real root is at z ~= -2.7853.
 _EXPLICIT_STABILITY_BOUNDARY: dict[int, float] = {
-    0: 2.0,  # Euler
-    1: 2.5127,  # SSPRK3
-    2: 2.7853,  # RK4
+    0: 2.0,      # Euler
+    1: 2.5127,   # SSPRK3
+    2: 2.7853,   # RK4
 }
 _DEFAULT_STABILITY_BOUNDARY = _EXPLICIT_STABILITY_BOUNDARY[0]  # Euler
 
@@ -73,7 +73,6 @@ class CFLParams:
             CFLParams with it and for any external diffusion-only use.
         cfl_wave: CFL number for wave/acoustic (default 0.5)
     """
-
     safety: float = 0.9
     dt_min: float = 1e-12
     dt_max: float = 1.0
@@ -111,7 +110,6 @@ class PIDParams:
         atol: Absolute tolerance for error (default 1e-6)
         rtol: Relative tolerance for error (default 1e-4)
     """
-
     safety: float = 0.9
     kI: float = 0.7  # Scaled by 1/order in controller
     kP: float = 0.4  # Scaled by 1/order in controller
@@ -134,7 +132,6 @@ class ControllerState(NamedTuple):
             is PI (see PIDParams). The field stays for API stability.
         consecutive_rejects: Number of consecutive rejected steps
     """
-
     prev_err_ratio: jnp.ndarray
     prevprev_err_ratio: jnp.ndarray
     consecutive_rejects: jnp.ndarray
@@ -145,7 +142,7 @@ def create_initial_controller_state(dtype: jnp.dtype = jnp.float64) -> Controlle
     return ControllerState(
         prev_err_ratio=jnp.array(1.0, dtype=dtype),
         prevprev_err_ratio=jnp.array(1.0, dtype=dtype),
-        consecutive_rejects=jnp.array(0, dtype=jnp.int32),
+        consecutive_rejects=jnp.array(0, dtype=jnp.int32)
     )
 
 
@@ -154,7 +151,7 @@ def heisenberg_cfl_dt(
     params: dict[str, Any],
     cfl_params: CFLParams,
     dtype: jnp.dtype | None = None,
-    method: int = 0,
+    method: int = 0
 ) -> jnp.ndarray:
     """
     Compute CFL-limited time step (Heisenberg limiter).
@@ -220,32 +217,42 @@ def heisenberg_cfl_dt(
     dy = grid.dy if isinstance(grid, Grid2D) else None
 
     # Advection + diffusion, combined (see docstring above).
-    vx = jnp.abs(params.get("vx", 0.0))
-    vy = jnp.abs(params.get("vy", 0.0)) if dy is not None else jnp.array(0.0)
+    vx = jnp.abs(params.get('vx', 0.0))
+    vy = jnp.abs(params.get('vy', 0.0)) if dy is not None else jnp.array(0.0)
 
-    D = params.get("D", 0.0)
-    Du = params.get("Du", 0.0)
-    Dv = params.get("Dv", 0.0)
+    D = params.get('D', 0.0)
+    Du = params.get('Du', 0.0)
+    Dv = params.get('Dv', 0.0)
     D_max = jnp.maximum(D, jnp.maximum(Du, Dv))
 
-    lam_x = 4.0 * D_max / dx**2 + 2.0 * vx / dx
-    lam_y = (4.0 * D_max / dy**2 + 2.0 * vy / dy) if dy is not None else 0.0
+    lam_x = 4.0 * D_max / dx ** 2 + 2.0 * vx / dx
+    lam_y = (4.0 * D_max / dy ** 2 + 2.0 * vy / dy) if dy is not None else 0.0
     lam_max = lam_x + lam_y
 
     r_stab = _stability_boundary(method)
-    dt_combined = lax.cond(lam_max > 1e-14, lambda: r_stab / lam_max, lambda: cfl_params.dt_max)
+    dt_combined = lax.cond(
+        lam_max > 1e-14,
+        lambda: r_stab / lam_max,
+        lambda: cfl_params.dt_max
+    )
     dt = jnp.minimum(jnp.array(cfl_params.dt_max), dt_combined)
 
     # Wave/acoustic CFL: an independent hyperbolic constraint, unrelated to
     # the advection-diffusion operator above.
     dx_wave = grid.min_dx
-    K = params.get("K", 0.0)
-    rho = params.get("rho", 1.0)
-    c_wave = params.get("wave_speed", 0.0)
-    c_acoustic = lax.cond(K > 1e-14, lambda: jnp.sqrt(K / rho), lambda: 0.0)
+    K = params.get('K', 0.0)
+    rho = params.get('rho', 1.0)
+    c_wave = params.get('wave_speed', 0.0)
+    c_acoustic = lax.cond(
+        K > 1e-14,
+        lambda: jnp.sqrt(K / rho),
+        lambda: 0.0
+    )
     c = jnp.maximum(c_wave, c_acoustic)
     dt_wave = lax.cond(
-        c > 1e-14, lambda: cfl_params.cfl_wave * dx_wave / c, lambda: cfl_params.dt_max
+        c > 1e-14,
+        lambda: cfl_params.cfl_wave * dx_wave / c,
+        lambda: cfl_params.dt_max
     )
     dt = jnp.minimum(dt, dt_wave)
 
@@ -261,7 +268,7 @@ def pid_controller_dt(
     err_ratio: jnp.ndarray,
     controller_state: ControllerState,
     pid_params: PIDParams,
-    order: int = 4,
+    order: int = 4
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     PI controller for adaptive time step (see PIDParams for the name).
@@ -302,7 +309,7 @@ def pid_controller_dt(
     new_state = ControllerState(
         prev_err_ratio=err_ratio,
         prevprev_err_ratio=controller_state.prev_err_ratio,
-        consecutive_rejects=jnp.array(0, dtype=jnp.int32),
+        consecutive_rejects=jnp.array(0, dtype=jnp.int32)
     )
 
     return dt_new, new_state
@@ -313,7 +320,7 @@ def handle_rejected_step(
     err_ratio: jnp.ndarray,
     controller_state: ControllerState,
     pid_params: PIDParams,
-    order: int = 4,
+    order: int = 4
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Handle a rejected step by reducing dt more aggressively.
@@ -343,7 +350,7 @@ def handle_rejected_step(
     new_state = ControllerState(
         prev_err_ratio=controller_state.prev_err_ratio,  # Keep old
         prevprev_err_ratio=controller_state.prevprev_err_ratio,
-        consecutive_rejects=n_rejects,
+        consecutive_rejects=n_rejects
     )
 
     return dt_new, new_state
@@ -351,7 +358,6 @@ def handle_rejected_step(
 
 class NKStats(NamedTuple):
     """Newton-Krylov solver statistics for implicit dt control."""
-
     converged: jnp.ndarray
     newton_iters: jnp.ndarray
     lin_iters: jnp.ndarray
@@ -365,7 +371,7 @@ def implicit_robustness_dt(
     dt_max: float = 1.0,
     growth_factor: float = 1.2,
     shrink_factor: float = 0.5,
-    fast_iters_threshold: int = 3,
+    fast_iters_threshold: int = 3
 ) -> jnp.ndarray:
     """
     Restrict dt based on Newton-Krylov convergence.
@@ -430,7 +436,7 @@ def propose_dt(
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
     order: int = 4,
-    accepted: jnp.ndarray | None = None,
+    accepted: jnp.ndarray | None = None
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Unified dt proposal function for all methods.
@@ -491,7 +497,11 @@ def propose_dt(
         )
         return dt_rej, new_state
 
-    dt_adaptive, new_controller_state = lax.cond(accepted, accepted_dt, rejected_dt)
+    dt_adaptive, new_controller_state = lax.cond(
+        accepted,
+        accepted_dt,
+        rejected_dt
+    )
 
     # For explicit methods (0-2), also enforce CFL. The limit is taken in
     # dt_old's dtype so the two lax.cond branches below agree, and in the
@@ -501,13 +511,21 @@ def propose_dt(
     is_explicit = method < 3
     dt_cfl = heisenberg_cfl_dt(grid, params, cfl_params, dtype=dt_old.dtype, method=method)
 
-    dt_final = lax.cond(is_explicit, lambda: jnp.minimum(dt_adaptive, dt_cfl), lambda: dt_adaptive)
+    dt_final = lax.cond(
+        is_explicit,
+        lambda: jnp.minimum(dt_adaptive, dt_cfl),
+        lambda: dt_adaptive
+    )
 
     # For implicit methods with NK stats, apply robustness limiter
     if nk_stats is not None:
         is_implicit = method >= 3
         dt_robust = implicit_robustness_dt(dt_final, nk_stats)
-        dt_final = lax.cond(is_implicit, lambda: dt_robust, lambda: dt_final)
+        dt_final = lax.cond(
+            is_implicit,
+            lambda: dt_robust,
+            lambda: dt_final
+        )
 
     # Final clamp
     dt_final = jnp.clip(dt_final, pid_params.dt_min, pid_params.dt_max)
@@ -573,9 +591,11 @@ def compute_error_order(method: int) -> int:
 # IMEX-Specific CFL Limits
 # =============================================================================
 
-
 def imex_cfl_dt(
-    grid, params: dict[str, Any], cfl_params: CFLParams, dtype: jnp.dtype | None = None
+    grid,
+    params: dict[str, Any],
+    cfl_params: CFLParams,
+    dtype: jnp.dtype | None = None
 ) -> jnp.ndarray:
     """
     Compute CFL-limited time step for IMEX methods.
@@ -602,32 +622,44 @@ def imex_cfl_dt(
     dt = jnp.array(cfl_params.dt_max)
 
     # Advection CFL (still explicit in IMEX)
-    vx = jnp.abs(params.get("vx", 0.0))
-    vy = jnp.abs(params.get("vy", 0.0))
+    vx = jnp.abs(params.get('vx', 0.0))
+    vy = jnp.abs(params.get('vy', 0.0))
     v_max = vx + vy
     dt_adv = lax.cond(
-        v_max > 1e-14, lambda: cfl_params.cfl_advection * dx / v_max, lambda: cfl_params.dt_max
+        v_max > 1e-14,
+        lambda: cfl_params.cfl_advection * dx / v_max,
+        lambda: cfl_params.dt_max
     )
     dt = jnp.minimum(dt, dt_adv)
 
     # Wave/acoustic CFL (still explicit if hyperbolic)
-    K = params.get("K", 0.0)
-    rho = params.get("rho", 1.0)
-    c_wave = params.get("wave_speed", 0.0)
-    c_acoustic = lax.cond(K > 1e-14, lambda: jnp.sqrt(K / rho), lambda: 0.0)
+    K = params.get('K', 0.0)
+    rho = params.get('rho', 1.0)
+    c_wave = params.get('wave_speed', 0.0)
+    c_acoustic = lax.cond(
+        K > 1e-14,
+        lambda: jnp.sqrt(K / rho),
+        lambda: 0.0
+    )
     c = jnp.maximum(c_wave, c_acoustic)
-    dt_wave = lax.cond(c > 1e-14, lambda: cfl_params.cfl_wave * dx / c, lambda: cfl_params.dt_max)
+    dt_wave = lax.cond(
+        c > 1e-14,
+        lambda: cfl_params.cfl_wave * dx / c,
+        lambda: cfl_params.dt_max
+    )
     dt = jnp.minimum(dt, dt_wave)
 
     # Reaction stiffness limit (heuristic)
     # For Gray-Scott: F+k ~ 0.1, so dt ~ 5
     # This is a soft limit; reactions are explicit in IMEX
-    F = params.get("F", 0.0)
-    k = params.get("k", 0.0)
-    r = params.get("r", 0.0)  # For Fisher-KPP
+    F = params.get('F', 0.0)
+    k = params.get('k', 0.0)
+    r = params.get('r', 0.0)  # For Fisher-KPP
     reaction_rate = jnp.maximum(F + k, r)
     dt_react = lax.cond(
-        reaction_rate > 1e-14, lambda: 0.5 / reaction_rate, lambda: cfl_params.dt_max
+        reaction_rate > 1e-14,
+        lambda: 0.5 / reaction_rate,
+        lambda: cfl_params.dt_max
     )
     dt = jnp.minimum(dt, dt_react)
 
@@ -640,7 +672,10 @@ def imex_cfl_dt(
     return dt.astype(dtype)
 
 
-def estimate_reaction_stiffness(state: StateDict, params: dict[str, Any]) -> jnp.ndarray:
+def estimate_reaction_stiffness(
+    state: StateDict,
+    params: dict[str, Any]
+) -> jnp.ndarray:
     """
     Estimate reaction stiffness for dt limiting.
 
@@ -658,20 +693,20 @@ def estimate_reaction_stiffness(state: StateDict, params: dict[str, Any]) -> jnp
     stiffness = jnp.array(0.0)
 
     # Gray-Scott: |df/du| ~ v^2 + F, |df/dv| ~ 2*u*v + (F+k)
-    if "F" in params and "k" in params:
-        F = params["F"]
-        k = params["k"]
+    if 'F' in params and 'k' in params:
+        F = params['F']
+        k = params['k']
         stiffness = jnp.maximum(stiffness, F + k)
-        if "u" in state and "v" in state:
+        if 'u' in state and 'v' in state:
             # More refined estimate using current state
-            v_max = jnp.max(jnp.abs(state["v"]))
-            u_max = jnp.max(jnp.abs(state["u"]))
+            v_max = jnp.max(jnp.abs(state['v']))
+            u_max = jnp.max(jnp.abs(state['u']))
             stiffness = jnp.maximum(stiffness, v_max**2 + F)
-            stiffness = jnp.maximum(stiffness, 2 * u_max * v_max + F + k)
+            stiffness = jnp.maximum(stiffness, 2*u_max*v_max + F + k)
 
     # Fisher-KPP: |df/du| = r * |1 - 2u| <= r
-    if "r" in params:
-        stiffness = jnp.maximum(stiffness, params["r"])
+    if 'r' in params:
+        stiffness = jnp.maximum(stiffness, params['r'])
 
     return stiffness
 
@@ -687,7 +722,7 @@ def propose_dt_imex(
     cfl_params: CFLParams | None = None,
     pid_params: PIDParams | None = None,
     order: int = 2,
-    accepted: jnp.ndarray | None = None,
+    accepted: jnp.ndarray | None = None
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
     Propose dt for IMEX methods.
@@ -734,7 +769,11 @@ def propose_dt_imex(
         )
         return dt_rej, new_state
 
-    dt_adaptive, new_controller_state = lax.cond(accepted, accepted_dt, rejected_dt)
+    dt_adaptive, new_controller_state = lax.cond(
+        accepted,
+        accepted_dt,
+        rejected_dt
+    )
 
     # Apply IMEX CFL limit (no diffusion constraint), in dt_old's dtype so
     # the loop carry keeps the model's dtype.

@@ -1206,7 +1206,9 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
         is_explicit = method < 3
         dt_cfl = heisenberg_cfl_dt(model.grid, model.params, cfl_params, dtype=dtype)
         dt_init = lax.cond(
-            is_explicit, lambda: jnp.minimum(dt0, dt_cfl), lambda: jnp.array(dt0, dtype=dtype)
+            is_explicit,
+            lambda: jnp.minimum(dt0, dt_cfl),
+            lambda: jnp.array(dt0, dtype=dtype)
         )
 
         # Allocate output buffers. +1 for the initial state at t0, +1 more for
