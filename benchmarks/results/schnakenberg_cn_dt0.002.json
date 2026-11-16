@@ -1,0 +1,58 @@
+{
+  "methods": [
+    {
+      "name": "CN (Newton-Krylov)",
+      "time_s": 1783.7563502750018,
+      "iqr_s": 0.0,
+      "steps": 50000,
+      "dt": 0.002,
+      "t_final": 100.0,
+      "nfe": null,
+      "finite": true,
+      "u_min": 0.1347849890054033,
+      "u_max": 4.425537022095606,
+      "u_mean": 0.999999999999978,
+      "u_std": 1.0894395138238147,
+      "v_min": 0.28097233629480567,
+      "v_max": 0.8319223457142688,
+      "v_mean": 0.6374480403580504,
+      "v_std": 0.1340096144370573,
+      "status": "SUCCESS",
+      "valid": true,
+      "nk_params": {
+        "max_newton_iters": 20,
+        "max_krylov_iters": 60,
+        "restart": 30,
+        "newton_tol": 1e-06,
+        "krylov_tol": 0.001,
+        "damping": 1.0,
+        "backtrack_factor": 0.5,
+        "max_backtrack": 8,
+        "min_residual_decrease": 0.0001
+      },
+      "newton_iters_total": 180920,
+      "krylov_iters_total": 1882998,
+      "newton_iters_per_step": 3.6184,
+      "krylov_iters_per_step": 37.65996
+    }
+  ],
+  "config": {
+    "Du": 1.0,
+    "Dv": 40.0,
+    "a": 0.1,
+    "b": 0.9,
+    "gamma": 1000.0,
+    "system": "schnakenberg",
+    "N": 256,
+    "L": 1.0,
+    "t_final": 100.0,
+    "n_reps": 1,
+    "dtype": "float64",
+    "device": "cuda:0",
+    "jax_version": "0.11.2",
+    "moljax_version": "1.2.1",
+    "laplacian": "second-order central differences (moljax), periodic",
+    "solvers": "moljax library (integrate_fixed_dt, integrate_imex_fixed_dt, etd_integrate)",
+    "timing": "one full warm-up run, then n_reps timed runs; median and IQR"
+  }
+}
