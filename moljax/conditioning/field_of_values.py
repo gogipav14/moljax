@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import weakref
 from collections.abc import Callable
 from typing import NamedTuple
 
@@ -230,39 +229,6 @@ def _default_operator_key(matvec: Matvec, n: int) -> jax.Array:
     return jax.random.PRNGKey(seed)
 
 
-# Each compiled kernel closes over weak references to the operator actions, so
-# the cache does not keep a no-longer-used operator alive.  Bound methods are
-# keyed by their owner rather than by the ephemeral bound-method object Python
-# creates on every attribute access.
-_SUPPORT_KERNEL_CACHE: weakref.WeakKeyDictionary[
-    object,
-    weakref.WeakKeyDictionary[object, dict[tuple[object, ...], SupportKernel]],
-] = weakref.WeakKeyDictionary()
-
-
-def _action_identity(action: Matvec) -> tuple[object, object | None]:
-    """Return the weak-cache owner and unbound function for one action."""
-    owner = getattr(action, "__self__", None)
-    function = getattr(action, "__func__", None)
-    return (action, None) if owner is None or function is None else (owner, function)
-
-
-def _weak_action(action: Matvec) -> tuple[weakref.ReferenceType[object], object | None]:
-    """Represent an action without retaining its callable or bound-method owner."""
-    owner, function = _action_identity(action)
-    return weakref.ref(owner), function
-
-
-def _resolve_action(reference: weakref.ReferenceType[object], function: object | None) -> Matvec:
-    """Resolve an action while its operator is alive for tracing."""
-    owner = reference()
-    if owner is None:
-        raise RuntimeError("the numerical-range operator expired before support tracing")
-    if function is None:
-        return owner  # type: ignore[return-value]
-    return lambda value: function(owner, value)  # type: ignore[operator]
-
-
 def _build_support_kernel(
     matvec: Matvec,
     matvec_adjoint: Matvec,
@@ -271,8 +237,6 @@ def _build_support_kernel(
     tolerance: float,
 ) -> SupportKernel:
     """Build one dynamic-angle LOBPCG kernel for an operator and solve shape."""
-    matvec_reference, matvec_function = _weak_action(matvec)
-    adjoint_reference, adjoint_function = _weak_action(matvec_adjoint)
     real_dimension = 2 * n
     block_width = 3
     padded_dimension = max(real_dimension, 5 * block_width + 1)
@@ -284,13 +248,11 @@ def _build_support_kernel(
         restart: jax.Array,
         operator_key: jax.Array,
     ) -> tuple[jax.Array, jax.Array]:
-        forward_action = _resolve_action(matvec_reference, matvec_function)
-        adjoint_action = _resolve_action(adjoint_reference, adjoint_function)
         phase = jnp.exp(jnp.asarray(1j, dtype=jnp.complex128) * theta)
 
         def hermitian_action(value: jax.Array) -> jax.Array:
-            forward = _complex_action(forward_action, value)
-            adjoint = _complex_action(adjoint_action, value)
+            forward = _complex_action(matvec, value)
+            adjoint = _complex_action(matvec_adjoint, value)
             return 0.5 * (phase * forward + jnp.conj(phase) * adjoint)
 
         real_action = _realified_action(hermitian_action, n)
@@ -336,31 +298,6 @@ def _build_support_kernel(
         return vector, residual
 
     return jax.jit(support_kernel)
-
-
-def _support_kernel_for(
-    matvec: Matvec,
-    matvec_adjoint: Matvec,
-    n: int,
-    max_iters: int,
-    tolerance: float,
-) -> SupportKernel:
-    """Return the shape-specialized support kernel cached for this operator."""
-    matvec_owner, matvec_function = _action_identity(matvec)
-    adjoint_owner, adjoint_function = _action_identity(matvec_adjoint)
-    key = (matvec_function, adjoint_function, n, max_iters, tolerance)
-    try:
-        adjoint_caches = _SUPPORT_KERNEL_CACHE.setdefault(matvec_owner, weakref.WeakKeyDictionary())
-        kernels = adjoint_caches.setdefault(adjoint_owner, {})
-    except TypeError:
-        # A rare callable may not support weak references or hashing.  It still
-        # gets one kernel for this call; only cross-call reuse is unavailable.
-        return _build_support_kernel(matvec, matvec_adjoint, n, max_iters, tolerance)
-    kernel = kernels.get(key)
-    if kernel is None:
-        kernel = _build_support_kernel(matvec, matvec_adjoint, n, max_iters, tolerance)
-        kernels[key] = kernel
-    return kernel
 
 
 def _largest_hermitian_eigenvector(
@@ -532,7 +469,7 @@ def numerical_range(
     require_x64("conditioning diagnostics")
     if operator_key is None:
         operator_key = _default_operator_key(matvec, n)
-    support_kernel = _support_kernel_for(matvec, matvec_adjoint, n, max_iters, tolerance)
+    support_kernel = _build_support_kernel(matvec, matvec_adjoint, n, max_iters, tolerance)
 
     boundary: list[jax.Array] = []
     thetas: list[float] = []
