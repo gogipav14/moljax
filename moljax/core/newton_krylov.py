@@ -113,11 +113,10 @@ class NKParams(NamedTuple):
 class NKStats(NamedTuple):
     """Newton-Krylov solver statistics.
 
-    lin_iters is the Krylov budget that was made available, newton_iters
-    times max_krylov_iters (the NKParams field, i.e. the total matvec
-    ceiling _gmres_solve enforces via its derived restart/maxiter pair,
-    not the restart/maxiter values themselves), not the iterations spent:
-    jax.scipy.sparse.linalg.gmres returns (x, info) with no count.
+    lin_iters is the number of Krylov iterations that the GMRES solves
+    used, summed over the Newton iterations (see _gmres_solve). It is at
+    most newton_iters times the budget of NKParams.max_krylov_iters, plus
+    less than one restart cycle for each Newton iteration.
     final_res_norm is the unweighted 2-norm of the residual at the
     returned solution and converged is final_res_norm < newton_tol.
     """
@@ -161,6 +160,67 @@ def _jvp_matvec(
     return jvp_result
 
 
+def _gmres_cycle(matvec, b, x0, m: int, tol_abs):
+    """One GMRES cycle of at most m iterations that stops at the tolerance.
+
+    Arnoldi with modified Gram-Schmidt, one reorthogonalization pass and
+    Givens rotations, so the residual norm is known after each iteration and
+    the loop stops when it is at most tol_abs. Returns (x, iterations,
+    residual norm estimate). b, x0 are flat vectors.
+    """
+    r0 = b - matvec(x0)
+    beta = jnp.linalg.norm(r0)
+    n = b.shape[0]
+    dtype = b.dtype
+    V0 = jnp.zeros((m + 1, n), dtype=dtype).at[0].set(r0 / jnp.where(beta > 0, beta, 1.0))
+    H0 = jnp.zeros((m + 1, m), dtype=dtype)
+    # The product of the Givens rotations so far. One matrix product then
+    # applies them to a new column. A loop of scalar updates for the same
+    # work costs more than the matrix-vector product on a GPU.
+    Q0 = jnp.eye(m + 1, dtype=dtype)
+    g0 = jnp.zeros((m + 1,), dtype=dtype).at[0].set(beta)
+    index = jnp.arange(m + 1)
+
+    def cond(state):
+        _, _, _, g, k = state
+        return jnp.logical_and(k < m, jnp.abs(g[k]) > tol_abs)
+
+    def body(state):
+        V, H, Q, g, k = state
+        w = matvec(V[k])
+        active = (index <= k).astype(dtype)
+        # Two Gram-Schmidt passes against the vectors built so far.
+        h = active * (V @ w)
+        w = w - h @ V
+        corr = active * (V @ w)
+        w = w - corr @ V
+        h = h + corr
+        h_next = jnp.linalg.norm(w)
+        h = h.at[k + 1].set(h_next)
+        V = V.at[k + 1].set(w / jnp.where(h_next > 0, h_next, 1.0))
+
+        # Apply the earlier Givens rotations to the new column.
+        h = Q @ h
+
+        denom = jnp.sqrt(h[k] ** 2 + h[k + 1] ** 2)
+        denom = jnp.where(denom > 0, denom, 1.0)
+        c, s_ = h[k] / denom, h[k + 1] / denom
+        h = h.at[k].set(c * h[k] + s_ * h[k + 1]).at[k + 1].set(0.0)
+        g = g.at[k + 1].set(-s_ * g[k]).at[k].set(c * g[k])
+        row_k, row_next = Q[k], Q[k + 1]
+        Q = Q.at[k].set(c * row_k + s_ * row_next).at[k + 1].set(-s_ * row_k + c * row_next)
+        return V, H.at[:, k].set(h), Q, g, k + 1
+
+    V, H, _, g, k = lax.while_loop(
+        cond, body, (V0, H0, Q0, g0, jnp.array(0, dtype=jnp.int32)))
+
+    # Solve the k-by-k triangular system; the unused part is the identity.
+    used = jnp.arange(m) < k
+    R = jnp.where(used[:, None] & used[None, :], H[:m, :], jnp.eye(m, dtype=dtype))
+    y = jax.scipy.linalg.solve_triangular(R, jnp.where(used, g[:m], 0.0), lower=False)
+    return x0 + y @ V[:m], k, jnp.abs(g[k])
+
+
 def _gmres_solve(
     matvec: Callable[[jnp.ndarray], jnp.ndarray],
     b: jnp.ndarray,
@@ -169,73 +229,65 @@ def _gmres_solve(
     max_iters: int,
     restart: int = 20,
     M: Callable[[jnp.ndarray], jnp.ndarray] | None = None
-) -> tuple[jnp.ndarray, int]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-    GMRES solver wrapper.
+    Restarted GMRES that stops at the tolerance and counts its iterations.
 
-    Uses jax.scipy.sparse.linalg.gmres if available.
-    Falls back to basic implementation if needed.
+    jax.scipy.sparse.linalg.gmres in its default ("batched") mode builds the
+    complete Krylov space of the restart size in each cycle, and it returns
+    no iteration count. A solve that needs two iterations then costs
+    ``restart`` matrix-vector products (measured: one Crank-Nicolson step on
+    a 128 x 128 Brusselator took 908 ms at restart 30 and 8.6 ms at restart
+    2). This solver stops inside a cycle when the residual estimate reaches
+    the tolerance.
 
     Args:
         matvec: Matrix-vector product function
         b: Right-hand side
         x0: Initial guess
-        tol: Convergence tolerance
-        max_iters: Total Krylov budget (NKParams.max_krylov_iters), not
-            gmres's own maxiter. gmres takes a Krylov subspace size
-            ("restart") and a cycle count ("maxiter") that rebuilds that
-            subspace from the previous cycle's result; passing max_iters
-            straight through as maxiter with restart left at its default
-            of 20 (the pre-fix behavior) made the true budget 20x
-            max_iters, with no way to cap the Krylov space itself below
-            20. This derives restart_used = min(max_iters, restart) and
-            maxiter = ceil(max_iters / restart_used), so
-            restart_used * maxiter never exceeds max_iters by more than
-            restart_used - 1 (see NKParams.max_krylov_iters).
+        tol: Relative tolerance: the solve stops when the (preconditioned)
+            residual 2-norm is at most tol times the 2-norm of the
+            (preconditioned) right-hand side, as gmres does with atol = 0.
+        max_iters: Total Krylov budget (NKParams.max_krylov_iters). The
+            cycle size is restart_used = min(max_iters, restart) and the
+            number of cycles is ceil(max_iters / restart_used), so the
+            budget is exceeded by fewer than restart_used products.
         restart: Requested Krylov subspace size per restart cycle, capped
             by max_iters (NKParams.restart).
         M: Optional left preconditioner
 
     Returns:
-        Tuple of (solution, max_iters). JAX's gmres returns (x, info) with
-        info always None, so no iteration count is available inside a
-        traced loop; the requested budget (max_iters, not
-        restart_used * maxiter) is returned in its place and summed into
-        NKStats.lin_iters.
+        Tuple of (solution, iterations). iterations is the number of Krylov
+        iterations that the solve used (one matrix-vector product each; a
+        cycle adds one more product for its starting residual).
     """
-    try:
-        from jax.scipy.sparse.linalg import gmres
+    restart_used = max(1, min(max_iters, restart))
+    maxiter = -(-max_iters // restart_used)  # ceil(max_iters / restart_used)
 
-        # Total Krylov budget -> gmres's own (restart, maxiter) pair. See
-        # the max_iters docstring above and NKParams.max_krylov_iters.
-        restart_used = max(1, min(max_iters, restart))
-        maxiter = -(-max_iters // restart_used)  # ceil(max_iters / restart_used)
+    if M is not None:
+        # Left preconditioning: solve M^-1 A x = M^-1 b
+        def op(v):
+            return M(matvec(v))
+        rhs = M(b)
+    else:
+        op = matvec
+        rhs = b
 
-        # Wrap matvec in LinearOperator-like callable
-        def linear_op(v):
-            return matvec(v)
+    tol_abs = tol * jnp.linalg.norm(rhs)
 
-        # Apply preconditioner if provided
-        if M is not None:
-            # Left preconditioning: solve M^-1 A x = M^-1 b
-            def precond_matvec(v):
-                return M(matvec(v))
-            b_precond = M(b)
-            result, info = gmres(
-                precond_matvec, b_precond, x0=x0, tol=tol,
-                restart=restart_used, maxiter=maxiter
-            )
-        else:
-            result, info = gmres(
-                linear_op, b, x0=x0, tol=tol,
-                restart=restart_used, maxiter=maxiter
-            )
+    def cond(state):
+        _, res, _, cycle = state
+        return jnp.logical_and(cycle < maxiter, res > tol_abs)
 
-        return result, max_iters
+    def body(state):
+        x, _, iters, cycle = state
+        x, k, res = _gmres_cycle(op, rhs, x, restart_used, tol_abs)
+        return x, res, iters + k, cycle + 1
 
-    except ImportError:
-        # Fallback to BiCGSTAB
-        return _bicgstab_solve(matvec, b, x0, tol, max_iters, M)
+    init = (x0, jnp.linalg.norm(rhs - op(x0)), jnp.array(0, dtype=jnp.int32),
+            jnp.array(0, dtype=jnp.int32))
+    x, _, iters, _ = lax.while_loop(cond, body, init)
+    return x, iters
 
 
 def _bicgstab_solve(

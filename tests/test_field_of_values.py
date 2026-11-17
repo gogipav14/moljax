@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from moljax.conditioning import FieldOfValuesResult, numerical_range
-from moljax.conditioning.field_of_values import _CP_PREFACTOR, _SUPPORT_KERNEL_CACHE
+from moljax.conditioning.field_of_values import _CP_PREFACTOR
 
 
 def _matrix_actions(matrix: np.ndarray) -> tuple[Callable[[jax.Array], jax.Array], ...]:
@@ -103,6 +103,17 @@ def _grcar(n: int) -> np.ndarray:
     return matrix
 
 
+class _MatrixOperator:
+    def __init__(self, matrix: np.ndarray) -> None:
+        self.matrix = jnp.asarray(matrix, dtype=jnp.complex128)
+
+    def matvec(self, value: jax.Array) -> jax.Array:
+        return self.matrix @ value
+
+    def adjoint(self, value: jax.Array) -> jax.Array:
+        return self.matrix.conj().T @ value
+
+
 def test_normal_boundary_matches_convex_hull_supports():
     """A normal operator's supports agree with its eigenvalue convex hull."""
     eigenvalues = np.array(
@@ -138,8 +149,8 @@ def test_nonnormal_boundary_matches_dense_hermitian_reference(matrix: np.ndarray
     _assert_boundary_matches_dense(matrix, result, expected)
 
 
-def test_support_kernel_compiles_once_and_is_reused_for_the_same_operator():
-    """Angle and restart changes reuse one operator-and-shape support executable."""
+def test_support_kernel_compiles_once_per_call():
+    """Angles and restarts share one support executable within each call."""
     if jax.__version_info__ < (0, 7):
         pytest.skip(
             "JAX < 0.7 has no public event-listener unregister API; registering "
@@ -147,18 +158,7 @@ def test_support_kernel_compiles_once_and_is_reused_for_the_same_operator():
             "rest of the test process"
         )
 
-    class Operator:
-        def __init__(self) -> None:
-            self.matrix = jnp.asarray(_grcar(8))
-
-        def matvec(self, value: jax.Array) -> jax.Array:
-            return self.matrix @ value
-
-        def adjoint(self, value: jax.Array) -> jax.Array:
-            return self.matrix.conj().T @ value
-
-    operator = Operator()
-    _SUPPORT_KERNEL_CACHE.clear()
+    operator = _MatrixOperator(_grcar(8))
     jax.clear_caches()
     compilations: list[str] = []
 
@@ -188,19 +188,55 @@ def test_support_kernel_compiles_once_and_is_reused_for_the_same_operator():
             8,
             n_angles=8,
             max_iters=20,
-            n_restarts=2,
+            n_restarts=3,
         )
         jax.block_until_ready(second.boundary)
-        repeated_compilations = len(compilations) - first_compilations
+        second_compilations = len(compilations) - first_compilations
     finally:
         unregister = getattr(jax.monitoring, "unregister_event_duration_listener", None)
         if unregister is not None:
             unregister(listener)
 
-    # A persistent on-disk compilation-cache hit can make the first count zero;
-    # either way the number is independent of direction/restart count.
+    # A persistent on-disk compilation-cache hit can make either count zero.
     assert first_compilations <= 1
-    assert repeated_compilations == 0
+    assert second_compilations <= 1
+
+
+def test_changed_operator_rebuilds_supports_from_its_new_matrix():
+    """A second call must trace the changed matrix, even for the same object."""
+    n = 12
+    first_matrix = np.diag(np.linspace(1.0, 12.0, n)) + 0.5 * np.diag(np.ones(n - 1), 1)
+    new_matrix = np.diag(np.linspace(22.0, 3.0, n)) + 2.0 * np.diag(np.ones(n - 1), 1)
+    operator = _MatrixOperator(first_matrix)
+    settings = dict(n_angles=8, n_restarts=2, max_iters=100)
+    numerical_range(operator.matvec, operator.adjoint, n, **settings)
+    operator.matrix = jnp.asarray(new_matrix, dtype=jnp.complex128)
+    changed = numerical_range(operator.matvec, operator.adjoint, n, **settings)
+    fresh = _MatrixOperator(new_matrix)
+    expected = numerical_range(fresh.matvec, fresh.adjoint, n, **settings)
+    np.testing.assert_allclose(
+        np.asarray(changed.boundary), np.asarray(expected.boundary), atol=1e-8
+    )
+    dense = _dense_boundary(new_matrix, settings["n_angles"])
+    _assert_boundary_matches_dense(new_matrix, changed, dense)
+    phases = np.exp(2j * np.pi * np.arange(settings["n_angles"]) / settings["n_angles"])
+    sampled_radius = max(np.real(phases * np.asarray(changed.boundary)))
+    dense_radius = max(np.real(phases * dense))
+    assert sampled_radius == pytest.approx(dense_radius, abs=1e-8)
+
+
+def test_two_operators_keep_their_own_supports():
+    """Calling A, B, then A preserves each operator's dense support values."""
+    n = 12
+    matrices = (
+        np.diag(np.linspace(1.0, 12.0, n)) + 0.5 * np.diag(np.ones(n - 1), 1),
+        np.diag(np.linspace(22.0, 3.0, n)) + 2.0 * np.diag(np.ones(n - 1), 1),
+    )
+    operators = [_MatrixOperator(matrix) for matrix in matrices]
+    for index in (0, 1, 0):
+        operator = operators[index]
+        result = numerical_range(operator.matvec, operator.adjoint, n, n_angles=8, max_iters=100)
+        _assert_boundary_matches_dense(matrices[index], result, _dense_boundary(matrices[index], 8))
 
 
 def test_adjoint_identity():
