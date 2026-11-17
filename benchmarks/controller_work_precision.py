@@ -12,6 +12,7 @@ Newton iterations and does not present it as measured work.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import platform
@@ -653,15 +654,43 @@ def per_method_summary(matched_rows):
     return summary
 
 
+CSV_FIELDS = [
+    "table", "problem", "method", "config", "tolerance", "accepted", "rejected",
+    "rejection_fraction", "rhs_evaluations", "newton_iterations", "gmres_budget",
+    "final_error", "t_final", "success",
+]
+
+
+def write_csv_summary(report: dict, json_path: Path) -> Path:
+    """Write one CSV row for each record of the two result tables of a report."""
+    csv_path = json_path.with_suffix(".csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        for table in ("work_precision_results", "robustness_results"):
+            for record in report[table]:
+                writer.writerow({"table": table.removesuffix("_results"), **record})
+    return csv_path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
+    parser.add_argument(
+        "--csv-only",
+        action="store_true",
+        help="write the CSV summary of the existing output JSON file and stop",
+    )
     parser.add_argument(
         "--output",
         type=Path,
         default=Path("benchmarks/results/controller_work_precision.json"),
     )
     args = parser.parse_args()
+    if args.csv_only:
+        csv_path = write_csv_summary(json.loads(args.output.read_text()), args.output)
+        print(f"Wrote {csv_path}")
+        return
     work_precision_problems = [
         make_pr_problem(),
         make_gray_problem(),
@@ -711,8 +740,9 @@ def main():
         "tolerances": tolerances,
         "work_metric": "right-hand-side evaluations",
         "gmres_budget_note": (
-            "gmres_budget is NKStats.lin_iters: the configured Krylov budget, "
-            "not iterations spent; Newton iterations are reported separately."
+            "gmres_budget is NKStats.lin_iters. Before moljax 1.3.0 this was the "
+            "configured Krylov budget; from 1.3.0 it is the number of Krylov "
+            "iterations used. Newton iterations are reported separately."
         ),
         "work_precision_results": [asdict(result) for result in work_precision_results],
         "robustness_results": [asdict(result) for result in robustness_results],
@@ -724,6 +754,7 @@ def main():
         "per_method_median_matched_error_nfe": per_method_summary(matched_rows),
     }
     args.output.write_text(json.dumps(report, indent=2) + "\n")
+    write_csv_summary(report, args.output)
     plot_results(work_precision_results + robustness_results, args.output.parent)
 
 
