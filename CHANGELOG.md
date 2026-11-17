@@ -42,6 +42,18 @@ All notable changes to moljax are documented here.
   `create_gray_scott_periodic_fft`, `create_schnakenberg_periodic_fft` and
   `create_brusselator_periodic_fft` also give their nonlinear part directly
   as the explicit part. The Schnakenberg benchmark run is 3.5 times faster.
+- **`numerical_range` compiles its support computation once per call.** On
+  main, a repeated eight-angle, three-restart call compiled 24
+  `jit(_lobpcg_standard_callable)` executables. It now builds one jitted
+  kernel per call, passing the angle, restart and operator key as arguments
+  and reusing it across that call; the repeated call compiled one
+  `jit(support_kernel)` executable. The maximum relative boundary difference
+  from main in these calls was 5.22e-9; support values and disk radius
+  differed by at most 3.38e-16 and 1.70e-16. A cross-call cache retains
+  arrays captured when an operator was traced, so replacing its matrix could
+  return supports for the old matrix. `tests/test_field_of_values.py` checks
+  compilations per call, a changed operator against a fresh object and the
+  dense numerical radius, and two operators used in turn.
 
 ### Added
 
