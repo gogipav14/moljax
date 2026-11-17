@@ -20,8 +20,11 @@ All notable changes to moljax are documented here.
   `brusselator.json` and `schnakenberg.json` (with two more Schnakenberg
   files for ETDRK4 at dt = 0.0005 and Crank-Nicolson at dt = 0.002) are
   generated again with the new scripts. The work-precision files
-  (`wp_*.json`, `work_precision_*.json`) and the stored `.npy` states are
-  from the old scripts.
+  (`wp_*.json`, `work_precision_*.json`, each with a CSV file) are also
+  generated again; their reference is ETDRK4 at a small step, with RK4 as
+  an independent cross-check. The five stored `.npy` states now hold the
+  ETDRK4 final states of the new table runs. The earlier Schnakenberg
+  state was not finite.
 - **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
   No Newton solve converges at this step (the fastest Turing mode has the
   growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark

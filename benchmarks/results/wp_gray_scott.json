@@ -1,134 +1,271 @@
 {
   "RK4": [
     {
-      "dt": 0.054111349906644006,
-      "steps": 1849,
-      "nfe": 7396,
-      "error": 0.24594979473532386,
-      "time_s": 2.306917839000562
+      "dt": 0.13351134846461948,
+      "dt_requested": 0.13351440429687497,
+      "steps": 749,
+      "nfe": 2996,
+      "time_s": 0.5887224184989464,
+      "time_includes_compile": false,
+      "status": "SUCCESS",
+      "error": 4.698527098827124e-10,
+      "error_linf": 8.039201526699458e-10,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
-      "dt": 0.0649336198879728,
-      "steps": 1541,
-      "nfe": 6164,
-      "error": 0.24599479900316834,
-      "time_s": 1.8667233149999447
+      "dt": 0.16,
+      "dt_requested": 0.16021728515624997,
+      "steps": 625,
+      "nfe": 2500,
+      "time_s": 0.5230033330008155,
+      "time_includes_compile": false,
+      "status": "SUCCESS",
+      "error": 1.1832049985952183e-09,
+      "error_linf": 1.9735026945966183e-09,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
-      "dt": 0.07575588986930161,
-      "steps": 1321,
-      "nfe": 5284,
-      "error": 0.24603978665606296,
-      "time_s": 1.5638088240002617
+      "dt": 0.18691588785046728,
+      "dt_requested": 0.18692016601562494,
+      "steps": 535,
+      "nfe": 2140,
+      "time_s": 0.4314060375036206,
+      "time_includes_compile": false,
+      "status": "SUCCESS",
+      "error": 2.6174843417184895e-09,
+      "error_linf": 4.347158966133691e-09,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
-      "dt": 0.08657815985063042,
-      "steps": 1156,
-      "nfe": 4624,
-      "error": 0.2460847578155846,
-      "time_s": 1.358793532001073
+      "dt": 0.21321961620469082,
+      "dt_requested": 0.21362304687499997,
+      "steps": 469,
+      "nfe": 1876,
+      "time_s": 0.26698530149587896,
+      "time_includes_compile": false,
+      "status": "SUCCESS",
+      "error": 5.061282789379868e-09,
+      "error_linf": 8.578953547555557e-09,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
-      "dt": 0.0974004298319592,
-      "steps": 1027,
-      "nfe": 4108,
-      "error": 0.2458597394522425,
-      "time_s": 1.2806999484992048
+      "dt": 0.23980815347721823,
+      "dt_requested": 0.24032592773437494,
+      "steps": 417,
+      "nfe": 1668,
+      "time_s": 0.24365046099410392,
+      "time_includes_compile": false,
+      "status": "SUCCESS",
+      "error": 8.341653310066485e-09,
+      "error_linf": 1.5294896349438147e-08,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     }
   ],
   "IMEX-Strang": [
     {
       "dt": 0.1,
+      "dt_requested": 0.1,
       "steps": 1000,
       "nfe": 2000,
-      "error": 0.2462100545375594,
-      "time_s": 0.41784094349986844
+      "time_s": 0.3541561599849956,
+      "time_includes_compile": false,
+      "error": 5.7758909084510794e-06,
+      "error_linf": 5.086362178108317e-06,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.2,
+      "dt_requested": 0.2,
       "steps": 500,
       "nfe": 1000,
-      "error": 0.24668578084527681,
-      "time_s": 0.25491271299961227
+      "time_s": 0.18375335799646564,
+      "time_includes_compile": false,
+      "error": 2.304729894980014e-05,
+      "error_linf": 2.0294788749986026e-05,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.5,
+      "dt_requested": 0.5,
       "steps": 200,
       "nfe": 400,
-      "error": 0.24810900394753443,
-      "time_s": 0.19207483399986813
+      "time_s": 0.07295573050214443,
+      "time_includes_compile": false,
+      "error": 0.0001436401438186633,
+      "error_linf": 0.00012646678285388457,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 1.0,
+      "dt_requested": 1.0,
       "steps": 100,
       "nfe": 200,
-      "error": 0.2504653346415445,
-      "time_s": 0.1727144619999308
+      "time_s": 0.04936575649480801,
+      "time_includes_compile": false,
+      "error": 0.0005848715337519369,
+      "error_linf": 0.0005148704366915169,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 2.0,
+      "dt_requested": 2.0,
       "steps": 50,
       "nfe": 100,
-      "error": 0.2551082539407007,
-      "time_s": 0.15435784450073697
+      "time_s": 0.023738725503790192,
+      "time_includes_compile": false,
+      "error": 0.0027531438570668415,
+      "error_linf": 0.002428951169821336,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 5.0,
+      "dt_requested": 5.0,
       "steps": 20,
       "nfe": 40,
-      "error": 0.2674747911107693,
-      "time_s": 0.1535811340008877
+      "time_s": 0.013595618496765383,
+      "time_includes_compile": false,
+      "error": null,
+      "error_linf": null,
+      "finite": false,
+      "valid": false,
+      "above_10x_cross_check": null
     }
   ],
   "ETDRK4": [
     {
       "dt": 0.05,
+      "dt_requested": 0.05,
       "steps": 2000,
       "nfe": 8000,
-      "error": 5.906469366201428e-05,
-      "time_s": 2.6486560955008827
+      "time_s": 3.876721729990095,
+      "time_includes_compile": false,
+      "error": 1.718172577379199e-11,
+      "error_linf": 1.6710188788238156e-11,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.1,
+      "dt_requested": 0.1,
       "steps": 1000,
       "nfe": 4000,
-      "error": 0.00013088907208125278,
-      "time_s": 1.486160669000128
+      "time_s": 2.5363220584986266,
+      "time_includes_compile": false,
+      "error": 2.794019879418933e-10,
+      "error_linf": 2.7067514896117473e-10,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.2,
+      "dt_requested": 0.2,
       "steps": 500,
       "nfe": 2000,
-      "error": 0.00026791732715425454,
-      "time_s": 0.9236969175008198
+      "time_s": 1.4611717725056224,
+      "time_includes_compile": false,
+      "error": 4.684874611013086e-09,
+      "error_linf": 4.484605353738402e-09,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.5,
+      "dt_requested": 0.5,
       "steps": 200,
       "nfe": 800,
-      "error": 0.000627992558240642,
-      "time_s": 0.5661093930002608
+      "time_s": 1.468529004487209,
+      "time_includes_compile": false,
+      "error": 2.1891799740993614e-07,
+      "error_linf": 2.0194027794406821e-07,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 1.0,
+      "dt_requested": 1.0,
       "steps": 100,
       "nfe": 400,
-      "error": 0.0010773842671560896,
-      "time_s": 0.47305286200025876
+      "time_s": 1.1708162340219133,
+      "time_includes_compile": false,
+      "error": 4.316879114215901e-06,
+      "error_linf": 3.8868726989216285e-06,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 2.0,
+      "dt_requested": 2.0,
       "steps": 50,
       "nfe": 200,
-      "error": 0.0016325901995146719,
-      "time_s": 0.39301455200075
+      "time_s": 1.2176504615054,
+      "time_includes_compile": false,
+      "error": 9.093789609794415e-05,
+      "error_linf": 8.126062823887725e-05,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 5.0,
+      "dt_requested": 5.0,
       "steps": 20,
       "nfe": 80,
-      "error": 0.006836243580224277,
-      "time_s": 0.36701793700012786
+      "time_s": 0.9871618509932887,
+      "time_includes_compile": false,
+      "error": 0.008781936256473388,
+      "error_linf": 0.007871008953311054,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     }
-  ]
+  ],
+  "reference_cross_check": 2.825509115340674e-14,
+  "reference_info": {
+    "error_norm": "relative L2 of (u, v)",
+    "primary": {
+      "method": "ETDRK4",
+      "dt": 0.01,
+      "steps": 10000,
+      "time_s": 17.056787558016367
+    },
+    "secondary": {
+      "method": "RK4",
+      "dt": 0.01,
+      "steps": 10000,
+      "time_s": 10.68452493098448,
+      "finite": true
+    },
+    "flag": "above_10x_cross_check: error > 10 * reference_cross_check",
+    "quick": false,
+    "t_final": 100.0,
+    "solvers": "moljax library (integrate_fixed_dt, integrate_imex_fixed_dt, etd_integrate)",
+    "laplacian": "second-order central differences (moljax), periodic",
+    "jax_version": "0.11.2",
+    "device": "cuda:0"
+  }
 }
