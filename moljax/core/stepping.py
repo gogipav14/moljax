@@ -520,6 +520,18 @@ def _imex_explicit_rhs(
     if len(model.linear_ops) == 0 and len(model.nonlinear_ops) == 0:
         return tree_zeros_like(y)
 
+    # Direct path. A model can state that its linear operators are exactly
+    # the diffusion D * Laplacian of metadata['diffusivities'] (the
+    # create_*_periodic_fft factories do). When the split uses those same
+    # diffusivities, the subtraction below would remove the complete linear
+    # part, so the explicit part is the nonlinear part and nothing else.
+    # This saves one stencil Laplacian and one FFT Laplacian for each field
+    # and stage. The two paths agree to rounding.
+    if (model.metadata.get("linear_ops_are_fft_diffusion", False)
+            and dict(model.metadata.get("diffusivities", {})) == dict(diffusivities)):
+        # model.rhs applies the boundary conditions first; do the same here.
+        return model.nonlinear_rhs(model.apply_bcs(y, t), t)
+
     explicit = model.rhs(y, t)
     if len(model.linear_ops) == 0:
         return explicit
@@ -583,6 +595,38 @@ def imex_euler_step(
     return y_new
 
 
+def _imex_heun_explicit_step(
+    model: MOLModel,
+    y_star: StateDict,
+    t: float,
+    dt: float,
+    fft_cache,
+    diffusivities: dict[str, float]
+) -> StateDict:
+    """
+    The explicit part of one IMEX-Strang step: Heun's method over [t, t + dt].
+
+    y** = y* + dt/2 * (E(y*, t) + E(y* + dt * E(y*, t), t + dt)), with E from
+    _imex_explicit_rhs. Boundary conditions are applied to the predictor and
+    to the result.
+    """
+    # k1 = E(y*, t)
+    R1 = _imex_explicit_rhs(model, y_star, t, fft_cache, diffusivities)
+
+    # y_tilde = y* + dt * k1
+    y_tilde = tree_axpy(y_star, dt, R1)
+    y_tilde = model.apply_bcs(y_tilde, t + dt)
+
+    # k2 = E(y_tilde, t + dt)
+    R2 = _imex_explicit_rhs(model, y_tilde, t + dt, fft_cache, diffusivities)
+
+    # y** = y* + dt/2 * (k1 + k2)
+    R_avg = tree_add(R1, R2)
+    y_double = tree_axpy(y_star, 0.5 * dt, R_avg)
+
+    return model.apply_bcs(y_double, t + dt)
+
+
 def imex_strang_step(
     model: MOLModel,
     y: StateDict,
@@ -640,21 +684,7 @@ def imex_strang_step(
     y_star = model.apply_bcs(y_star, t + dt_half)
 
     # Step 2: Full explicit step using Heun's method (explicit 2nd order)
-    # k1 = E(y*, t)
-    R1 = _imex_explicit_rhs(model, y_star, t, fft_cache, diffusivities)
-
-    # y_tilde = y* + dt * k1
-    y_tilde = tree_axpy(y_star, dt, R1)
-    y_tilde = model.apply_bcs(y_tilde, t + dt)
-
-    # k2 = E(y_tilde, t + dt)
-    R2 = _imex_explicit_rhs(model, y_tilde, t + dt, fft_cache, diffusivities)
-
-    # y** = y* + dt/2 * (k1 + k2)
-    R_avg = tree_add(R1, R2)
-    y_double = tree_axpy(y_star, 0.5 * dt, R_avg)
-
-    y_double = model.apply_bcs(y_double, t + dt)
+    y_double = _imex_heun_explicit_step(model, y_star, t, dt, fft_cache, diffusivities)
 
     # Step 3: Half diffusion step (exact)
     y_new = apply_diffusion_exp_fft(y_double, model.grid, dt_half, diffusivities, fft_cache)
@@ -1567,7 +1597,8 @@ def _fixed_step_count(t0: float, t_end: float, dt: float, save_every: int) -> in
     return n_steps
 
 
-def _run_fixed_steps(advance: Callable, carry, n_steps: int, save_every: int, grid):
+def _run_fixed_steps(advance: Callable, carry, n_steps: int, save_every: int, grid,
+                     run_block: Callable | None = None):
     """
     Run n_steps of advance(carry), keeping the state after every save_every-th step.
 
@@ -1577,12 +1608,18 @@ def _run_fixed_steps(advance: Callable, carry, n_steps: int, save_every: int, gr
     over when save_every does not divide n_steps are taken after the scan
     so the returned carry is always at t_end. The saved states hold
     interior points only, the layout the adaptive integrators use.
+
+    run_block(carry, n), when given, replaces the default block of n calls
+    of advance. It must return the carry after exactly n steps (n >= 1 is a
+    Python integer). A method can then combine work across the steps of one
+    block (see _build_imex_fixed_driver).
     """
     n_saves = n_steps // save_every
     n_tail = n_steps - n_saves * save_every
 
-    def run_block(c, n):
-        return lax.fori_loop(0, n, lambda _, c_in: advance(c_in), c)
+    if run_block is None:
+        def run_block(c, n):
+            return lax.fori_loop(0, n, lambda _, c_in: advance(c_in), c)
 
     def save_body(c, _):
         c = run_block(c, save_every)
@@ -1653,6 +1690,21 @@ class _FixedScanState(NamedTuple):
     dt_prev: jnp.ndarray
     step: jnp.ndarray
     status: jnp.ndarray
+    newton_iters: jnp.ndarray
+    lin_iters: jnp.ndarray
+
+
+class FixedStepStats(NamedTuple):
+    """
+    Newton-Krylov totals of one integrate_fixed_dt run.
+
+    newton_iters and lin_iters are the sums of NKStats.newton_iters and
+    NKStats.lin_iters over the steps that the run took. A failed step is
+    in the sums. The steps after a failed step do no work and add zero.
+    The explicit methods give zero for the two totals.
+    """
+    newton_iters: jnp.ndarray
+    lin_iters: jnp.ndarray
 
 
 class _ImexFixedScanState(NamedTuple):
@@ -1703,6 +1755,9 @@ def _build_fixed_driver(model, method, dt, n_steps, save_every, preconditioner, 
         time_dtype = _time_dtype()
         t0_time = jnp.array(t0, dtype=time_dtype)
         dt_time = jnp.array(dt, dtype=time_dtype)
+        # The totals of a long run can exceed the int32 range, so they use
+        # int64 when x64 is on.
+        count_dtype = jnp.int64 if jax.config.jax_enable_x64 else jnp.int32
 
         def advance(carry: _FixedScanState) -> _FixedScanState:
             """Single fixed step, a no-op once an earlier step has failed."""
@@ -1773,7 +1828,9 @@ def _build_fixed_driver(model, method, dt, n_steps, save_every, preconditioner, 
                 y_prev=y_prev_new,
                 dt_prev=jnp.array(dt, dtype=model.dtype),
                 step=next_step,
-                status=new_status
+                status=new_status,
+                newton_iters=carry.newton_iters + nk_stats.newton_iters.astype(count_dtype),
+                lin_iters=carry.lin_iters + nk_stats.lin_iters.astype(count_dtype)
             )
 
         init_carry = _FixedScanState(
@@ -1782,7 +1839,9 @@ def _build_fixed_driver(model, method, dt, n_steps, save_every, preconditioner, 
             y_prev=y0,
             dt_prev=jnp.array(dt, dtype=model.dtype),
             step=jnp.array(0, dtype=jnp.int32),
-            status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32)
+            status=jnp.array(StatusCode.RUNNING, dtype=jnp.int32),
+            newton_iters=jnp.array(0, dtype=count_dtype),
+            lin_iters=jnp.array(0, dtype=count_dtype)
         )
 
         t_history, y_history, final_carry = _run_fixed_steps(
@@ -1794,7 +1853,9 @@ def _build_fixed_driver(model, method, dt, n_steps, save_every, preconditioner, 
             jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
             final_carry.status
         )
-        return t_history, y_history, final_carry.y, status
+        stats = FixedStepStats(newton_iters=final_carry.newton_iters,
+                               lin_iters=final_carry.lin_iters)
+        return t_history, y_history, final_carry.y, status, stats
 
     return jax.jit(run)
 
@@ -1824,7 +1885,8 @@ def integrate_fixed_dt(
     save_every: int = 1,
     preconditioner: Preconditioner | None = None,
     nk_params: NKParams | None = None,
-    return_status: bool = False
+    return_status: bool = False,
+    return_stats: bool = False
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], StateDict]:
     """
     Fixed time step integration with compiled loops.
@@ -1852,6 +1914,8 @@ def integrate_fixed_dt(
         nk_params: For implicit methods
         return_status: Return the run's StatusCode as a fourth element
             instead of raising on failure (see below)
+        return_stats: Return a FixedStepStats (the Newton and Krylov
+            iteration totals of the run) as the last element
 
     Returns:
         Tuple of (t_history, y_history, final_state). The histories hold
@@ -1864,6 +1928,9 @@ def integrate_fixed_dt(
         (t_history, y_history, final_state, status), status being one of
         StatusCode.SUCCESS, StatusCode.NK_FAILED or
         StatusCode.NON_FINITE_VALUES as a JAX scalar.
+
+        With return_stats=True a FixedStepStats is the last element of the
+        tuple, after the status when return_status is also True.
 
     Raises:
         RuntimeError: if the run did not reach t_end with every step
@@ -1899,13 +1966,14 @@ def integrate_fixed_dt(
 
     driver = _fixed_driver(model, y0, method, dt, n_steps, save_every,
                            preconditioner, nk_params)
-    t_history, y_history, y_final, status = driver(y0, t0)
+    t_history, y_history, y_final, status, stats = driver(y0, t0)
+    tail = (stats,) if return_stats else ()
 
     if return_status:
-        return t_history, y_history, y_final, status
+        return (t_history, y_history, y_final, status) + tail
 
     _raise_on_failed_fixed_run(status, "integrate_fixed_dt")
-    return t_history, y_history, y_final
+    return (t_history, y_history, y_final) + tail
 
 
 # =============================================================================
@@ -2226,10 +2294,53 @@ def _build_imex_fixed_driver(model, dt, n_steps, save_every, fft_cache, diffusiv
                 step=next_step
             )
 
+        def strang_block(carry: _ImexFixedScanState, n: int) -> _ImexFixedScanState:
+            """n Strang steps with the adjacent half diffusion steps combined.
+
+            Two half diffusion steps in sequence are one full diffusion step,
+            exp(dt/2 D Lap) exp(dt/2 D Lap) = exp(dt D Lap). So n steps are
+            D(dt/2), then n - 1 times [Heun(dt), D(dt)], then Heun(dt),
+            D(dt/2). The result is that of n calls of imex_strang_step up to
+            rounding, with one diffusion solve for each step and not two. A
+            block ends with the closing half step, so each saved state and
+            the final state are complete steps.
+            """
+            from moljax.core.fft_solvers import apply_diffusion_exp_fft
+
+            _imex_split_is_valid(model, diffusivities)
+            grid = model.grid
+
+            def step_time(step):
+                return t0_time + step.astype(time_dtype) * dt_time
+
+            def heun(y, step):
+                y = _imex_heun_explicit_step(model, y, step_time(step), dt, fft_cache,
+                                             diffusivities)
+                return _to_state_dtype(y, model.dtype)
+
+            def diffuse(y, tau, t_bc):
+                y = apply_diffusion_exp_fft(y, grid, tau, diffusivities, fft_cache)
+                return _to_state_dtype(model.apply_bcs(y, t_bc), model.dtype)
+
+            y = model.apply_bcs(carry.y, carry.t)
+            y = diffuse(y, dt / 2.0, carry.t + dt_time / 2)
+
+            def body(_, state):
+                y, step = state
+                y = heun(y, step)
+                return diffuse(y, dt, step_time(step + 1) + dt_time / 2), step + 1
+
+            y, step = lax.fori_loop(0, n - 1, body, (y, carry.step))
+            y = heun(y, step)
+            step = step + 1
+            y = diffuse(y, dt / 2.0, step_time(step))
+            return _ImexFixedScanState(t=step_time(step), y=y, step=step)
+
         init_carry = _ImexFixedScanState(t=t0_time, y=y0, step=jnp.array(0, dtype=jnp.int32))
 
         t_history, y_history, final_carry = _run_fixed_steps(
-            advance, init_carry, n_steps, save_every, model.grid
+            advance, init_carry, n_steps, save_every, model.grid,
+            run_block=strang_block if use_strang else None
         )
 
         return t_history, y_history, final_carry.y
@@ -2288,6 +2399,13 @@ def integrate_imex_fixed_dt(
 
     Notes:
         The compiled loop is cached and reused; see integrate_fixed_dt.
+
+        With use_strang, the steps between two saved states share their
+        diffusion solves: the closing half diffusion step of one step and the
+        opening half step of the next are one full step. The result equals
+        repeated imex_strang_step calls up to rounding. The saving is one
+        diffusion solve for each step that is not followed by a save, so a
+        large save_every is faster than save_every=1.
     """
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
     _validate_time_resolution(t0, t_end, dt, "integrate_imex_fixed_dt")

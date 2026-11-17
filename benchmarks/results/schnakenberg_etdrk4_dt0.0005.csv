@@ -1,0 +1,2 @@
+name,dt,steps,time_s,iqr_s,nfe,finite,status,extrapolated,state_is_at_t,newton_iters_per_step,krylov_iters_per_step,u_min,u_max,u_mean,u_std,v_min,v_max,v_mean,v_std
+ETDRK4,0.0005,200000,255.97826669200003,2.6692672640001547,800000,True,,False,100.0,,,0.13478271000571948,4.425265614554819,1.0,1.0894395138241286,0.280962319323708,0.8318939971716389,0.637448040357969,0.13400961282594454
