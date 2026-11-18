@@ -217,6 +217,21 @@ def test_horner_upper_encloses_exact_complex_polynomials() -> None:
             )
 
 
+def test_horner_upper_encloses_subnormal_terms() -> None:
+    """Cover gradual underflow in the complex Horner recurrence."""
+    subnormal = np.nextafter(0.0, 1.0)
+    coefficients = np.asarray(
+        [complex((-1) ** index * subnormal, subnormal) for index in range(41)],
+        dtype=np.complex128,
+    )
+    point = 0.5 + 0.25j
+    upper, _, evaluation_error = _horner_modulus_upper(np.asarray([point]), coefficients)
+    assert evaluation_error[0] >= 8 * 40 * subnormal
+    assert Fraction.from_float(float(upper[0])) ** 2 >= _exact_modulus_squared(
+        coefficients, _fraction_point(point)
+    )
+
+
 def test_contour_upper_encloses_exact_points_between_samples() -> None:
     """Check 100 random rectangles at 65 rational positions on each edge."""
     rng = np.random.default_rng(20261118)

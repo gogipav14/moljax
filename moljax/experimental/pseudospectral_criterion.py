@@ -575,7 +575,9 @@ def _horner_modulus_upper(
     2nd ed., Sections 3.1, 3.6, 5.1).  The real Horner absolute and
     translation sums use at most ``3n+1`` rounded operations, covered by
     ``gamma_{4n}`` for ``n >= 1``.  A final ``gamma_4`` covers complex
-    modulus and the two additions.
+    modulus and the two additions.  Gradual underflow contributes at most
+    ``8n * 2**-1074 * sum_{k=0}**n |z|**k`` in absolute error.  Overflow
+    fails closed to infinity; the underflow term covers subnormal results.
     If coefficients themselves are enclosed, their propagated uncertainty is
     added separately.  The result fails closed to infinity on non-finite data.
     """
@@ -598,7 +600,17 @@ def _horner_modulus_upper(
     inflation = np.nextafter(1.0 + gamma, np.inf)
     absolute_sum_upper = np.nextafter(absolute_sum * inflation, np.inf)
     translation_sum_upper = np.nextafter(translation_sum * inflation, np.inf)
-    evaluation_error = np.nextafter(gamma * absolute_sum_upper, np.inf)
+    geometric_sum = np.ones(points.shape, dtype=np.float64)
+    for _ in range(degree):
+        geometric_sum = geometric_sum * point_modulus + 1.0
+    # gamma_{4n} encloses the real geometric recurrence; eight subnormals per
+    # complex Horner step cover gradual underflow in its products and sums.
+    geometric_sum_upper = np.nextafter(geometric_sum * inflation, np.inf)
+    underflow_error = np.nextafter(
+        (8.0 * degree * np.nextafter(0.0, 1.0)) * geometric_sum_upper,
+        np.inf,
+    )
+    evaluation_error = np.nextafter(gamma * absolute_sum_upper + underflow_error, np.inf)
     upper = np.nextafter(
         (np.abs(values) + evaluation_error + translation_sum_upper)
         * np.nextafter(1.0 + _roundoff_gamma(4), np.inf),
