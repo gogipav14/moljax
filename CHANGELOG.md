@@ -4,6 +4,26 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **`numerical_range` compiles its support computation once per call.**
+  Each angle and restart of a call compiled its own
+  `jit(_lobpcg_standard_callable)`, so a repeated call with eight angles
+  and three restarts compiled 24 executables. A call now builds one jitted
+  kernel that takes the angle, the restart and the operator key as
+  arguments, and the same repeated call compiles one. The kernel is not
+  kept between calls: a kernel cached across calls keeps the arrays of the
+  operator it was traced with, so an operator whose matrix is replaced
+  would get the supports of the old matrix. On an 8 x 8 Grcar matrix the
+  supports and the enclosing disk agree with the earlier results to
+  rounding (at most 3.4e-16 relative). The boundary points move only along
+  their supporting lines, by up to 1.4e-8; against a dense eigensolver
+  their error along these lines is at most 1.7e-8 before and 3.4e-9 now,
+  so both are at the accuracy of the LOBPCG eigenvectors.
+  `tests/test_field_of_values.py` checks the compilations per call, a
+  changed operator against a fresh object and the dense numerical radius,
+  and two operators used in turn.
+
 ## [1.3.1] - 2026-11-18
 
 ### Fixed
@@ -102,23 +122,6 @@ All notable changes to moljax are documented here.
   `create_gray_scott_periodic_fft`, `create_schnakenberg_periodic_fft` and
   `create_brusselator_periodic_fft` also give their nonlinear part directly
   as the explicit part. The Schnakenberg benchmark run is 3.5 times faster.
-- **`numerical_range` compiles its support computation once per call.**
-  Each angle and restart of a call compiled its own
-  `jit(_lobpcg_standard_callable)`, so a repeated call with eight angles
-  and three restarts compiled 24 executables. A call now builds one jitted
-  kernel that takes the angle, the restart and the operator key as
-  arguments, and the same repeated call compiles one. The kernel is not
-  kept between calls: a kernel cached across calls keeps the arrays of the
-  operator it was traced with, so an operator whose matrix is replaced
-  would get the supports of the old matrix. On an 8 x 8 Grcar matrix the
-  supports and the enclosing disk agree with the earlier results to
-  rounding (at most 3.4e-16 relative). The boundary points move only along
-  their supporting lines, by up to 1.4e-8; against a dense eigensolver
-  their error along these lines is at most 1.7e-8 before and 3.4e-9 now,
-  so both are at the accuracy of the LOBPCG eigenvectors.
-  `tests/test_field_of_values.py` checks the compilations per call, a
-  changed operator against a fresh object and the dense numerical radius,
-  and two operators used in turn.
 
 ### Fixed
 
