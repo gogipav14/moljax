@@ -226,47 +226,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 2.1960211427085596e-13,
           "certified": true,
           "constraint_points": 4097,
-          "contour_floor": 0.04798016632458628,
-          "contour_modulus_bound": 0.2003021086905712,
+          "contour_floor": 0.04798016632458673,
+          "contour_modulus_bound": 0.20030210867933135,
+          "contour_modulus_bound_origin_only": 0.2019761493742523,
           "criterion_predicted_iterations": 52,
           "degree": 4,
-          "eps_connect_grid": 0.030898097158471274,
-          "eps_connect_upper": 0.04060386416872766,
-          "epsilon_zero": 0.16473036438874464,
+          "eps_connect_grid": 0.030898097158471236,
+          "eps_connect_upper": 0.04060386416872762,
+          "epsilon_zero": 0.16473036438874475,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 53,
-          "prefactor": 7.801650747118417,
+          "minimum_origin_only_contour_bound": 0.2019761493742523,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.2019761493742523,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.670386132634563,
+              "predicted_iterations": 52
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 7.801650747118344,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6689927023722538,
-          "search_seconds": 0.9482817593961954,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 169.30714597100086
+          },
+          "rho": 0.6689927023628688,
+          "search_seconds": 167.85301161700045,
+          "selection_effect": -5.389788615417501e-11,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 0.661070654168725,
-          "wall_seconds": 1.61384691670537,
-          "window_width": 0.12412650022001698
+          "sigma_min_seconds": 0.9683028910003486,
+          "wall_seconds": 169.30714597100086,
+          "window_width": 0.12412650022001713
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 2.1960211427085596e-13,
         "certified": true,
         "constraint_points": 4097,
-        "contour_floor": 0.04798016632458628,
-        "contour_modulus_bound": 0.2003021086905712,
+        "contour_floor": 0.04798016632458673,
+        "contour_modulus_bound": 0.20030210867933135,
+        "contour_modulus_bound_origin_only": 0.2019761493742523,
         "criterion_predicted_iterations": 52,
         "degree": 4,
-        "eps_connect_grid": 0.030898097158471274,
-        "eps_connect_upper": 0.04060386416872766,
-        "epsilon_zero": 0.16473036438874464,
+        "eps_connect_grid": 0.030898097158471236,
+        "eps_connect_upper": 0.04060386416872762,
+        "epsilon_zero": 0.16473036438874475,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 53,
-        "prefactor": 7.801650747118417,
+        "minimum_origin_only_contour_bound": 0.2019761493742523,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.2019761493742523,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.670386132634563,
+            "predicted_iterations": 52
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 7.801650747118344,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.6689927023722538,
-        "search_seconds": 0.9482817593961954,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 169.30714597100086
+        },
+        "rho": 0.6689927023628688,
+        "search_seconds": 167.85301161700045,
+        "selection_effect": -5.389788615417501e-11,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 0.661070654168725,
-        "wall_seconds": 1.61384691670537,
-        "window_width": 0.12412650022001698
+        "sigma_min_seconds": 0.9683028910003486,
+        "wall_seconds": 169.30714597100086,
+        "window_width": 0.12412650022001713
       },
       "Y_fov": {
         "angles": [
@@ -774,47 +836,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 7.283285086145952e-12,
           "certified": true,
           "constraint_points": 5903,
-          "contour_floor": 0.08847891411373406,
-          "contour_modulus_bound": 0.03766531773445117,
+          "contour_floor": 0.08847891411373435,
+          "contour_modulus_bound": 0.037665316993844344,
+          "contour_modulus_bound_origin_only": 0.4712871914724882,
           "criterion_predicted_iterations": 56,
           "degree": 8,
-          "eps_connect_grid": 0.039851701327293536,
-          "eps_connect_upper": 0.06755276561920942,
-          "epsilon_zero": 0.45693880390610886,
+          "eps_connect_grid": 0.039851701327291454,
+          "eps_connect_upper": 0.06755276561920734,
+          "epsilon_zero": 0.45693880390610864,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 57,
-          "prefactor": 14.415351499709887,
+          "minimum_origin_only_contour_bound": 0.21390590750437752,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.21390590750437752,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.6800732532119712,
+              "predicted_iterations": 56
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 14.415351499709839,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6637319204818662,
-          "search_seconds": 2.5486214607954025,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 229.99505412799772
+          },
+          "rho": 0.6637319188505101,
+          "search_seconds": 214.19796766400032,
+          "selection_effect": -1.957050699274987e-08,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 20.974953893572092,
-          "wall_seconds": 23.69800836406648,
-          "window_width": 0.38938603828689944
+          "sigma_min_seconds": 15.290610743999423,
+          "wall_seconds": 229.99505412799772,
+          "window_width": 0.3893860382869013
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 7.283285086145952e-12,
         "certified": true,
         "constraint_points": 5903,
-        "contour_floor": 0.08847891411373406,
-        "contour_modulus_bound": 0.03766531773445117,
+        "contour_floor": 0.08847891411373435,
+        "contour_modulus_bound": 0.037665316993844344,
+        "contour_modulus_bound_origin_only": 0.4712871914724882,
         "criterion_predicted_iterations": 56,
         "degree": 8,
-        "eps_connect_grid": 0.039851701327293536,
-        "eps_connect_upper": 0.06755276561920942,
-        "epsilon_zero": 0.45693880390610886,
+        "eps_connect_grid": 0.039851701327291454,
+        "eps_connect_upper": 0.06755276561920734,
+        "epsilon_zero": 0.45693880390610864,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 57,
-        "prefactor": 14.415351499709887,
+        "minimum_origin_only_contour_bound": 0.21390590750437752,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.21390590750437752,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.6800732532119712,
+            "predicted_iterations": 56
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 14.415351499709839,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.6637319204818662,
-        "search_seconds": 2.5486214607954025,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 229.99505412799772
+        },
+        "rho": 0.6637319188505101,
+        "search_seconds": 214.19796766400032,
+        "selection_effect": -1.957050699274987e-08,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 20.974953893572092,
-        "wall_seconds": 23.69800836406648,
-        "window_width": 0.38938603828689944
+        "sigma_min_seconds": 15.290610743999423,
+        "wall_seconds": 229.99505412799772,
+        "window_width": 0.3893860382869013
       },
       "Y_fov": {
         "angles": [
@@ -1324,47 +1448,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 2.417177569213891e-12,
           "certified": true,
           "constraint_points": 15463,
-          "contour_floor": 0.13500673220702972,
-          "contour_modulus_bound": 2.7922415361886763e-05,
+          "contour_floor": 0.13500673220703038,
+          "contour_modulus_bound": 2.7914051371017185e-05,
+          "contour_modulus_bound_origin_only": 0.3865787478721848,
           "criterion_predicted_iterations": 24,
           "degree": 12,
-          "eps_connect_grid": 0.017939296684796237,
-          "eps_connect_upper": 0.026623311154286313,
+          "eps_connect_grid": 0.017939296684796414,
+          "eps_connect_upper": 0.026623311154286497,
           "epsilon_zero": 0.8187637102643597,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 25,
-          "prefactor": 4.183455657549494,
+          "minimum_origin_only_contour_bound": 0.01061030723144952,
+          "origin_only_counterfactual": {
+            "candidate_count": 3,
+            "choice": {
+              "bound": 0.03252888312339648,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.4246853580641751,
+              "predicted_iterations": 24
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 4.183455657549474,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.41734583328566227,
-          "search_seconds": 1.0265941955149174,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 44.264429442999244
+          },
+          "rho": 0.41733541406982205,
+          "search_seconds": 42.84677885500059,
+          "selection_effect": -0.0004318355052310707,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 0.7008965853601694,
-          "wall_seconds": 1.7335481531918049,
-          "window_width": 0.7921403991100734
+          "sigma_min_seconds": 0.9426754150008492,
+          "wall_seconds": 44.264429442999244,
+          "window_width": 0.7921403991100732
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 2.417177569213891e-12,
         "certified": true,
         "constraint_points": 15463,
-        "contour_floor": 0.13500673220702972,
-        "contour_modulus_bound": 2.7922415361886763e-05,
+        "contour_floor": 0.13500673220703038,
+        "contour_modulus_bound": 2.7914051371017185e-05,
+        "contour_modulus_bound_origin_only": 0.3865787478721848,
         "criterion_predicted_iterations": 24,
         "degree": 12,
-        "eps_connect_grid": 0.017939296684796237,
-        "eps_connect_upper": 0.026623311154286313,
+        "eps_connect_grid": 0.017939296684796414,
+        "eps_connect_upper": 0.026623311154286497,
         "epsilon_zero": 0.8187637102643597,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 25,
-        "prefactor": 4.183455657549494,
+        "minimum_origin_only_contour_bound": 0.01061030723144952,
+        "origin_only_counterfactual": {
+          "candidate_count": 3,
+          "choice": {
+            "bound": 0.03252888312339648,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.4246853580641751,
+            "predicted_iterations": 24
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 4.183455657549474,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.41734583328566227,
-        "search_seconds": 1.0265941955149174,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 44.264429442999244
+        },
+        "rho": 0.41733541406982205,
+        "search_seconds": 42.84677885500059,
+        "selection_effect": -0.0004318355052310707,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 0.7008965853601694,
-        "wall_seconds": 1.7335481531918049,
-        "window_width": 0.7921403991100734
+        "sigma_min_seconds": 0.9426754150008492,
+        "wall_seconds": 44.264429442999244,
+        "window_width": 0.7921403991100732
       },
       "Y_fov": {
         "angles": [
@@ -1887,6 +2073,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.008216626942157745,
           "sigma_min_evaluations": 7382,
@@ -1908,6 +2097,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.03113578073680401,
           "sigma_min_evaluations": 29162,
@@ -1929,6 +2121,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.15177655965089798,
           "sigma_min_evaluations": 115922,
@@ -1951,6 +2146,9 @@
         "lemma1_full_operator_iteration_bound": null,
         "prefactor": null,
         "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+        "recomputation": {
+          "status": "carried over: decided before the contour bound"
+        },
         "rho": null,
         "search_seconds": 0.15177655965089798,
         "sigma_min_evaluations": 115922,
@@ -2464,47 +2662,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 1.2811973704174306e-13,
           "certified": true,
           "constraint_points": 15182,
-          "contour_floor": 0.05348372357680458,
-          "contour_modulus_bound": 0.20591450005716555,
+          "contour_floor": 0.053483723576814156,
+          "contour_modulus_bound": 0.205914500052739,
+          "contour_modulus_bound_origin_only": 0.20687279057521027,
           "criterion_predicted_iterations": 56,
           "degree": 4,
-          "eps_connect_grid": 0.014793227334637102,
-          "eps_connect_upper": 0.03530379909188451,
-          "epsilon_zero": 0.3509913761718014,
+          "eps_connect_grid": 0.0147932273346425,
+          "eps_connect_upper": 0.03530379909189002,
+          "epsilon_zero": 0.3509913761718055,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 61,
-          "prefactor": 22.1738783705684,
+          "minimum_origin_only_contour_bound": 0.199130186880682,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.20687279057521027,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.6744128603019309,
+              "predicted_iterations": 56
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 22.173878370564502,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6736304843905815,
-          "search_seconds": 0.27192797884345055,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 51.737145740000415
+          },
+          "rho": 0.6736304843869613,
+          "search_seconds": 49.029605436000566,
+          "selection_effect": -1.9336421352988964e-11,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 1.374782782047987,
-          "wall_seconds": 1.6540943682193756,
-          "window_width": 0.31568757707991685
+          "sigma_min_seconds": 2.212663151000015,
+          "wall_seconds": 51.737145740000415,
+          "window_width": 0.31568757707991546
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.2811973704174306e-13,
         "certified": true,
         "constraint_points": 15182,
-        "contour_floor": 0.05348372357680458,
-        "contour_modulus_bound": 0.20591450005716555,
+        "contour_floor": 0.053483723576814156,
+        "contour_modulus_bound": 0.205914500052739,
+        "contour_modulus_bound_origin_only": 0.20687279057521027,
         "criterion_predicted_iterations": 56,
         "degree": 4,
-        "eps_connect_grid": 0.014793227334637102,
-        "eps_connect_upper": 0.03530379909188451,
-        "epsilon_zero": 0.3509913761718014,
+        "eps_connect_grid": 0.0147932273346425,
+        "eps_connect_upper": 0.03530379909189002,
+        "epsilon_zero": 0.3509913761718055,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 61,
-        "prefactor": 22.1738783705684,
+        "minimum_origin_only_contour_bound": 0.199130186880682,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.20687279057521027,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.6744128603019309,
+            "predicted_iterations": 56
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 22.173878370564502,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.6736304843905815,
-        "search_seconds": 0.27192797884345055,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 51.737145740000415
+        },
+        "rho": 0.6736304843869613,
+        "search_seconds": 49.029605436000566,
+        "selection_effect": -1.9336421352988964e-11,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 1.374782782047987,
-        "wall_seconds": 1.6540943682193756,
-        "window_width": 0.31568757707991685
+        "sigma_min_seconds": 2.212663151000015,
+        "wall_seconds": 51.737145740000415,
+        "window_width": 0.31568757707991546
       },
       "Y_fov": {
         "angles": [
@@ -3014,47 +3274,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 9.78594982825598e-12,
           "certified": true,
           "constraint_points": 3335,
-          "contour_floor": 0.020772201333300534,
-          "contour_modulus_bound": 0.10472445449988219,
+          "contour_floor": 0.02077220133330009,
+          "contour_modulus_bound": 0.10472445108995862,
+          "contour_modulus_bound_origin_only": 1.6809357681103818,
           "criterion_predicted_iterations": 80,
           "degree": 8,
-          "eps_connect_grid": 0.014813114526529303,
-          "eps_connect_upper": 0.024807346215744507,
-          "epsilon_zero": 0.08703789015046165,
+          "eps_connect_grid": 0.014813114526529395,
+          "eps_connect_upper": 0.0248073462157446,
+          "epsilon_zero": 0.08703789015046143,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 89,
-          "prefactor": 16.893763706667098,
+          "minimum_origin_only_contour_bound": 0.34345303150868056,
+          "origin_only_counterfactual": {
+            "candidate_count": 1,
+            "choice": {
+              "bound": 0.34345303150868056,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.7655381503730234,
+              "predicted_iterations": 80
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 16.893763706667457,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.7542338390940535,
-          "search_seconds": 0.97665392793715,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 105.18083030799971
+          },
+          "rho": 0.754233836024236,
+          "search_seconds": 101.74933548300032,
+          "selection_effect": -3.248470337169351e-08,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 4.088132841512561,
-          "wall_seconds": 5.1537720412015915,
-          "window_width": 0.06223054393471714
+          "sigma_min_seconds": 2.954063805998885,
+          "wall_seconds": 105.18083030799971,
+          "window_width": 0.06223054393471683
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 9.78594982825598e-12,
         "certified": true,
         "constraint_points": 3335,
-        "contour_floor": 0.020772201333300534,
-        "contour_modulus_bound": 0.10472445449988219,
+        "contour_floor": 0.02077220133330009,
+        "contour_modulus_bound": 0.10472445108995862,
+        "contour_modulus_bound_origin_only": 1.6809357681103818,
         "criterion_predicted_iterations": 80,
         "degree": 8,
-        "eps_connect_grid": 0.014813114526529303,
-        "eps_connect_upper": 0.024807346215744507,
-        "epsilon_zero": 0.08703789015046165,
+        "eps_connect_grid": 0.014813114526529395,
+        "eps_connect_upper": 0.0248073462157446,
+        "epsilon_zero": 0.08703789015046143,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 89,
-        "prefactor": 16.893763706667098,
+        "minimum_origin_only_contour_bound": 0.34345303150868056,
+        "origin_only_counterfactual": {
+          "candidate_count": 1,
+          "choice": {
+            "bound": 0.34345303150868056,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.7655381503730234,
+            "predicted_iterations": 80
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 16.893763706667457,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.7542338390940535,
-        "search_seconds": 0.97665392793715,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 105.18083030799971
+        },
+        "rho": 0.754233836024236,
+        "search_seconds": 101.74933548300032,
+        "selection_effect": -3.248470337169351e-08,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 4.088132841512561,
-        "wall_seconds": 5.1537720412015915,
-        "window_width": 0.06223054393471714
+        "sigma_min_seconds": 2.954063805998885,
+        "wall_seconds": 105.18083030799971,
+        "window_width": 0.06223054393471683
       },
       "Y_fov": {
         "angles": [
@@ -3562,47 +3884,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 6.179279310458696e-12,
           "certified": true,
           "constraint_points": 17396,
-          "contour_floor": 0.14402408347655202,
-          "contour_modulus_bound": 0.0009528339344910796,
+          "contour_floor": 0.1440240834765545,
+          "contour_modulus_bound": 0.0009528225589699948,
+          "contour_modulus_bound_origin_only": 0.3362630744825586,
           "criterion_predicted_iterations": 36,
           "degree": 12,
-          "eps_connect_grid": 0.034299925956582565,
-          "eps_connect_upper": 0.04427486444542147,
-          "epsilon_zero": 0.7994302096928539,
+          "eps_connect_grid": 0.034299925956582294,
+          "eps_connect_upper": 0.0442748644454212,
+          "epsilon_zero": 0.7994302096928542,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 49,
-          "prefactor": 6.646784512897663,
+          "minimum_origin_only_contour_bound": 0.018504740378605177,
+          "origin_only_counterfactual": {
+            "candidate_count": 3,
+            "choice": {
+              "bound": 0.10440284837167482,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.5684314348648551,
+              "predicted_iterations": 36
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 6.646784512897543,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.5600817668099525,
-          "search_seconds": 2.5711784921586514,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 131.72332563700184
+          },
+          "rho": 0.5600812095900128,
+          "search_seconds": 127.73141495800155,
+          "selection_effect": -1.193572863600334e-05,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 4.788368472829461,
-          "wall_seconds": 7.531704993918538,
-          "window_width": 0.7551553452474324
+          "sigma_min_seconds": 3.490055962000042,
+          "wall_seconds": 131.72332563700184,
+          "window_width": 0.755155345247433
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 6.179279310458696e-12,
         "certified": true,
         "constraint_points": 17396,
-        "contour_floor": 0.14402408347655202,
-        "contour_modulus_bound": 0.0009528339344910796,
+        "contour_floor": 0.1440240834765545,
+        "contour_modulus_bound": 0.0009528225589699948,
+        "contour_modulus_bound_origin_only": 0.3362630744825586,
         "criterion_predicted_iterations": 36,
         "degree": 12,
-        "eps_connect_grid": 0.034299925956582565,
-        "eps_connect_upper": 0.04427486444542147,
-        "epsilon_zero": 0.7994302096928539,
+        "eps_connect_grid": 0.034299925956582294,
+        "eps_connect_upper": 0.0442748644454212,
+        "epsilon_zero": 0.7994302096928542,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 49,
-        "prefactor": 6.646784512897663,
+        "minimum_origin_only_contour_bound": 0.018504740378605177,
+        "origin_only_counterfactual": {
+          "candidate_count": 3,
+          "choice": {
+            "bound": 0.10440284837167482,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.5684314348648551,
+            "predicted_iterations": 36
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 6.646784512897543,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.5600817668099525,
-        "search_seconds": 2.5711784921586514,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 131.72332563700184
+        },
+        "rho": 0.5600812095900128,
+        "search_seconds": 127.73141495800155,
+        "selection_effect": -1.193572863600334e-05,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 4.788368472829461,
-        "wall_seconds": 7.531704993918538,
-        "window_width": 0.7551553452474324
+        "sigma_min_seconds": 3.490055962000042,
+        "wall_seconds": 131.72332563700184,
+        "window_width": 0.755155345247433
       },
       "Y_fov": {
         "angles": [
@@ -4112,47 +4496,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 1.2026379891949546e-11,
           "certified": true,
           "constraint_points": 1995,
-          "contour_floor": 0.007290643128563665,
-          "contour_modulus_bound": 0.6065185331064852,
+          "contour_floor": 0.007290643128565011,
+          "contour_modulus_bound": 0.6065185301684325,
+          "contour_modulus_bound_origin_only": 8.501108460225542,
           "criterion_predicted_iterations": 360,
           "degree": 8,
-          "eps_connect_grid": 0.007941450159919327,
-          "eps_connect_upper": 0.01819464608277933,
-          "epsilon_zero": 0.033845096060819695,
+          "eps_connect_grid": 0.007941450159917433,
+          "eps_connect_upper": 0.018194646082777436,
+          "epsilon_zero": 0.03384509606081975,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 385,
-          "prefactor": 47.66057858392867,
+          "minimum_origin_only_contour_bound": 0.814019464970102,
+          "origin_only_counterfactual": {
+            "candidate_count": 1,
+            "choice": {
+              "bound": 0.814019464970102,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.9498580276528468,
+              "predicted_iterations": 436
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 47.66057858391987,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.9394107150360617,
-          "search_seconds": 0.22948139533400536,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 51.082249908999074
+          },
+          "rho": 0.9394107144672336,
+          "search_seconds": 22.366442015998473,
+          "selection_effect": -4.8332564617226126e-09,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 32.349558502435684,
-          "wall_seconds": 33.32021464407444,
-          "window_width": 0.015650449978040364
+          "sigma_min_seconds": 28.14206615399962,
+          "wall_seconds": 51.082249908999074,
+          "window_width": 0.015650449978042314
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.2026379891949546e-11,
         "certified": true,
         "constraint_points": 1995,
-        "contour_floor": 0.007290643128563665,
-        "contour_modulus_bound": 0.6065185331064852,
+        "contour_floor": 0.007290643128565011,
+        "contour_modulus_bound": 0.6065185301684325,
+        "contour_modulus_bound_origin_only": 8.501108460225542,
         "criterion_predicted_iterations": 360,
         "degree": 8,
-        "eps_connect_grid": 0.007941450159919327,
-        "eps_connect_upper": 0.01819464608277933,
-        "epsilon_zero": 0.033845096060819695,
+        "eps_connect_grid": 0.007941450159917433,
+        "eps_connect_upper": 0.018194646082777436,
+        "epsilon_zero": 0.03384509606081975,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 385,
-        "prefactor": 47.66057858392867,
+        "minimum_origin_only_contour_bound": 0.814019464970102,
+        "origin_only_counterfactual": {
+          "candidate_count": 1,
+          "choice": {
+            "bound": 0.814019464970102,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.9498580276528468,
+            "predicted_iterations": 436
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 47.66057858391987,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.9394107150360617,
-        "search_seconds": 0.22948139533400536,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 51.082249908999074
+        },
+        "rho": 0.9394107144672336,
+        "search_seconds": 22.366442015998473,
+        "selection_effect": -4.8332564617226126e-09,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 32.349558502435684,
-        "wall_seconds": 33.32021464407444,
-        "window_width": 0.015650449978040364
+        "sigma_min_seconds": 28.14206615399962,
+        "wall_seconds": 51.082249908999074,
+        "window_width": 0.015650449978042314
       },
       "Y_fov": {
         "angles": [
@@ -4673,6 +5119,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.11367511749267578,
           "sigma_min_evaluations": 7382,
@@ -4694,6 +5143,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.2253896091133356,
           "sigma_min_evaluations": 29162,
@@ -4706,21 +5158,39 @@
           "constraint_points": null,
           "contour_floor": null,
           "contour_modulus_bound": null,
+          "contour_modulus_bound_origin_only": null,
           "criterion_predicted_iterations": null,
           "degree": null,
-          "eps_connect_grid": 0.12519122721378584,
-          "eps_connect_upper": 0.22286977976642786,
-          "epsilon_zero": 0.288079283078326,
+          "eps_connect_grid": 0.1251912272136582,
+          "eps_connect_upper": 0.2228697797663002,
+          "epsilon_zero": 0.2880792830783253,
           "grid": 481,
           "lemma1_full_operator_iteration_bound": null,
+          "minimum_origin_only_contour_bound": null,
           "prefactor": null,
           "reason": "the connected window has no polynomial with a proven contour bound below one",
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 8089.625465501
+          },
           "rho": null,
-          "search_seconds": 1.0141713880002499,
+          "search_seconds": 5.467122633002873,
           "sigma_min_evaluations": 115922,
-          "sigma_min_seconds": 5161.626340959221,
-          "wall_seconds": 5163.0756974909455,
-          "window_width": 0.06520950331189812
+          "sigma_min_seconds": 8081.513184817,
+          "wall_seconds": 8089.625465501,
+          "window_width": 0.0652095033120251
         }
       ],
       "Y_certificate_selected": {
@@ -4728,21 +5198,39 @@
         "constraint_points": null,
         "contour_floor": null,
         "contour_modulus_bound": null,
+        "contour_modulus_bound_origin_only": null,
         "criterion_predicted_iterations": null,
         "degree": null,
-        "eps_connect_grid": 0.12519122721378584,
-        "eps_connect_upper": 0.22286977976642786,
-        "epsilon_zero": 0.288079283078326,
+        "eps_connect_grid": 0.1251912272136582,
+        "eps_connect_upper": 0.2228697797663002,
+        "epsilon_zero": 0.2880792830783253,
         "grid": 481,
         "lemma1_full_operator_iteration_bound": null,
+        "minimum_origin_only_contour_bound": null,
         "prefactor": null,
         "reason": "the connected window has no polynomial with a proven contour bound below one",
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 8089.625465501
+        },
         "rho": null,
-        "search_seconds": 1.0141713880002499,
+        "search_seconds": 5.467122633002873,
         "sigma_min_evaluations": 115922,
-        "sigma_min_seconds": 5161.626340959221,
-        "wall_seconds": 5163.0756974909455,
-        "window_width": 0.06520950331189812
+        "sigma_min_seconds": 8081.513184817,
+        "wall_seconds": 8089.625465501,
+        "window_width": 0.0652095033120251
       },
       "Y_fov": {
         "angles": [
@@ -5252,47 +5740,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 3.752553823233029e-14,
           "certified": true,
           "constraint_points": 19467,
-          "contour_floor": 0.12620166406958824,
-          "contour_modulus_bound": 0.1427443817014758,
+          "contour_floor": 0.1262016640698458,
+          "contour_modulus_bound": 0.1427443816969726,
+          "contour_modulus_bound_origin_only": 0.14372630510426784,
           "criterion_predicted_iterations": 44,
           "degree": 4,
-          "eps_connect_grid": 0.026902926168107116,
-          "eps_connect_upper": 0.0397557822438598,
-          "epsilon_zero": 0.7178198414578973,
+          "eps_connect_grid": 0.026902926168115335,
+          "eps_connect_upper": 0.03975578224384076,
+          "epsilon_zero": 0.717819841457898,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 49,
-          "prefactor": 9.623848771742596,
+          "minimum_origin_only_contour_bound": 0.044261583152314675,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.14372630510426784,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.615721140624278,
+              "predicted_iterations": 44
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 9.623848771712847,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6146667996354322,
-          "search_seconds": 1.283954657614231,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 219.08616247700047
+          },
+          "rho": 0.6146667996305845,
+          "search_seconds": 189.22704397599955,
+          "selection_effect": -3.0058511235608876e-11,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 36.33186652883887,
-          "wall_seconds": 38.833468275144696,
-          "window_width": 0.6780640592140376
+          "sigma_min_seconds": 29.236812675000692,
+          "wall_seconds": 219.08616247700047,
+          "window_width": 0.6780640592140572
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 3.752553823233029e-14,
         "certified": true,
         "constraint_points": 19467,
-        "contour_floor": 0.12620166406958824,
-        "contour_modulus_bound": 0.1427443817014758,
+        "contour_floor": 0.1262016640698458,
+        "contour_modulus_bound": 0.1427443816969726,
+        "contour_modulus_bound_origin_only": 0.14372630510426784,
         "criterion_predicted_iterations": 44,
         "degree": 4,
-        "eps_connect_grid": 0.026902926168107116,
-        "eps_connect_upper": 0.0397557822438598,
-        "epsilon_zero": 0.7178198414578973,
+        "eps_connect_grid": 0.026902926168115335,
+        "eps_connect_upper": 0.03975578224384076,
+        "epsilon_zero": 0.717819841457898,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 49,
-        "prefactor": 9.623848771742596,
+        "minimum_origin_only_contour_bound": 0.044261583152314675,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.14372630510426784,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.615721140624278,
+            "predicted_iterations": 44
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 9.623848771712847,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.6146667996354322,
-        "search_seconds": 1.283954657614231,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 219.08616247700047
+        },
+        "rho": 0.6146667996305845,
+        "search_seconds": 189.22704397599955,
+        "selection_effect": -3.0058511235608876e-11,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 36.33186652883887,
-        "wall_seconds": 38.833468275144696,
-        "window_width": 0.6780640592140376
+        "sigma_min_seconds": 29.236812675000692,
+        "wall_seconds": 219.08616247700047,
+        "window_width": 0.6780640592140572
       },
       "Y_fov": {
         "angles": [
@@ -5806,64 +6356,144 @@
           "constraint_points": null,
           "contour_floor": null,
           "contour_modulus_bound": null,
+          "contour_modulus_bound_origin_only": null,
           "criterion_predicted_iterations": null,
           "degree": null,
-          "eps_connect_grid": 0.006979502592437939,
-          "eps_connect_upper": 0.01726858810992319,
-          "epsilon_zero": 0.023444946327754845,
+          "eps_connect_grid": 0.006979502592439726,
+          "eps_connect_upper": 0.01726858810992498,
+          "epsilon_zero": 0.023444946327754904,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": null,
+          "minimum_origin_only_contour_bound": null,
           "prefactor": null,
           "reason": "the connected window has no polynomial with a proven contour bound below one",
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 72.16913008499978
+          },
           "rho": null,
-          "search_seconds": 0.03167390078306198,
+          "search_seconds": 0.1591482449985051,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 58.19238436035812,
-          "wall_seconds": 59.775988295674324,
-          "window_width": 0.006176358217831655
+          "sigma_min_seconds": 71.3555447889994,
+          "wall_seconds": 72.16913008499978,
+          "window_width": 0.006176358217829924
         },
         {
+          "allowance_effect": 1.3530732090316633e-11,
           "certified": true,
           "constraint_points": 5255,
-          "contour_floor": 0.005068234183277692,
-          "contour_modulus_bound": 0.4797904301281608,
+          "contour_floor": 0.005068234183277581,
+          "contour_modulus_bound": 0.4797904277055948,
+          "contour_modulus_bound_origin_only": 4.039461649796157,
           "criterion_predicted_iterations": 248,
           "degree": 8,
-          "eps_connect_grid": 0.005262569270262226,
-          "eps_connect_upper": 0.010407112029004824,
-          "epsilon_zero": 0.023444946327754984,
+          "eps_connect_grid": 0.005262569270262484,
+          "eps_connect_upper": 0.010407112029005083,
+          "epsilon_zero": 0.023444946327754904,
           "grid": 241,
           "lemma1_full_operator_iteration_bound": 281,
-          "prefactor": 66.78308198703529,
+          "minimum_origin_only_contour_bound": 0.7314639831996925,
+          "origin_only_counterfactual": {
+            "candidate_count": 1,
+            "choice": {
+              "bound": 0.7314639831996925,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.9248008849441058,
+              "predicted_iterations": 292
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 66.78308198703675,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.9122869189350137,
-          "search_seconds": 0.8281207010149956,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 361.00438347100135
+          },
+          "rho": 0.9122869183592218,
+          "search_seconds": 92.77728568900056,
+          "selection_effect": -5.220863297239475e-09,
           "sigma_min_evaluations": 29162,
-          "sigma_min_seconds": 221.42346365377307,
-          "wall_seconds": 223.74549563974142,
-          "window_width": 0.01303783429875016
+          "sigma_min_seconds": 267.4668289750007,
+          "wall_seconds": 361.00438347100135,
+          "window_width": 0.013037834298749822
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.3530732090316633e-11,
         "certified": true,
         "constraint_points": 5255,
-        "contour_floor": 0.005068234183277692,
-        "contour_modulus_bound": 0.4797904301281608,
+        "contour_floor": 0.005068234183277581,
+        "contour_modulus_bound": 0.4797904277055948,
+        "contour_modulus_bound_origin_only": 4.039461649796157,
         "criterion_predicted_iterations": 248,
         "degree": 8,
-        "eps_connect_grid": 0.005262569270262226,
-        "eps_connect_upper": 0.010407112029004824,
-        "epsilon_zero": 0.023444946327754984,
+        "eps_connect_grid": 0.005262569270262484,
+        "eps_connect_upper": 0.010407112029005083,
+        "epsilon_zero": 0.023444946327754904,
         "grid": 241,
         "lemma1_full_operator_iteration_bound": 281,
-        "prefactor": 66.78308198703529,
+        "minimum_origin_only_contour_bound": 0.7314639831996925,
+        "origin_only_counterfactual": {
+          "candidate_count": 1,
+          "choice": {
+            "bound": 0.7314639831996925,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.9248008849441058,
+            "predicted_iterations": 292
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 66.78308198703675,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.9122869189350137,
-        "search_seconds": 0.8281207010149956,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 361.00438347100135
+        },
+        "rho": 0.9122869183592218,
+        "search_seconds": 92.77728568900056,
+        "selection_effect": -5.220863297239475e-09,
         "sigma_min_evaluations": 29162,
-        "sigma_min_seconds": 221.42346365377307,
-        "wall_seconds": 223.74549563974142,
-        "window_width": 0.01303783429875016
+        "sigma_min_seconds": 267.4668289750007,
+        "wall_seconds": 361.00438347100135,
+        "window_width": 0.013037834298749822
       },
       "Y_fov": {
         "angles": [
@@ -6371,47 +7001,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 3.1241675912951905e-13,
           "certified": true,
           "constraint_points": 16827,
-          "contour_floor": 0.16040628634258242,
-          "contour_modulus_bound": 0.04532865960446653,
+          "contour_floor": 0.16040628634295126,
+          "contour_modulus_bound": 0.04532865910661408,
+          "contour_modulus_bound_origin_only": 0.07164517206735568,
           "criterion_predicted_iterations": 56,
           "degree": 8,
-          "eps_connect_grid": 0.0683113464054318,
-          "eps_connect_upper": 0.08478438888537632,
+          "eps_connect_grid": 0.06831134640543544,
+          "eps_connect_upper": 0.08478438888537997,
           "epsilon_zero": 0.7375362514793249,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 65,
-          "prefactor": 10.191672032917642,
+          "minimum_origin_only_contour_bound": 0.07164517206735568,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.24725721744555704,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.7051593103952758,
+              "predicted_iterations": 60
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 10.191672032881643,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6792765304282334,
-          "search_seconds": 4.741477895528078,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 375.6249203110019
+          },
+          "rho": 0.6792765294956571,
+          "search_seconds": 300.3732862190009,
+          "selection_effect": -1.0997926458422569e-08,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 65.46119968406856,
-          "wall_seconds": 71.48407669737935,
-          "window_width": 0.6527518625939486
+          "sigma_min_seconds": 74.58788428799744,
+          "wall_seconds": 375.6249203110019,
+          "window_width": 0.6527518625939449
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 3.1241675912951905e-13,
         "certified": true,
         "constraint_points": 16827,
-        "contour_floor": 0.16040628634258242,
-        "contour_modulus_bound": 0.04532865960446653,
+        "contour_floor": 0.16040628634295126,
+        "contour_modulus_bound": 0.04532865910661408,
+        "contour_modulus_bound_origin_only": 0.07164517206735568,
         "criterion_predicted_iterations": 56,
         "degree": 8,
-        "eps_connect_grid": 0.0683113464054318,
-        "eps_connect_upper": 0.08478438888537632,
+        "eps_connect_grid": 0.06831134640543544,
+        "eps_connect_upper": 0.08478438888537997,
         "epsilon_zero": 0.7375362514793249,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 65,
-        "prefactor": 10.191672032917642,
+        "minimum_origin_only_contour_bound": 0.07164517206735568,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.24725721744555704,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.7051593103952758,
+            "predicted_iterations": 60
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 10.191672032881643,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.6792765304282334,
-        "search_seconds": 4.741477895528078,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 375.6249203110019
+        },
+        "rho": 0.6792765294956571,
+        "search_seconds": 300.3732862190009,
+        "selection_effect": -1.0997926458422569e-08,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 65.46119968406856,
-        "wall_seconds": 71.48407669737935,
-        "window_width": 0.6527518625939486
+        "sigma_min_seconds": 74.58788428799744,
+        "wall_seconds": 375.6249203110019,
+        "window_width": 0.6527518625939449
       },
       "Y_fov": {
         "angles": [
@@ -6934,6 +7626,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.039290083572268486,
           "sigma_min_evaluations": 7382,
@@ -6946,64 +7641,144 @@
           "constraint_points": null,
           "contour_floor": null,
           "contour_modulus_bound": null,
+          "contour_modulus_bound_origin_only": null,
           "criterion_predicted_iterations": null,
           "degree": null,
-          "eps_connect_grid": 0.005090813598645767,
-          "eps_connect_upper": 0.010260243480511352,
-          "epsilon_zero": 0.01429840734011764,
+          "eps_connect_grid": 0.005090813598646178,
+          "eps_connect_upper": 0.010260243480511706,
+          "epsilon_zero": 0.014298407340117633,
           "grid": 241,
           "lemma1_full_operator_iteration_bound": null,
+          "minimum_origin_only_contour_bound": null,
           "prefactor": null,
           "reason": "the connected window has no polynomial with a proven contour bound below one",
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 466.73788658099875
+          },
           "rho": null,
-          "search_seconds": 0.13653146661818027,
+          "search_seconds": 0.8450756780002848,
           "sigma_min_evaluations": 29162,
-          "sigma_min_seconds": 328.8982736784965,
-          "wall_seconds": 329.966589525342,
-          "window_width": 0.004038163859606288
+          "sigma_min_seconds": 465.07729309299975,
+          "wall_seconds": 466.73788658099875,
+          "window_width": 0.004038163859605927
         },
         {
+          "allowance_effect": 1.589617326658299e-11,
           "certified": true,
           "constraint_points": 10911,
-          "contour_floor": 0.005103250576188097,
-          "contour_modulus_bound": 0.6226100440639435,
+          "contour_floor": 0.005103250576190189,
+          "contour_modulus_bound": 0.6226100405358506,
+          "contour_modulus_bound_origin_only": 3.3260054116761153,
           "criterion_predicted_iterations": 384,
           "degree": 8,
-          "eps_connect_grid": 0.005106539823876813,
-          "eps_connect_upper": 0.0076912547648095774,
-          "epsilon_zero": 0.014298407340117635,
+          "eps_connect_grid": 0.005106539823876366,
+          "eps_connect_upper": 0.00769125476480913,
+          "epsilon_zero": 0.014298407340117633,
           "grid": 481,
           "lemma1_full_operator_iteration_bound": 425,
-          "prefactor": 68.79722677582824,
+          "minimum_origin_only_contour_bound": 0.8536490265473192,
+          "origin_only_counterfactual": {
+            "candidate_count": 1,
+            "choice": {
+              "bound": 0.8536490265473192,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.9612134460498026,
+              "predicted_iterations": 576
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 68.79722677580003,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.9424905737071312,
-          "search_seconds": 2.190439812839031,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 1720.5587245849993
+          },
+          "rho": 0.9424905730395395,
+          "search_seconds": 122.77580914399914,
+          "selection_effect": -5.56451740241215e-09,
           "sigma_min_evaluations": 115922,
-          "sigma_min_seconds": 1389.2123038750142,
-          "wall_seconds": 1392.7364443149418,
-          "window_width": 0.006607152575308057
+          "sigma_min_seconds": 1596.3167479179992,
+          "wall_seconds": 1720.5587245849993,
+          "window_width": 0.006607152575308503
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.589617326658299e-11,
         "certified": true,
         "constraint_points": 10911,
-        "contour_floor": 0.005103250576188097,
-        "contour_modulus_bound": 0.6226100440639435,
+        "contour_floor": 0.005103250576190189,
+        "contour_modulus_bound": 0.6226100405358506,
+        "contour_modulus_bound_origin_only": 3.3260054116761153,
         "criterion_predicted_iterations": 384,
         "degree": 8,
-        "eps_connect_grid": 0.005106539823876813,
-        "eps_connect_upper": 0.0076912547648095774,
-        "epsilon_zero": 0.014298407340117635,
+        "eps_connect_grid": 0.005106539823876366,
+        "eps_connect_upper": 0.00769125476480913,
+        "epsilon_zero": 0.014298407340117633,
         "grid": 481,
         "lemma1_full_operator_iteration_bound": 425,
-        "prefactor": 68.79722677582824,
+        "minimum_origin_only_contour_bound": 0.8536490265473192,
+        "origin_only_counterfactual": {
+          "candidate_count": 1,
+          "choice": {
+            "bound": 0.8536490265473192,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.9612134460498026,
+            "predicted_iterations": 576
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 68.79722677580003,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.9424905737071312,
-        "search_seconds": 2.190439812839031,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 1720.5587245849993
+        },
+        "rho": 0.9424905730395395,
+        "search_seconds": 122.77580914399914,
+        "selection_effect": -5.56451740241215e-09,
         "sigma_min_evaluations": 115922,
-        "sigma_min_seconds": 1389.2123038750142,
-        "wall_seconds": 1392.7364443149418,
-        "window_width": 0.006607152575308057
+        "sigma_min_seconds": 1596.3167479179992,
+        "wall_seconds": 1720.5587245849993,
+        "window_width": 0.006607152575308503
       },
       "Y_fov": {
         "angles": [
@@ -7511,47 +8286,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 4.419131727217973e-12,
           "certified": true,
           "constraint_points": 14829,
-          "contour_floor": 0.19156212122921457,
-          "contour_modulus_bound": 0.018810048315273234,
+          "contour_floor": 0.1915621212377473,
+          "contour_modulus_bound": 0.018796769791940258,
+          "contour_modulus_bound_origin_only": 414.9118938319886,
           "criterion_predicted_iterations": 96,
           "degree": 16,
-          "eps_connect_grid": 0.11873230973896688,
-          "eps_connect_upper": 0.14675510980441642,
-          "epsilon_zero": 0.7046379433372438,
+          "eps_connect_grid": 0.11873230973880028,
+          "eps_connect_upper": 0.14675510980520895,
+          "epsilon_zero": 0.7046379433372423,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 97,
-          "prefactor": 12.768787826461187,
+          "minimum_origin_only_contour_bound": 0.2217389648838209,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.416580582274309,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.8033869181408504,
+              "predicted_iterations": 96
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 12.768787826101265,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.78009836818504,
-          "search_seconds": 11.034301659092307,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 417.21422452000115
+          },
+          "rho": 0.7800639385033146,
+          "search_seconds": 293.4323068169997,
+          "selection_effect": -0.0007059058374271343,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 103.01250456087291,
-          "wall_seconds": 117.14924841187894,
-          "window_width": 0.5578828335328274
+          "sigma_min_seconds": 123.08835813000042,
+          "wall_seconds": 417.21422452000115,
+          "window_width": 0.5578828335320334
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 4.419131727217973e-12,
         "certified": true,
         "constraint_points": 14829,
-        "contour_floor": 0.19156212122921457,
-        "contour_modulus_bound": 0.018810048315273234,
+        "contour_floor": 0.1915621212377473,
+        "contour_modulus_bound": 0.018796769791940258,
+        "contour_modulus_bound_origin_only": 414.9118938319886,
         "criterion_predicted_iterations": 96,
         "degree": 16,
-        "eps_connect_grid": 0.11873230973896688,
-        "eps_connect_upper": 0.14675510980441642,
-        "epsilon_zero": 0.7046379433372438,
+        "eps_connect_grid": 0.11873230973880028,
+        "eps_connect_upper": 0.14675510980520895,
+        "epsilon_zero": 0.7046379433372423,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 97,
-        "prefactor": 12.768787826461187,
+        "minimum_origin_only_contour_bound": 0.2217389648838209,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.416580582274309,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.8033869181408504,
+            "predicted_iterations": 96
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 12.768787826101265,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.78009836818504,
-        "search_seconds": 11.034301659092307,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 417.21422452000115
+        },
+        "rho": 0.7800639385033146,
+        "search_seconds": 293.4323068169997,
+        "selection_effect": -0.0007059058374271343,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 103.01250456087291,
-        "wall_seconds": 117.14924841187894,
-        "window_width": 0.5578828335328274
+        "sigma_min_seconds": 123.08835813000042,
+        "wall_seconds": 417.21422452000115,
+        "window_width": 0.5578828335320334
       },
       "Y_fov": {
         "angles": [
@@ -8065,64 +8902,144 @@
           "constraint_points": null,
           "contour_floor": null,
           "contour_modulus_bound": null,
+          "contour_modulus_bound_origin_only": null,
           "criterion_predicted_iterations": null,
           "degree": null,
-          "eps_connect_grid": 0.00492849791409149,
-          "eps_connect_upper": 0.015256601476857801,
-          "epsilon_zero": 0.016596977617984333,
+          "eps_connect_grid": 0.004928497914091163,
+          "eps_connect_upper": 0.015256601476857473,
+          "epsilon_zero": 0.016596977617984326,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": null,
+          "minimum_origin_only_contour_bound": null,
           "prefactor": null,
           "reason": "the connected window has no polynomial with a proven contour bound below one",
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 164.86118381900087
+          },
           "rho": null,
-          "search_seconds": 0.09843534417450428,
+          "search_seconds": 0.22759574500014423,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 128.02481559850276,
-          "wall_seconds": 128.63188321329653,
-          "window_width": 0.0013403761411265314
+          "sigma_min_seconds": 163.5550671989986,
+          "wall_seconds": 164.86118381900087,
+          "window_width": 0.0013403761411268523
         },
         {
+          "allowance_effect": 1.4382273150204128e-11,
           "certified": true,
           "constraint_points": 4193,
-          "contour_floor": 0.0032093515945784004,
-          "contour_modulus_bound": 0.7040514720653939,
+          "contour_floor": 0.0032093515945779945,
+          "contour_modulus_bound": 0.7040514686492237,
+          "contour_modulus_bound_origin_only": 5.995386611659102,
           "criterion_predicted_iterations": 528,
           "degree": 8,
-          "eps_connect_grid": 0.004120031201892322,
-          "eps_connect_upper": 0.00928408298327545,
-          "epsilon_zero": 0.01659697761798387,
+          "eps_connect_grid": 0.0041200312018920705,
+          "eps_connect_upper": 0.009284082983275198,
+          "epsilon_zero": 0.016596977617984326,
           "grid": 241,
           "lemma1_full_operator_iteration_bound": 585,
-          "prefactor": 105.11849912482445,
+          "minimum_origin_only_contour_bound": 0.872448851336934,
+          "origin_only_counterfactual": {
+            "candidate_count": 1,
+            "choice": {
+              "bound": 0.872448851336934,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.9664624695044155,
+              "predicted_iterations": 680
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 105.11849912483775,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.9570850916654773,
-          "search_seconds": 0.34030336514115334,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 718.1935814249991
+          },
+          "rho": 0.9570850910849861,
+          "search_seconds": 20.88307037300183,
+          "selection_effect": -4.865326364011935e-09,
           "sigma_min_evaluations": 29162,
-          "sigma_min_seconds": 499.7130693756044,
-          "wall_seconds": 500.3742420133203,
-          "window_width": 0.007312894634708422
+          "sigma_min_seconds": 696.0846284280015,
+          "wall_seconds": 718.1935814249991,
+          "window_width": 0.007312894634709128
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.4382273150204128e-11,
         "certified": true,
         "constraint_points": 4193,
-        "contour_floor": 0.0032093515945784004,
-        "contour_modulus_bound": 0.7040514720653939,
+        "contour_floor": 0.0032093515945779945,
+        "contour_modulus_bound": 0.7040514686492237,
+        "contour_modulus_bound_origin_only": 5.995386611659102,
         "criterion_predicted_iterations": 528,
         "degree": 8,
-        "eps_connect_grid": 0.004120031201892322,
-        "eps_connect_upper": 0.00928408298327545,
-        "epsilon_zero": 0.01659697761798387,
+        "eps_connect_grid": 0.0041200312018920705,
+        "eps_connect_upper": 0.009284082983275198,
+        "epsilon_zero": 0.016596977617984326,
         "grid": 241,
         "lemma1_full_operator_iteration_bound": 585,
-        "prefactor": 105.11849912482445,
+        "minimum_origin_only_contour_bound": 0.872448851336934,
+        "origin_only_counterfactual": {
+          "candidate_count": 1,
+          "choice": {
+            "bound": 0.872448851336934,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.9664624695044155,
+            "predicted_iterations": 680
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 105.11849912483775,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.9570850916654773,
-        "search_seconds": 0.34030336514115334,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 718.1935814249991
+        },
+        "rho": 0.9570850910849861,
+        "search_seconds": 20.88307037300183,
+        "selection_effect": -4.865326364011935e-09,
         "sigma_min_evaluations": 29162,
-        "sigma_min_seconds": 499.7130693756044,
-        "wall_seconds": 500.3742420133203,
-        "window_width": 0.007312894634708422
+        "sigma_min_seconds": 696.0846284280015,
+        "wall_seconds": 718.1935814249991,
+        "window_width": 0.007312894634709128
       },
       "Y_fov": {
         "angles": [
@@ -8643,6 +9560,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.11887427233159542,
           "sigma_min_evaluations": 14642,
@@ -8655,6 +9575,9 @@
           "grid": 241,
           "projected_wall_seconds": 14482.752964085375,
           "reason": "estimated cumulative compute exceeds four-hour per-case cap",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "stopped_before_run": true
         }
       ],
@@ -8663,6 +9586,9 @@
         "grid": 241,
         "projected_wall_seconds": 14482.752964085375,
         "reason": "estimated cumulative compute exceeds four-hour per-case cap",
+        "recomputation": {
+          "status": "carried over: decided before the contour bound"
+        },
         "stopped_before_run": true
       },
       "Y_fov": {
@@ -9173,47 +10099,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 1.8185453143360064e-13,
           "certified": true,
           "constraint_points": 15358,
-          "contour_floor": 0.13544859370977064,
-          "contour_modulus_bound": 0.046375907074349985,
+          "contour_floor": 0.13544859372695875,
+          "contour_modulus_bound": 0.04637590626746773,
+          "contour_modulus_bound_origin_only": 0.10910359380109605,
           "criterion_predicted_iterations": 56,
           "degree": 8,
-          "eps_connect_grid": 0.04934794464516006,
-          "eps_connect_upper": 0.0706877786791274,
-          "epsilon_zero": 0.6856324148512828,
+          "eps_connect_grid": 0.04934794465209998,
+          "eps_connect_upper": 0.07068777870082013,
+          "epsilon_zero": 0.685632414851284,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 65,
-          "prefactor": 12.266602906309355,
+          "minimum_origin_only_contour_bound": 0.10910359380109605,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.23848348669180988,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.698818796863221,
+              "predicted_iterations": 60
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 12.266602909190569,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6812186858156133,
-          "search_seconds": 3.053941832855344,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 429.0731587949995
+          },
+          "rho": 0.6812186843340702,
+          "search_seconds": 225.772658848,
+          "selection_effect": -1.8326772432963878e-08,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 148.93700454942882,
-          "wall_seconds": 152.30454792641103,
-          "window_width": 0.6149446361721553
+          "sigma_min_seconds": 202.14518227699955,
+          "wall_seconds": 429.0731587949995,
+          "window_width": 0.6149446361504639
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.8185453143360064e-13,
         "certified": true,
         "constraint_points": 15358,
-        "contour_floor": 0.13544859370977064,
-        "contour_modulus_bound": 0.046375907074349985,
+        "contour_floor": 0.13544859372695875,
+        "contour_modulus_bound": 0.04637590626746773,
+        "contour_modulus_bound_origin_only": 0.10910359380109605,
         "criterion_predicted_iterations": 56,
         "degree": 8,
-        "eps_connect_grid": 0.04934794464516006,
-        "eps_connect_upper": 0.0706877786791274,
-        "epsilon_zero": 0.6856324148512828,
+        "eps_connect_grid": 0.04934794465209998,
+        "eps_connect_upper": 0.07068777870082013,
+        "epsilon_zero": 0.685632414851284,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 65,
-        "prefactor": 12.266602906309355,
+        "minimum_origin_only_contour_bound": 0.10910359380109605,
+        "origin_only_counterfactual": {
+          "candidate_count": 2,
+          "choice": {
+            "bound": 0.23848348669180988,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.698818796863221,
+            "predicted_iterations": 60
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 12.266602909190569,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.6812186858156133,
-        "search_seconds": 3.053941832855344,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 429.0731587949995
+        },
+        "rho": 0.6812186843340702,
+        "search_seconds": 225.772658848,
+        "selection_effect": -1.8326772432963878e-08,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 148.93700454942882,
-        "wall_seconds": 152.30454792641103,
-        "window_width": 0.6149446361721553
+        "sigma_min_seconds": 202.14518227699955,
+        "wall_seconds": 429.0731587949995,
+        "window_width": 0.6149446361504639
       },
       "Y_fov": {
         "angles": [
@@ -9736,6 +10724,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.11377941258251667,
           "sigma_min_evaluations": 7382,
@@ -9757,6 +10748,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.20798011869192123,
           "sigma_min_evaluations": 29162,
@@ -9778,6 +10772,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.9793409742414951,
           "sigma_min_evaluations": 115922,
@@ -9800,6 +10797,9 @@
         "lemma1_full_operator_iteration_bound": null,
         "prefactor": null,
         "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+        "recomputation": {
+          "status": "carried over: decided before the contour bound"
+        },
         "rho": null,
         "search_seconds": 0.9793409742414951,
         "sigma_min_evaluations": 115922,
@@ -10326,6 +11326,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.062185293063521385,
           "sigma_min_evaluations": 7382,
@@ -10347,6 +11350,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.20636965706944466,
           "sigma_min_evaluations": 29162,
@@ -10359,21 +11365,39 @@
           "constraint_points": null,
           "contour_floor": null,
           "contour_modulus_bound": null,
+          "contour_modulus_bound_origin_only": null,
           "criterion_predicted_iterations": null,
           "degree": null,
-          "eps_connect_grid": 0.009484750551709886,
-          "eps_connect_upper": 0.09838173813963608,
-          "epsilon_zero": 0.177628225777412,
+          "eps_connect_grid": 0.009484750551710426,
+          "eps_connect_upper": 0.09838173813963484,
+          "epsilon_zero": 0.17762822577741144,
           "grid": 481,
           "lemma1_full_operator_iteration_bound": null,
+          "minimum_origin_only_contour_bound": null,
           "prefactor": null,
           "reason": "the connected window has no polynomial with a proven contour bound below one",
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 5916.946981404
+          },
           "rho": null,
-          "search_seconds": 0.9788827076554298,
+          "search_seconds": 3.568409800000154,
           "sigma_min_evaluations": 115922,
-          "sigma_min_seconds": 3232.6012874338776,
-          "wall_seconds": 3234.019590716809,
-          "window_width": 0.07924648763777592
+          "sigma_min_seconds": 5910.828669606,
+          "wall_seconds": 5916.946981404,
+          "window_width": 0.0792464876377766
         }
       ],
       "Y_certificate_selected": {
@@ -10381,21 +11405,39 @@
         "constraint_points": null,
         "contour_floor": null,
         "contour_modulus_bound": null,
+        "contour_modulus_bound_origin_only": null,
         "criterion_predicted_iterations": null,
         "degree": null,
-        "eps_connect_grid": 0.009484750551709886,
-        "eps_connect_upper": 0.09838173813963608,
-        "epsilon_zero": 0.177628225777412,
+        "eps_connect_grid": 0.009484750551710426,
+        "eps_connect_upper": 0.09838173813963484,
+        "epsilon_zero": 0.17762822577741144,
         "grid": 481,
         "lemma1_full_operator_iteration_bound": null,
+        "minimum_origin_only_contour_bound": null,
         "prefactor": null,
         "reason": "the connected window has no polynomial with a proven contour bound below one",
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 5916.946981404
+        },
         "rho": null,
-        "search_seconds": 0.9788827076554298,
+        "search_seconds": 3.568409800000154,
         "sigma_min_evaluations": 115922,
-        "sigma_min_seconds": 3232.6012874338776,
-        "wall_seconds": 3234.019590716809,
-        "window_width": 0.07924648763777592
+        "sigma_min_seconds": 5910.828669606,
+        "wall_seconds": 5916.946981404,
+        "window_width": 0.0792464876377766
       },
       "Y_fov": {
         "angles": [
@@ -10918,6 +11960,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.0804559476673603,
           "sigma_min_evaluations": 7382,
@@ -10939,6 +11984,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 0.2521920371800661,
           "sigma_min_evaluations": 29162,
@@ -10960,6 +12008,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": null,
           "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+          "recomputation": {
+            "status": "carried over: decided before the contour bound"
+          },
           "rho": null,
           "search_seconds": 1.1877708192914724,
           "sigma_min_evaluations": 115922,
@@ -10982,6 +12033,9 @@
         "lemma1_full_operator_iteration_bound": null,
         "prefactor": null,
         "reason": "spectrum connectivity reaches the origin-exclusion threshold",
+        "recomputation": {
+          "status": "carried over: decided before the contour bound"
+        },
         "rho": null,
         "search_seconds": 1.1877708192914724,
         "sigma_min_evaluations": 115922,
@@ -11495,47 +12549,109 @@
       },
       "Y_certificate_ladder": [
         {
+          "allowance_effect": 1.8667289936047382e-12,
           "certified": true,
           "constraint_points": 10548,
-          "contour_floor": 0.08076701967900567,
-          "contour_modulus_bound": 0.6929270924749852,
+          "contour_floor": 0.08076701967970133,
+          "contour_modulus_bound": 0.6929270924773075,
+          "contour_modulus_bound_origin_only": 1.6712437230186623,
           "criterion_predicted_iterations": 504,
           "degree": 8,
-          "eps_connect_grid": 0.10991173542010828,
-          "eps_connect_upper": 0.2412788476768704,
-          "epsilon_zero": 0.46277392270232576,
+          "eps_connect_grid": 0.10991173542006509,
+          "eps_connect_upper": 0.24127884767705904,
+          "epsilon_zero": 0.46277392270232487,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": 553,
-          "prefactor": 77.99591529445692,
+          "minimum_origin_only_contour_bound": 0.8462924892476499,
+          "origin_only_counterfactual": {
+            "candidate_count": 1,
+            "choice": {
+              "bound": 0.8462924892476499,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.9591358445953918,
+              "predicted_iterations": 548
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 77.99591529392283,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.9551815886687668,
-          "search_seconds": 0.8229468166828156,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 704.6778698039998
+          },
+          "rho": 0.9551815886691669,
+          "search_seconds": 59.48347920000015,
+          "selection_effect": 0.0,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 307.61513135768473,
-          "wall_seconds": 310.3442957494408,
-          "window_width": 0.22149507502545535
+          "sigma_min_seconds": 643.6796051599995,
+          "wall_seconds": 704.6778698039998,
+          "window_width": 0.22149507502526583
         }
       ],
       "Y_certificate_selected": {
+        "allowance_effect": 1.8667289936047382e-12,
         "certified": true,
         "constraint_points": 10548,
-        "contour_floor": 0.08076701967900567,
-        "contour_modulus_bound": 0.6929270924749852,
+        "contour_floor": 0.08076701967970133,
+        "contour_modulus_bound": 0.6929270924773075,
+        "contour_modulus_bound_origin_only": 1.6712437230186623,
         "criterion_predicted_iterations": 504,
         "degree": 8,
-        "eps_connect_grid": 0.10991173542010828,
-        "eps_connect_upper": 0.2412788476768704,
-        "epsilon_zero": 0.46277392270232576,
+        "eps_connect_grid": 0.10991173542006509,
+        "eps_connect_upper": 0.24127884767705904,
+        "epsilon_zero": 0.46277392270232487,
         "grid": 121,
         "lemma1_full_operator_iteration_bound": 553,
-        "prefactor": 77.99591529445692,
+        "minimum_origin_only_contour_bound": 0.8462924892476499,
+        "origin_only_counterfactual": {
+          "candidate_count": 1,
+          "choice": {
+            "bound": 0.8462924892476499,
+            "call_index": 0,
+            "degree": 4,
+            "effective_rate": 0.9591358445953918,
+            "predicted_iterations": 548
+          },
+          "scope": "selected contour and its prefactor"
+        },
+        "prefactor": 77.99591529392283,
         "reason": "connected pseudospectral window excludes the origin",
-        "rho": 0.9551815886687668,
-        "search_seconds": 0.8229468166828156,
+        "recomputation": {
+          "backend": "cpu",
+          "git_commit": "18f684d",
+          "host": "georgios-vourvachakis-82K2",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "numpy": "2.5.4",
+          "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+          "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+          "scipy": "1.18.1",
+          "script": "benchmarks/tau_blend_active_block.py",
+          "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+          "status": "recomputed",
+          "utc_date": "2026-11-18",
+          "wall_seconds": 704.6778698039998
+        },
+        "rho": 0.9551815886691669,
+        "search_seconds": 59.48347920000015,
+        "selection_effect": 0.0,
         "sigma_min_evaluations": 7382,
-        "sigma_min_seconds": 307.61513135768473,
-        "wall_seconds": 310.3442957494408,
-        "window_width": 0.22149507502545535
+        "sigma_min_seconds": 643.6796051599995,
+        "wall_seconds": 704.6778698039998,
+        "window_width": 0.22149507502526583
       },
       "Y_fov": {
         "angles": [
@@ -11820,6 +12936,36 @@
       "wall_seconds": 364.97195529192686
     }
   ],
+  "certificate_recomputation": {
+    "carried_over_ladder_entries": 16,
+    "comparison_call_counts": {
+      "compared_calls": 443,
+      "g1_exempted_underflows": [],
+      "min_only_calls": 123
+    },
+    "max_compared_allowance_case": {
+      "call_index": 8,
+      "degree": 36,
+      "key": "Y_512_8_one_inverse_cfl_mask_g481_all"
+    },
+    "max_compared_allowance_effect": 2.1311448161753788e-09,
+    "max_compared_selection_case": {
+      "call_index": 6,
+      "degree": 36,
+      "key": "Y_128_2_cfl_reference_blend_B3_g121_all"
+    },
+    "max_compared_selection_reduction": 0.880406916586236,
+    "max_selected_allowance_effect": 1.589617326658299e-11,
+    "max_selected_selection_reduction": 0.0007059058374271343,
+    "pending_second_host": "direct regularized full MJ at N=128",
+    "provenance": {
+      "git_commit": "18f684dc8b8175c8d0fb4ee63ea44e93b16f04cf",
+      "host": "georgios-vourvachakis-82K2",
+      "status": "recomputed",
+      "utc_date": "2026-11-18"
+    },
+    "recomputed_ladder_entries": 22
+  },
   "configuration": {
     "case_cap_seconds": 14400.0,
     "certificate_changes": [
@@ -11899,6 +13045,9 @@
           "lemma1_full_operator_iteration_bound": null,
           "prefactor": 5.253893058404162,
           "reason": "connected pseudospectral window excludes the origin",
+          "recomputation": {
+            "status": "pending second-host recomputation"
+          },
           "rho": 0.425151735789047,
           "search_seconds": 27.83317468687892,
           "sigma_min_evaluations": 159896,
@@ -11922,25 +13071,56 @@
     {
       "certificate_ladder": [
         {
+          "allowance_effect": 4.574118861455645e-13,
           "certified": true,
           "constraint_points": 20346,
-          "contour_floor": 0.05564828411556964,
-          "contour_modulus_bound": 0.0037458725402770257,
+          "contour_floor": 0.05564828411645377,
+          "contour_modulus_bound": 0.0037458104860982363,
+          "contour_modulus_bound_origin_only": 2.0974536295528914,
           "criterion_predicted_iterations": 48,
           "degree": 12,
-          "eps_connect_grid": 0.007764138918101576,
-          "eps_connect_upper": 0.020618516968649393,
-          "epsilon_zero": 0.3837670258019191,
+          "eps_connect_grid": 0.007764138918033736,
+          "eps_connect_upper": 0.020618516968172455,
+          "epsilon_zero": 0.3837670258019174,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": null,
-          "prefactor": 21.42511771518175,
+          "minimum_origin_only_contour_bound": 0.054542139571121084,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.17277887153814744,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.6447222498485488,
+              "predicted_iterations": 52
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 21.425117714513622,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.6277635318328167,
-          "search_seconds": 4.692118987441063,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 707.9132024680002
+          },
+          "rho": 0.6277626651979228,
+          "search_seconds": 191.52773806500045,
+          "selection_effect": -1.5675688318617098e-05,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 291.59927656315267,
-          "wall_seconds": 296.7670141812414,
-          "window_width": 0.3631485088332697
+          "sigma_min_seconds": 515.1660896699977,
+          "wall_seconds": 707.9132024680002,
+          "window_width": 0.36314850883374494
         }
       ],
       "dimension": 512,
@@ -11958,25 +13138,56 @@
     {
       "certificate_ladder": [
         {
+          "allowance_effect": 1.5365486660812167e-13,
           "certified": true,
           "constraint_points": 16896,
-          "contour_floor": 0.029872834495732085,
-          "contour_modulus_bound": 0.08014562041304953,
+          "contour_floor": 0.029872834509473156,
+          "contour_modulus_bound": 0.08014561945498157,
+          "contour_modulus_bound_origin_only": 0.14787257239213483,
           "criterion_predicted_iterations": 72,
           "degree": 8,
-          "eps_connect_grid": 0.010933830837064196,
-          "eps_connect_upper": 0.032273842125917794,
-          "epsilon_zero": 0.2368540831160984,
+          "eps_connect_grid": 0.010933830836217228,
+          "eps_connect_upper": 0.03227384213304056,
+          "epsilon_zero": 0.23685408311609746,
           "grid": 121,
           "lemma1_full_operator_iteration_bound": null,
-          "prefactor": 55.10530378822444,
+          "minimum_origin_only_contour_bound": 0.14787257239213483,
+          "origin_only_counterfactual": {
+            "candidate_count": 2,
+            "choice": {
+              "bound": 0.29701177929084654,
+              "call_index": 0,
+              "degree": 4,
+              "effective_rate": 0.7382329380175764,
+              "predicted_iterations": 76
+            },
+            "scope": "selected contour and its prefactor"
+          },
+          "prefactor": 55.10530377323766,
           "reason": "connected pseudospectral window excludes the origin",
-          "rho": 0.7294322731134694,
-          "search_seconds": 2.866385171189904,
+          "recomputation": {
+            "backend": "cpu",
+            "git_commit": "18f684d",
+            "host": "georgios-vourvachakis-82K2",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.4",
+            "platform": "Linux-6.2.0-39-generic-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "b47117dfcc27272be0ca0079084ca3887e72b57048558075db22c752d3b89585",
+            "status": "recomputed",
+            "utc_date": "2026-11-18",
+            "wall_seconds": 3184.6533524089973
+          },
+          "rho": 0.7294322720235069,
+          "search_seconds": 174.64776197699757,
+          "selection_effect": -1.2482219813314543e-08,
           "sigma_min_evaluations": 7382,
-          "sigma_min_seconds": 1278.8013354875147,
-          "wall_seconds": 1283.2262525074184,
-          "window_width": 0.2045802409901806
+          "sigma_min_seconds": 3006.9445598700004,
+          "wall_seconds": 3184.6533524089973,
+          "window_width": 0.20458024098305688
         }
       ],
       "dimension": 1024,
@@ -11997,15 +13208,15 @@
       "certified_rates": [
         [
           "one_inverse_cfl_mask",
-          0.6689927023722538
+          0.6689927023628688
         ],
         [
           "repository_blend_B3",
-          0.6637319204818662
+          0.6637319188505101
         ],
         [
           "cfl_reference_blend_B3",
-          0.41734583328566227
+          0.41733541406982205
         ]
       ],
       "fastest_true_stop_count": 10,
@@ -12018,7 +13229,7 @@
       "certified_rates": [
         [
           "cfl_reference_blend_B3",
-          0.6736304843905815
+          0.6736304843869613
         ]
       ],
       "fastest_true_stop_count": 17,
@@ -12031,11 +13242,11 @@
       "certified_rates": [
         [
           "one_inverse_cfl_mask",
-          0.7542338390940535
+          0.754233836024236
         ],
         [
           "cfl_reference_blend_B3",
-          0.5600817668099525
+          0.5600812095900128
         ]
       ],
       "fastest_true_stop_count": 11,
@@ -12048,11 +13259,11 @@
       "certified_rates": [
         [
           "one_inverse_cfl_mask",
-          0.9394107150360617
+          0.9394107144672336
         ],
         [
           "cfl_reference_blend_B3",
-          0.6146667996354322
+          0.6146667996305845
         ]
       ],
       "fastest_true_stop_count": 15,
@@ -12065,11 +13276,11 @@
       "certified_rates": [
         [
           "one_inverse_cfl_mask",
-          0.9122869189350137
+          0.9122869183592218
         ],
         [
           "cfl_reference_blend_B3",
-          0.6792765304282334
+          0.6792765294956571
         ]
       ],
       "fastest_true_stop_count": 17,
@@ -12082,11 +13293,11 @@
       "certified_rates": [
         [
           "one_inverse_cfl_mask",
-          0.9424905737071312
+          0.9424905730395395
         ],
         [
           "cfl_reference_blend_B3",
-          0.78009836818504
+          0.7800639385033146
         ]
       ],
       "fastest_true_stop_count": 20,
@@ -12099,11 +13310,11 @@
       "certified_rates": [
         [
           "one_inverse_cfl_mask",
-          0.9570850916654773
+          0.9570850910849861
         ],
         [
           "cfl_reference_blend_B3",
-          0.6812186858156133
+          0.6812186843340702
         ]
       ],
       "fastest_true_stop_count": 19,
@@ -12124,7 +13335,7 @@
       "certified_rates": [
         [
           "cfl_reference_blend_B3",
-          0.9551815886687668
+          0.9551815886691669
         ]
       ],
       "fastest_true_stop_count": 38,
