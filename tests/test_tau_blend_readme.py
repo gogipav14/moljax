@@ -53,6 +53,21 @@ def test_lemma6_failure_is_rejected(tmp_path: Path) -> None:
         render(tmp_path)
 
 
+def test_missing_origin_only_certificate_evidence_is_rejected(tmp_path: Path) -> None:
+    """A centred-enclosure claim requires its origin-only comparison."""
+    _copy_results(tmp_path)
+
+    def remove_origin_bound(document: dict) -> None:
+        row = next(
+            item for item in document["cases"] if item["Y_certificate_selected"]["certified"]
+        )
+        row["Y_certificate_selected"]["contour_modulus_bound_origin_only"] = None
+
+    _mutate(tmp_path, FILES["active"], remove_origin_bound)
+    with pytest.raises(RuntimeError, match="origin-only contour evidence is missing"):
+        render(tmp_path)
+
+
 def test_certified_slower_than_abstained_is_rejected(tmp_path: Path) -> None:
     """The ordering claim fails closed when a certified method becomes slower."""
     _copy_results(tmp_path)

@@ -259,6 +259,20 @@ def _assert_evidence(data: dict[str, dict[str, Any]]) -> None:
 
     summary = active["decision_summary"]
     certified = [row for row in cases if _selected(row)["certified"]]
+    for row in certified:
+        selected = _selected(row)
+        origin = selected.get("contour_modulus_bound_origin_only")
+        minimum = selected.get("minimum_origin_only_contour_bound")
+        counterfactual = selected.get("origin_only_counterfactual", {})
+        _require(
+            origin is not None
+            and minimum is not None
+            and selected["contour_modulus_bound"] <= origin
+            and minimum <= origin
+            and counterfactual.get("scope") == "selected contour and its prefactor"
+            and counterfactual.get("choice") is not None,
+            f"origin-only contour evidence is missing at N={row['nx']}, m={row['m']}",
+        )
     disk_adequate = [row for row in cases if row["merged_policy"]["verdict"] == "adequate"]
     union = [row for row in cases if row["union"] == "certified"]
     _require(
@@ -1361,6 +1375,65 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
     m2_table = _m2_table(cases, mask)
     geometry_table = _active_geometry_table(cases)
     decision_table = _decision_table(cases)
+    dependent_rows = [
+        row
+        for row in cases
+        if _selected(row)["certified"]
+        and _selected(row)["minimum_origin_only_contour_bound"] >= 1.0
+    ]
+    dependent_table = (
+        _table(
+            ("N", "m", "Method", "Degree", "Origin-only bound", "Reported bound"),
+            [
+                (
+                    row["nx"],
+                    row["m"],
+                    row["method"],
+                    _selected(row)["degree"],
+                    _selected(row)["contour_modulus_bound_origin_only"],
+                    _selected(row)["contour_modulus_bound"],
+                )
+                for row in dependent_rows
+            ],
+        )
+        if dependent_rows
+        else "No selected-grid verdict depends on the centred enclosure."
+    )
+    origin_choice_table = _table(
+        (
+            "N",
+            "m",
+            "Method",
+            "Reported degree",
+            "Reported iterations",
+            "Origin-only degree",
+            "Origin-only iterations",
+            "Different",
+        ),
+        [
+            (
+                row["nx"],
+                row["m"],
+                row["method"],
+                _selected(row)["degree"],
+                _selected(row)["criterion_predicted_iterations"],
+                _selected(row)["origin_only_counterfactual"]["choice"]["degree"],
+                _selected(row)["origin_only_counterfactual"]["choice"]["predicted_iterations"],
+                "yes"
+                if (
+                    _selected(row)["degree"],
+                    _selected(row)["criterion_predicted_iterations"],
+                )
+                != (
+                    _selected(row)["origin_only_counterfactual"]["choice"]["degree"],
+                    _selected(row)["origin_only_counterfactual"]["choice"]["predicted_iterations"],
+                )
+                else "no",
+            )
+            for row in certified
+        ],
+    )
+    recomputation = active["certificate_recomputation"]
     direct_table = _direct_table(active)
     reference_table = _reference_table(reference_rows)
     lemma4_table = _lemma4_table(lemma["lemma4"])
@@ -1373,8 +1446,7 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
     study_degree_text = ", ".join(str(value) for value in configs["polynomial_degrees"])
     grid_text = ", ".join(str(value) for value in configs["grid_ladder"])
     mask_rule = (
-        f"`D <= max({_fmt(REPOSITORY_ACTIVE_ABSOLUTE)}, "
-        f"{_fmt(REPOSITORY_ACTIVE_RELATIVE)} max(D))`"
+        f"`D <= max({_fmt(REPOSITORY_ACTIVE_ABSOLUTE)}, {_fmt(REPOSITORY_ACTIVE_RELATIVE)} max(D))`"
     )
     four_hour_cap = configs["case_cap_seconds"] / (60 * 60)
     abstention_count = case_count - len(certified)
@@ -1583,33 +1655,62 @@ certified rate is `rho = M_Gamma^(1/d)`, and the prefactor is
 
 `s_Gamma` comes from the grid samples of `sigma_min`, its 1-Lipschitz property
 along each edge, and an SVD backward-error margin. `M_Gamma` is the sampled
-maximum of `|p|` plus three allowances: a derivative enclosure times half the
-sample spacing, the floating-point error of evaluating `p`, and, when a centred
-basis is used, the error of translating the coefficients. Three changes on this
-branch tighten or correct the bound:
+maximum of `|p|` with allowances for the gaps between samples and the
+floating-point arithmetic. Three changes on this branch tighten or correct
+the bound:
 
 1. **Centred derivative enclosure** ({changes['centred derivative enclosure and numerical-range domain fallback']}).
    The enclosure is the minimum of the origin-centred
    `sum_j j |a_j| R^(j-1)` and the same sum in powers of `z - c`, with `c` the
-   centre of the spectral bounding box. The sample points are unchanged, so the
-   bound can only decrease.
+   centre of the contour bounding box. It lowers the derivative enclosure and
+   hence the between-sample remainder. A selected-grid verdict depends on it
+   only when every tried origin-only bound is at least one. The cases are
+   listed below.
 2. **Search-domain fallback** ({changes['centred derivative enclosure and numerical-range domain fallback']}).
    If a level set touches the edge of the search box, the box is enlarged once
    to an outer rectangle of `W(A) + D(0, eps)`, which contains the
    epsilon-pseudospectrum because `sigma_min(zI - A) >= dist(z, W(A))`. The grid
    spacing does not increase.
 3. **Floating-point evaluation of `p`** ({changes['Horner floating-point evaluation allowance']}).
-   The previous bound covered the variation between samples but not the rounding
-   error of the sampled values. The Horner allowance
-   `gamma_{{2n}} sum_i |a_i| |z|^i` [Higham] is now added, evaluated in whichever
-   of the origin and centred bases gives the tighter valid bound. The term grows
-   with the degree and the size of the coefficients; a degree-40 regression test
-   with large coefficients exercises a case where it dominates.
+   The previous sampled-value allowance was insufficient for complex Horner.
+   Complex Horner evaluation now uses the allowance
+   `gamma_{{4n}} sum_i |a_i| |z|^i` [Brent--Percival--Zimmermann; Higham]. The
+   absolute and translation sums, complex modulus, sample positions, derivative
+   enclosures and final sum carry their own upward allowances. Gradual underflow
+   is covered in Horner; the centred path fails closed when an actual product,
+   quotient or power falls below its normal-range guard. At each sample the
+   bound is the pointwise minimum of the origin and centred enclosures.
+
+{dependent_table}
+
+At each selected contour and its prefactor, the criterion's predicted-iterations
+rule gives the following origin-only choice. `Different` marks every active-block
+certificate for which its degree or predicted count differs from the reported
+pointwise-minimum choice.
+
+{origin_choice_table}
+
+Source: `tau_blend_active_block.json`,
+`/cases/*/Y_certificate_selected/minimum_origin_only_contour_bound`,
+`/cases/*/Y_certificate_selected/contour_modulus_bound_origin_only`,
+`/cases/*/Y_certificate_selected/contour_modulus_bound`,
+`/cases/*/Y_certificate_selected/origin_only_counterfactual`.
+
+Across the compared candidate calls, the corrected upward allowances raise a
+contour bound by at most {_fmt(recomputation["max_compared_allowance_effect"])}
+(at degree {recomputation["max_compared_allowance_case"]["degree"]}); the pointwise
+minimum lowers the corresponding absolute-sum-choice bound by up to
+{_sig(100 * recomputation["max_compared_selection_reduction"], 3)}%.
+
+Source: `tau_blend_active_block.json`, `/certificate_recomputation/max_compared_allowance_effect`,
+`/certificate_recomputation/max_compared_allowance_case`,
+`/certificate_recomputation/max_compared_selection_reduction`.
 
 Monotonicity and validity are tested in
 {changes['soundness and monotonicity validation for the tightened certificate']}:
-the derivative bound is never below the sampled `max |p'|`; the new contour bound
-never exceeds the old one; `sigma_min(zI - A) >= dist(z, W(A))` holds on random
+the derivative bound is never below the sampled `max |p'|`; with the same
+allowances, the reported bound never exceeds its origin-only bound;
+`sigma_min(zI - A) >= dist(z, W(A))` holds on random
 non-normal matrices. The study settings differ from the public defaults: grids
 {grid_text}; degrees {study_degree_text}; {configs['epsilon_samples']} epsilon
 samples; target `{_fmt(configs['target_tolerance'])}`. The public defaults are grid
@@ -1620,6 +1721,17 @@ samples; target `{_fmt(configs['target_tolerance'])}`. The public defaults are g
 `assess_dense_pseudospectral_criterion` signature).
 
 Source: `tau_blend_active_block.json`, `/configuration` [F6].
+
+**Recomputation.** On {recomputation["provenance"]["host"]} at commit
+{recomputation["provenance"]["git_commit"]},
+{recomputation["recomputed_ladder_entries"]} ladder entries were recomputed;
+{recomputation["carried_over_ladder_entries"]} were carried over because
+connectivity or the compute cap decided them before contour evaluation. The
+direct full-operator certificate at `N = 128` retains its committed values and
+is pending recomputation on a second host.
+
+Source: `tau_blend_active_block.json`, `/certificate_recomputation`,
+`/direct_regularized_full_MJ_certificates/0/certificate_ladder/0/recomputation`.
 
 ### The merged decision
 

@@ -218,35 +218,87 @@ rate is `rho = M_Gamma^(1/d)`, and the prefactor is `L(Gamma) / (2 pi s_Gamma)`.
 
 `s_Gamma` comes from the grid samples of `sigma_min`, its 1-Lipschitz property along
 each edge, and an SVD backward-error margin. `M_Gamma` is the sampled maximum of `|p|`
-plus three allowances: a derivative enclosure times half the sample spacing, the
-floating-point error of evaluating `p`, and, when a centred basis is used, the error of
-translating the coefficients. Three changes on this branch tighten or correct the bound:
+with allowances for the gaps between samples and the floating-point arithmetic. Three
+changes on this branch tighten or correct the bound:
 
 1. **Centred derivative enclosure** (61fa907). The enclosure is the minimum of the
    origin-centred `sum_j j |a_j| R^(j-1)` and the same sum in powers of `z - c`, with
-   `c` the centre of the spectral bounding box. The sample points are unchanged, so the
-   bound can only decrease.
+   `c` the centre of the contour bounding box. It lowers the derivative enclosure and
+   hence the between-sample remainder. A selected-grid verdict depends on it only when
+   every tried origin-only bound is at least one. The cases are listed below.
 2. **Search-domain fallback** (61fa907). If a level set touches the edge of the search
    box, the box is enlarged once to an outer rectangle of `W(A) + D(0, eps)`, which
    contains the epsilon-pseudospectrum because `sigma_min(zI - A) >= dist(z, W(A))`. The
    grid spacing does not increase.
-3. **Floating-point evaluation of `p`** (a7d6dae). The previous bound covered the
-   variation between samples but not the rounding error of the sampled values. The
-   Horner allowance `gamma_{2n} sum_i |a_i| |z|^i` [Higham] is now added, evaluated in
-   whichever of the origin and centred bases gives the tighter valid bound. The term
-   grows with the degree and the size of the coefficients; a degree-40 regression test
-   with large coefficients exercises a case where it dominates.
+3. **Floating-point evaluation of `p`** (a7d6dae). The previous sampled-value allowance
+   was insufficient for complex Horner. Complex Horner evaluation now uses the allowance
+   `gamma_{4n} sum_i |a_i| |z|^i` [Brent--Percival--Zimmermann; Higham]. The absolute
+   and translation sums, complex modulus, sample positions, derivative enclosures and
+   final sum carry their own upward allowances. Gradual underflow is covered in Horner;
+   the centred path fails closed when an actual product, quotient or power falls below
+   its normal-range guard. At each sample the bound is the pointwise minimum of the
+   origin and centred enclosures.
+
+No selected-grid verdict depends on the centred enclosure.
+
+At each selected contour and its prefactor, the criterion's predicted-iterations rule
+gives the following origin-only choice. `Different` marks every active-block certificate
+for which its degree or predicted count differs from the reported pointwise-minimum
+choice.
+
+| N | m | Method | Reported degree | Reported iterations | Origin-only degree | Origin-only iterations | Different |
+|---:|---:|---|---:|---:|---:|---:|---|
+| 128 | 2 | one_inverse_cfl_mask | 4 | 52 | 4 | 52 | no |
+| 128 | 2 | repository_blend_B3 | 8 | 56 | 4 | 56 | yes |
+| 128 | 2 | cfl_reference_blend_B3 | 12 | 24 | 4 | 24 | yes |
+| 128 | 4 | cfl_reference_blend_B3 | 4 | 56 | 4 | 56 | no |
+| 128 | 8 | one_inverse_cfl_mask | 8 | 80 | 4 | 80 | yes |
+| 128 | 8 | cfl_reference_blend_B3 | 12 | 36 | 4 | 36 | yes |
+| 512 | 2 | one_inverse_cfl_mask | 8 | 360 | 4 | 436 | yes |
+| 512 | 2 | cfl_reference_blend_B3 | 4 | 44 | 4 | 44 | no |
+| 512 | 4 | one_inverse_cfl_mask | 8 | 248 | 4 | 292 | yes |
+| 512 | 4 | cfl_reference_blend_B3 | 8 | 56 | 4 | 60 | yes |
+| 512 | 8 | one_inverse_cfl_mask | 8 | 384 | 4 | 576 | yes |
+| 512 | 8 | cfl_reference_blend_B3 | 16 | 96 | 4 | 96 | yes |
+| 1024 | 2 | one_inverse_cfl_mask | 8 | 528 | 4 | 680 | yes |
+| 1024 | 2 | cfl_reference_blend_B3 | 8 | 56 | 4 | 60 | yes |
+| 1024 | 8 | cfl_reference_blend_B3 | 8 | 504 | 4 | 548 | yes |
+
+Source: `tau_blend_active_block.json`,
+`/cases/*/Y_certificate_selected/minimum_origin_only_contour_bound`,
+`/cases/*/Y_certificate_selected/contour_modulus_bound_origin_only`,
+`/cases/*/Y_certificate_selected/contour_modulus_bound`,
+`/cases/*/Y_certificate_selected/origin_only_counterfactual`.
+
+Across the compared candidate calls, the corrected upward allowances raise a contour
+bound by at most 2.1311448e-9 (at degree 36); the pointwise minimum lowers the
+corresponding absolute-sum-choice bound by up to 88%.
+
+Source: `tau_blend_active_block.json`,
+`/certificate_recomputation/max_compared_allowance_effect`,
+`/certificate_recomputation/max_compared_allowance_case`,
+`/certificate_recomputation/max_compared_selection_reduction`.
 
 Monotonicity and validity are tested in c9c4a8e: the derivative bound is never below the
-sampled `max |p'|`; the new contour bound never exceeds the old one;
-`sigma_min(zI - A) >= dist(z, W(A))` holds on random non-normal matrices. The study
-settings differ from the public defaults: grids 121, 241, 481; degrees 4, 8, 12, 16, 20,
-24, 28, 32, 36, 40; 6 epsilon samples; target `1e-8`. The public defaults are grid 61,
-domain-padding fraction 0.75, degrees 4, 8, 12, 16, 20, 6 epsilon samples and target
-`1e-8` (source: `moljax/experimental/pseudospectral_criterion.py`,
+sampled `max |p'|`; with the same allowances, the reported bound never exceeds its
+origin-only bound; `sigma_min(zI - A) >= dist(z, W(A))` holds on random non-normal
+matrices. The study settings differ from the public defaults: grids 121, 241, 481;
+degrees 4, 8, 12, 16, 20, 24, 28, 32, 36, 40; 6 epsilon samples; target `1e-8`. The
+public defaults are grid 61, domain-padding fraction 0.75, degrees 4, 8, 12, 16, 20, 6
+epsilon samples and target `1e-8` (source:
+`moljax/experimental/pseudospectral_criterion.py`,
 `assess_dense_pseudospectral_criterion` signature).
 
 Source: `tau_blend_active_block.json`, `/configuration` [F6].
+
+**Recomputation.** On georgios-vourvachakis-82K2 at commit
+18f684dc8b8175c8d0fb4ee63ea44e93b16f04cf, 22 ladder entries were recomputed; 16 were
+carried over because connectivity or the compute cap decided them before contour
+evaluation. The direct full-operator certificate at `N = 128` retains its committed
+values and is pending recomputation on a second host.
+
+Source: `tau_blend_active_block.json`, `/certificate_recomputation`,
+`/direct_regularized_full_MJ_certificates/0/certificate_ladder/0/recomputation`.
 
 ### The merged decision
 
@@ -258,21 +310,21 @@ policy; `provisional`, `investigate` and `indeterminate` do not.
 |---:|---:|---|---|---|---|---:|---:|---:|---:|---:|
 | 128 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 4 | 0.6689927 | 7.8016507 | 53 | 17 | 17 |
 | 128 | 2 | `repository_blend_B3` | adequate | certified | 121 / 8 | 0.66373192 | 14.415351 | 57 | 15 | 15 |
-| 128 | 2 | `cfl_reference_blend_B3` | adequate | certified | 121 / 12 | 0.41734583 | 4.1834557 | 25 | 10 | 10 |
+| 128 | 2 | `cfl_reference_blend_B3` | adequate | certified | 121 / 12 | 0.41733541 | 4.1834557 | 25 | 10 | 10 |
 | 128 | 4 | `one_inverse_cfl_mask` | investigate | abstains: connectivity | 481 / -- | -- | -- | -- | 24 | 24 |
 | 128 | 4 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 4 | 0.67363048 | 22.173878 | 61 | 17 | 17 |
 | 128 | 8 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 8 | 0.75423384 | 16.893764 | 89 | 24 | 24 |
-| 128 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 12 | 0.56008177 | 6.6467845 | 49 | 11 | 11 |
-| 512 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 8 | 0.93941072 | 47.660579 | 385 | 40 | 40 |
+| 128 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 12 | 0.56008121 | 6.6467845 | 49 | 11 | 11 |
+| 512 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 121 / 8 | 0.93941071 | 47.660579 | 385 | 40 | 40 |
 | 512 | 2 | `repository_blend_B3` | indeterminate | abstains: no polynomial | 481 / -- | -- | -- | -- | 57 | 57 |
 | 512 | 2 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 4 | 0.6146668 | 9.6238488 | 49 | 15 | 15 |
 | 512 | 4 | `one_inverse_cfl_mask` | indeterminate | certified | 241 / 8 | 0.91228692 | 66.783082 | 281 | 47 | 47 |
 | 512 | 4 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 8 | 0.67927653 | 10.191672 | 65 | 17 | 17 |
 | 512 | 8 | `one_inverse_cfl_mask` | indeterminate | certified | 481 / 8 | 0.94249057 | 68.797227 | 425 | 55 | 55 |
-| 512 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 16 | 0.78009837 | 12.768788 | 97 | 20 | 20 |
+| 512 | 8 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 16 | 0.78006394 | 12.768788 | 97 | 20 | 20 |
 | 1024 | 2 | `one_inverse_cfl_mask` | indeterminate | certified | 241 / 8 | 0.95708509 | 105.1185 | 585 | 57 | 58 |
 | 1024 | 2 | `repository_blend_B3` | indeterminate | abstains: compute cap | 241 / -- | -- | -- | -- | 118 | 118 |
-| 1024 | 2 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 8 | 0.68121869 | 12.266603 | 65 | 19 | 19 |
+| 1024 | 2 | `cfl_reference_blend_B3` | indeterminate | certified | 121 / 8 | 0.68121868 | 12.266603 | 65 | 19 | 19 |
 | 1024 | 4 | `one_inverse_cfl_mask` | indeterminate | abstains: connectivity | 481 / -- | -- | -- | -- | 78 | 78 |
 | 1024 | 4 | `cfl_reference_blend_B3` | indeterminate | abstains: no polynomial | 481 / -- | -- | -- | -- | 67 | 67 |
 | 1024 | 8 | `one_inverse_cfl_mask` | indeterminate | abstains: connectivity | 481 / -- | -- | -- | -- | 84 | 84 |
@@ -312,7 +364,7 @@ operator `M J` is certified directly:
 | N | grid | degree | rho | prefactor | GMRES `J` |
 |---:|---:|---:|---:|---:|---:|
 | 128 | 565 | 12 | 0.42515174 | 5.2538931 | 10 |
-| 512 | 121 | 12 | 0.62776353 | 21.425118 | 15 |
+| 512 | 121 | 12 | 0.62776267 | 21.425118 | 15 |
 | 1024 | 121 | 8 | 0.72943227 | 55.105304 | 19 |
 
 Source: `tau_blend_active_block.json`, `/direct_regularized_full_MJ_certificates/*`

@@ -4,6 +4,16 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The experimental dense pseudospectral contour bound accounts for its
+  floating-point arithmetic.** Complex Horner evaluation uses a
+  `gamma_{4n}` allowance; the absolute and translation sums, sample
+  positions, derivative enclosures and final sum have upward allowances.
+  At each sample the origin and centred enclosures are combined by their
+  pointwise minimum. Centred translation and differentiation fail closed
+  when a nonzero product, quotient or power falls below the normal-range guard.
+
 ## [1.3.0] - 2026-11-17
 
 ### Added
