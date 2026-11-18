@@ -6,6 +6,43 @@ All notable changes to moljax are documented here.
 
 ### Fixed
 
+- **The GMRES of the Newton-Krylov solve is correct for complex systems.**
+  The solver of 1.3.0 used inner products with no complex conjugate and
+  Givens rotations for real values. A complex linear system did not
+  converge: for `A = diag(1+1j, 2-1j)` the true residual was 6.9 after 20
+  iterations, where the solver of 1.2.1 reached rounding. The projections
+  now use the conjugate and the rotations are unitary. For a real system
+  the arithmetic of a cycle does not change.
+- **GMRES stops on the true residual.** The outer loop of 1.3.0 stopped
+  when the residual estimate of a cycle reached the tolerance. In float32
+  the estimate can be far below the true residual: for
+  `A = diag(1, 1e-4)`, `b = (1, 1)` and a tolerance of 1e-6 the solve
+  stopped after 2 iterations with a true residual of 1.7e-4. The loop now
+  computes the residual of the iterate after each cycle and stops on it.
+  That residual is also the start residual of the next cycle, so the
+  number of operator products does not change. When the working precision
+  cannot reach the tolerance, the solve ends at its cycle budget.
+- **The direct explicit path of the IMEX step compares the split with the
+  parameters that the model uses.** In 1.3.0 the path compared the split
+  with `metadata['diffusivities']`, and the `create_*_periodic_fft`
+  factories returned that same dictionary to the caller. A caller who
+  changed a value of the split in place got the direct path for a split
+  that did not match the model: the explicit part had no diffusion
+  correction, and the IMEX step solved a different equation. The factories
+  now return a separate dictionary, the models name the parameter of each
+  field in `metadata['fft_diffusion_params']`, and the path is used only
+  when each value of the split is equal to the current value in
+  `model.params`.
+- **The changelog of 1.3.0 gave a wrong reason for the Schnakenberg
+  Crank-Nicolson failure at dt = 0.01.** It said that no Newton solve
+  converges at this step and that Crank-Nicolson needs dt below 0.0049.
+  The measured behavior with the Newton settings of the benchmark is: at
+  dt = 0.01 the first step converges and the second fails; at dt = 0.005
+  the first step fails; at dt = 0.004 the third step fails; at dt = 0.002
+  all 50,000 steps converge. The value 0.0049 is the step above which the
+  Crank-Nicolson amplification factor of the fastest growing mode is
+  negative. It is not a convergence limit of the Newton solve. The 1.3.0
+  entry is corrected.
 - **The adaptive drivers stop after `max_steps` accepted steps.**
   `adaptive_integrate` and `adaptive_integrate_imex` enforced `max_steps`
   only through the capacity of the history buffers, so a run could take up
@@ -109,8 +146,9 @@ All notable changes to moljax are documented here.
   ETDRK4 final states of the new table runs. The earlier Schnakenberg
   state was not finite.
 - **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
-  No Newton solve converges at this step (the fastest Turing mode has the
-  growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark
+  With the Newton settings of the benchmark (20 iterations, tolerance
+  1e-6, FFT diffusion preconditioner) the first step converges and the
+  second step does not. The benchmark
   now reports `NK_FAILED` for this row and records no time.
 - **`dst_I_fast` keeps the dtype of its input.** The odd extension used
   `jnp.array([0.0])` for its zero pads, which is float64 when x64 is on, so

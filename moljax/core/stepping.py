@@ -478,6 +478,40 @@ def _imex_split_is_valid(model: MOLModel, diffusivities: dict[str, float]) -> No
             )
 
 
+def _split_equals_model_diffusion(model: MOLModel, diffusivities: dict[str, float]) -> bool:
+    """
+    Whether the IMEX split removes exactly the linear part of the model.
+
+    True only when the model states that its linear operators are
+    D * Laplacian (metadata['linear_ops_are_fft_diffusion']), names the
+    parameter that holds D for each field
+    (metadata['fft_diffusion_params'], for example {'u': 'Du', 'v': 'Dv'}),
+    and each value of ``diffusivities`` is equal to the current value of
+    that parameter in model.params.
+
+    The comparison uses model.params, which is what the linear operators
+    read, and not metadata['diffusivities']. A factory returns that
+    dictionary to the caller, so a caller who changes the split in place
+    would change the two sides of a comparison with it and get the direct
+    path for a split that does not match the model.
+
+    A value that is not concrete (a tracer) gives False: the general path
+    is always correct.
+    """
+    if not model.metadata.get("linear_ops_are_fft_diffusion", False):
+        return False
+    names = model.metadata.get("fft_diffusion_params")
+    if not names or set(names) != set(diffusivities):
+        return False
+    try:
+        return all(
+            name in model.params and float(diffusivities[field]) == float(model.params[name])
+            for field, name in names.items()
+        )
+    except (TypeError, ValueError, jax.errors.JAXTypeError):
+        return False
+
+
 def _imex_explicit_rhs(
     model: MOLModel,
     y: StateDict,
@@ -521,14 +555,14 @@ def _imex_explicit_rhs(
         return tree_zeros_like(y)
 
     # Direct path. A model can state that its linear operators are exactly
-    # the diffusion D * Laplacian of metadata['diffusivities'] (the
-    # create_*_periodic_fft factories do). When the split uses those same
-    # diffusivities, the subtraction below would remove the complete linear
-    # part, so the explicit part is the nonlinear part and nothing else.
+    # the diffusion D * Laplacian, with D read from model.params (the
+    # create_*_periodic_fft factories do; see _split_equals_model_diffusion).
+    # When the split uses those same values, the subtraction below would
+    # remove the complete linear part, so the explicit part is the nonlinear
+    # part and nothing else.
     # This saves one stencil Laplacian and one FFT Laplacian for each field
     # and stage. The two paths agree to rounding.
-    if (model.metadata.get("linear_ops_are_fft_diffusion", False)
-            and dict(model.metadata.get("diffusivities", {})) == dict(diffusivities)):
+    if _split_equals_model_diffusion(model, diffusivities):
         # model.rhs applies the boundary conditions first; do the same here.
         return model.nonlinear_rhs(model.apply_bcs(y, t), t)
 
