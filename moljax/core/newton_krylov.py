@@ -160,18 +160,23 @@ def _jvp_matvec(
     return jvp_result
 
 
-def _gmres_cycle(matvec, b, x0, m: int, tol_abs):
+def _gmres_cycle(matvec, r0, x0, m: int, tol_abs):
     """One GMRES cycle of at most m iterations that stops at the tolerance.
 
     Arnoldi with modified Gram-Schmidt, one reorthogonalization pass and
     Givens rotations, so the residual norm is known after each iteration and
-    the loop stops when it is at most tol_abs. Returns (x, iterations,
-    residual norm estimate). b, x0 are flat vectors.
+    the loop stops when it is at most tol_abs. r0 is the residual b -
+    matvec(x0) of the start vector. The caller computes it, so the cycle
+    does not use an operator product for it. Returns (x, iterations).
+    r0 and x0 are flat vectors. They can be real or complex.
+
+    The inner products use the complex conjugate (V.conj() @ w), and the
+    Givens rotations are unitary. For a real dtype, the arithmetic is the
+    same as the real algorithm.
     """
-    r0 = b - matvec(x0)
     beta = jnp.linalg.norm(r0)
-    n = b.shape[0]
-    dtype = b.dtype
+    n = r0.shape[0]
+    dtype = r0.dtype
     V0 = jnp.zeros((m + 1, n), dtype=dtype).at[0].set(r0 / jnp.where(beta > 0, beta, 1.0))
     H0 = jnp.zeros((m + 1, m), dtype=dtype)
     # The product of the Givens rotations so far. One matrix product then
@@ -189,26 +194,38 @@ def _gmres_cycle(matvec, b, x0, m: int, tol_abs):
         V, H, Q, g, k = state
         w = matvec(V[k])
         active = (index <= k).astype(dtype)
-        # Two Gram-Schmidt passes against the vectors built so far.
-        h = active * (V @ w)
+        # Two Gram-Schmidt passes against the vectors built so far. The
+        # projection coefficient on v_i is <v_i, w> = conj(v_i) . w.
+        h = active * (V.conj() @ w)
         w = w - h @ V
-        corr = active * (V @ w)
+        corr = active * (V.conj() @ w)
         w = w - corr @ V
         h = h + corr
         h_next = jnp.linalg.norm(w)
         h = h.at[k + 1].set(h_next)
         V = V.at[k + 1].set(w / jnp.where(h_next > 0, h_next, 1.0))
 
-        # Apply the earlier Givens rotations to the new column.
+        # Apply the earlier Givens rotations to the new column. Row k + 1
+        # of Q is still the unit row, so h[k + 1] stays h_next.
         h = Q @ h
 
-        denom = jnp.sqrt(h[k] ** 2 + h[k + 1] ** 2)
-        denom = jnp.where(denom > 0, denom, 1.0)
-        c, s_ = h[k] / denom, h[k + 1] / denom
-        h = h.at[k].set(c * h[k] + s_ * h[k + 1]).at[k + 1].set(0.0)
-        g = g.at[k + 1].set(-s_ * g[k]).at[k].set(c * g[k])
+        # A unitary rotation G with rows (conj(c), s) and (-s, c) on the
+        # rows k, k + 1. a = h[k] is complex, d = h_next is real and not
+        # negative. With r = sqrt(|a|^2 + d^2), c = a / r and s = d / r,
+        # G maps (a, d) to (r, 0): conj(c) a + s d = (|a|^2 + d^2) / r = r
+        # and -s a + c d = (-d a + a d) / r = 0. G is unitary because
+        # |c|^2 + s^2 = 1 and conj(c) (-s) + s conj(c) = 0. For real
+        # values, conj(c) = c and G is the real Givens rotation.
+        a = h[k]
+        d = h_next
+        r = jnp.sqrt(jnp.real(a * jnp.conj(a)) + d * d)
+        r = jnp.where(r > 0, r, 1.0)
+        c, s_ = a / r, d / r
+        c_bar = jnp.conj(c)
+        h = h.at[k].set(c_bar * a + s_ * d).at[k + 1].set(0.0)
+        g = g.at[k + 1].set(-s_ * g[k]).at[k].set(c_bar * g[k])
         row_k, row_next = Q[k], Q[k + 1]
-        Q = Q.at[k].set(c * row_k + s_ * row_next).at[k + 1].set(-s_ * row_k + c * row_next)
+        Q = Q.at[k].set(c_bar * row_k + s_ * row_next).at[k + 1].set(-s_ * row_k + c * row_next)
         return V, H.at[:, k].set(h), Q, g, k + 1
 
     V, H, _, g, k = lax.while_loop(
@@ -218,7 +235,7 @@ def _gmres_cycle(matvec, b, x0, m: int, tol_abs):
     used = jnp.arange(m) < k
     R = jnp.where(used[:, None] & used[None, :], H[:m, :], jnp.eye(m, dtype=dtype))
     y = jax.scipy.linalg.solve_triangular(R, jnp.where(used, g[:m], 0.0), lower=False)
-    return x0 + y @ V[:m], k, jnp.abs(g[k])
+    return x0 + y @ V[:m], k
 
 
 def _gmres_solve(
@@ -239,7 +256,9 @@ def _gmres_solve(
     ``restart`` matrix-vector products (measured: one Crank-Nicolson step on
     a 128 x 128 Brusselator took 908 ms at restart 30 and 8.6 ms at restart
     2). This solver stops inside a cycle when the residual estimate reaches
-    the tolerance.
+    the tolerance. After each cycle, it calculates the true residual of the
+    iterate and stops only when the true residual reaches the tolerance.
+    The arithmetic is correct for real and complex systems.
 
     Args:
         matvec: Matrix-vector product function
@@ -258,8 +277,9 @@ def _gmres_solve(
 
     Returns:
         Tuple of (solution, iterations). iterations is the number of Krylov
-        iterations that the solve used (one matrix-vector product each; a
-        cycle adds one more product for its starting residual).
+        iterations that the solve used (one matrix-vector product each).
+        The solve also uses one product for the initial residual and one
+        product for the true residual after each cycle.
     """
     restart_used = max(1, min(max_iters, restart))
     maxiter = -(-max_iters // restart_used)  # ceil(max_iters / restart_used)
@@ -275,18 +295,26 @@ def _gmres_solve(
 
     tol_abs = tol * jnp.linalg.norm(rhs)
 
+    # The outer loop stops on the true residual norm(rhs - op(x)), not on
+    # the estimate |g[k]| of the cycle. In float32 the estimate can be far
+    # below the true residual. The residual vector of the returned iterate
+    # is also the start residual of the next cycle, so this test does not
+    # add an operator product. If the working precision cannot reach
+    # tol_abs, the loop stops at the cycle budget.
     def cond(state):
-        _, res, _, cycle = state
+        _, _, res, _, cycle = state
         return jnp.logical_and(cycle < maxiter, res > tol_abs)
 
     def body(state):
-        x, _, iters, cycle = state
-        x, k, res = _gmres_cycle(op, rhs, x, restart_used, tol_abs)
-        return x, res, iters + k, cycle + 1
+        x, r, _, iters, cycle = state
+        x, k = _gmres_cycle(op, r, x, restart_used, tol_abs)
+        r = rhs - op(x)
+        return x, r, jnp.linalg.norm(r), iters + k, cycle + 1
 
-    init = (x0, jnp.linalg.norm(rhs - op(x0)), jnp.array(0, dtype=jnp.int32),
+    r0 = rhs - op(x0)
+    init = (x0, r0, jnp.linalg.norm(r0), jnp.array(0, dtype=jnp.int32),
             jnp.array(0, dtype=jnp.int32))
-    x, _, iters, _ = lax.while_loop(cond, body, init)
+    x, _, _, iters, _ = lax.while_loop(cond, body, init)
     return x, iters
 
 

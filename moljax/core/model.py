@@ -914,12 +914,15 @@ def create_gray_scott_periodic_fft(
     # Add FFT cache to metadata
     metadata = dict(model.metadata)
     metadata['fft_cache'] = fft_cache
-    metadata['diffusivities'] = diffusivities
+    # A copy: the caller owns the returned dictionary and can change it.
+    metadata['diffusivities'] = dict(diffusivities)
     metadata['supports_fft'] = True
-    # The linear operators are exactly D * Laplacian for these diffusivities,
-    # so the IMEX split can take the nonlinear part as its explicit part
-    # (see stepping._imex_explicit_rhs).
+    # The linear operators are exactly D * Laplacian, with D read from
+    # params['Du'] and params['Dv']. When the IMEX split uses these values,
+    # it can take the nonlinear part as its explicit part (see
+    # stepping._split_equals_model_diffusion).
     metadata['linear_ops_are_fft_diffusion'] = True
+    metadata['fft_diffusion_params'] = {'u': 'Du', 'v': 'Dv'}
 
     # Create new model with updated metadata
     model_fft = MOLModel(
@@ -961,12 +964,15 @@ def create_schnakenberg_periodic_fft(
 
     metadata = dict(model.metadata)
     metadata['fft_cache'] = fft_cache
-    metadata['diffusivities'] = diffusivities
+    # A copy: the caller owns the returned dictionary and can change it.
+    metadata['diffusivities'] = dict(diffusivities)
     metadata['supports_fft'] = True
-    # The linear operators are exactly D * Laplacian for these diffusivities,
-    # so the IMEX split can take the nonlinear part as its explicit part
-    # (see stepping._imex_explicit_rhs).
+    # The linear operators are exactly D * Laplacian, with D read from
+    # params['Du'] and params['Dv']. When the IMEX split uses these values,
+    # it can take the nonlinear part as its explicit part (see
+    # stepping._split_equals_model_diffusion).
     metadata['linear_ops_are_fft_diffusion'] = True
+    metadata['fft_diffusion_params'] = {'u': 'Du', 'v': 'Dv'}
 
     model_fft = MOLModel(
         grid=model.grid,
@@ -1006,12 +1012,15 @@ def create_brusselator_periodic_fft(
 
     metadata = dict(model.metadata)
     metadata['fft_cache'] = fft_cache
-    metadata['diffusivities'] = diffusivities
+    # A copy: the caller owns the returned dictionary and can change it.
+    metadata['diffusivities'] = dict(diffusivities)
     metadata['supports_fft'] = True
-    # The linear operators are exactly D * Laplacian for these diffusivities,
-    # so the IMEX split can take the nonlinear part as its explicit part
-    # (see stepping._imex_explicit_rhs).
+    # The linear operators are exactly D * Laplacian, with D read from
+    # params['Du'] and params['Dv']. When the IMEX split uses these values,
+    # it can take the nonlinear part as its explicit part (see
+    # stepping._split_equals_model_diffusion).
     metadata['linear_ops_are_fft_diffusion'] = True
+    metadata['fft_diffusion_params'] = {'u': 'Du', 'v': 'Dv'}
 
     model_fft = MOLModel(
         grid=model.grid,

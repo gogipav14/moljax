@@ -631,6 +631,173 @@ class TestGmresBudget:
         assert NKParams().restart == 20
 
 
+def _dense_complex_system(dtype=jnp.complex128):
+    """A dense 12 x 12 complex system randn + 1j*randn + 6*I (seed 0)."""
+    rng = np.random.default_rng(0)
+    n = 12
+    A = rng.standard_normal((n, n)) + 1j * rng.standard_normal((n, n)) + 6.0 * np.eye(n)
+    b = rng.standard_normal(n) + 1j * rng.standard_normal(n)
+    return jnp.asarray(A, dtype=dtype), jnp.asarray(b, dtype=dtype)
+
+
+class TestGmresComplexAndPrecision:
+    """_gmres_solve on complex systems and in single precision.
+
+    The Arnoldi projections must use the complex conjugate and the Givens
+    rotations must be unitary. The outer loop must stop on the true
+    residual, not on the estimate of the cycle. The earlier code gave a
+    true residual of 6.93 on the diagonal system and 31.8 on the dense
+    system, and it stopped the float32 system after 2 iterations with a
+    true residual of 1.7e-4.
+    """
+
+    def test_complex_diagonal_system_reaches_the_tolerance(self):
+        """diag(1+1j, 2-1j) x = (1+2j, 2-1j) with cycles of 2."""
+        A = jnp.diag(jnp.array([1 + 1j, 2 - 1j], dtype=jnp.complex128))
+        b = jnp.array([1 + 2j, 2 - 1j], dtype=jnp.complex128)
+
+        x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros_like(b), tol=1e-10,
+                                max_iters=20, restart=2)
+
+        assert x.dtype == jnp.complex128
+        assert float(jnp.linalg.norm(b - A @ x)) <= 1e-10 * float(jnp.linalg.norm(b))
+        # Two distinct eigenvalues: one cycle of 2 iterations solves it.
+        assert int(iters) == 2
+
+    def test_complex_dense_system_reaches_the_tolerance(self):
+        """The dense 12 x 12 complex system with cycles of 12."""
+        A, b = _dense_complex_system()
+
+        x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros_like(b), tol=1e-10,
+                                max_iters=60, restart=12)
+
+        assert float(jnp.linalg.norm(b - A @ x)) <= 1e-10 * float(jnp.linalg.norm(b))
+        assert float(jnp.linalg.norm(x - jnp.linalg.solve(A, b))) < 1e-10
+        assert 1 <= int(iters) <= 12
+
+    def test_complex_dense_system_with_a_left_preconditioner(self):
+        """The dense complex system with M = inverse of the diagonal of A."""
+        A, b = _dense_complex_system()
+        Minv = jnp.diag(1.0 / jnp.diag(A))
+
+        x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros_like(b), tol=1e-10,
+                                max_iters=60, restart=12, M=lambda v: Minv @ v)
+
+        # The stop test is on the preconditioned residual.
+        assert (float(jnp.linalg.norm(Minv @ (b - A @ x)))
+                <= 1e-10 * float(jnp.linalg.norm(Minv @ b)))
+        assert float(jnp.linalg.norm(x - jnp.linalg.solve(A, b))) < 1e-10
+        assert 1 <= int(iters) <= 12
+
+    def test_single_precision_keeps_the_dtype(self):
+        """complex64 and float32 systems give a result of the same dtype.
+
+        The residual is calculated in double precision. The limit of
+        1e-5 times the norm of b is the tolerance; the solve reaches it
+        well inside the budget of 60 iterations.
+        """
+        A, b = _dense_complex_system(jnp.complex64)
+        A_real, b_real = jnp.real(A), jnp.real(b)
+        for A_s, b_s, dtype in ((A, b, jnp.complex64), (A_real, b_real, jnp.float32)):
+            assert A_s.dtype == dtype and b_s.dtype == dtype
+            x, iters = _gmres_solve(lambda v, A_s=A_s: A_s @ v, b_s, jnp.zeros_like(b_s),
+                                    tol=1e-5, max_iters=60, restart=12)
+            assert x.dtype == dtype
+            A64 = np.asarray(A_s, dtype=np.complex128)
+            b64 = np.asarray(b_s, dtype=np.complex128)
+            residual = np.linalg.norm(b64 - A64 @ np.asarray(x, dtype=np.complex128))
+            assert residual <= 1e-5 * np.linalg.norm(b64), (dtype, residual)
+            assert int(iters) < 60
+
+    def test_float32_stops_on_the_true_residual(self):
+        """diag(1, 1e-4) x = (1, 1) in float32 with cycles of 2.
+
+        The first cycle builds the complete Krylov space (2 iterations),
+        and its estimate is below the limit 1e-6 * sqrt(2) = 1.4e-6. The
+        true residual of its iterate is 1.7e-4 in float32. The outer loop
+        must then start a second cycle, so the solve uses more than 2
+        iterations and its true residual is at or below the limit. The
+        float32 rounding of x[1] = 1e4 is about 6e-4, which gives a
+        residual of about 6e-8, so the limit is attainable.
+        """
+        A = jnp.diag(jnp.array([1.0, 1e-4], dtype=jnp.float32))
+        b = jnp.ones(2, dtype=jnp.float32)
+
+        x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros_like(b), tol=1e-6,
+                                max_iters=20, restart=2)
+
+        assert x.dtype == jnp.float32
+        limit = 1e-6 * float(jnp.linalg.norm(b))
+        assert float(jnp.linalg.norm(b - A @ x)) <= limit
+        assert int(iters) > 2
+
+    def test_float32_unreachable_tolerance_ends_at_the_cycle_budget(self):
+        """A tolerance below float32 rounding stops at the cycle budget.
+
+        The loop must not run without end when the true residual cannot
+        reach the tolerance. A dense 12 x 12 float32 system has a true
+        residual far above 1e-12 * norm(b) at float32 rounding. With
+        max_iters = 60 and restart = 12, there are 5 cycles of 12
+        iterations, so the solve uses the full budget of 60 and stops.
+        """
+        rng = np.random.default_rng(0)
+        A = jnp.asarray(np.eye(12) + 0.3 * rng.standard_normal((12, 12)), dtype=jnp.float32)
+        b = jnp.asarray(rng.standard_normal(12), dtype=jnp.float32)
+
+        x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros_like(b), tol=1e-12,
+                                max_iters=60, restart=12)
+
+        assert x.dtype == jnp.float32
+        assert int(iters) == 60
+        residual = float(jnp.linalg.norm(b - A @ x))
+        assert np.isfinite(residual) and residual > 1e-12 * float(jnp.linalg.norm(b))
+
+    def test_real_float64_results_are_unchanged(self):
+        """A real float64 system gives the same counts and solution as before.
+
+        The values were measured with the earlier code (real Givens
+        rotations, stop on the estimate). The solutions of the earlier
+        and the new code were bitwise equal.
+        """
+        rng = np.random.default_rng(3)
+        n = 30
+        A = jnp.asarray(np.eye(n) + 0.5 * rng.standard_normal((n, n)) / np.sqrt(n))
+        b = jnp.asarray(rng.standard_normal(n))
+        expected = {
+            4: (31, [0.8771489931854293, 2.1084662764647573, 0.291893236592645, 0.6820181001500846]),
+            30: (24, [0.8771489932757599, 2.1084662764162676, 0.29189323661730504, 0.6820181002184134]),
+        }
+        for restart, (count, head) in expected.items():
+            x, iters = _gmres_solve(lambda v: A @ v, b, jnp.zeros(n), tol=1e-10,
+                                    max_iters=200, restart=restart)
+            assert int(iters) == count
+            np.testing.assert_allclose(np.asarray(x)[:4], head, rtol=0, atol=1e-13)
+            assert float(jnp.linalg.norm(b - A @ x)) <= 1e-10 * float(jnp.linalg.norm(b))
+
+    def test_nk_solves_a_complex_linear_problem(self):
+        """newton_krylov_solve accepts a complex state (ravel_pytree keeps
+        the complex dtype and jax.jvp of a complex linear map is A v).
+
+        F(u) = A u - b on the dense complex system: one Newton step with a
+        Krylov tolerance of 1e-12 solves it.
+        """
+        A, b = _dense_complex_system()
+        grid = Grid1D.uniform(1, 0.0, 1.0)
+
+        result = newton_krylov_solve(
+            residual_fn=lambda s: {'u': A @ s['u'] - b},
+            x0={'u': jnp.zeros(12, dtype=jnp.complex128)},
+            grid=grid,
+            params={},
+            nk_params=NKParams(newton_tol=1e-9, krylov_tol=1e-12, max_krylov_iters=24, restart=12),
+        )
+
+        assert result.solution['u'].dtype == jnp.complex128
+        assert bool(result.stats.converged)
+        assert int(result.stats.newton_iters) == 1
+        assert float(jnp.linalg.norm(result.solution['u'] - jnp.linalg.solve(A, b))) < 1e-10
+
+
 class TestLineSearchDepth:
     """backtrack_step's lax.scan must stop evaluating candidates once one
     has been accepted, so its cost tracks where a solve happens to accept,
