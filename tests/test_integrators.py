@@ -1455,7 +1455,9 @@ class TestReusedDriversAreFasterAndUnchanged:
     identity within one process is asserted by
     TestDriversAreCompiledOnce, which compares repeated calls, and by
     test_clear_compiled_drivers_forces_a_rebuild, which compares a reused
-    loop with a freshly built one.
+    loop with a freshly built one. The adaptive references below follow the
+    estimator-order controller schedule and the Newton-robustness cap; the
+    fixed-step references are unchanged by those corrections.
     """
 
     def test_gray_scott_trajectory_is_unchanged(self):
@@ -1473,10 +1475,10 @@ class TestReusedDriversAreFasterAndUnchanged:
         )
         assert float(y_final['u'][5, 4]) == pytest.approx(0.6240511704012716, rel=1e-13)
 
-        result = adaptive_integrate(model, y0, 0.0, 0.2, 0.01,
-                                    method=IntegratorType.RK4, max_steps=100)
-        assert float(result.y_final['u'][5, 4]) == pytest.approx(0.5715040636320732,
-                                                                 rel=1e-13)
+        result = adaptive_integrate(
+            model, y0, 0.0, 0.2, 0.01, method=IntegratorType.RK4, max_steps=100
+        )
+        assert float(result.y_final["u"][5, 4]) == pytest.approx(0.5715040645982623, rel=1e-13)
         assert int(result.n_accepted) == 4
         assert int(result.status) == StatusCode.SUCCESS
 
@@ -1492,10 +1494,40 @@ class TestReusedDriversAreFasterAndUnchanged:
                                            nk_params=NKParams(newton_tol=1e-12))
         assert float(y_final['u'][7]) == pytest.approx(0.6007181904376475, rel=1e-13)
 
-        result = adaptive_integrate(model, y0, 0.0, 0.5, 0.05, method=IntegratorType.BE,
-                                    max_steps=50, nk_params=NKParams(newton_tol=1e-12))
-        assert float(result.y_final['u'][7]) == pytest.approx(0.9076426244308792,
-                                                              rel=1e-13)
+        result = adaptive_integrate(
+            model,
+            y0,
+            0.0,
+            0.5,
+            0.05,
+            method=IntegratorType.BE,
+            max_steps=400,
+            nk_params=NKParams(newton_tol=1e-12),
+        )
+        # The run must reach t_end. With max_steps=50 it stopped at t = 0.456
+        # with MAX_STEPS_REACHED, so the pinned value was not at the final time.
+        assert int(result.status) == StatusCode.SUCCESS
+        assert float(result.t_final) == pytest.approx(0.5, rel=1e-12)
+        assert (int(result.n_accepted), int(result.n_rejected)) == (55, 1)
+        assert float(result.y_final["u"][7]) == pytest.approx(0.7516955753782651, rel=1e-13)
+
+    def test_implicit_adaptive_run_uses_the_controller_dt_max(self):
+        """An implicit run can take steps up to PIDParams.dt_max.
+
+        The Newton limiter used its own default dt_max of 1.0, so the largest
+        step of an adaptive BE or CN run was 1.0 for any PIDParams.dt_max.
+        """
+        model, y0, _ = counting_cubic_model()
+        for method in (IntegratorType.BE, IntegratorType.CN):
+            result = adaptive_integrate(
+                model, y0, 0.0, 200.0, 0.05, method=method, max_steps=2000,
+                pid_params=PIDParams(dt_max=20.0, rtol=1e-2, atol=1e-4),
+                cfl_params=CFLParams(dt_max=20.0),
+                nk_params=NKParams(newton_tol=1e-10),
+            )
+            assert int(result.status) == StatusCode.SUCCESS
+            dts = np.asarray(result.dt_history)
+            assert 1.0 < float(dts.max()) <= 20.0
 
     def test_a_reused_loop_only_dispatches(self):
         """The wall clock, generously: the reused calls cost a fraction of the first.

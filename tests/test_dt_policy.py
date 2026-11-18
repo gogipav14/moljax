@@ -7,6 +7,8 @@ Verifies:
 - PID controller adjusts dt based on error
 """
 
+import inspect
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -18,18 +20,21 @@ jax.config.update("jax_enable_x64", True)
 from moljax.core.bc import FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
+    ControllerState,
     PIDParams,
+    compute_error_order,
     create_initial_controller_state,
     heisenberg_cfl_dt,
     imex_cfl_dt,
+    implicit_robustness_dt,
     pid_controller_dt,
     propose_dt,
 )
 from moljax.core.grid import Grid1D, Grid2D
 from moljax.core.model import MOLModel
 from moljax.core.newton_krylov import NKStats
-from moljax.core.operators import LinearOp
-from moljax.core.stepping import IntegratorType, adaptive_integrate
+from moljax.core.operators import LinearOp, NonlinearOp
+from moljax.core.stepping import IntegratorType, adaptive_integrate, integrate_fixed_dt
 from moljax.core.utils import StatusCode
 
 
@@ -182,6 +187,47 @@ class TestPIDController:
         dt_new, _ = pid_controller_dt(dt_old, err_ratio, controller, pid_params, order=4)
 
         assert float(dt_new) >= pid_params.dt_min, "dt should be clamped to min"
+
+
+class TestImplicitRobustnessLimiter:
+    """Newton diagnostics may restrict, but never enlarge, a PI proposal."""
+
+    def test_fast_solve_does_not_grow_and_slow_solve_is_unchanged(self):
+        dt = jnp.array(0.1)
+        fast = NKStats(
+            converged=jnp.array(True),
+            newton_iters=jnp.array(3, dtype=jnp.int32),
+            lin_iters=jnp.array(50, dtype=jnp.int32),
+            final_res_norm=jnp.array(1.0e-12),
+        )
+        slow = fast._replace(newton_iters=jnp.array(4, dtype=jnp.int32))
+        failed = fast._replace(converged=jnp.array(False))
+
+        assert float(implicit_robustness_dt(dt, fast)) == pytest.approx(0.1)
+        assert float(implicit_robustness_dt(dt, slow)) == pytest.approx(0.1)
+        assert float(implicit_robustness_dt(dt, failed)) == pytest.approx(0.05)
+
+    def test_growth_factor_default_is_one_and_a_larger_value_has_no_effect(self):
+        default = inspect.signature(implicit_robustness_dt).parameters["growth_factor"].default
+        assert default == 1.0
+        dt = jnp.array(0.1)
+        fast = NKStats(
+            converged=jnp.array(True),
+            newton_iters=jnp.array(1, dtype=jnp.int32),
+            lin_iters=jnp.array(5, dtype=jnp.int32),
+            final_res_norm=jnp.array(1.0e-12),
+        )
+        assert float(implicit_robustness_dt(dt, fast, growth_factor=1.2)) == pytest.approx(0.1)
+        assert float(implicit_robustness_dt(dt, fast, growth_factor=0.5)) == pytest.approx(0.05)
+
+    def test_limiter_keeps_a_step_above_one_when_dt_max_allows_it(self):
+        fast = NKStats(
+            converged=jnp.array(True),
+            newton_iters=jnp.array(1, dtype=jnp.int32),
+            lin_iters=jnp.array(5, dtype=jnp.int32),
+            final_res_norm=jnp.array(1.0e-12),
+        )
+        assert float(implicit_robustness_dt(jnp.array(5.0), fast, dt_max=20.0)) == pytest.approx(5.0)
 
 
 class TestWaveCFL:
@@ -525,6 +571,179 @@ class TestRejectionsTerminate:
 
         err_only = reject_sequence(False)
         assert err_only[-1] >= 0.1, err_only
+
+
+class TestErrorOrderTable:
+    """compute_error_order has one entry for each IntegratorType.
+
+    These are the powers of h in the local error estimates, not the methods'
+    global convergence orders. Step doubling raises the exponent by one;
+    the CN--BE and BDF2--BE comparisons are dominated by BE's O(h**2)
+    local error.
+    """
+
+    EXPECTED = {
+        IntegratorType.EULER: 2,
+        IntegratorType.SSPRK3: 4,
+        IntegratorType.RK4: 5,
+        IntegratorType.BE: 2,
+        IntegratorType.CN: 2,
+        IntegratorType.BDF2: 2,
+        IntegratorType.IMEX_EULER: 2,
+        IntegratorType.IMEX_STRANG: 3,
+    }
+
+    def test_every_integrator_type_has_an_entry(self):
+        assert set(self.EXPECTED) == set(IntegratorType)
+        for method, order in self.EXPECTED.items():
+            assert compute_error_order(method) == order, method
+            assert compute_error_order(int(method)) == order, method
+
+    @pytest.mark.parametrize("method", [8, -1, 100, "rk4", None])
+    def test_unknown_method_raises(self, method):
+        with pytest.raises(ValueError, match="unknown method"):
+            compute_error_order(method)
+
+    def test_euler_controller_no_longer_oscillates_on_transient(self):
+        """The estimator exponent removes the old near-50% rejection cycle.
+
+        The manufactured solution is u(t, x) = cos(t + x) for
+        u' = -5 u - u**2 + forcing. With Euler's method order (1) in the
+        controller this run takes about 100 accepted and 100 rejected steps;
+        with its local-estimate exponent (2), it finishes with essentially no
+        rejections. Broad bounds keep the regression about controller
+        behavior rather than a platform-specific exact count.
+        """
+        grid = Grid1D.uniform(8, 0.0, 1.0)
+        x = grid.x_coords(include_ghost=True)
+
+        def linear_apply(state, grid, t, params):
+            return {"u": -5.0 * state["u"]}
+
+        def nonlinear_apply(state, grid, t, params):
+            phi = jnp.cos(t + x)
+            dphi = -jnp.sin(t + x)
+            u = state["u"]
+            return {"u": -u * u + 5.0 * phi + dphi + phi * phi}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
+            linear_ops=(LinearOp("minus_five", linear_apply),),
+            nonlinear_ops=(NonlinearOp("forcing", nonlinear_apply),),
+        )
+        y0 = model.apply_bcs({"u": jnp.cos(x)}, 0.0)
+        result = adaptive_integrate(
+            model,
+            y0,
+            0.0,
+            4.0,
+            0.01,
+            method=IntegratorType.EULER,
+            max_steps=500,
+            save_every=500,
+            pid_params=PIDParams(atol=1e-3, rtol=1e-3, dt_max=10.0),
+        )
+
+        assert int(result.status) == StatusCode.SUCCESS
+        attempts = int(result.n_accepted + result.n_rejected)
+        assert int(result.n_accepted) < 70
+        assert int(result.n_rejected) / attempts < 0.05
+
+    def test_be_controller_does_not_reintroduce_a_rejection_cycle(self):
+        """Fast Newton convergence must not enlarge the PI proposal.
+
+        On this manufactured transient, the inherited post-PI factor 1.2
+        produces a one-in-three rejection cycle at tight tolerance.  The
+        robustness limiter now leaves a fast solve alone, so the estimator-
+        order controller remains below a five-percent rejection fraction.
+        """
+        grid = Grid1D.uniform(8, 0.0, 1.0)
+        x = grid.x_coords(include_ghost=True)
+
+        def linear_apply(state, grid, t, params):
+            return {"u": -5.0 * state["u"]}
+
+        def nonlinear_apply(state, grid, t, params):
+            phi = jnp.cos(t + x)
+            dphi = -jnp.sin(t + x)
+            u = state["u"]
+            return {"u": -u * u + 5.0 * phi + dphi + phi * phi}
+
+        model = MOLModel(
+            grid=grid,
+            bc_spec={"u": FieldBCSpec.periodic()},
+            params={"dtype": jnp.float64},
+            linear_ops=(LinearOp("minus_five", linear_apply),),
+            nonlinear_ops=(NonlinearOp("forcing", nonlinear_apply),),
+        )
+        y0 = model.apply_bcs({"u": jnp.cos(x)}, 0.0)
+        result = adaptive_integrate(
+            model,
+            y0,
+            0.0,
+            4.0,
+            0.01,
+            method=IntegratorType.BE,
+            max_steps=5000,
+            save_every=5000,
+            pid_params=PIDParams(atol=1.0e-5, rtol=1.0e-5, dt_max=10.0),
+        )
+
+        assert int(result.status) == StatusCode.SUCCESS
+        attempts = int(result.n_accepted + result.n_rejected)
+        assert int(result.n_rejected) / attempts < 0.05
+
+
+class TestDriversRejectUnknownMethods:
+    """The MOLModel drivers raise for a method value that they cannot step.
+
+    Before the check, "method < 3 is explicit, else implicit" sent each
+    unknown value (an IMEX value, or 8) to the BDF2 branch. The check
+    runs before the driver is built, so these calls compile nothing.
+    """
+
+    @pytest.mark.parametrize(
+        "method", [IntegratorType.IMEX_EULER, IntegratorType.IMEX_STRANG, 8, -1]
+    )
+    def test_adaptive_integrate(self, method):
+        model, y0 = float32_decay_model()
+        with pytest.raises(ValueError, match="not supported"):
+            adaptive_integrate(model, y0, 0.0, 1.0, 0.1, method=method, max_steps=4)
+
+    @pytest.mark.parametrize("method", [IntegratorType.IMEX_EULER, 8])
+    def test_integrate_fixed_dt(self, method):
+        model, y0 = float32_decay_model()
+        with pytest.raises(ValueError, match="not supported"):
+            integrate_fixed_dt(model, y0, 0.0, 1.0, 0.5, method=method)
+
+
+class TestControllerIsPI:
+    """pid_controller_dt is the PI formula of the PIDParams docstring.
+
+    The expected dt is computed here by hand from that formula. The test
+    also shows that prevprev_err_ratio has no effect on the result.
+    """
+
+    def test_formula_and_unused_prevprev(self):
+        p = PIDParams(
+            safety=0.9, kI=0.7, kP=0.4, max_factor=10.0, min_factor=0.1, dt_min=1e-12, dt_max=10.0
+        )
+        order = 2
+        dt_old, err, prev = 0.1, 0.25, 0.5
+        expected = dt_old * 0.9 * err ** (-0.7 / order) * (prev / err) ** (0.4 / order)
+        for prevprev in (1e-3, 1.0, 1e3):
+            state = ControllerState(
+                prev_err_ratio=jnp.array(prev),
+                prevprev_err_ratio=jnp.array(prevprev),
+                consecutive_rejects=jnp.array(0, dtype=jnp.int32),
+            )
+            dt_new, new_state = pid_controller_dt(
+                jnp.array(dt_old), jnp.array(err), state, p, order
+            )
+            np.testing.assert_allclose(float(dt_new), expected, rtol=1e-12)
+            assert float(new_state.prev_err_ratio) == err
 
 
 if __name__ == "__main__":
