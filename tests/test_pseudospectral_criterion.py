@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fractions import Fraction
-from math import ceil, comb, pi
+from math import comb, pi
 
 import jax
 
@@ -232,6 +232,35 @@ def test_horner_upper_encloses_subnormal_terms() -> None:
     )
 
 
+def test_centred_enclosure_falls_back_on_actual_underflow() -> None:
+    """A nonzero translation product becoming subnormal uses the origin enclosure."""
+    starts = np.array([0.0, 2.0e-60, 2.0e-60 + 1.0e-60j, 1.0e-60j])
+    ends = np.roll(starts, -1)
+    coefficients = np.array([0.0, 1.0e-200], dtype=np.complex128)
+    product = coefficients[1] * (1.0e-60 + 0.5e-60j) ** 2
+    assert 0.0 < abs(product) < np.finfo(np.float64).tiny
+    assert _centered_polynomial_derivative_bound(starts, ends, coefficients, 1.0) == float("inf")
+    serialized = tuple((float(value.real), float(value.imag)) for value in coefficients)
+    assert _contour_modulus_bound(starts, ends, serialized, 1.0) == _contour_modulus_bound(
+        starts, ends, serialized, 1.0, basis="origin"
+    )
+
+
+def test_tiny_normal_coefficient_keeps_previous_centred_bound_bitwise() -> None:
+    """A small coefficient is safe when the products actually used stay normal."""
+    starts = np.array([0.4 - 0.1j, 0.6 - 0.1j, 0.6 + 0.1j, 0.4 + 0.1j])
+    ends = np.roll(starts, -1)
+    coefficients = np.zeros(40, dtype=np.complex128)
+    coefficients[0] = 0.1
+    coefficients[-1] = 1.0e-30
+    derivative = _centered_polynomial_derivative_bound(starts, ends, coefficients, 1.0)
+    assert derivative.hex() == "0x1.99999999ae9d0p-4"
+    serialized = tuple((float(value.real), float(value.imag)) for value in coefficients)
+    bound, lipschitz = _contour_modulus_bound(starts, ends, serialized, 1.0)
+    assert bound.hex() == "0x1.0f9ad455c5f2dp+0"
+    assert float(lipschitz).hex() == "0x1.99999999999e3p-4"
+
+
 def test_contour_upper_encloses_exact_points_between_samples() -> None:
     """Check 100 random rectangles at 65 rational positions on each edge."""
     rng = np.random.default_rng(20261118)
@@ -311,27 +340,10 @@ def test_centered_derivative_bound_covers_random_fitted_polynomials() -> None:
                 serialized,
                 scale,
             )
-            orders = np.arange(1, degree + 1)
-            radius = float(np.max(np.abs(np.concatenate((starts, ends))))) / scale
-            origin_derivative_bound = float(
-                np.sum(orders * np.abs(coefficients) * radius ** (orders - 1)) / scale
+            origin_modulus_bound, _ = _contour_modulus_bound(
+                starts, ends, serialized, scale, basis="origin"
             )
-            edge_length = float(np.max(np.abs(ends - starts)))
-            subdivisions = min(
-                max(8, ceil(origin_derivative_bound * edge_length / (2.0e-3))),
-                1024,
-            )
-            old_fractions = np.linspace(0.0, 1.0, subdivisions + 1)
-            old_points = starts[:, None] + old_fractions[None, :] * (ends - starts)[:, None]
-            old_scaled = old_points / scale
-            old_values = 1.0 + sum(
-                coefficient * old_scaled**order
-                for order, coefficient in enumerate(coefficients, start=1)
-            )
-            old_modulus_bound = float(np.max(np.abs(old_values))) + (
-                origin_derivative_bound * edge_length / (2.0 * subdivisions)
-            )
-            assert new_modulus_bound <= old_modulus_bound
+            assert new_modulus_bound <= origin_modulus_bound
     assert min(successful_fits.values()) >= 3
 
 

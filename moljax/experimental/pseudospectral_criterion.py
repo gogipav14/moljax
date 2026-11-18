@@ -494,6 +494,19 @@ def _roundoff_gamma(operation_count: int) -> float:
     return product / (1.0 - product)
 
 
+class _CentredArithmeticOutOfRange(ArithmeticError):
+    """The normal-range model for centred arithmetic does not apply."""
+
+
+def _checked_centred_result(
+    value: complex | float, left: complex | float, right: complex | float
+) -> complex | float:
+    """Reject an actual tiny product, quotient or power of nonzero operands."""
+    if not np.isfinite(value) or (left != 0 and right != 0 and abs(value) < np.ldexp(1.0, -1000)):
+        raise _CentredArithmeticOutOfRange
+    return value
+
+
 def _translate_polynomial_to_contour_center(
     starts: np.ndarray,
     ends: np.ndarray,
@@ -506,7 +519,9 @@ def _translate_polynomial_to_contour_center(
     products, and summation for every translated coefficient; it is not merely
     a summation allowance.  The returned componentwise errors enclose the
     floating-point binomial translation under the standard round-to-nearest
-    model, absent overflow or underflow.
+    model.  Every explicit multiplication, division and power with nonzero
+    operands is checked against the normal range; an actual tiny result makes
+    the centred path return infinity.
     """
     degree = int(coefficients.size)
     all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), coefficients))
@@ -515,46 +530,64 @@ def _translate_polynomial_to_contour_center(
     real_max = float(np.max(points.real))
     imag_min = float(np.min(points.imag))
     imag_max = float(np.max(points.imag))
-    center = complex(0.5 * (real_min + real_max), 0.5 * (imag_min + imag_max))
+    real_sum = real_min + real_max
+    imag_sum = imag_min + imag_max
+    center = complex(0.5 * real_sum, 0.5 * imag_sum)
     unit_roundoff = float(np.finfo(np.float64).eps) / 2.0
     geometry_scale = max(1.0, abs(center), float(np.max(np.abs(points))))
-    geometry_allowance = 32.0 * unit_roundoff * geometry_scale
+    geometry_unit = 32.0 * unit_roundoff
+    geometry_allowance = geometry_unit * geometry_scale
     centered_radius = np.nextafter(
         float(np.max(np.abs(points - center))) + geometry_allowance,
         np.inf,
     )
-    normalized_center = center / scale
+    try:
+        _checked_centred_result(center.real, 0.5, real_sum)
+        _checked_centred_result(center.imag, 0.5, imag_sum)
+        _checked_centred_result(geometry_unit, 32.0, unit_roundoff)
+        _checked_centred_result(geometry_allowance, geometry_unit, geometry_scale)
+        normalized_center = _checked_centred_result(center / scale, center, scale)
 
-    # A complex multiply/add uses several real operations.  This deliberately
-    # generous count covers powers, products, binomial-factor conversion, and
-    # summation for all degree <= 40 fits used by the study.
-    gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
-    if not np.isfinite(gamma):
+        # A complex multiply/add uses several real operations.  This deliberately
+        # generous count covers powers, products, binomial-factor conversion, and
+        # summation for all degree <= 40 fits used by the study.
+        gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
+        translated_coefficients: list[complex] = []
+        translation_errors: list[float] = []
+        for shifted_order in range(degree + 1):
+            translated_terms = []
+            for origin_order in range(shifted_order, degree + 1):
+                coefficient = all_coefficients[origin_order]
+                binomial = comb(origin_order, shifted_order)
+                first = _checked_centred_result(coefficient * binomial, coefficient, binomial)
+                exponent = origin_order - shifted_order
+                power = _checked_centred_result(
+                    normalized_center**exponent, normalized_center, exponent
+                )
+                translated_terms.append(_checked_centred_result(first * power, first, power))
+            translated = sum(translated_terms, 0.0j)
+            absolute_sum = fsum(abs(term) for term in translated_terms)
+            translated_coefficients.append(translated)
+            translation_errors.append(
+                float(
+                    np.nextafter(
+                        _checked_centred_result(gamma * absolute_sum, gamma, absolute_sum), np.inf
+                    )
+                )
+            )
+        return (
+            center,
+            np.asarray(translated_coefficients, dtype=np.complex128),
+            np.asarray(translation_errors, dtype=np.float64),
+            centered_radius,
+        )
+    except _CentredArithmeticOutOfRange:
         return (
             center,
             np.full(degree + 1, complex(np.nan, np.nan)),
             np.full(degree + 1, np.inf),
             centered_radius,
         )
-    translated_coefficients: list[complex] = []
-    translation_errors: list[float] = []
-    for shifted_order in range(degree + 1):
-        translated_terms = [
-            all_coefficients[origin_order]
-            * comb(origin_order, shifted_order)
-            * normalized_center ** (origin_order - shifted_order)
-            for origin_order in range(shifted_order, degree + 1)
-        ]
-        translated = sum(translated_terms, 0.0j)
-        absolute_sum = fsum(abs(term) for term in translated_terms)
-        translated_coefficients.append(translated)
-        translation_errors.append(float(np.nextafter(gamma * absolute_sum, np.inf)))
-    return (
-        center,
-        np.asarray(translated_coefficients, dtype=np.complex128),
-        np.asarray(translation_errors, dtype=np.float64),
-        centered_radius,
-    )
 
 
 def _horner_modulus_upper(
@@ -647,11 +680,12 @@ def _centered_polynomial_derivative_bound(
     The coefficients are translated with the binomial identity.  The returned
     enclosure adds a standard floating-point ``gamma_n`` allowance to every
     translated coefficient and to the final nonnegative sum.  Under the usual
-    IEEE round-to-nearest model (without overflow or underflow), this covers
-    the conversion error.  Any non-finite intermediate fails closed to
-    infinity.  The radius includes all edge endpoints; convexity of distance
-    along a segment then includes every contour sample and every between-sample
-    point as well.
+    IEEE round-to-nearest model, this covers the conversion error.  Every
+    explicit multiplication, division and power with nonzero operands is
+    checked against the normal range; an actual tiny result returns infinity.
+    Any non-finite intermediate also fails closed to infinity.  The radius includes all edge
+    endpoints; convexity of distance along a segment then includes every
+    contour sample and every between-sample point as well.
     """
     degree = int(coefficients.size)
     if degree == 0:
@@ -662,23 +696,35 @@ def _centered_polynomial_derivative_bound(
         coefficients,
         scale,
     )
-    normalized_radius = np.nextafter((centered_radius + extra_radius) / scale, np.inf)
-    gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
-    if not np.isfinite(gamma):
+    if not np.all(np.isfinite(translated)) or not np.all(np.isfinite(translation_errors)):
         return float("inf")
-    derivative_terms: list[float] = []
-    for shifted_order in range(1, degree + 1):
-        coefficient_upper = np.nextafter(
-            abs(translated[shifted_order]) + translation_errors[shifted_order],
-            np.inf,
+    try:
+        radius = centered_radius + extra_radius
+        normalized_radius = np.nextafter(
+            _checked_centred_result(radius / scale, radius, scale), np.inf
         )
-        derivative_terms.append(
-            shifted_order * coefficient_upper * normalized_radius ** (shifted_order - 1) / scale
+        gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
+        derivative_terms: list[float] = []
+        for shifted_order in range(1, degree + 1):
+            coefficient_upper = np.nextafter(
+                abs(translated[shifted_order]) + translation_errors[shifted_order],
+                np.inf,
+            )
+            first = _checked_centred_result(
+                shifted_order * coefficient_upper, shifted_order, coefficient_upper
+            )
+            exponent = shifted_order - 1
+            power = _checked_centred_result(
+                normalized_radius**exponent, normalized_radius, exponent
+            )
+            product = _checked_centred_result(first * power, first, power)
+            derivative_terms.append(_checked_centred_result(product / scale, product, scale))
+        bound = fsum(derivative_terms)
+        return float(
+            np.nextafter(_checked_centred_result(bound * (1.0 + gamma), bound, 1.0 + gamma), np.inf)
         )
-    bound = fsum(derivative_terms)
-    if not np.isfinite(bound):
+    except _CentredArithmeticOutOfRange:
         return float("inf")
-    return float(np.nextafter(bound * (1.0 + gamma), np.inf))
 
 
 def _fit_polynomial(
