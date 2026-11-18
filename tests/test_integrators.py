@@ -1511,6 +1511,43 @@ class TestReusedDriversAreFasterAndUnchanged:
         assert (int(result.n_accepted), int(result.n_rejected)) == (55, 1)
         assert float(result.y_final["u"][7]) == pytest.approx(0.7516955753782651, rel=1e-13)
 
+    @pytest.mark.parametrize("save_every", [1, 25, 40])
+    def test_adaptive_run_takes_at_most_max_steps_accepted_steps(self, save_every):
+        """max_steps limits the accepted steps for each save_every.
+
+        The limit came from the history capacity only, so max_steps=40 gave
+        41, 50 and 80 accepted steps for save_every 1, 25 and 40.
+        """
+        model, y0, _ = counting_cubic_model()
+        result = adaptive_integrate(
+            model, y0, 0.0, 50.0, 0.001, method=IntegratorType.RK4, max_steps=40,
+            save_every=save_every, pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(result.n_accepted) == 40
+        assert int(result.status) == StatusCode.MAX_STEPS_REACHED
+        assert float(result.t_final) < 50.0
+
+    def test_adaptive_run_that_needs_exactly_max_steps_succeeds(self):
+        model, y0, _ = counting_cubic_model()
+        free = adaptive_integrate(
+            model, y0, 0.0, 0.2, 0.001, method=IntegratorType.RK4, max_steps=400,
+            pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(free.status) == StatusCode.SUCCESS
+        needed = int(free.n_accepted)
+        exact = adaptive_integrate(
+            model, y0, 0.0, 0.2, 0.001, method=IntegratorType.RK4, max_steps=needed,
+            pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(exact.status) == StatusCode.SUCCESS
+        assert int(exact.n_accepted) == needed
+        short = adaptive_integrate(
+            model, y0, 0.0, 0.2, 0.001, method=IntegratorType.RK4, max_steps=needed - 1,
+            pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(short.status) == StatusCode.MAX_STEPS_REACHED
+        assert int(short.n_accepted) == needed - 1
+
     def test_implicit_adaptive_run_uses_the_controller_dt_max(self):
         """An implicit run can take steps up to PIDParams.dt_max.
 
