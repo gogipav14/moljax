@@ -4,6 +4,8 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-18
+
 ### Fixed
 
 - **The GMRES of the Newton-Krylov solve is correct for complex systems.**
