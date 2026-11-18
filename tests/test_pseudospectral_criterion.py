@@ -147,14 +147,22 @@ def test_degree_40_evaluation_roundoff_is_included_in_contour_bound() -> None:
     assert bound >= evaluation_error[0]
 
 
-def _exact_modulus_squared(coefficients: np.ndarray, point: tuple[Fraction, Fraction]) -> Fraction:
+def _exact_modulus_squared(
+    coefficients: np.ndarray,
+    point: tuple[Fraction, Fraction],
+    perturbations: np.ndarray | None = None,
+) -> Fraction:
     """Evaluate an ascending complex polynomial exactly from its float inputs."""
     real = Fraction(0)
     imag = Fraction(0)
     x, y = point
-    for coefficient in coefficients[::-1]:
+    for index in range(coefficients.size - 1, -1, -1):
+        coefficient = coefficients[index]
         a = Fraction.from_float(float(coefficient.real))
         b = Fraction.from_float(float(coefficient.imag))
+        if perturbations is not None:
+            a += Fraction.from_float(float(perturbations[index].real))
+            b += Fraction.from_float(float(perturbations[index].imag))
         real, imag = real * x - imag * y + a, real * y + imag * x + b
     return real * real + imag * imag
 
@@ -200,9 +208,12 @@ def test_horner_upper_encloses_exact_complex_polynomials() -> None:
             uncertain_upper, _, _ = _horner_modulus_upper(
                 np.asarray([point]), coefficients, coefficient_errors=errors
             )
-            perturbed = coefficients + perturbations
+            assert all(
+                abs(Fraction.from_float(float(error))) <= Fraction.from_float(float(limit))
+                for error, limit in zip(perturbations, errors, strict=True)
+            )
             assert Fraction.from_float(float(uncertain_upper[0])) ** 2 >= _exact_modulus_squared(
-                perturbed, _fraction_point(point)
+                coefficients, _fraction_point(point), perturbations
             )
 
 
