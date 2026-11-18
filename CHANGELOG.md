@@ -4,6 +4,54 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-17
+
+### Added
+
+- **`benchmarks/controller_work_precision.py`** with its results: a
+  comparison of the old exponent, the new exponent and the new exponent
+  with the Newton cap on scalar test problems. The script has its own copy
+  of the controller. The library drivers are measured by
+  `benchmarks/benchmark_adaptive_gray_scott.py`; its results are in
+  `benchmarks/results/adaptive_gray_scott.json` and `.csv`.
+- **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
+  with the Newton iteration total and the Krylov iteration total of the run.
+  The default return value does not change.
+- **`benchmarks/rd_steppers.py`**: an independent implementation of RK4,
+  IMEX-Strang, ETDRK4 and Crank-Nicolson (Newton-GMRES) for two-species
+  periodic systems. `tests/test_rd_benchmark_steppers.py` uses it to verify
+  the convergence orders and to compare the library solvers with it.
+- **`benchmarks/benchmark_reactor_sensitivity.py`** and
+  **`benchmarks/benchmark_adaptive_gray_scott.py`**: scripts for the reactor
+  sensitivity with automatic differentiation (with an analytical check) and
+  for the step statistics of the adaptive integrators.
+
+### Changed
+
+- **The step sequence of every adaptive run changes**, because the
+  controller exponent changes for all eight methods. Results agree with the
+  earlier ones within the tolerance of the controller, not bit for bit.
+  The `order` argument of `pid_controller_dt`, `handle_rejected_step`,
+  `propose_dt` and `propose_dt_imex` now means the power of h of the local
+  error estimate. A caller that passes a method order must add 1 for a
+  step-doubling estimate.
+- **An unknown method value raises `ValueError`** in `compute_error_order`,
+  `adaptive_integrate` and `integrate_fixed_dt`. Before, an IMEX value or an
+  out-of-range value ran as BDF2 with no message.
+- **`_gmres_solve` stops at the tolerance and counts its iterations.** The
+  solver used `jax.scipy.sparse.linalg.gmres` in its default mode, which
+  builds the complete Krylov space of the restart size in each cycle and
+  returns no iteration count. The new solver is a restarted GMRES with
+  Givens rotations and an early stop. `NKStats.lin_iters` is now the number
+  of Krylov iterations used. A fixed-step Crank-Nicolson run on the
+  256 x 256 Brusselator and Gray-Scott benchmarks is 5 to 6 times faster.
+- **`integrate_imex_fixed_dt` with Strang splitting combines the diffusion
+  half steps of adjacent steps inside one saved block.** The result is equal
+  to that of repeated `imex_strang_step` calls to rounding. The models from
+  `create_gray_scott_periodic_fft`, `create_schnakenberg_periodic_fft` and
+  `create_brusselator_periodic_fft` also give their nonlinear part directly
+  as the explicit part. The Schnakenberg benchmark run is 3.5 times faster.
+
 ### Fixed
 
 - **The adaptive controller uses the power of h of the local error
@@ -52,52 +100,14 @@ All notable changes to moljax are documented here.
   No Newton solve converges at this step (the fastest Turing mode has the
   growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark
   now reports `NK_FAILED` for this row and records no time.
-
-### Changed
-
-- **The step sequence of every adaptive run changes**, because the
-  controller exponent changes for all eight methods. Results agree with the
-  earlier ones within the tolerance of the controller, not bit for bit.
-  The `order` argument of `pid_controller_dt`, `handle_rejected_step`,
-  `propose_dt` and `propose_dt_imex` now means the power of h of the local
-  error estimate. A caller that passes a method order must add 1 for a
-  step-doubling estimate.
-- **An unknown method value raises `ValueError`** in `compute_error_order`,
-  `adaptive_integrate` and `integrate_fixed_dt`. Before, an IMEX value or an
-  out-of-range value ran as BDF2 with no message.
-- **`_gmres_solve` stops at the tolerance and counts its iterations.** The
-  solver used `jax.scipy.sparse.linalg.gmres` in its default mode, which
-  builds the complete Krylov space of the restart size in each cycle and
-  returns no iteration count. The new solver is a restarted GMRES with
-  Givens rotations and an early stop. `NKStats.lin_iters` is now the number
-  of Krylov iterations used. A fixed-step Crank-Nicolson run on the
-  256 x 256 Brusselator and Gray-Scott benchmarks is 5 to 6 times faster.
-- **`integrate_imex_fixed_dt` with Strang splitting combines the diffusion
-  half steps of adjacent steps inside one saved block.** The result is equal
-  to that of repeated `imex_strang_step` calls to rounding. The models from
-  `create_gray_scott_periodic_fft`, `create_schnakenberg_periodic_fft` and
-  `create_brusselator_periodic_fft` also give their nonlinear part directly
-  as the explicit part. The Schnakenberg benchmark run is 3.5 times faster.
-
-### Added
-
-- **`benchmarks/controller_work_precision.py`** with its results: a
-  comparison of the old exponent, the new exponent and the new exponent
-  with the Newton cap on scalar test problems. The script has its own copy
-  of the controller. The library drivers are measured by
-  `benchmarks/benchmark_adaptive_gray_scott.py`; its results are in
-  `benchmarks/results/adaptive_gray_scott.json` and `.csv`.
-- **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
-  with the Newton iteration total and the Krylov iteration total of the run.
-  The default return value does not change.
-- **`benchmarks/rd_steppers.py`**: an independent implementation of RK4,
-  IMEX-Strang, ETDRK4 and Crank-Nicolson (Newton-GMRES) for two-species
-  periodic systems. `tests/test_rd_benchmark_steppers.py` uses it to verify
-  the convergence orders and to compare the library solvers with it.
-- **`benchmarks/benchmark_reactor_sensitivity.py`** and
-  **`benchmarks/benchmark_adaptive_gray_scott.py`**: scripts for the reactor
-  sensitivity with automatic differentiation (with an analytical check) and
-  for the step statistics of the adaptive integrators.
+- **`dst_I_fast` keeps the dtype of its input.** The odd extension used
+  `jnp.array([0.0])` for its zero pads, which is float64 when x64 is on, so
+  a float32 input was transformed in float64. The pads now use the dtype of
+  the input.
+- **The Weeks error-estimate test uses a threshold, not a pinned value.**
+  The pinned true error (90057 with a relative tolerance of 1e-3) failed
+  under JAX 0.12.0.1 on CPU, where the value is 89966.9. This was a test
+  defect only.
 
 ## [1.2.1] - 2026-09-20
 
