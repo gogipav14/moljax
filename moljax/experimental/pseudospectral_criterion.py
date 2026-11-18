@@ -79,6 +79,8 @@ class PseudospectralCriterionResult:
     contour_arc_length_grid: float | None
     contour_sigma_min_lower_bound: float | None
     contour_modulus_bound: float | None
+    contour_modulus_bound_origin_only: float | None
+    minimum_origin_only_contour_bound: float | None
     contour_edge_count: int | None
     polynomial_lipschitz_bound: float | None
     real_grid: tuple[float, ...]
@@ -111,6 +113,7 @@ class _PolynomialCandidate:
     arc_length: float
     contour_sigma_min_lower_bound: float
     contour_modulus_bound: float
+    contour_modulus_bound_origin_only: float
     contour_edge_count: int
     polynomial_lipschitz_bound: float
 
@@ -120,6 +123,7 @@ class _PolynomialSearch:
     candidate: _PolynomialCandidate | None
     touched_domain_boundary: bool
     largest_boundary_envelope_epsilon: float | None
+    minimum_origin_only_contour_bound: float | None
 
 
 def materialize_dense_operator(matvec: Matvec, n: int) -> np.ndarray:
@@ -826,8 +830,9 @@ def _search_polynomial_certificate(
     fine_seeds, _ = _eigenvalue_seed_indices(fine_real, fine_imag, eigenvalues)
     gap = epsilon_zero - eps_connect_upper
     if gap <= 0.0:
-        return _PolynomialSearch(None, False, None)
+        return _PolynomialSearch(None, False, None, None)
     candidates: list[_PolynomialCandidate] = []
+    minimum_origin_only: float | None = None
     touched_domain_boundary = False
     boundary_envelope_epsilons: list[float] = []
     fractions = np.linspace(0.15, 0.9, epsilon_samples)
@@ -902,6 +907,14 @@ def _search_polynomial_certificate(
                 coefficients,
                 scale,
             )
+            origin_only, _ = _contour_modulus_bound(
+                starts, ends, coefficients, scale, basis="origin"
+            )
+            minimum_origin_only = (
+                origin_only
+                if minimum_origin_only is None
+                else min(minimum_origin_only, origin_only)
+            )
             if not contour_maximum < 1.0:
                 continue
             effective_rate = contour_maximum ** (1.0 / degree)
@@ -928,6 +941,7 @@ def _search_polynomial_certificate(
                     arc_length=arc_length,
                     contour_sigma_min_lower_bound=contour_floor,
                     contour_modulus_bound=contour_maximum,
+                    contour_modulus_bound_origin_only=origin_only,
                     contour_edge_count=int(starts.size),
                     polynomial_lipschitz_bound=lipschitz,
                 )
@@ -937,6 +951,7 @@ def _search_polynomial_certificate(
             None,
             touched_domain_boundary,
             max(boundary_envelope_epsilons, default=None),
+            minimum_origin_only,
         )
     candidate = min(
         candidates,
@@ -950,6 +965,7 @@ def _search_polynomial_certificate(
         candidate,
         touched_domain_boundary,
         max(boundary_envelope_epsilons, default=None),
+        minimum_origin_only,
     )
 
 
@@ -1235,6 +1251,10 @@ def assess_dense_pseudospectral_criterion(
             None if candidate is None else candidate.contour_sigma_min_lower_bound
         ),
         contour_modulus_bound=None if candidate is None else candidate.contour_modulus_bound,
+        contour_modulus_bound_origin_only=(
+            None if candidate is None else candidate.contour_modulus_bound_origin_only
+        ),
+        minimum_origin_only_contour_bound=search.minimum_origin_only_contour_bound,
         contour_edge_count=None if candidate is None else candidate.contour_edge_count,
         polynomial_lipschitz_bound=(
             None if candidate is None else candidate.polynomial_lipschitz_bound

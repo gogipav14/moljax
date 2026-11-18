@@ -71,6 +71,10 @@ def test_clustered_normal_operator_is_certified_conservatively() -> None:
     )
     assert result.contour_modulus_bound is not None
     assert 0.0 < result.contour_modulus_bound < 1.0
+    assert result.contour_modulus_bound_origin_only is not None
+    assert result.contour_modulus_bound <= result.contour_modulus_bound_origin_only
+    assert result.minimum_origin_only_contour_bound is not None
+    assert result.minimum_origin_only_contour_bound <= result.contour_modulus_bound_origin_only
     assert result.predicted_iterations is not None
 
 
