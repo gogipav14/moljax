@@ -43,6 +43,15 @@ All notable changes to moljax are documented here.
   Crank-Nicolson amplification factor of the fastest growing mode is
   negative. It is not a convergence limit of the Newton solve. The 1.3.0
   entry is corrected.
+- **The adaptive drivers stop after `max_steps` accepted steps.**
+  `adaptive_integrate` and `adaptive_integrate_imex` enforced `max_steps`
+  only through the capacity of the history buffers, so a run could take up
+  to `(max_steps // save_every + 1) * save_every` accepted steps. With
+  `max_steps = 40` a run took 41, 50 and 80 steps for `save_every` 1, 25
+  and 40. The loop now also stops at `max_steps` accepted steps, with the
+  status `MAX_STEPS_REACHED` when `t_end` is not reached. A run that needs
+  exactly `max_steps` steps ends with `SUCCESS`. Reported by Georgios
+  Vourvachakis.
 
 ## [1.3.0] - 2026-11-17
 

@@ -277,6 +277,18 @@ class TestIMEXAdaptive:
         assert seen == [3, 2]
         clear_compiled_drivers()
 
+    @pytest.mark.parametrize("save_every", [1, 7, 20])
+    def test_adaptive_imex_takes_at_most_max_steps_accepted_steps(self, save_every):
+        grid = Grid2D.uniform(8, 8, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        state = model.create_initial_state(fill_values={"u": 0.5, "v": 0.25})
+        result = adaptive_integrate_imex(
+            model, state, 0.0, 100.0, 0.001, cache, diffusivities, use_strang=True,
+            max_steps=20, save_every=save_every, pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(result.n_accepted) == 20
+        assert int(result.status) == StatusCode.MAX_STEPS_REACHED
+
     @pytest.mark.parametrize("use_strang, rtol", [(False, 1e-4), (True, 1e-6)])
     def test_adaptive_imex_has_no_rejection_cycle(self, use_strang, rtol):
         """The rejected fraction is small when the controller has the estimator order.

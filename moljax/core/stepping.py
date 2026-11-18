@@ -1278,7 +1278,13 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
             running = state.status == StatusCode.RUNNING
             not_done = state.t < t_end
             space_left = state.write_idx < max_saves
-            return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
+            # max_steps is a limit on the accepted steps. The history
+            # capacity alone let a run take up to
+            # (max_steps // save_every + 1) * save_every accepted steps.
+            steps_left = state.n_accepted < max_steps
+            return jnp.logical_and(
+                jnp.logical_and(running, not_done), jnp.logical_and(space_left, steps_left)
+            )
 
         def body_fn(state: AdaptiveState) -> AdaptiveState:
             """Single step of adaptive integration."""
@@ -1521,7 +1527,9 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
             final_state.t >= t_end,
             lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
             lambda: lax.cond(
-                final_state.write_idx >= max_saves,
+                jnp.logical_or(
+                    final_state.write_idx >= max_saves, final_state.n_accepted >= max_steps
+                ),
                 lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
                 lambda: final_state.status
             )
@@ -1596,7 +1604,10 @@ def adaptive_integrate(
         method: IntegratorType enum value: EULER, SSPRK3, RK4, BE, CN or
             BDF2. Other values raise ValueError (use adaptive_integrate_imex
             for the IMEX methods).
-        max_steps: Maximum number of steps (for buffer allocation)
+        max_steps: Maximum number of accepted steps. A run that needs more
+            stops with StatusCode.MAX_STEPS_REACHED after exactly max_steps
+            accepted steps. The value also sets the size of the history
+            buffers.
         cfl_params: CFL parameters (default created if None)
         pid_params: PID parameters (default created if None)
         preconditioner: Preconditioner for implicit methods
@@ -2101,7 +2112,13 @@ def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max
             running = state.status == StatusCode.RUNNING
             not_done = state.t < t_end
             space_left = state.write_idx < max_saves
-            return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
+            # max_steps is a limit on the accepted steps. The history
+            # capacity alone let a run take up to
+            # (max_steps // save_every + 1) * save_every accepted steps.
+            steps_left = state.n_accepted < max_steps
+            return jnp.logical_and(
+                jnp.logical_and(running, not_done), jnp.logical_and(space_left, steps_left)
+            )
 
         def body_fn(state: AdaptiveState) -> AdaptiveState:
             # Clamp dt to not overshoot (see adaptive_integrate for the cast)
@@ -2243,7 +2260,9 @@ def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max
             final_state.t >= t_end,
             lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
             lambda: lax.cond(
-                final_state.write_idx >= max_saves,
+                jnp.logical_or(
+                    final_state.write_idx >= max_saves, final_state.n_accepted >= max_steps
+                ),
                 lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
                 lambda: final_state.status
             )
@@ -2313,7 +2332,7 @@ def adaptive_integrate_imex(
         fft_cache: Precomputed FFT cache for diffusion solve
         diffusivities: Dict mapping field name to diffusion coefficient
         use_strang: Use Strang splitting (True) or IMEX Euler (False)
-        max_steps: Maximum number of steps
+        max_steps: Maximum number of accepted steps (see adaptive_integrate)
         cfl_params: CFL parameters (for advection/reaction limiting)
         pid_params: PID parameters
         save_every: Save every N accepted steps
