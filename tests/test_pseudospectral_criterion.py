@@ -123,7 +123,7 @@ def test_degree_40_evaluation_roundoff_is_included_in_contour_bound() -> None:
     """Large cancelling coefficients cannot hide Horner evaluation error."""
     degree = 40
     # p(z) = (1 - z)**40 vanishes at z=1, but its monomial absolute sum is
-    # 2**40 there.  The gamma_80 evaluation term must therefore dominate the
+    # 2**40 there.  The gamma_160 evaluation term must therefore dominate the
     # computed zero and enter the rigorous contour maximum.
     coefficients = np.asarray(
         [(-1) ** order * comb(degree, order) for order in range(degree + 1)],
@@ -227,7 +227,11 @@ def test_contour_upper_encloses_exact_points_between_samples() -> None:
         )
         serialized = tuple((float(z.real), float(z.imag)) for z in coefficients[1:])
         bound, _ = _contour_modulus_bound(corners, np.roll(corners, -1), serialized, 1.0)
+        origin_bound, _ = _contour_modulus_bound(
+            corners, np.roll(corners, -1), serialized, 1.0, basis="origin"
+        )
         assert np.isfinite(bound)
+        assert bound <= origin_bound
         bound_squared = Fraction.from_float(float(bound)) ** 2
         for start, end in zip(corners, np.roll(corners, -1), strict=True):
             start_exact = _fraction_point(start)

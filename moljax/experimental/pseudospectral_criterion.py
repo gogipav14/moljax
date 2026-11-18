@@ -387,6 +387,8 @@ def _contour_modulus_bound(
     scale: float,
     absolute_slack: float = 1.0e-3,
     max_subdivisions: int = 1024,
+    *,
+    basis: str = "min",
 ) -> tuple[float, float]:
     """Bound ``max |p|`` on every point of every edge, not only at samples.
 
@@ -399,9 +401,14 @@ def _contour_modulus_bound(
     have separate upward allowances.  Rounded contour samples lie within
     ``16u (R_abs + |c|)`` of their intended locations; the Lipschitz remainder
     includes that displacement.  Both derivative enclosures, the edge length,
-    and the final sum are inflated for their arithmetic rounding.  Non-finite
-    intermediate bounds fail closed to infinity.
+    and the final sum are inflated for their arithmetic rounding.  The sample
+    positions are those of the origin-only algorithm.  Taking the pointwise
+    minimum of the two valid sample bounds and the smaller derivative bound
+    cannot exceed the origin-only contour bound with the same allowances.
+    Non-finite intermediate bounds fail closed to infinity.
     """
+    if basis not in ("min", "origin"):
+        raise ValueError("basis must be 'min' or 'origin'")
     complex_coefficients = np.array([real + 1j * imag for real, imag in coefficients])
     orders = np.arange(1, complex_coefficients.size + 1)
     degree = complex_coefficients.size
@@ -437,10 +444,9 @@ def _contour_modulus_bound(
         scale,
         extra_radius=point_allowance if geometry_allowance < point_allowance else 0.0,
     )
-    # Both bounds follow from the triangle inequality on disks containing the
-    # complete contour.  Their minimum is therefore valid and can only tighten
-    # the previous origin-centred enclosure.
-    lipschitz = min(origin_lipschitz, centered_lipschitz)
+    # Both enclose the derivative on the complete contour.  The origin mode
+    # keeps the same samples and allowances for a direct monotonicity check.
+    lipschitz = origin_lipschitz if basis == "origin" else min(origin_lipschitz, centered_lipschitz)
     # Complex endpoint subtraction/modulus is covered by gamma_4.
     edge_up = np.nextafter(edge_length * np.nextafter(1.0 + _roundoff_gamma(4), np.inf), np.inf)
     sampling_need = sampling_lipschitz * edge_length / (2.0 * absolute_slack)
@@ -456,21 +462,19 @@ def _contour_modulus_bound(
     points = starts[:, None] + fractions[None, :] * (ends - starts)[:, None]
     all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), complex_coefficients))
     scaled = points / scale
-    origin_upper, origin_absolute_sum, _ = _horner_modulus_upper(
+    origin_upper, _, _ = _horner_modulus_upper(
         scaled,
         all_coefficients,
     )
     centered_scaled = (points - center) / scale
-    centered_upper, centered_absolute_sum, _ = _horner_modulus_upper(
+    centered_upper, _, _ = _horner_modulus_upper(
         centered_scaled,
         translated,
         coefficient_errors=translation_errors,
     )
-    # Both upper bounds enclose the same exact polynomial value.  Prefer the
-    # basis with the smaller absolute polynomial sum, as this directly controls
-    # the Horner forward-error term; either choice is rigorous.
-    use_centered = centered_absolute_sum < origin_absolute_sum
-    sampled_upper = np.where(use_centered, centered_upper, origin_upper)
+    # Both upper bounds cover each intended sample after the point allowance;
+    # their pointwise minimum is the tighter valid enclosure.
+    sampled_upper = origin_upper if basis == "origin" else np.minimum(origin_upper, centered_upper)
     sampled = float(np.max(sampled_upper))
     # gamma_4 covers the remainder product and the final addition.
     bound = np.nextafter(
