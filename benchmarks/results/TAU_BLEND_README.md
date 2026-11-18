@@ -224,14 +224,15 @@ changes on this branch tighten or correct the bound:
 1. **Centred derivative enclosure** (61fa907). The enclosure is the minimum of the
    origin-centred `sum_j j |a_j| R^(j-1)` and the same sum in powers of `z - c`, with
    `c` the centre of the contour bounding box. It lowers the derivative enclosure and
-   hence the between-sample remainder. A selected-grid verdict depends on it only when
-   every tried origin-only bound is at least one. The cases are listed below.
+   hence the between-sample remainder. No selected-grid verdict depends on the centred
+   enclosure, because every certified case has a tried origin-only bound below one.
 2. **Search-domain fallback** (61fa907). If a level set touches the edge of the search
    box, the box is enlarged once to an outer rectangle of `W(A) + D(0, eps)`, which
    contains the epsilon-pseudospectrum because `sigma_min(zI - A) >= dist(z, W(A))`. The
    grid spacing does not increase.
-3. **Floating-point evaluation of `p`** (a7d6dae). The previous sampled-value allowance
-   was insufficient for complex Horner. Complex Horner evaluation now uses the allowance
+3. **Floating-point evaluation of `p`** (a7d6dae; corrected in 39ddcfa, 6dad61f, 47b5b3d
+   and 9473e1c). The previous sampled-value allowance was insufficient for complex
+   Horner. Complex Horner evaluation now uses the allowance
    `gamma_{4n} sum_i |a_i| |z|^i` [Brent--Percival--Zimmermann; Higham]. The absolute
    and translation sums, complex modulus, sample positions, derivative enclosures and
    final sum carry their own upward allowances. Gradual underflow is covered in Horner;
@@ -239,36 +240,39 @@ changes on this branch tighten or correct the bound:
    its normal-range guard. At each sample the bound is the pointwise minimum of the
    origin and centred enclosures.
 
-No selected-grid verdict depends on the centred enclosure.
-
 At each selected contour and its prefactor, the criterion's predicted-iterations rule
-gives the following origin-only choice. `Different` marks every active-block certificate
-for which its degree or predicted count differs from the reported pointwise-minimum
-choice.
+gives the following origin-only choice. The centred enclosure changes no verdict. It
+lowers the predicted iteration count in 7 of the 15 active-block certificates (most at N
+= 512, m = 8, one_inverse_cfl_mask: 576 → 384) and in 2 of the 2 recomputed direct
+certificates; in the others the origin enclosure alone gives the same prediction at
+degree 4.
 
-| N | m | Method | Reported degree | Reported iterations | Origin-only degree | Origin-only iterations | Different |
-|---:|---:|---|---:|---:|---:|---:|---|
-| 128 | 2 | one_inverse_cfl_mask | 4 | 52 | 4 | 52 | no |
-| 128 | 2 | repository_blend_B3 | 8 | 56 | 4 | 56 | yes |
-| 128 | 2 | cfl_reference_blend_B3 | 12 | 24 | 4 | 24 | yes |
-| 128 | 4 | cfl_reference_blend_B3 | 4 | 56 | 4 | 56 | no |
-| 128 | 8 | one_inverse_cfl_mask | 8 | 80 | 4 | 80 | yes |
-| 128 | 8 | cfl_reference_blend_B3 | 12 | 36 | 4 | 36 | yes |
-| 512 | 2 | one_inverse_cfl_mask | 8 | 360 | 4 | 436 | yes |
-| 512 | 2 | cfl_reference_blend_B3 | 4 | 44 | 4 | 44 | no |
-| 512 | 4 | one_inverse_cfl_mask | 8 | 248 | 4 | 292 | yes |
-| 512 | 4 | cfl_reference_blend_B3 | 8 | 56 | 4 | 60 | yes |
-| 512 | 8 | one_inverse_cfl_mask | 8 | 384 | 4 | 576 | yes |
-| 512 | 8 | cfl_reference_blend_B3 | 16 | 96 | 4 | 96 | yes |
-| 1024 | 2 | one_inverse_cfl_mask | 8 | 528 | 4 | 680 | yes |
-| 1024 | 2 | cfl_reference_blend_B3 | 8 | 56 | 4 | 60 | yes |
-| 1024 | 8 | cfl_reference_blend_B3 | 8 | 504 | 4 | 548 | yes |
+| N | m | Method | Operator | Reported degree | Reported iterations | Origin-only degree | Origin-only iterations | Degree differs | Prediction differs |
+|---:|---:|---|---|---:|---:|---:|---:|---|---|
+| 128 | 2 | one_inverse_cfl_mask | Y | 4 | 52 | 4 | 52 | no | no |
+| 128 | 2 | repository_blend_B3 | Y | 8 | 56 | 4 | 56 | yes | no |
+| 128 | 2 | cfl_reference_blend_B3 | Y | 12 | 24 | 4 | 24 | yes | no |
+| 128 | 4 | cfl_reference_blend_B3 | Y | 4 | 56 | 4 | 56 | no | no |
+| 128 | 8 | one_inverse_cfl_mask | Y | 8 | 80 | 4 | 80 | yes | no |
+| 128 | 8 | cfl_reference_blend_B3 | Y | 12 | 36 | 4 | 36 | yes | no |
+| 512 | 2 | one_inverse_cfl_mask | Y | 8 | 360 | 4 | 436 | yes | yes |
+| 512 | 2 | cfl_reference_blend_B3 | Y | 4 | 44 | 4 | 44 | no | no |
+| 512 | 4 | one_inverse_cfl_mask | Y | 8 | 248 | 4 | 292 | yes | yes |
+| 512 | 4 | cfl_reference_blend_B3 | Y | 8 | 56 | 4 | 60 | yes | yes |
+| 512 | 8 | one_inverse_cfl_mask | Y | 8 | 384 | 4 | 576 | yes | yes |
+| 512 | 8 | cfl_reference_blend_B3 | Y | 16 | 96 | 4 | 96 | yes | no |
+| 1024 | 2 | one_inverse_cfl_mask | Y | 8 | 528 | 4 | 680 | yes | yes |
+| 1024 | 2 | cfl_reference_blend_B3 | Y | 8 | 56 | 4 | 60 | yes | yes |
+| 1024 | 8 | cfl_reference_blend_B3 | Y | 8 | 504 | 4 | 548 | yes | yes |
+| 512 | 2 | cfl_reference_blend_B3 | regularized_full_MJ | 12 | 48 | 4 | 52 | yes | yes |
+| 1024 | 2 | cfl_reference_blend_B3 | regularized_full_MJ | 8 | 72 | 4 | 76 | yes | yes |
 
 Source: `tau_blend_active_block.json`,
 `/cases/*/Y_certificate_selected/minimum_origin_only_contour_bound`,
 `/cases/*/Y_certificate_selected/contour_modulus_bound_origin_only`,
 `/cases/*/Y_certificate_selected/contour_modulus_bound`,
-`/cases/*/Y_certificate_selected/origin_only_counterfactual`.
+`/cases/*/Y_certificate_selected/origin_only_counterfactual`,
+`/direct_regularized_full_MJ_certificates/*/certificate_ladder/*/origin_only_counterfactual`.
 
 Across the compared candidate calls, the corrected upward allowances raise a contour
 bound by at most 2.1311448e-9 (at degree 36); the pointwise minimum lowers the
@@ -291,7 +295,7 @@ epsilon samples and target `1e-8` (source:
 
 Source: `tau_blend_active_block.json`, `/configuration` [F6].
 
-**Recomputation.** On georgios-vourvachakis-82K2 at commit
+**Recomputation.** On laptop CPU (AMD Ryzen 7 5800H) at commit
 18f684dc8b8175c8d0fb4ee63ea44e93b16f04cf, 22 ladder entries were recomputed; 16 were
 carried over because connectivity or the compute cap decided them before contour
 evaluation. The direct full-operator certificate at `N = 128` retains its committed
@@ -681,7 +685,7 @@ Source: `pme_dst_tau_blend_batching_audit_{gpu,cpu}.json` [P7].
 
 ## II.5 Dense criterion and runtime estimator
 
-The legacy dense criterion used the public defaults on code that predates the 3
+The legacy dense criterion used the public defaults on code that predates the 7
 certificate changes of Part I. It and the current rerun both use `N = 512`.
 
 | m | certified | rate | predicted iterations | GMRES |

@@ -256,7 +256,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -309,7 +309,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -866,7 +866,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -919,7 +919,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -1478,7 +1478,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -1531,7 +1531,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -2692,7 +2692,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -2745,7 +2745,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -3304,7 +3304,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -3357,7 +3357,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -3914,7 +3914,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -3967,7 +3967,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -4526,7 +4526,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -4579,7 +4579,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -5172,7 +5172,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -5212,7 +5212,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -5770,7 +5770,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -5823,7 +5823,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -6370,7 +6370,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -6421,7 +6421,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -6474,7 +6474,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -7031,7 +7031,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -7084,7 +7084,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -7655,7 +7655,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -7706,7 +7706,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -7759,7 +7759,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -8316,7 +8316,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -8369,7 +8369,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -8916,7 +8916,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -8967,7 +8967,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -9020,7 +9020,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -10129,7 +10129,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -10182,7 +10182,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -11379,7 +11379,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -11419,7 +11419,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -12579,7 +12579,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -12632,7 +12632,7 @@
         "recomputation": {
           "backend": "cpu",
           "git_commit": "18f684d",
-          "host": "georgios-vourvachakis-82K2",
+          "host": "laptop CPU (AMD Ryzen 7 5800H)",
           "jax": "0.11.2",
           "jaxlib": "0.11.2",
           "numpy": "2.5.4",
@@ -12959,8 +12959,14 @@
     "max_selected_selection_reduction": 0.0007059058374271343,
     "pending_second_host": "direct regularized full MJ at N=128",
     "provenance": {
+      "backend": "cpu",
       "git_commit": "18f684dc8b8175c8d0fb4ee63ea44e93b16f04cf",
-      "host": "georgios-vourvachakis-82K2",
+      "host": "laptop CPU (AMD Ryzen 7 5800H)",
+      "jax": "0.11.2",
+      "jaxlib": "0.11.2",
+      "numpy": "2.5.4",
+      "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+      "scipy": "1.18.1",
       "status": "recomputed",
       "utc_date": "2026-11-18"
     },
@@ -12980,6 +12986,22 @@
       {
         "change": "soundness and monotonicity validation for the tightened certificate",
         "commit": "c9c4a8e"
+      },
+      {
+        "change": "rounding allowances, including gamma_{4n} for complex Horner",
+        "commit": "39ddcfa"
+      },
+      {
+        "change": "pointwise minimum of origin and centred sample bounds",
+        "commit": "6dad61f"
+      },
+      {
+        "change": "gradual underflow allowance in complex Horner",
+        "commit": "47b5b3d"
+      },
+      {
+        "change": "fail-closed centred translation and derivative underflow detection",
+        "commit": "9473e1c"
       }
     ],
     "certificate_matrix_dtype": "complex128",
@@ -13101,7 +13123,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",
@@ -13168,7 +13190,7 @@
           "recomputation": {
             "backend": "cpu",
             "git_commit": "18f684d",
-            "host": "georgios-vourvachakis-82K2",
+            "host": "laptop CPU (AMD Ryzen 7 5800H)",
             "jax": "0.11.2",
             "jaxlib": "0.11.2",
             "numpy": "2.5.4",

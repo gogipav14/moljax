@@ -160,6 +160,7 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
             [
                 SOURCES[source],
                 facts.cite(source, f"{pointer}/{head_key}"),
+                facts.cite(source, f"{pointer}/host") if "host" in provenance else "not recorded",
                 facts.cite(source, f"{pointer}/python"),
                 facts.cite(source, f"{pointer}/jax"),
                 jaxlib,
@@ -168,12 +169,27 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
                 facts.cite(source, f"{pointer}/{backend_key}"),
             ]
         )
+    pointer = "/certificate_recomputation/provenance"
+    provenance_rows.append(
+        [
+            f"{SOURCES['active']} (recomputation)",
+            facts.cite("active", f"{pointer}/git_commit"),
+            facts.cite("active", f"{pointer}/host"),
+            facts.cite("active", f"{pointer}/python"),
+            facts.cite("active", f"{pointer}/jax"),
+            facts.cite("active", f"{pointer}/jaxlib"),
+            facts.cite("active", f"{pointer}/numpy"),
+            facts.cite("active", f"{pointer}/scipy"),
+            facts.cite("active", f"{pointer}/backend"),
+        ]
+    )
     lines.extend(
         [
             _table(
                 [
                     "JSON",
                     "execution commit",
+                    "host label",
                     "Python",
                     "JAX",
                     "jaxlib",
@@ -346,6 +362,11 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
         ]
     )
     certificate_rows = []
+    source_labels = {
+        "recomputed": "recomputed",
+        "carried over: decided before the contour bound": "carried over",
+        "pending second-host recomputation": "pending second host",
+    }
     for index, row in enumerate(active["cases"]):
         root = f"/cases/{index}"
         selected = row["Y_certificate_selected"]
@@ -357,6 +378,11 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
                 facts.cite("active", f"{root}/merged_policy/verdict"),
                 facts.cite("active", f"{root}/merged_policy/disk_rate"),
                 facts.cite("active", f"{root}/Y_certificate_selected/certified"),
+                facts.cite(
+                    "active",
+                    f"{root}/Y_certificate_selected/recomputation/status",
+                    source_labels[selected["recomputation"]["status"]],
+                ),
                 facts.cite("active", f"{root}/Y_certificate_selected/reason"),
                 facts.cite("active", f"{root}/Y_certificate_selected/grid"),
                 (
@@ -397,6 +423,7 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
                     "disk",
                     "disk rate",
                     "Y cert",
+                    "source",
                     "reason",
                     "grid",
                     "degree",
@@ -425,6 +452,13 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
             [
                 facts.cite("active", f"{root}/nx"),
                 facts.cite("active", f"{cert}/certified"),
+                facts.cite(
+                    "active",
+                    f"{cert}/recomputation/status",
+                    source_labels[
+                        row["certificate_ladder"][selected_index]["recomputation"]["status"]
+                    ],
+                ),
                 facts.cite("active", f"{cert}/grid"),
                 facts.cite("active", f"{cert}/degree"),
                 facts.cite("active", f"{cert}/rho"),
@@ -434,7 +468,10 @@ def render_facts() -> tuple[str, tuple[JsonReference, ...]]:
         )
     lines.extend(
         [
-            _table(["N", "certified", "grid", "degree", "rho", "prefactor", "reason"], direct_rows),
+            _table(
+                ["N", "certified", "source", "grid", "degree", "rho", "prefactor", "reason"],
+                direct_rows,
+            ),
             "",
             "Certificate settings: grids "
             f"{facts.cite('active', '/configuration/grid_ladder')}; degrees "

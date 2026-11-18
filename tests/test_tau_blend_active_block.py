@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import jax
@@ -26,6 +29,53 @@ from moljax.experimental.tau_blend_active_block import (
     lemma6_tail_lower_bound,
     true_residual_gmres,
 )
+
+
+def test_pending_direct_refresh_preserves_other_evidence(tmp_path: Path, monkeypatch) -> None:
+    """The selected-degree refresh changes only the pending direct certificate."""
+    source = Path(audit.__file__).parent / "results" / "tau_blend_active_block.json"
+    output = tmp_path / source.name
+    output.write_bytes(source.read_bytes())
+    before = json.loads(output.read_text())
+
+    def refresh(row: dict) -> dict:
+        selected = next(item for item in row["certificate_ladder"] if item["certified"])
+        assert (row["nx"], selected["grid"], selected["degree"]) == (128, 565, 12)
+        selected["contour_modulus_bound"] = 0.125
+        return row
+
+    monkeypatch.setattr(audit, "refresh_full_protocol", refresh)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "tau_blend_active_block.py",
+            "--resume",
+            "--nx",
+            "128",
+            "--refresh-full-selected",
+            "--output",
+            str(output),
+        ],
+    )
+    audit.main()
+    after = json.loads(output.read_text())
+    assert after["cases"] == before["cases"]
+    assert after["decision_summary"] == before["decision_summary"]
+    assert after["ordering_check"] == before["ordering_check"]
+    assert (
+        after["direct_regularized_full_MJ_certificates"][1:]
+        == before["direct_regularized_full_MJ_certificates"][1:]
+    )
+    updated = after["direct_regularized_full_MJ_certificates"][0]["certificate_ladder"][0]
+    assert updated["contour_modulus_bound"] == 0.125
+    assert updated["recomputation"]["status"] == "recomputed"
+    assert updated["recomputation"]["host"] == "second host"
+    assert "pending_second_host" not in after["certificate_recomputation"]
+    assert (
+        after["certificate_recomputation"]["recomputed_ladder_entries"]
+        == before["certificate_recomputation"]["recomputed_ladder_entries"] + 1
+    )
 
 
 def _state(nx: int, m: int = 4) -> dict:

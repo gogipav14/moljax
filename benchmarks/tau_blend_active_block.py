@@ -556,6 +556,11 @@ def main() -> None:
         help="re-evaluate one existing Y/full ladder grid with all study degrees; requires --resume",
     )
     parser.add_argument(
+        "--refresh-full-selected",
+        action="store_true",
+        help="refresh one pending direct certificate at its selected grid and degree; requires --resume --nx N",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("benchmarks/results/tau_blend_active_block.json"),
@@ -575,6 +580,29 @@ def main() -> None:
         previous = json.loads(args.output.read_text())
         rows = previous.get("cases", [])
         full = previous.get("direct_regularized_full_MJ_certificates", [])
+    if args.refresh_full_selected:
+        if not args.resume or len(args.nx) != 1 or not full:
+            raise ValueError(
+                "--refresh-full-selected requires --resume, --nx N and a completed checkpoint"
+            )
+        index = next((i for i, row in enumerate(full) if row["nx"] == args.nx[0]), None)
+        if index is None:
+            raise ValueError(f"no direct certificate for N={args.nx[0]}")
+        selected = next(item for item in full[index]["certificate_ladder"] if item["certified"])
+        if selected.get("recomputation", {}).get("status") != "pending second-host recomputation":
+            raise ValueError("direct certificate is not pending second-host recomputation")
+        full[index] = refresh_full_protocol(full[index])
+        selected = next(item for item in full[index]["certificate_ladder"] if item["certified"])
+        selected["recomputation"] = {
+            "status": "recomputed",
+            "utc_date": datetime.now(timezone.utc).date().isoformat(),
+            **benchmark_provenance(__file__, selected["wall_seconds"]),
+            "host": "second host",
+        }
+        previous["certificate_recomputation"]["recomputed_ladder_entries"] += 1
+        previous["certificate_recomputation"].pop("pending_second_host", None)
+        write_json(args.output, _json_ready(previous))
+        return
     completed = {(row["nx"], row["m"], row["method"]) for row in rows}
     configuration = {
         "grid_ladder": list(GRID_LADDER),
@@ -602,6 +630,22 @@ def main() -> None:
             {
                 "commit": "c9c4a8e",
                 "change": "soundness and monotonicity validation for the tightened certificate",
+            },
+            {
+                "commit": "39ddcfa",
+                "change": "rounding allowances, including gamma_{4n} for complex Horner",
+            },
+            {
+                "commit": "6dad61f",
+                "change": "pointwise minimum of origin and centred sample bounds",
+            },
+            {
+                "commit": "47b5b3d",
+                "change": "gradual underflow allowance in complex Horner",
+            },
+            {
+                "commit": "9473e1c",
+                "change": "fail-closed centred translation and derivative underflow detection",
             },
         ],
     }

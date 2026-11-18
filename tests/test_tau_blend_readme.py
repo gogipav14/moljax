@@ -68,6 +68,18 @@ def test_missing_origin_only_certificate_evidence_is_rejected(tmp_path: Path) ->
         render(tmp_path)
 
 
+def test_selected_degree_direct_refresh_renders_without_counterfactual(tmp_path: Path) -> None:
+    """A direct refresh of one degree cannot supply an all-degree comparison."""
+    _copy_results(tmp_path)
+
+    def refresh(document: dict) -> None:
+        selected = document["direct_regularized_full_MJ_certificates"][0]["certificate_ladder"][0]
+        selected["recomputation"]["status"] = "recomputed"
+
+    _mutate(tmp_path, FILES["active"], refresh)
+    assert "selected-degree-only direct refresh at N = 128" in render(tmp_path)
+
+
 def test_certified_slower_than_abstained_is_rejected(tmp_path: Path) -> None:
     """The ordering claim fails closed when a certified method becomes slower."""
     _copy_results(tmp_path)

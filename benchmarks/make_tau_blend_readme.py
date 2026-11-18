@@ -1381,59 +1381,113 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
         if _selected(row)["certified"]
         and _selected(row)["minimum_origin_only_contour_bound"] >= 1.0
     ]
-    dependent_table = (
-        _table(
-            ("N", "m", "Method", "Degree", "Origin-only bound", "Reported bound"),
-            [
-                (
-                    row["nx"],
-                    row["m"],
-                    row["method"],
-                    _selected(row)["degree"],
-                    _selected(row)["contour_modulus_bound_origin_only"],
-                    _selected(row)["contour_modulus_bound"],
-                )
-                for row in dependent_rows
-            ],
+    _require(not dependent_rows, "centred enclosure changes a selected-grid verdict")
+    direct_all_recomputed = [
+        (row, next(item for item in row["certificate_ladder"] if item["certified"]))
+        for row in active["direct_regularized_full_MJ_certificates"]
+        if any(
+            item.get("recomputation", {}).get("status") == "recomputed"
+            for item in row["certificate_ladder"]
         )
-        if dependent_rows
-        else "No selected-grid verdict depends on the centred enclosure."
+    ]
+    direct_recomputed = [
+        (row, selected)
+        for row, selected in direct_all_recomputed
+        if selected.get("origin_only_counterfactual")
+    ]
+    direct_without_comparison = [
+        row
+        for row, selected in direct_all_recomputed
+        if not selected.get("origin_only_counterfactual")
+    ]
+    comparison_scope = " with recorded origin-only comparisons" if direct_without_comparison else ""
+    comparison_note = (
+        "The selected-degree-only direct refresh at N = "
+        + ", ".join(str(row["nx"]) for row in direct_without_comparison)
+        + " has no origin-only counterfactual.\n\n"
+        if direct_without_comparison
+        else ""
     )
+    comparisons = [(row, _selected(row), "Y") for row in certified] + [
+        (row, selected, row["operator"]) for row, selected in direct_recomputed
+    ]
+    changed_active = [
+        (row, selected)
+        for row, selected, operator in comparisons
+        if operator == "Y"
+        and selected["origin_only_counterfactual"]["choice"]["predicted_iterations"]
+        != selected["criterion_predicted_iterations"]
+    ]
+    changed_direct = [
+        selected
+        for _, selected in direct_recomputed
+        if selected["origin_only_counterfactual"]["choice"]["predicted_iterations"]
+        != selected["criterion_predicted_iterations"]
+    ]
+    largest_row, largest_selected = max(
+        changed_active,
+        key=lambda item: (
+            item[1]["origin_only_counterfactual"]["choice"]["predicted_iterations"]
+            - item[1]["criterion_predicted_iterations"]
+        ),
+    )
+    origin_degrees = {
+        selected["origin_only_counterfactual"]["choice"]["degree"] for _, selected, _ in comparisons
+    }
+    _require(len(origin_degrees) == 1, "origin-only choices do not share one degree")
     origin_choice_table = _table(
         (
             "N",
             "m",
             "Method",
+            "Operator",
             "Reported degree",
             "Reported iterations",
             "Origin-only degree",
             "Origin-only iterations",
-            "Different",
+            "Degree differs",
+            "Prediction differs",
         ),
         [
             (
                 row["nx"],
                 row["m"],
                 row["method"],
-                _selected(row)["degree"],
-                _selected(row)["criterion_predicted_iterations"],
-                _selected(row)["origin_only_counterfactual"]["choice"]["degree"],
-                _selected(row)["origin_only_counterfactual"]["choice"]["predicted_iterations"],
+                operator,
+                selected["degree"],
+                selected["criterion_predicted_iterations"],
+                selected["origin_only_counterfactual"]["choice"]["degree"],
+                selected["origin_only_counterfactual"]["choice"]["predicted_iterations"],
                 "yes"
-                if (
-                    _selected(row)["degree"],
-                    _selected(row)["criterion_predicted_iterations"],
-                )
-                != (
-                    _selected(row)["origin_only_counterfactual"]["choice"]["degree"],
-                    _selected(row)["origin_only_counterfactual"]["choice"]["predicted_iterations"],
-                )
+                if selected["degree"] != selected["origin_only_counterfactual"]["choice"]["degree"]
+                else "no",
+                "yes"
+                if selected["criterion_predicted_iterations"]
+                != selected["origin_only_counterfactual"]["choice"]["predicted_iterations"]
                 else "no",
             )
-            for row in certified
+            for row, selected, operator in comparisons
         ],
     )
     recomputation = active["certificate_recomputation"]
+    horner_commit = changes["Horner floating-point evaluation allowance"]
+    correction_names = (
+        "rounding allowances, including gamma_{4n} for complex Horner",
+        "pointwise minimum of origin and centred sample bounds",
+        "gradual underflow allowance in complex Horner",
+        "fail-closed centred translation and derivative underflow detection",
+    )
+    correction_commits = ", ".join(changes[name] for name in correction_names[:-1])
+    correction_commits += " and " + changes[correction_names[-1]]
+    largest_nx, largest_m, largest_method = (
+        largest_row["nx"],
+        largest_row["m"],
+        largest_row["method"],
+    )
+    largest_origin_count = largest_selected["origin_only_counterfactual"]["choice"][
+        "predicted_iterations"
+    ]
+    largest_reported_count = largest_selected["criterion_predicted_iterations"]
     direct_table = _direct_table(active)
     reference_table = _reference_table(reference_rows)
     lemma4_table = _lemma4_table(lemma["lemma4"])
@@ -1663,15 +1717,15 @@ the bound:
    The enclosure is the minimum of the origin-centred
    `sum_j j |a_j| R^(j-1)` and the same sum in powers of `z - c`, with `c` the
    centre of the contour bounding box. It lowers the derivative enclosure and
-   hence the between-sample remainder. A selected-grid verdict depends on it
-   only when every tried origin-only bound is at least one. The cases are
-   listed below.
+   hence the between-sample remainder. No selected-grid verdict depends on the
+   centred enclosure, because every certified case has a tried origin-only
+   bound below one.
 2. **Search-domain fallback** ({changes['centred derivative enclosure and numerical-range domain fallback']}).
    If a level set touches the edge of the search box, the box is enlarged once
    to an outer rectangle of `W(A) + D(0, eps)`, which contains the
    epsilon-pseudospectrum because `sigma_min(zI - A) >= dist(z, W(A))`. The grid
    spacing does not increase.
-3. **Floating-point evaluation of `p`** ({changes['Horner floating-point evaluation allowance']}).
+3. **Floating-point evaluation of `p`** ({horner_commit}; corrected in {correction_commits}).
    The previous sampled-value allowance was insufficient for complex Horner.
    Complex Horner evaluation now uses the allowance
    `gamma_{{4n}} sum_i |a_i| |z|^i` [Brent--Percival--Zimmermann; Higham]. The
@@ -1681,20 +1735,24 @@ the bound:
    quotient or power falls below its normal-range guard. At each sample the
    bound is the pointwise minimum of the origin and centred enclosures.
 
-{dependent_table}
-
 At each selected contour and its prefactor, the criterion's predicted-iterations
-rule gives the following origin-only choice. `Different` marks every active-block
-certificate for which its degree or predicted count differs from the reported
-pointwise-minimum choice.
+rule gives the following origin-only choice. The centred enclosure changes no
+verdict. It lowers the predicted iteration count in {len(changed_active)} of the
+{len(certified)} active-block certificates (most at N = {largest_nx},
+m = {largest_m}, {largest_method}: {largest_origin_count}
+→ {largest_reported_count}) and in
+{len(changed_direct)} of the {len(direct_recomputed)} recomputed direct
+certificates{comparison_scope}; in the others the origin enclosure alone gives the same
+prediction at degree {next(iter(origin_degrees))}.
 
-{origin_choice_table}
+{comparison_note}{origin_choice_table}
 
 Source: `tau_blend_active_block.json`,
 `/cases/*/Y_certificate_selected/minimum_origin_only_contour_bound`,
 `/cases/*/Y_certificate_selected/contour_modulus_bound_origin_only`,
 `/cases/*/Y_certificate_selected/contour_modulus_bound`,
-`/cases/*/Y_certificate_selected/origin_only_counterfactual`.
+`/cases/*/Y_certificate_selected/origin_only_counterfactual`,
+`/direct_regularized_full_MJ_certificates/*/certificate_ladder/*/origin_only_counterfactual`.
 
 Across the compared candidate calls, the corrected upward allowances raise a
 contour bound by at most {_fmt(recomputation["max_compared_allowance_effect"])}
