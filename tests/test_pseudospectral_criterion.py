@@ -286,12 +286,17 @@ def test_contour_upper_encloses_exact_points_between_samples() -> None:
         )
         serialized = tuple((float(z.real), float(z.imag)) for z in coefficients[1:])
         bound, _ = _contour_modulus_bound(corners, np.roll(corners, -1), serialized, 1.0)
+        absolute_sum_bound, _ = _contour_modulus_bound(
+            corners, np.roll(corners, -1), serialized, 1.0, basis="absolute_sum"
+        )
         origin_bound, _ = _contour_modulus_bound(
             corners, np.roll(corners, -1), serialized, 1.0, basis="origin"
         )
         assert np.isfinite(bound)
+        assert bound <= absolute_sum_bound
         assert bound <= origin_bound
         bound_squared = Fraction.from_float(float(bound)) ** 2
+        absolute_sum_bound_squared = Fraction.from_float(float(absolute_sum_bound)) ** 2
         for start, end in zip(corners, np.roll(corners, -1), strict=True):
             start_exact = _fraction_point(start)
             end_exact = _fraction_point(end)
@@ -302,6 +307,7 @@ def test_contour_upper_encloses_exact_points_between_samples() -> None:
                     start_exact[1] + ratio * (end_exact[1] - start_exact[1]),
                 )
                 assert bound_squared >= _exact_modulus_squared(coefficients, point)
+                assert absolute_sum_bound_squared >= _exact_modulus_squared(coefficients, point)
 
 
 def test_centered_derivative_bound_covers_random_fitted_polynomials() -> None:

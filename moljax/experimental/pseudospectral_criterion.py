@@ -409,10 +409,12 @@ def _contour_modulus_bound(
     positions are those of the origin-only algorithm.  Taking the pointwise
     minimum of the two valid sample bounds and the smaller derivative bound
     cannot exceed the origin-only contour bound with the same allowances.
+    The private ``absolute_sum`` mode uses the former basis-selection rule
+    with the current allowances, for comparisons of the two effects.
     Non-finite intermediate bounds fail closed to infinity.
     """
-    if basis not in ("min", "origin"):
-        raise ValueError("basis must be 'min' or 'origin'")
+    if basis not in ("min", "origin", "absolute_sum"):
+        raise ValueError("basis must be 'min', 'origin' or 'absolute_sum'")
     complex_coefficients = np.array([real + 1j * imag for real, imag in coefficients])
     orders = np.arange(1, complex_coefficients.size + 1)
     degree = complex_coefficients.size
@@ -466,19 +468,26 @@ def _contour_modulus_bound(
     points = starts[:, None] + fractions[None, :] * (ends - starts)[:, None]
     all_coefficients = np.concatenate((np.ones(1, dtype=np.complex128), complex_coefficients))
     scaled = points / scale
-    origin_upper, _, _ = _horner_modulus_upper(
+    origin_upper, origin_absolute_sum, _ = _horner_modulus_upper(
         scaled,
         all_coefficients,
     )
     centered_scaled = (points - center) / scale
-    centered_upper, _, _ = _horner_modulus_upper(
+    centered_upper, centered_absolute_sum, _ = _horner_modulus_upper(
         centered_scaled,
         translated,
         coefficient_errors=translation_errors,
     )
     # Both upper bounds cover each intended sample after the point allowance;
     # their pointwise minimum is the tighter valid enclosure.
-    sampled_upper = origin_upper if basis == "origin" else np.minimum(origin_upper, centered_upper)
+    if basis == "origin":
+        sampled_upper = origin_upper
+    elif basis == "absolute_sum":
+        sampled_upper = np.where(
+            centered_absolute_sum < origin_absolute_sum, centered_upper, origin_upper
+        )
+    else:
+        sampled_upper = np.minimum(origin_upper, centered_upper)
     sampled = float(np.max(sampled_upper))
     # gamma_4 covers the remainder product and the final addition.
     bound = np.nextafter(
