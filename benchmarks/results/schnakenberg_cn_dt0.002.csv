@@ -1,0 +1,2 @@
+name,dt,steps,time_s,iqr_s,nfe,finite,status,extrapolated,state_is_at_t,newton_iters_per_step,krylov_iters_per_step,u_min,u_max,u_mean,u_std,v_min,v_max,v_mean,v_std
+CN (Newton-Krylov),0.002,50000,1783.7563502750018,0.0,,True,SUCCESS,False,100.0,3.6184,37.65996,0.1347849890054033,4.425537022095606,0.999999999999978,1.0894395138238147,0.28097233629480567,0.8319223457142688,0.6374480403580504,0.1340096144370573

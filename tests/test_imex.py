@@ -16,9 +16,11 @@ import pytest
 # The order and exactness tests resolve errors at 1e-6 and below.
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core import dt_policy
 from moljax.core.bc import BCType, FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
+    PIDParams,
     heisenberg_cfl_dt,
     imex_cfl_dt,
 )
@@ -39,6 +41,7 @@ from moljax.core.operators import NonlinearOp, laplacian_2d
 from moljax.core.state import tree_add, tree_axpy, tree_zeros_like
 from moljax.core.stepping import (
     adaptive_integrate_imex,
+    clear_compiled_drivers,
     imex_euler_step,
     imex_ssprk2_step,
     imex_strang_step,
@@ -243,6 +246,62 @@ class TestIMEXDTPolicy:
 
 class TestIMEXAdaptive:
     """Test IMEX adaptive integration."""
+
+    def test_controller_receives_estimator_order(self, monkeypatch):
+        seen = []
+        original = dt_policy.propose_dt_imex
+
+        def recording_proposal(*args, **kwargs):
+            seen.append(kwargs["order"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(dt_policy, "propose_dt_imex", recording_proposal)
+        grid = Grid2D.uniform(8, 8, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        state = model.create_initial_state(fill_values={"u": 1.0, "v": 0.0})
+        clear_compiled_drivers()
+        for strang in (True, False):
+            result = adaptive_integrate_imex(
+                model,
+                state,
+                0.0,
+                0.01,
+                0.005,
+                cache,
+                diffusivities,
+                use_strang=strang,
+                max_steps=10,
+                save_every=10,
+            )
+            assert int(result.status) == 0
+        assert seen == [3, 2]
+        clear_compiled_drivers()
+
+    @pytest.mark.parametrize("use_strang, rtol", [(False, 1e-4), (True, 1e-6)])
+    def test_adaptive_imex_has_no_rejection_cycle(self, use_strang, rtol):
+        """The rejected fraction is small when the controller has the estimator order.
+
+        With the method order (1 for Euler, 2 for Strang) the same runs
+        rejected 214 of 443 attempts (Euler) and 21 of 87 attempts (Strang).
+        """
+        grid = Grid2D.uniform(16, 16, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        rng = np.random.default_rng(0)
+        state = model.create_initial_state(fill_values={"u": 1.0, "v": 0.0})
+        sl = grid.interior_slice
+        u = np.asarray(state["u"]).copy()
+        v = np.asarray(state["v"]).copy()
+        u[sl] = 1.0 - 0.5 * rng.random(u[sl].shape)
+        v[sl] = 0.25 * rng.random(v[sl].shape)
+        state = model.apply_bcs({"u": jnp.asarray(u), "v": jnp.asarray(v)}, 0.0)
+        result = adaptive_integrate_imex(
+            model, state, 0.0, 20.0, 0.01, cache, diffusivities, use_strang=use_strang,
+            max_steps=4000, save_every=4000,
+            pid_params=PIDParams(rtol=rtol, atol=rtol * 1e-2),
+        )
+        assert int(result.status) == 0
+        accepted, rejected = int(result.n_accepted), int(result.n_rejected)
+        assert rejected <= 0.1 * (accepted + rejected)
 
     def test_adaptive_imex_completes(self):
         """Adaptive IMEX should complete integration."""
@@ -469,7 +528,17 @@ class TestIMEXSSPRK2StageReuse:
             "moljax.core.fft_solvers.diffusion_rhs_fft", counting_diffusion_rhs_fft
         )
 
-        y_new = imex_ssprk2_step(model, y0, t, dt, fft_cache, diffusivities)
+        # The factory marks the model's linear part as exactly the split
+        # diffusion, and the explicit part then is model.nonlinear_rhs with
+        # no call of diffusion_rhs_fft. The stage reuse is a property of the
+        # subtraction path, so count on a copy of the model without the mark.
+        plain = MOLModel(
+            grid=model.grid, bc_spec=model.bc_spec, params=model.params,
+            linear_ops=model.linear_ops, nonlinear_ops=model.nonlinear_ops,
+            metadata={k: v for k, v in model.metadata.items()
+                      if k != "linear_ops_are_fft_diffusion"},
+        )
+        y_new = imex_ssprk2_step(plain, y0, t, dt, fft_cache, diffusivities)
 
         assert call_count["n"] == 2, (
             f"diffusion_rhs_fft was called {call_count['n']} times inside the step; "
@@ -478,6 +547,14 @@ class TestIMEXSSPRK2StageReuse:
         )
         for name in y_ref:
             max_diff = float(jnp.max(jnp.abs(y_new[name] - y_ref[name])))
+            assert max_diff < 1e-12, f"field {name}: max difference {max_diff:.3e}"
+
+        # The marked model: the direct path, with no call at all and the same step.
+        call_count["n"] = 0
+        y_direct = imex_ssprk2_step(model, y0, t, dt, fft_cache, diffusivities)
+        assert call_count["n"] == 0
+        for name in y_ref:
+            max_diff = float(jnp.max(jnp.abs(y_direct[name] - y_ref[name])))
             assert max_diff < 1e-12, f"field {name}: max difference {max_diff:.3e}"
 
 

@@ -9,14 +9,33 @@ Each panel shows the computed Turing pattern (u field) with wall time and NFE.
 All methods use identical parameters, grid, and initial conditions per system.
 The different treatment of the stiff linear operator steers each solver onto a
 different pattern attractor branch during the transient growth phase.
+
+The solvers are the moljax library solvers (see rd_library_benchmark.py):
+integrate_fixed_dt (RK4), integrate_imex_fixed_dt and etd_integrate. The
+Laplacian is the one of the library (second-order central differences). NFE
+is 4 for each RK4 step, 2 for each IMEX-Strang step, 4 for each ETDRK4 step.
+A library driver compiles one loop for each step count, so the warm-up is
+one full run. A run of more than 2,000,000 steps has no warm-up; its time
+includes the compilation (`time_includes_compile`).
+
+Output: the figure, and the files attractor_divergence.json and
+attractor_divergence.csv (one row for each (system, method)). There is no
+reference solution here, so the `error` column of the CSV file is empty.
+
+Environment variables:
+  RD_OUT_DIR   Output folder for the figure, JSON and CSV (default: the
+               figures folder for the figure, the results folder for the data).
+  RD_QUICK=1   Short test (short final times, small blocks).
 """
 
 import jax
 
 jax.config.update("jax_enable_x64", True)
 
+import csv
+import json
+import os
 import time
-from functools import partial
 from pathlib import Path
 
 import jax.numpy as jnp
@@ -25,74 +44,25 @@ import numpy as np
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import rd_library_benchmark as lb
 
-output_dir = Path(__file__).parent.parent / "figures"
-output_dir.mkdir(exist_ok=True)
+from moljax.core.model import (
+    create_brusselator_periodic_fft,
+    create_gray_scott_periodic_fft,
+    create_schnakenberg_periodic_fft,
+)
+
+QUICK = os.environ.get("RD_QUICK", "0") == "1"
+_OUT = os.environ.get("RD_OUT_DIR")
+output_dir = Path(_OUT) if _OUT else Path(__file__).parent.parent / "figures"
+results_dir = Path(_OUT) if _OUT else Path(__file__).parent / "results"
+output_dir.mkdir(parents=True, exist_ok=True)
+results_dir.mkdir(parents=True, exist_ok=True)
 
 print("Generating 3x3 attractor divergence figure...")
 print(f"JAX devices: {jax.devices()}")
-
-
-# =============================================================================
-# Helpers
-# =============================================================================
-def make_lap(N, L):
-    dx = L / N
-    kx = np.fft.fftfreq(N, dx) * 2 * np.pi
-    ky = np.fft.fftfreq(N, dx) * 2 * np.pi
-    KX, KY = np.meshgrid(kx, ky, indexing='ij')
-    return jnp.array(-(KX**2 + KY**2))
-
-
-def etdrk4_coeffs(L_hat, dt):
-    E = jnp.exp(dt * L_hat)
-    E2 = jnp.exp(dt * L_hat / 2)
-    M = 32
-    r = jnp.exp(1j * jnp.pi * (jnp.arange(1, M+1) - 0.5) / M)
-    LR = dt * L_hat[..., None] + r[None, None, :]
-    Q = dt * jnp.real(jnp.mean((jnp.exp(LR / 2) - 1) / LR, axis=-1))
-    f1 = dt * jnp.real(jnp.mean((-4 - LR + jnp.exp(LR) * (4 - 3*LR + LR**2)) / LR**3, axis=-1))
-    f2 = dt * jnp.real(jnp.mean((2 + LR + jnp.exp(LR) * (-2 + LR)) / LR**3, axis=-1))
-    f3 = dt * jnp.real(jnp.mean((-4 - 3*LR - LR**2 + jnp.exp(LR) * (4 - LR)) / LR**3, axis=-1))
-    return E, E2, Q, f1, f2, f3
-
-
-def run_scan(step_fn, state, n_total, block_size, label):
-    """Run a JIT-scanned integration with timing."""
-    # Warmup (exclude from timing)
-    _ = step_fn(state, None)
-    state[0].block_until_ready()
-
-    @partial(jax.jit, static_argnums=(1,))
-    def run_block(s, n):
-        return jax.lax.scan(step_fn, s, None, length=n)[0]
-
-    # Warmup the scan
-    if n_total > block_size:
-        warmup_state = run_block(state, block_size)
-        warmup_state[0].block_until_ready()
-
-    # Timed run
-    t0 = time.perf_counter()
-    n_blocks = n_total // block_size
-    remainder = n_total - n_blocks * block_size
-    s = state
-    for i in range(n_blocks):
-        s = run_block(s, block_size)
-        s[0].block_until_ready()
-        umin, umax = float(s[0].min()), float(s[0].max())
-        if np.isnan(umin):
-            print(f"  [{label}] NaN at block {i+1}!")
-            return s, time.perf_counter() - t0
-        if (i + 1) % max(1, n_blocks // 3) == 0:
-            print(f"  [{label}] Block {i+1}/{n_blocks}, u: [{umin:.4f}, {umax:.4f}]")
-    if remainder > 0:
-        s = run_block(s, remainder)
-        s[0].block_until_ready()
-    elapsed = time.perf_counter() - t0
-    umin, umax = float(s[0].min()), float(s[0].max())
-    print(f"  [{label}] Done in {elapsed:.2f}s, u: [{umin:.4f}, {umax:.4f}]")
-    return s, elapsed
+if QUICK:
+    print("RD_QUICK=1: short test. The results are not for the paper.")
 
 
 # =============================================================================
@@ -104,7 +74,6 @@ systems = []
 N_gs = 128; L_gs = 2.5; T_gs = 5000.0
 Du_gs, Dv_gs = 2e-5, 1e-5
 F_gs, k_gs = 0.035, 0.065
-lap_gs = make_lap(N_gs, L_gs)
 
 np.random.seed(42)
 u0_gs = jnp.array(1.0 - 0.5 * np.random.rand(N_gs, N_gs))
@@ -121,19 +90,16 @@ def gs_rxn_v(u, v):
 systems.append({
     'name': 'Gray--Scott', 'field': 'v', 'cmap': 'inferno',
     'N': N_gs, 'L': L_gs, 'T': T_gs,
-    'Du': Du_gs, 'Dv': Dv_gs, 'lap': lap_gs,
+    'make_model': lambda g: create_gray_scott_periodic_fft(g, Du=Du_gs, Dv=Dv_gs, F=F_gs, k=k_gs),
     'u0': u0_gs, 'v0': v0_gs,
     'rxn_u': gs_rxn_u, 'rxn_v': gs_rxn_v,
     'dt_rk4': 0.5, 'dt_imex': 0.5, 'dt_etd': 1.0,
-    'nfe_per_step': {'RK4': 4, 'IMEX': 2, 'ETDRK4': 4},
-    'block_rk4': 2000, 'block_imex': 2000, 'block_etd': 1000,
 })
 
 # --- Schnakenberg ---
 N_sn = 128; L_sn = 10.0; T_sn = 500.0
 Du_sn, Dv_sn = 1.0, 40.0
 a_sn, b_sn, gamma_sn = 0.1, 0.9, 100.0
-lap_sn = make_lap(N_sn, L_sn)
 
 us_sn = a_sn + b_sn; vs_sn = b_sn / (a_sn + b_sn)**2
 np.random.seed(42)
@@ -154,12 +120,11 @@ def sn_rxn_v(u, v):
 systems.append({
     'name': 'Schnakenberg', 'field': 'u', 'cmap': 'viridis',
     'N': N_sn, 'L': L_sn, 'T': T_sn,
-    'Du': Du_sn, 'Dv': Dv_sn, 'lap': lap_sn,
+    'make_model': lambda g: create_schnakenberg_periodic_fft(
+        g, Du=Du_sn, Dv=Dv_sn, a=a_sn, b=b_sn, gamma=gamma_sn),
     'u0': u0_sn, 'v0': v0_sn,
     'rxn_u': sn_rxn_u, 'rxn_v': sn_rxn_v,
     'dt_rk4': 4e-5, 'dt_imex': 0.005, 'dt_etd': 0.005,
-    'nfe_per_step': {'RK4': 4, 'IMEX': 2, 'ETDRK4': 4},
-    'block_rk4': 50000, 'block_imex': 5000, 'block_etd': 5000,
     'rk4_infeasible': True,  # Flag: RK4 is unstable at any practical dt
 })
 
@@ -167,7 +132,6 @@ systems.append({
 N_br = 128; L_br = 5.0; T_br = 100.0
 Du_br, Dv_br = 0.01, 0.1
 a_br, b_br = 1.0, 1.8
-lap_br = make_lap(N_br, L_br)
 
 us_br, vs_br = a_br, b_br / a_br
 np.random.seed(42)
@@ -187,115 +151,82 @@ def br_rxn_v(u, v):
 systems.append({
     'name': 'Brusselator', 'field': 'u', 'cmap': 'RdBu_r',
     'N': N_br, 'L': L_br, 'T': T_br,
-    'Du': Du_br, 'Dv': Dv_br, 'lap': lap_br,
+    'make_model': lambda g: create_brusselator_periodic_fft(g, Du=Du_br, Dv=Dv_br, a=a_br, b=b_br),
     'u0': u0_br, 'v0': v0_br,
     'rxn_u': br_rxn_u, 'rxn_v': br_rxn_v,
     'dt_rk4': 0.002, 'dt_imex': 0.05, 'dt_etd': 0.5,
-    'nfe_per_step': {'RK4': 4, 'IMEX': 2, 'ETDRK4': 4},
-    'block_rk4': 5000, 'block_imex': 2000, 'block_etd': 200,
 })
 
 
 # =============================================================================
 # Run all 9 combinations
 # =============================================================================
+if QUICK:
+    # Short final times.
+    for sys_, t_quick in zip(systems, (20.0, 0.5, 2.0), strict=True):
+        sys_['T'] = t_quick
+
 results = {}  # results[(sys_idx, method)] = (u_field, v_field, walltime, nfe, nsteps, dt)
+records = []  # one record for each (system, method) for the JSON and CSV files
+
+NFE_KEY = {'RK4': 'rk4', 'IMEX': 'imex_strang', 'ETDRK4': 'etdrk4'}
 
 for si, sys in enumerate(systems):
     name = sys['name']
-    lap = sys['lap']
-    Du, Dv = sys['Du'], sys['Dv']
     rxn_u, rxn_v = sys['rxn_u'], sys['rxn_v']
-    u0, v0 = sys['u0'], sys['v0']
     T = sys['T']
 
-    # --- RK4 ---
-    print(f"\n{'='*60}")
-    print(f"{name} - RK4")
-    print(f"{'='*60}")
-    dt = sys['dt_rk4']
-    n_steps = int(T / dt)
-    nfe = n_steps * 4
+    def reaction(u, v, rxn_u=rxn_u, rxn_v=rxn_v):
+        return rxn_u(u, v), rxn_v(u, v)
 
-    @jax.jit
-    def rk4_step(state, _, dt_=dt, Du_=Du, Dv_=Dv, lap_=lap):
-        u, v = state
-        def rhs(uu, vv):
-            lu = jnp.fft.ifft2(lap_ * jnp.fft.fft2(uu)).real
-            lv = jnp.fft.ifft2(lap_ * jnp.fft.fft2(vv)).real
-            return Du_ * lu + rxn_u(uu, vv), Dv_ * lv + rxn_v(uu, vv)
-        k1u, k1v = rhs(u, v)
-        k2u, k2v = rhs(u + 0.5*dt_*k1u, v + 0.5*dt_*k1v)
-        k3u, k3v = rhs(u + 0.5*dt_*k2u, v + 0.5*dt_*k2v)
-        k4u, k4v = rhs(u + dt_*k3u, v + dt_*k3v)
-        return (u + (dt_/6)*(k1u + 2*k2u + 2*k3u + k4u),
-                v + (dt_/6)*(k1v + 2*k2v + 2*k3v + k4v)), None
+    lib = lb.make_library_system(sys['make_model'], reaction, sys['u0'], sys['v0'], sys['L'], T)
+    lam_max = float(np.max(-lib['lap_eig'])) * max(lib['Du'], lib['Dv'])
+    print(f"\n{name}: RK4 diffusion limit of the library Laplacian: dt < {2.8 / lam_max:.3e}")
 
-    state, elapsed = run_scan(rk4_step, (u0, v0), n_steps, sys['block_rk4'], f"{name}/RK4")
-    results[(si, 'RK4')] = (np.array(state[0]), np.array(state[1]), elapsed, nfe, n_steps, dt)
+    for method, title in (('RK4', 'RK4'), ('IMEX', 'IMEX-Strang'), ('ETDRK4', 'ETDRK4')):
+        print(f"\n{'='*60}")
+        print(f"{name} - {title}")
+        print(f"{'='*60}", flush=True)
+        dt_req = sys[{'RK4': 'dt_rk4', 'IMEX': 'dt_imex', 'ETDRK4': 'dt_etd'}[method]]
+        n_steps, dt = lb.steps_for(T, dt_req)
+        lib_method = {'RK4': 'RK4', 'IMEX': 'IMEX-Strang', 'ETDRK4': 'ETDRK4'}[method]
+        warm = n_steps <= 2_000_000
+        if warm:
+            lb.library_solve(lib, lib_method, dt, n_steps)     # compile; not timed
+        t_start = time.perf_counter()
+        u_f, v_f, extra = lb.library_solve(lib, lib_method, dt, n_steps)
+        elapsed = time.perf_counter() - t_start
+        u_f, v_f = np.array(u_f), np.array(v_f)
+        status = extra.get('status')
+        if status == 'NON_FINITE_VALUES':
+            # The library returns the last finite state. The panel must show
+            # that the run failed.
+            u_f = np.full_like(u_f, np.nan)
+            v_f = np.full_like(v_f, np.nan)
+        nfe = lb.NFE_PER_STEP[NFE_KEY[method]] * n_steps
+        results[(si, method)] = (u_f, v_f, elapsed, nfe, n_steps, dt)
+        rec = {'system': name, 'method': method, 'dt': float(dt), 'steps': n_steps,
+               'nfe': int(nfe), 'time_s': float(elapsed), 'time_includes_compile': not warm,
+               'status': status, 'rk4_diffusion_limit': 2.8 / lam_max,
+               'error': None, 'valid': None}
+        rec.update(lb.field_summary(u_f, v_f))
+        rec['valid'] = rec['finite']
+        print(f"  {elapsed:.2f} s, steps {n_steps:,}, finite {rec['finite']}, status {status}, "
+              f"u mean {rec.get('u_mean')}, u std {rec.get('u_std')}", flush=True)
+        records.append(rec)
 
-    # --- IMEX-Strang ---
-    print(f"\n{'='*60}")
-    print(f"{name} - IMEX-Strang")
-    print(f"{'='*60}")
-    dt = sys['dt_imex']
-    n_steps = int(T / dt)
-    nfe = n_steps * 2
-
-    imex_fu_half = 1.0 / (1.0 - (dt / 2) * Du * lap)
-    imex_fv_half = 1.0 / (1.0 - (dt / 2) * Dv * lap)
-
-    @jax.jit
-    def imex_step(state, _, dt_=dt, fu_=imex_fu_half, fv_=imex_fv_half):
-        u, v = state
-        u_s = jnp.fft.ifft2(jnp.fft.fft2(u) * fu_).real
-        v_s = jnp.fft.ifft2(jnp.fft.fft2(v) * fv_).real
-        u_m = u_s + dt_ * rxn_u(u_s, v_s)
-        v_m = v_s + dt_ * rxn_v(u_s, v_s)
-        u_n = jnp.fft.ifft2(jnp.fft.fft2(u_m) * fu_).real
-        v_n = jnp.fft.ifft2(jnp.fft.fft2(v_m) * fv_).real
-        return (u_n, v_n), None
-
-    state, elapsed = run_scan(imex_step, (u0, v0), n_steps, sys['block_imex'], f"{name}/IMEX")
-    results[(si, 'IMEX')] = (np.array(state[0]), np.array(state[1]), elapsed, nfe, n_steps, dt)
-
-    # --- ETDRK4 ---
-    print(f"\n{'='*60}")
-    print(f"{name} - ETDRK4")
-    print(f"{'='*60}")
-    dt = sys['dt_etd']
-    n_steps = int(T / dt)
-    nfe = n_steps * 4
-
-    Eu, E2u, Qu, f1u, f2u, f3u = etdrk4_coeffs(Du * lap, dt)
-    Ev, E2v, Qv, f1v, f2v, f3v = etdrk4_coeffs(Dv * lap, dt)
-
-    @jax.jit
-    def etd_step(state, _,
-                 Eu_=Eu, E2u_=E2u, Qu_=Qu, f1u_=f1u, f2u_=f2u, f3u_=f3u,
-                 Ev_=Ev, E2v_=E2v, Qv_=Qv, f1v_=f1v, f2v_=f2v, f3v_=f3v):
-        u, v = state
-        uh, vh = jnp.fft.fft2(u), jnp.fft.fft2(v)
-        Na, Nb_ = jnp.fft.fft2(rxn_u(u, v)), jnp.fft.fft2(rxn_v(u, v))
-
-        ua = jnp.fft.ifft2(E2u_ * uh + Qu_ * Na).real
-        va = jnp.fft.ifft2(E2v_ * vh + Qv_ * Nb_).real
-        Nb, Nc_ = jnp.fft.fft2(rxn_u(ua, va)), jnp.fft.fft2(rxn_v(ua, va))
-
-        ub = jnp.fft.ifft2(E2u_ * uh + Qu_ * Nb).real
-        vb = jnp.fft.ifft2(E2v_ * vh + Qv_ * Nc_).real
-        Nc, Nd_ = jnp.fft.fft2(rxn_u(ub, vb)), jnp.fft.fft2(rxn_v(ub, vb))
-
-        uc = jnp.fft.ifft2(E2u_ * (E2u_ * uh + Qu_ * (2*Nc - Na))).real
-        vc = jnp.fft.ifft2(E2v_ * (E2v_ * vh + Qv_ * (2*Nd_ - Nb_))).real
-        Nd, Ne_ = jnp.fft.fft2(rxn_u(uc, vc)), jnp.fft.fft2(rxn_v(uc, vc))
-
-        un = jnp.fft.ifft2(Eu_ * uh + Na*f1u_ + 2*(Nb+Nc)*f2u_ + Nd*f3u_).real
-        vn = jnp.fft.ifft2(Ev_ * vh + Nb_*f1v_ + 2*(Nc_+Nd_)*f2v_ + Ne_*f3v_).real
-        return (un, vn), None
-
-    state, elapsed = run_scan(etd_step, (u0, v0), n_steps, sys['block_etd'], f"{name}/ETDRK4")
-    results[(si, 'ETDRK4')] = (np.array(state[0]), np.array(state[1]), elapsed, nfe, n_steps, dt)
+with open(results_dir / "attractor_divergence.json", 'w') as f:
+    json.dump({'records': records, 'quick': QUICK,
+               'config': {'grid': 128, 'solvers': 'moljax library', 'laplacian': 'second-order central differences',
+                          'jax_version': jax.__version__, 'device': str(jax.devices()[0])}}, f, indent=2)
+with open(results_dir / "attractor_divergence.csv", 'w', newline='') as f:
+    cols = ['system', 'method', 'dt', 'steps', 'nfe', 'time_s', 'time_includes_compile',
+            'status', 'error', 'finite', 'valid', 'u_mean', 'u_std', 'v_mean', 'v_std']
+    w = csv.writer(f)
+    w.writerow(cols)
+    for rec in records:
+        w.writerow(["" if rec.get(c) is None else rec[c] for c in cols])
+print(f"Saved: {results_dir / 'attractor_divergence.json'} and .csv")
 
 
 # =============================================================================
@@ -315,7 +246,7 @@ for si, sys in enumerate(systems):
         # Choose which field to show
         field = v_field if sys['field'] == 'v' else u_field
         extent = [0, sys['L'], 0, sys['L']]
-        is_nan = np.isnan(field).any()
+        is_nan = not np.isfinite(field).all()
 
         if is_nan:
             # Show informative "infeasible" panel

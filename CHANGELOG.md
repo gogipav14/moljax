@@ -4,6 +4,101 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The adaptive controller uses the power of h of the local error
+  estimate, not the order of the method.** `compute_error_order` returned
+  `[1, 3, 4, 1, 2, 2, 1, 2]` for Euler, SSPRK3, RK4, BE, CN, BDF2, IMEX
+  Euler and IMEX Strang. The estimates are step doubling (explicit and IMEX
+  methods) and a difference from the backward-Euler solution (BE, CN,
+  BDF2), so the correct values are `[2, 4, 5, 2, 2, 2, 2, 3]`. The adaptive
+  IMEX driver had its own values (1 and 2) and now uses the same table. With
+  the old exponents the controller proposed steps that were too large and
+  then rejected them. Accepted / rejected steps before and after:
+  adaptive IMEX-Strang on the 256 x 256 Gray-Scott pattern setup to
+  t = 10000 at rtol 1e-4, 10,855 / 5,422 and 7,631 / 0; adaptive backward
+  Euler on the cubic test model to t = 0.5, 95 / 94 and 55 / 1.
+- **A fast Newton solve does not enlarge the step proposal.**
+  `implicit_robustness_dt` multiplied the proposal of the error controller
+  by 1.2 after each fast solve. With the safety factor 0.9 this put the
+  steady state of the controller above the acceptance limit and gave a
+  rejection cycle. The factor is now capped at 1, and the default of
+  `growth_factor` is 1.0. A failed solve halves the step as before.
+- **An implicit adaptive run can use steps up to `PIDParams.dt_max`.**
+  `propose_dt` called the Newton limiter without the limits of the
+  controller, so the limiter used its own default `dt_max = 1.0`. The
+  largest step of an adaptive BE or CN run was 1.0 with
+  `PIDParams(dt_max=20)`; BDF2 uses the same path.
+- **The reaction-diffusion benchmark scripts now call the library solvers.**
+  `benchmark_gray_scott.py`, `benchmark_schnakenberg.py`,
+  `benchmark_brusselator.py`, the work-precision scripts and the two figure
+  scripts had hand-written steppers. Three of these steppers were not
+  correct: the Crank-Nicolson loop was a fixed-point iteration with a
+  constant count and no convergence check, the IMEX half steps were
+  first-order, and one ETDRK4 weight was too small by a factor of 2. The
+  library solvers (`integrate_fixed_dt`, `integrate_imex_fixed_dt`,
+  `etd_integrate`) did not have these errors. The scripts now use them
+  through `benchmarks/rd_library_benchmark.py`, record the status of each
+  run, and write CSV files beside the JSON files. `gray_scott.json`,
+  `brusselator.json` and `schnakenberg.json` (with two more Schnakenberg
+  files for ETDRK4 at dt = 0.0005 and Crank-Nicolson at dt = 0.002) are
+  generated again with the new scripts. The work-precision files
+  (`wp_*.json`, `work_precision_*.json`, each with a CSV file) are also
+  generated again; their reference is ETDRK4 at a small step, with RK4 as
+  an independent cross-check. The five stored `.npy` states now hold the
+  ETDRK4 final states of the new table runs. The earlier Schnakenberg
+  state was not finite.
+- **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
+  No Newton solve converges at this step (the fastest Turing mode has the
+  growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark
+  now reports `NK_FAILED` for this row and records no time.
+
+### Changed
+
+- **The step sequence of every adaptive run changes**, because the
+  controller exponent changes for all eight methods. Results agree with the
+  earlier ones within the tolerance of the controller, not bit for bit.
+  The `order` argument of `pid_controller_dt`, `handle_rejected_step`,
+  `propose_dt` and `propose_dt_imex` now means the power of h of the local
+  error estimate. A caller that passes a method order must add 1 for a
+  step-doubling estimate.
+- **An unknown method value raises `ValueError`** in `compute_error_order`,
+  `adaptive_integrate` and `integrate_fixed_dt`. Before, an IMEX value or an
+  out-of-range value ran as BDF2 with no message.
+- **`_gmres_solve` stops at the tolerance and counts its iterations.** The
+  solver used `jax.scipy.sparse.linalg.gmres` in its default mode, which
+  builds the complete Krylov space of the restart size in each cycle and
+  returns no iteration count. The new solver is a restarted GMRES with
+  Givens rotations and an early stop. `NKStats.lin_iters` is now the number
+  of Krylov iterations used. A fixed-step Crank-Nicolson run on the
+  256 x 256 Brusselator and Gray-Scott benchmarks is 5 to 6 times faster.
+- **`integrate_imex_fixed_dt` with Strang splitting combines the diffusion
+  half steps of adjacent steps inside one saved block.** The result is equal
+  to that of repeated `imex_strang_step` calls to rounding. The models from
+  `create_gray_scott_periodic_fft`, `create_schnakenberg_periodic_fft` and
+  `create_brusselator_periodic_fft` also give their nonlinear part directly
+  as the explicit part. The Schnakenberg benchmark run is 3.5 times faster.
+
+### Added
+
+- **`benchmarks/controller_work_precision.py`** with its results: a
+  comparison of the old exponent, the new exponent and the new exponent
+  with the Newton cap on scalar test problems. The script has its own copy
+  of the controller. The library drivers are measured by
+  `benchmarks/benchmark_adaptive_gray_scott.py`; its results are in
+  `benchmarks/results/adaptive_gray_scott.json` and `.csv`.
+- **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
+  with the Newton iteration total and the Krylov iteration total of the run.
+  The default return value does not change.
+- **`benchmarks/rd_steppers.py`**: an independent implementation of RK4,
+  IMEX-Strang, ETDRK4 and Crank-Nicolson (Newton-GMRES) for two-species
+  periodic systems. `tests/test_rd_benchmark_steppers.py` uses it to verify
+  the convergence orders and to compare the library solvers with it.
+- **`benchmarks/benchmark_reactor_sensitivity.py`** and
+  **`benchmarks/benchmark_adaptive_gray_scott.py`**: scripts for the reactor
+  sensitivity with automatic differentiation (with an analytical check) and
+  for the step statistics of the adaptive integrators.
+
 ## [1.2.1] - 2026-09-20
 
 ### Added

@@ -3,7 +3,7 @@ Time step policy for MOL-JAX.
 
 This module provides automatic time step selection:
 - Heisenberg/CFL limiter for explicit methods
-- PID/PI controller for adaptive stepping
+- PI controller for adaptive stepping (parameters in PIDParams)
 - Implicit robustness limiter based on Newton-Krylov stats
 - IMEX-aware dt limiting (no diffusion limit when diffusion is implicit)
 
@@ -84,12 +84,20 @@ class CFLParams:
 @dataclass(frozen=True)
 class PIDParams:
     """
-    Parameters for PID/PI adaptive time step controller.
+    Parameters for the adaptive time step controller.
 
-    The controller computes:
+    The controller is a PI controller. It has no derivative term. The
+    class keeps the name PIDParams for API stability. In short form, the
+    controller computes:
         dt_new = dt * safety * err_ratio^(-kI) * prev_err_ratio^(kP)
 
     where err_ratio = error_norm (should be <= 1 for accepted step).
+    The exact form in pid_controller_dt divides kI and kP by the exponent q
+    of the local error estimate, and the proportional factor is a ratio:
+        dt_new = dt * safety * err_ratio^(-kI/q)
+                 * (prev_err_ratio / err_ratio)^(kP/q)
+
+    The controller does not use ControllerState.prevprev_err_ratio.
 
     Attributes:
         safety: Safety factor (default 0.9)
@@ -119,7 +127,9 @@ class ControllerState(NamedTuple):
 
     Attributes:
         prev_err_ratio: Error ratio from previous step
-        prevprev_err_ratio: Error ratio from two steps ago (for PID)
+        prevprev_err_ratio: Error ratio from two steps ago. The controller
+            stores this value but does not read it, because the controller
+            is PI (see PIDParams). The field stays for API stability.
         consecutive_rejects: Number of consecutive rejected steps
     """
     prev_err_ratio: jnp.ndarray
@@ -261,7 +271,7 @@ def pid_controller_dt(
     order: int = 4
 ) -> tuple[jnp.ndarray, ControllerState]:
     """
-    PID/PI controller for adaptive time step.
+    PI controller for adaptive time step (see PIDParams for the name).
 
     Computes new dt based on error ratio using PI formula:
         factor = (1/err_ratio)^(kI/order) * (prev_err/err_ratio)^(kP/order)
@@ -272,7 +282,7 @@ def pid_controller_dt(
         err_ratio: Current error norm (should be <= 1 for accepted step)
         controller_state: Previous controller state
         pid_params: PID parameters
-        order: Order of the method (for scaling coefficients)
+        order: Power of h in the local error estimate (for scaling coefficients)
 
     Returns:
         Tuple of (dt_new, new_controller_state)
@@ -320,7 +330,7 @@ def handle_rejected_step(
         err_ratio: Error ratio that caused rejection (> 1)
         controller_state: Current controller state
         pid_params: PID parameters
-        order: Order of the method
+        order: Power of h in the local error estimate
 
     Returns:
         Tuple of (dt_new, new_controller_state)
@@ -359,41 +369,58 @@ def implicit_robustness_dt(
     nk_stats: NKStats,
     dt_min: float = 1e-12,
     dt_max: float = 1.0,
-    growth_factor: float = 1.2,
+    growth_factor: float = 1.0,
     shrink_factor: float = 0.5,
     fast_iters_threshold: int = 3
 ) -> jnp.ndarray:
     """
-    Adjust dt based on Newton-Krylov convergence.
+    Restrict dt based on Newton-Krylov convergence.
 
-    - Shrink dt if NK didn't converge
-    - Shrink dt if NK took many iterations
-    - Grow dt if NK converged quickly
+    The error controller owns step growth. A failed Newton solve retains the
+    inherited shrink, while a converged solve leaves the proposal unchanged,
+    regardless of its iteration count. ``growth_factor`` is retained for API
+    compatibility but capped at 1, so it can request an additional
+    restriction after a fast solve but can never enlarge the PI proposal.
+    A value above 1 has no effect. The default is 1.0 (it was 1.2 before the
+    cap).
+
+    This separation matters for the inherited PI form. Under the asymptotic
+    model ``err ∝ h**order``, if a post-controller factor ``g`` is applied
+    after every fast solve, the shipped PI form has the steady-state fixed
+    point ``e* = (safety * g)**(order / kI)``. Here ``kI`` is the un-normalized
+    ``PIDParams.kI`` (0.7 by default); the controller itself divides it by
+    ``order``. The former default ``g = 1.2`` gave ``safety * g = 0.9 * 1.2 > 1``,
+    which placed ``e*`` above the acceptance boundary and created a
+    deterministic rejection cycle.
 
     Args:
         dt_old: Current time step
         nk_stats: Statistics from NK solver
         dt_min: Minimum dt
         dt_max: Maximum dt
-        growth_factor: Factor to grow dt on fast convergence
-        shrink_factor: Factor to shrink dt on slow/failed convergence
+        growth_factor: Legacy fast-solve factor, capped at 1 (default 1.0)
+        shrink_factor: Factor to shrink dt on failed convergence
         fast_iters_threshold: Threshold for "fast" convergence
 
     Returns:
         New dt
     """
-    # Shrink if not converged
+    capped_fast_factor = jnp.minimum(
+        jnp.asarray(growth_factor, dtype=dt_old.dtype),
+        jnp.asarray(1.0, dtype=dt_old.dtype),
+    )
     dt_new = lax.cond(
         nk_stats.converged,
         lambda: dt_old,
-        lambda: dt_old * shrink_factor
+        lambda: dt_old * shrink_factor,
     )
-
-    # Adjust based on iteration count (only if converged)
     dt_new = lax.cond(
-        jnp.logical_and(nk_stats.converged, nk_stats.newton_iters <= fast_iters_threshold),
-        lambda: jnp.minimum(dt_new * growth_factor, dt_max),
-        lambda: dt_new
+        jnp.logical_and(
+            nk_stats.converged,
+            nk_stats.newton_iters <= fast_iters_threshold,
+        ),
+        lambda: dt_new * capped_fast_factor,
+        lambda: dt_new,
     )
 
     return jnp.clip(dt_new, dt_min, dt_max)
@@ -429,7 +456,7 @@ def propose_dt(
         nk_stats: NK statistics (for implicit methods)
         cfl_params: CFL parameters (default created if None)
         pid_params: PID parameters (default created if None)
-        order: Method order
+        order: Power of h in the local error estimate
         accepted: The integrator's own accept/reject decision. Pass it: a
             small error ratio is not by itself an acceptance, since the
             step must also be finite and its Newton-Krylov solve must have
@@ -496,7 +523,12 @@ def propose_dt(
     # For implicit methods with NK stats, apply robustness limiter
     if nk_stats is not None:
         is_implicit = method >= 3
-        dt_robust = implicit_robustness_dt(dt_final, nk_stats)
+        # The limiter must use the limits of the controller. Its own default
+        # dt_max is 1.0, which capped every implicit adaptive run at dt = 1
+        # whatever pid_params.dt_max was.
+        dt_robust = implicit_robustness_dt(
+            dt_final, nk_stats, dt_min=pid_params.dt_min, dt_max=pid_params.dt_max
+        )
         dt_final = lax.cond(
             is_implicit,
             lambda: dt_robust,
@@ -509,19 +541,58 @@ def propose_dt(
     return dt_final, new_controller_state
 
 
+# Power of h in the local error estimate supplied to the controller for each
+# IntegratorType value (moljax.core.stepping.IntegratorType). This is one
+# larger than a method's order for a step-doubling estimate. For the implicit
+# comparison estimates it is the order of the lower-order method whose defect
+# dominates the difference. Plain ints are used for the same reason as
+# _EXPLICIT_STABILITY_BOUNDARY: stepping.py imports from this module.
+_ERROR_ORDER: dict[int, int] = {
+    0: 2,  # EULER: Euler step doubling, O(h**2)
+    1: 4,  # SSPRK3: SSPRK3 step doubling, O(h**4)
+    2: 5,  # RK4: RK4 step doubling, O(h**5)
+    3: 2,  # BE: CN - BE, dominated by BE's O(h**2) local error
+    4: 2,  # CN: CN - BE, still measuring BE's O(h**2) local error
+    5: 2,  # BDF2: BDF2 - BE, dominated by BE's O(h**2) local error
+    6: 2,  # IMEX_EULER: IMEX Euler step doubling, O(h**2)
+    7: 3,  # IMEX_STRANG: Strang step doubling, O(h**3)
+}
+
+
 def compute_error_order(method: int) -> int:
     """
-    Get the error estimation order for a given method.
+    Get the power of ``h`` in a method's local error estimate.
+
+    Each IntegratorType value has an explicit entry. An unknown value
+    raises: a default order would give the controller a wrong exponent
+    and no message.
+
+    Explicit and IMEX methods use step doubling, so a method of order ``p``
+    supplies an estimate proportional to ``h**(p + 1)``. BE uses the
+    CN--BE difference, while CN and BDF2 compare their second-order solution
+    with BE; all three differences are dominated by BE's ``O(h**2)`` local
+    error. The controller therefore needs ``[2, 4, 5, 2, 2, 2, 2, 3]``, not
+    the methods' convergence orders.
 
     Args:
         method: Integrator type enum value
 
     Returns:
-        Order used for error estimation
+        Power of ``h`` used to scale the error controller
+
+    Raises:
+        ValueError: If method is not an IntegratorType value.
     """
-    # EULER=0, SSPRK3=1, RK4=2, BE=3, CN=4, BDF2=5, IMEX_EULER=6, IMEX_SSPRK3=7
-    orders = [1, 3, 4, 1, 2, 2, 1, 2]
-    return orders[min(method, len(orders) - 1)]
+    try:
+        key = int(method)
+    except (TypeError, ValueError):
+        key = None
+    if key is None or key not in _ERROR_ORDER:
+        raise ValueError(
+            f"compute_error_order: unknown method {method!r}; "
+            f"known IntegratorType values are {sorted(_ERROR_ORDER)}"
+        )
+    return _ERROR_ORDER[key]
 
 
 # =============================================================================
@@ -676,7 +747,7 @@ def propose_dt_imex(
         controller_state: Controller state
         cfl_params: CFL parameters
         pid_params: PID parameters
-        order: Method order
+        order: Power of h in this method's local error estimate
         accepted: The integrator's own accept/reject decision; see
             propose_dt. Defaults to err_ratio <= 1.0.
 
