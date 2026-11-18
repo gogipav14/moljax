@@ -8,6 +8,7 @@ import json
 import math
 import sys
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
@@ -127,6 +128,8 @@ def _certificate_summary(result, wall_seconds: float, block_constant: float | No
         "rho": result.polynomial_effective_rate,
         "prefactor": result.theorem_prefactor,
         "contour_modulus_bound": result.contour_modulus_bound,
+        "contour_modulus_bound_origin_only": result.contour_modulus_bound_origin_only,
+        "minimum_origin_only_contour_bound": result.minimum_origin_only_contour_bound,
         "contour_floor": result.contour_sigma_min_lower_bound,
         "epsilon_zero": result.epsilon_zero,
         "eps_connect_grid": result.eps_connect_grid,
@@ -351,6 +354,78 @@ def refresh_case_protocol(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+def refresh_case_grid(row: dict[str, Any], grid: int) -> dict[str, Any]:
+    """Re-evaluate one existing ladder grid with the study's full degree set."""
+    state = _state(int(row["nx"]), int(row["m"]))
+    preconditioner, mask, _ = _preconditioner(state, str(row["method"]))
+    zeroed = np.where(mask, 0.0, state["D"])
+    j0 = jacobian(state["L"], zeroed, state["dt"])
+    blocks = extract_active_block(preconditioner @ j0, mask)
+    ladder = row["Y_certificate_ladder"]
+    index = next(i for i, entry in enumerate(ladder) if entry["grid"] == grid)
+    started = perf_counter()
+    result = assess_dense_pseudospectral_criterion(
+        np.asarray(blocks.Y, dtype=np.complex128),
+        grid_points_per_axis=grid,
+        domain_padding_fraction=0.75,
+        polynomial_degrees=DEGREES,
+        epsilon_samples=6,
+        target_tolerance=1.0e-8,
+    )
+    if ladder[index]["certified"] and not result.certified:
+        raise RuntimeError(
+            f"selected certificate lost at {(row['nx'], row['m'], row['method'], grid)}"
+        )
+    wall = perf_counter() - started
+    ladder[index] = _certificate_summary(result, wall, blocks.lemma1_constant)
+    ladder[index]["recomputation"] = {
+        "status": "recomputed",
+        "utc_date": datetime.now(timezone.utc).date().isoformat(),
+        **benchmark_provenance(__file__, wall),
+    }
+    if result.certified:
+        del ladder[index + 1 :]
+    row["Y_certificate_selected"] = next(
+        (entry for entry in ladder if entry["certified"]), ladder[-1]
+    )
+    row["union"] = (
+        "certified"
+        if row["merged_policy"]["verdict"] == "adequate"
+        or row["Y_certificate_selected"]["certified"]
+        else "abstains"
+    )
+    return row
+
+
+def refresh_full_grid(row: dict[str, Any]) -> dict[str, Any]:
+    """Re-evaluate the selected full-operator grid with all study degrees."""
+    nx = int(row["nx"])
+    state = _state(nx, 2)
+    preconditioner, _, _ = _preconditioner(state, "cfl_reference_blend_B3")
+    ladder = row["certificate_ladder"]
+    index = next(i for i, entry in enumerate(ladder) if entry["certified"])
+    started = perf_counter()
+    result = assess_dense_pseudospectral_criterion(
+        np.asarray(preconditioner @ state["J"], dtype=np.complex128),
+        grid_points_per_axis=int(ladder[index]["grid"]),
+        domain_padding_fraction=0.75,
+        polynomial_degrees=DEGREES,
+        epsilon_samples=6,
+        target_tolerance=1.0e-8,
+    )
+    if not result.certified:
+        raise RuntimeError(f"selected full-operator certificate lost for N={nx}")
+    wall = perf_counter() - started
+    ladder[index] = _certificate_summary(result, wall, None)
+    ladder[index]["recomputation"] = {
+        "status": "recomputed",
+        "utc_date": datetime.now(timezone.utc).date().isoformat(),
+        **benchmark_provenance(__file__, wall),
+    }
+    del ladder[index + 1 :]
+    return row
+
+
 def refresh_gmres_counts(row: dict[str, Any]) -> dict[str, Any]:
     """Refresh both GMRES operators without rerunning any certificate."""
     nx, m, method = int(row["nx"]), int(row["m"]), str(row["method"])
@@ -476,6 +551,11 @@ def main() -> None:
         help="refresh J0 and regularized GMRES counts without rerunning certificates",
     )
     parser.add_argument(
+        "--refresh-grid",
+        type=int,
+        help="re-evaluate one existing Y/full ladder grid with all study degrees; requires --resume",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("benchmarks/results/tau_blend_active_block.json"),
@@ -557,6 +637,29 @@ def main() -> None:
         for index, row in enumerate(rows):
             rows[index] = refresh_gmres_counts(row)
         checkpoint()
+        return
+
+    if args.refresh_grid is not None:
+        if not args.resume or not rows:
+            raise ValueError("--refresh-grid requires --resume and a completed checkpoint")
+        for case in selected:
+            index = next(
+                i for i, row in enumerate(rows) if (row["nx"], row["m"], row["method"]) == case
+            )
+            rows[index] = refresh_case_grid(rows[index], args.refresh_grid)
+            checkpoint()
+        if (
+            not args.skip_full
+            and 2 in args.m
+            and (args.method is None or "cfl_reference_blend_B3" in args.method)
+        ):
+            for index, row in enumerate(full):
+                if row["nx"] in args.nx and any(
+                    entry["certified"] and entry["grid"] == args.refresh_grid
+                    for entry in row["certificate_ladder"]
+                ):
+                    full[index] = refresh_full_grid(row)
+                    checkpoint()
         return
 
     for case in selected:

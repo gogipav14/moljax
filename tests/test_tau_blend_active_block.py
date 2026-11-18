@@ -9,7 +9,9 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 import numpy as np
+import pytest
 
+from benchmarks import tau_blend_active_block as audit
 from benchmarks.tau_blend_mask_analysis import (
     build_state,
     cfl_mask,
@@ -166,3 +168,63 @@ def test_true_residual_protocol_returns_verified_counts() -> None:
         assert residual <= 1.0e-10
         assert result["true_stop_count"] is not None
         assert result["preconditioned_stop_count"] is not None
+
+
+def test_single_grid_refresh_truncates_later_entries_and_uses_all_degrees(monkeypatch) -> None:
+    """An earlier certificate becomes the selected grid with recorded provenance."""
+    state = {"D": np.ones(2), "L": np.eye(2), "J": np.eye(2), "dt": 1.0}
+    monkeypatch.setattr(audit, "_state", lambda nx, m: state)
+    monkeypatch.setattr(
+        audit,
+        "_preconditioner",
+        lambda state, method: (np.eye(2), np.zeros(2, dtype=bool), np.ones(1)),
+    )
+    monkeypatch.setattr(audit, "jacobian", lambda *args: np.eye(2))
+    monkeypatch.setattr(
+        audit,
+        "extract_active_block",
+        lambda *args: SimpleNamespace(Y=np.eye(2), lemma1_constant=1.0),
+    )
+    seen_degrees = []
+
+    def assess(matrix, **settings):
+        seen_degrees.append(settings["polynomial_degrees"])
+        return SimpleNamespace(certified=True, grid=settings["grid_points_per_axis"])
+
+    monkeypatch.setattr(audit, "assess_dense_pseudospectral_criterion", assess)
+    monkeypatch.setattr(
+        audit,
+        "_certificate_summary",
+        lambda result, wall, constant: {"certified": result.certified, "grid": result.grid},
+    )
+    monkeypatch.setattr(audit, "benchmark_provenance", lambda script, wall: {"git_commit": "test"})
+    row = {
+        "nx": 32,
+        "m": 2,
+        "method": "cfl_reference_blend_B3",
+        "Y_certificate_ladder": [
+            {"grid": 121, "certified": False},
+            {"grid": 241, "certified": True},
+        ],
+        "merged_policy": {"verdict": "indeterminate"},
+    }
+    refreshed = audit.refresh_case_grid(row, 121)
+    assert [entry["grid"] for entry in refreshed["Y_certificate_ladder"]] == [121]
+    assert refreshed["Y_certificate_selected"]["grid"] == 121
+    assert refreshed["union"] == "certified"
+    assert refreshed["Y_certificate_selected"]["recomputation"]["git_commit"] == "test"
+
+    full = {"nx": 32, "certificate_ladder": [{"grid": 121, "certified": True}]}
+    assert (
+        audit.refresh_full_grid(full)["certificate_ladder"][0]["recomputation"]["git_commit"]
+        == "test"
+    )
+    assert seen_degrees == [audit.DEGREES, audit.DEGREES]
+
+    monkeypatch.setattr(
+        audit,
+        "assess_dense_pseudospectral_criterion",
+        lambda *args, **kwargs: SimpleNamespace(certified=False, grid=121),
+    )
+    with pytest.raises(RuntimeError, match="selected certificate lost"):
+        audit.refresh_case_grid(refreshed, 121)
