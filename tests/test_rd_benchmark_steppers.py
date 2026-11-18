@@ -329,3 +329,56 @@ def test_imex_direct_explicit_path_equals_the_subtraction_path(name):
     part_plain = _imex_explicit_rhs(plain, y0, 0.0, cache, other)
     np.testing.assert_allclose(np.asarray(part["v"][sl]), np.asarray(part_plain["v"][sl]), rtol=0, atol=0)
     assert float(jnp.max(jnp.abs(part["v"][sl] - direct["v"][sl]))) > 1e-6
+
+
+@pytest.mark.parametrize("name", ["gray_scott", "schnakenberg", "brusselator"])
+def test_imex_direct_path_is_not_used_when_the_split_differs_from_the_model(name):
+    """The direct path compares the split with the parameters that the model uses.
+
+    The factory returned the dictionary of metadata['diffusivities'] itself.
+    A caller who changed a value in place changed the two sides of the
+    earlier comparison, so the direct path dropped the diffusion correction
+    and IMEX solved a different equation.
+    """
+    import dataclasses
+
+    import rd_library_benchmark as lb
+
+    from moljax.core.grid import Grid2D
+    from moljax.core.stepping import _imex_explicit_rhs, _split_equals_model_diffusion
+
+    make_model, _, um, vm, _, _ = _library_cases()[name]
+    grid = Grid2D.uniform(N, N, 0.0, 1.0, 0.0, 1.0, n_ghost=1)
+    model, cache, diff = make_model(grid)
+    plain = dataclasses.replace(
+        model,
+        metadata={k: v for k, v in model.metadata.items() if k != "linear_ops_are_fft_diffusion"},
+    )
+    y0 = lb.padded_state(model, grid, *_initial(um, vm))
+    sl = grid.interior_slice
+
+    assert diff is not model.metadata["diffusivities"]
+    assert _split_equals_model_diffusion(model, diff)
+
+    # 1. The caller changes the split in place.
+    changed = diff
+    changed["u"] = 3.0 * changed["u"]
+    assert not _split_equals_model_diffusion(model, changed)
+    got = _imex_explicit_rhs(model, y0, 0.0, cache, changed)
+    want = _imex_explicit_rhs(plain, y0, 0.0, cache, changed)
+    for f in ("u", "v"):
+        np.testing.assert_allclose(np.asarray(got[f][sl]), np.asarray(want[f][sl]), rtol=0, atol=0)
+
+    # 2. The parameters of the model change and the split keeps the old values.
+    _, _, original = make_model(grid)
+    moved = dataclasses.replace(model, params={**model.params, "Dv": 2.0 * model.params["Dv"]})
+    moved_plain = dataclasses.replace(plain, params=moved.params)
+    assert not _split_equals_model_diffusion(moved, original)
+    got = _imex_explicit_rhs(moved, y0, 0.0, cache, original)
+    want = _imex_explicit_rhs(moved_plain, y0, 0.0, cache, original)
+    for f in ("u", "v"):
+        np.testing.assert_allclose(np.asarray(got[f][sl]), np.asarray(want[f][sl]), rtol=0, atol=0)
+
+    # 3. A split with the new parameter values takes the direct path again.
+    matching = {**original, "v": moved.params["Dv"]}
+    assert _split_equals_model_diffusion(moved, matching)

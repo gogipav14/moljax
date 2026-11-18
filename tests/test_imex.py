@@ -16,9 +16,11 @@ import pytest
 # The order and exactness tests resolve errors at 1e-6 and below.
 jax.config.update("jax_enable_x64", True)
 
+from moljax.core import dt_policy
 from moljax.core.bc import BCType, FieldBCSpec
 from moljax.core.dt_policy import (
     CFLParams,
+    PIDParams,
     heisenberg_cfl_dt,
     imex_cfl_dt,
 )
@@ -39,6 +41,7 @@ from moljax.core.operators import NonlinearOp, laplacian_2d
 from moljax.core.state import tree_add, tree_axpy, tree_zeros_like
 from moljax.core.stepping import (
     adaptive_integrate_imex,
+    clear_compiled_drivers,
     imex_euler_step,
     imex_ssprk2_step,
     imex_strang_step,
@@ -243,6 +246,74 @@ class TestIMEXDTPolicy:
 
 class TestIMEXAdaptive:
     """Test IMEX adaptive integration."""
+
+    def test_controller_receives_estimator_order(self, monkeypatch):
+        seen = []
+        original = dt_policy.propose_dt_imex
+
+        def recording_proposal(*args, **kwargs):
+            seen.append(kwargs["order"])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(dt_policy, "propose_dt_imex", recording_proposal)
+        grid = Grid2D.uniform(8, 8, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        state = model.create_initial_state(fill_values={"u": 1.0, "v": 0.0})
+        clear_compiled_drivers()
+        for strang in (True, False):
+            result = adaptive_integrate_imex(
+                model,
+                state,
+                0.0,
+                0.01,
+                0.005,
+                cache,
+                diffusivities,
+                use_strang=strang,
+                max_steps=10,
+                save_every=10,
+            )
+            assert int(result.status) == 0
+        assert seen == [3, 2]
+        clear_compiled_drivers()
+
+    @pytest.mark.parametrize("save_every", [1, 7, 20])
+    def test_adaptive_imex_takes_at_most_max_steps_accepted_steps(self, save_every):
+        grid = Grid2D.uniform(8, 8, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        state = model.create_initial_state(fill_values={"u": 0.5, "v": 0.25})
+        result = adaptive_integrate_imex(
+            model, state, 0.0, 100.0, 0.001, cache, diffusivities, use_strang=True,
+            max_steps=20, save_every=save_every, pid_params=PIDParams(dt_max=0.01),
+        )
+        assert int(result.n_accepted) == 20
+        assert int(result.status) == StatusCode.MAX_STEPS_REACHED
+
+    @pytest.mark.parametrize("use_strang, rtol", [(False, 1e-4), (True, 1e-6)])
+    def test_adaptive_imex_has_no_rejection_cycle(self, use_strang, rtol):
+        """The rejected fraction is small when the controller has the estimator order.
+
+        With the method order (1 for Euler, 2 for Strang) the same runs
+        rejected 214 of 443 attempts (Euler) and 21 of 87 attempts (Strang).
+        """
+        grid = Grid2D.uniform(16, 16, 0, 2.5, 0, 2.5, n_ghost=1)
+        model, cache, diffusivities = create_gray_scott_periodic_fft(grid)
+        rng = np.random.default_rng(0)
+        state = model.create_initial_state(fill_values={"u": 1.0, "v": 0.0})
+        sl = grid.interior_slice
+        u = np.asarray(state["u"]).copy()
+        v = np.asarray(state["v"]).copy()
+        u[sl] = 1.0 - 0.5 * rng.random(u[sl].shape)
+        v[sl] = 0.25 * rng.random(v[sl].shape)
+        state = model.apply_bcs({"u": jnp.asarray(u), "v": jnp.asarray(v)}, 0.0)
+        result = adaptive_integrate_imex(
+            model, state, 0.0, 20.0, 0.01, cache, diffusivities, use_strang=use_strang,
+            max_steps=4000, save_every=4000,
+            pid_params=PIDParams(rtol=rtol, atol=rtol * 1e-2),
+        )
+        assert int(result.status) == 0
+        accepted, rejected = int(result.n_accepted), int(result.n_rejected)
+        assert rejected <= 0.1 * (accepted + rejected)
 
     def test_adaptive_imex_completes(self):
         """Adaptive IMEX should complete integration."""

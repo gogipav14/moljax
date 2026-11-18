@@ -4,31 +4,91 @@ All notable changes to moljax are documented here.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-18
+
 ### Fixed
 
-- **The reaction-diffusion benchmark scripts now call the library solvers.**
-  `benchmark_gray_scott.py`, `benchmark_schnakenberg.py`,
-  `benchmark_brusselator.py`, the work-precision scripts and the two figure
-  scripts had hand-written steppers. Three of these steppers were not
-  correct: the Crank-Nicolson loop was a fixed-point iteration with a
-  constant count and no convergence check, the IMEX half steps were
-  first-order, and one ETDRK4 weight was too small by a factor of 2. The
-  library solvers (`integrate_fixed_dt`, `integrate_imex_fixed_dt`,
-  `etd_integrate`) did not have these errors. The scripts now use them
-  through `benchmarks/rd_library_benchmark.py`, record the status of each
-  run, and write CSV files beside the JSON files. `gray_scott.json`,
-  `brusselator.json` and `schnakenberg.json` (with two more Schnakenberg
-  files for ETDRK4 at dt = 0.0005 and Crank-Nicolson at dt = 0.002) are
-  generated again with the new scripts. The work-precision files
-  (`wp_*.json`, `work_precision_*.json`) and the stored `.npy` states are
-  from the old scripts.
-- **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
-  No Newton solve converges at this step (the fastest Turing mode has the
-  growth rate 409, so Crank-Nicolson needs dt below 0.0049). The benchmark
-  now reports `NK_FAILED` for this row and records no time.
+- **The GMRES of the Newton-Krylov solve is correct for complex systems.**
+  The solver of 1.3.0 used inner products with no complex conjugate and
+  Givens rotations for real values. A complex linear system did not
+  converge: for `A = diag(1+1j, 2-1j)` the true residual was 6.9 after 20
+  iterations, where the solver of 1.2.1 reached rounding. The projections
+  now use the conjugate and the rotations are unitary. For a real system
+  the arithmetic of a cycle does not change.
+- **GMRES stops on the true residual.** The outer loop of 1.3.0 stopped
+  when the residual estimate of a cycle reached the tolerance. In float32
+  the estimate can be far below the true residual: for
+  `A = diag(1, 1e-4)`, `b = (1, 1)` and a tolerance of 1e-6 the solve
+  stopped after 2 iterations with a true residual of 1.7e-4. The loop now
+  computes the residual of the iterate after each cycle and stops on it.
+  That residual is also the start residual of the next cycle, so the
+  number of operator products does not change. When the working precision
+  cannot reach the tolerance, the solve ends at its cycle budget.
+- **The direct explicit path of the IMEX step compares the split with the
+  parameters that the model uses.** In 1.3.0 the path compared the split
+  with `metadata['diffusivities']`, and the `create_*_periodic_fft`
+  factories returned that same dictionary to the caller. A caller who
+  changed a value of the split in place got the direct path for a split
+  that did not match the model: the explicit part had no diffusion
+  correction, and the IMEX step solved a different equation. The factories
+  now return a separate dictionary, the models name the parameter of each
+  field in `metadata['fft_diffusion_params']`, and the path is used only
+  when each value of the split is equal to the current value in
+  `model.params`.
+- **The changelog of 1.3.0 gave a wrong reason for the Schnakenberg
+  Crank-Nicolson failure at dt = 0.01.** It said that no Newton solve
+  converges at this step and that Crank-Nicolson needs dt below 0.0049.
+  The measured behavior with the Newton settings of the benchmark is: at
+  dt = 0.01 the first step converges and the second fails; at dt = 0.005
+  the first step fails; at dt = 0.004 the third step fails; at dt = 0.002
+  all 50,000 steps converge. The value 0.0049 is the step above which the
+  Crank-Nicolson amplification factor of the fastest growing mode is
+  negative. It is not a convergence limit of the Newton solve. The 1.3.0
+  entry is corrected.
+- **The adaptive drivers stop after `max_steps` accepted steps.**
+  `adaptive_integrate` and `adaptive_integrate_imex` enforced `max_steps`
+  only through the capacity of the history buffers, so a run could take up
+  to `(max_steps // save_every + 1) * save_every` accepted steps. With
+  `max_steps = 40` a run took 41, 50 and 80 steps for `save_every` 1, 25
+  and 40. The loop now also stops at `max_steps` accepted steps, with the
+  status `MAX_STEPS_REACHED` when `t_end` is not reached. A run that needs
+  exactly `max_steps` steps ends with `SUCCESS`. Reported by Georgios
+  Vourvachakis.
+
+## [1.3.0] - 2026-11-17
+
+### Added
+
+- **`benchmarks/controller_work_precision.py`** with its results: a
+  comparison of the old exponent, the new exponent and the new exponent
+  with the Newton cap on scalar test problems. The script has its own copy
+  of the controller. The library drivers are measured by
+  `benchmarks/benchmark_adaptive_gray_scott.py`; its results are in
+  `benchmarks/results/adaptive_gray_scott.json` and `.csv`.
+- **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
+  with the Newton iteration total and the Krylov iteration total of the run.
+  The default return value does not change.
+- **`benchmarks/rd_steppers.py`**: an independent implementation of RK4,
+  IMEX-Strang, ETDRK4 and Crank-Nicolson (Newton-GMRES) for two-species
+  periodic systems. `tests/test_rd_benchmark_steppers.py` uses it to verify
+  the convergence orders and to compare the library solvers with it.
+- **`benchmarks/benchmark_reactor_sensitivity.py`** and
+  **`benchmarks/benchmark_adaptive_gray_scott.py`**: scripts for the reactor
+  sensitivity with automatic differentiation (with an analytical check) and
+  for the step statistics of the adaptive integrators.
 
 ### Changed
 
+- **The step sequence of every adaptive run changes**, because the
+  controller exponent changes for all eight methods. Results agree with the
+  earlier ones within the tolerance of the controller, not bit for bit.
+  The `order` argument of `pid_controller_dt`, `handle_rejected_step`,
+  `propose_dt` and `propose_dt_imex` now means the power of h of the local
+  error estimate. A caller that passes a method order must add 1 for a
+  step-doubling estimate.
+- **An unknown method value raises `ValueError`** in `compute_error_order`,
+  `adaptive_integrate` and `integrate_fixed_dt`. Before, an IMEX value or an
+  out-of-range value ran as BDF2 with no message.
 - **`_gmres_solve` stops at the tolerance and counts its iterations.** The
   solver used `jax.scipy.sparse.linalg.gmres` in its default mode, which
   builds the complete Krylov space of the restart size in each cycle and
@@ -60,19 +120,63 @@ All notable changes to moljax are documented here.
   changed operator against a fresh object and the dense numerical radius,
   and two operators used in turn.
 
-### Added
+### Fixed
 
-- **`integrate_fixed_dt(..., return_stats=True)` returns a `FixedStepStats`**
-  with the Newton iteration total and the Krylov iteration total of the run.
-  The default return value does not change.
-- **`benchmarks/rd_steppers.py`**: an independent implementation of RK4,
-  IMEX-Strang, ETDRK4 and Crank-Nicolson (Newton-GMRES) for two-species
-  periodic systems. `tests/test_rd_benchmark_steppers.py` uses it to verify
-  the convergence orders and to compare the library solvers with it.
-- **`benchmarks/benchmark_reactor_sensitivity.py`** and
-  **`benchmarks/benchmark_adaptive_gray_scott.py`**: scripts for the reactor
-  sensitivity with automatic differentiation (with an analytical check) and
-  for the step statistics of the adaptive integrators.
+- **The adaptive controller uses the power of h of the local error
+  estimate, not the order of the method.** `compute_error_order` returned
+  `[1, 3, 4, 1, 2, 2, 1, 2]` for Euler, SSPRK3, RK4, BE, CN, BDF2, IMEX
+  Euler and IMEX Strang. The estimates are step doubling (explicit and IMEX
+  methods) and a difference from the backward-Euler solution (BE, CN,
+  BDF2), so the correct values are `[2, 4, 5, 2, 2, 2, 2, 3]`. The adaptive
+  IMEX driver had its own values (1 and 2) and now uses the same table. With
+  the old exponents the controller proposed steps that were too large and
+  then rejected them. Accepted / rejected steps before and after:
+  adaptive IMEX-Strang on the 256 x 256 Gray-Scott pattern setup to
+  t = 10000 at rtol 1e-4, 10,855 / 5,422 and 7,631 / 0; adaptive backward
+  Euler on the cubic test model to t = 0.5, 95 / 94 and 55 / 1.
+- **A fast Newton solve does not enlarge the step proposal.**
+  `implicit_robustness_dt` multiplied the proposal of the error controller
+  by 1.2 after each fast solve. With the safety factor 0.9 this put the
+  steady state of the controller above the acceptance limit and gave a
+  rejection cycle. The factor is now capped at 1, and the default of
+  `growth_factor` is 1.0. A failed solve halves the step as before.
+- **An implicit adaptive run can use steps up to `PIDParams.dt_max`.**
+  `propose_dt` called the Newton limiter without the limits of the
+  controller, so the limiter used its own default `dt_max = 1.0`. The
+  largest step of an adaptive BE or CN run was 1.0 with
+  `PIDParams(dt_max=20)`; BDF2 uses the same path.
+- **The reaction-diffusion benchmark scripts now call the library solvers.**
+  `benchmark_gray_scott.py`, `benchmark_schnakenberg.py`,
+  `benchmark_brusselator.py`, the work-precision scripts and the two figure
+  scripts had hand-written steppers. Three of these steppers were not
+  correct: the Crank-Nicolson loop was a fixed-point iteration with a
+  constant count and no convergence check, the IMEX half steps were
+  first-order, and one ETDRK4 weight was too small by a factor of 2. The
+  library solvers (`integrate_fixed_dt`, `integrate_imex_fixed_dt`,
+  `etd_integrate`) did not have these errors. The scripts now use them
+  through `benchmarks/rd_library_benchmark.py`, record the status of each
+  run, and write CSV files beside the JSON files. `gray_scott.json`,
+  `brusselator.json` and `schnakenberg.json` (with two more Schnakenberg
+  files for ETDRK4 at dt = 0.0005 and Crank-Nicolson at dt = 0.002) are
+  generated again with the new scripts. The work-precision files
+  (`wp_*.json`, `work_precision_*.json`, each with a CSV file) are also
+  generated again; their reference is ETDRK4 at a small step, with RK4 as
+  an independent cross-check. The five stored `.npy` states now hold the
+  ETDRK4 final states of the new table runs. The earlier Schnakenberg
+  state was not finite.
+- **The Schnakenberg Crank-Nicolson row at dt = 0.01 is not a valid run.**
+  With the Newton settings of the benchmark (20 iterations, tolerance
+  1e-6, FFT diffusion preconditioner) the first step converges and the
+  second step does not. The benchmark
+  now reports `NK_FAILED` for this row and records no time.
+- **`dst_I_fast` keeps the dtype of its input.** The odd extension used
+  `jnp.array([0.0])` for its zero pads, which is float64 when x64 is on, so
+  a float32 input was transformed in float64. The pads now use the dtype of
+  the input.
+- **The Weeks error-estimate test uses a threshold, not a pinned value.**
+  The pinned true error (90057 with a relative tolerance of 1e-3) failed
+  under JAX 0.12.0.1 on CPU, where the value is 89966.9. This was a test
+  defect only.
 
 ## [1.2.1] - 2026-09-20
 

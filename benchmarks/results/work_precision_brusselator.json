@@ -1,98 +1,228 @@
 {
   "RK4": [
     {
-      "dt": 9.740042983195922e-05,
-      "steps": 513345,
-      "nfe": 2053380,
-      "error": 2.1916737080849518
+      "dt": 0.00024032568937423996,
+      "dt_requested": 0.000240325927734375,
+      "steps": 208051,
+      "nfe": 832204,
+      "time_s": 197.9777013430139,
+      "time_includes_compile": false,
+      "status": "SUCCESS",
+      "error": 0.00015746866623958286,
+      "error_linf": 0.00035233488766595045,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": false
     }
   ],
   "IMEX-Strang": [
     {
       "dt": 0.005,
+      "dt_requested": 0.005,
       "steps": 10000,
       "nfe": 20000,
-      "error": 2.2850943148602774
+      "time_s": 3.903943559009349,
+      "time_includes_compile": false,
+      "error": 0.0019124853529356761,
+      "error_linf": 0.004283923661984712,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.01,
+      "dt_requested": 0.01,
       "steps": 5000,
       "nfe": 10000,
-      "error": 2.372588690364873
+      "time_s": 1.888210461489507,
+      "time_includes_compile": false,
+      "error": 0.003293940605018983,
+      "error_linf": 0.007388378632574355,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.02,
+      "dt_requested": 0.02,
       "steps": 2500,
       "nfe": 5000,
-      "error": 2.5356523459994946
+      "time_s": 0.9648114544979762,
+      "time_includes_compile": false,
+      "error": 0.007878233872758968,
+      "error_linf": 0.017707207562683625,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.05,
+      "dt_requested": 0.05,
       "steps": 1000,
       "nfe": 2000,
-      "error": 2.943394724271126
+      "time_s": 0.4102645569946617,
+      "time_includes_compile": false,
+      "error": 0.03732644300253933,
+      "error_linf": 0.08435121852788008,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.1,
+      "dt_requested": 0.1,
       "steps": 500,
       "nfe": 1000,
-      "error": 2.1223440591091
+      "time_s": 0.19747861950600054,
+      "time_includes_compile": false,
+      "error": 0.18190934620413582,
+      "error_linf": 0.4209163412744479,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.2,
+      "dt_requested": 0.2,
       "steps": 250,
       "nfe": 500,
-      "error": NaN
+      "time_s": 0.10732981601904612,
+      "time_includes_compile": false,
+      "error": null,
+      "error_linf": null,
+      "finite": false,
+      "valid": false,
+      "above_10x_cross_check": null
     },
     {
       "dt": 0.5,
+      "dt_requested": 0.5,
       "steps": 100,
       "nfe": 200,
-      "error": NaN
+      "time_s": 0.046711025992408395,
+      "time_includes_compile": false,
+      "error": null,
+      "error_linf": null,
+      "finite": false,
+      "valid": false,
+      "above_10x_cross_check": null
     }
   ],
   "ETDRK4": [
     {
       "dt": 0.005,
+      "dt_requested": 0.005,
       "steps": 10000,
       "nfe": 40000,
-      "error": 0.35989428200537876
+      "time_s": 15.533373057493009,
+      "time_includes_compile": false,
+      "error": 0.003136418804204558,
+      "error_linf": 0.007014655061882813,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.01,
+      "dt_requested": 0.01,
       "steps": 5000,
       "nfe": 20000,
-      "error": 0.8717473158187228
+      "time_s": 8.15229915000964,
+      "time_includes_compile": false,
+      "error": 0.007669781496238391,
+      "error_linf": 0.017143266004310487,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.02,
+      "dt_requested": 0.02,
       "steps": 2500,
       "nfe": 10000,
-      "error": 1.8656753425650985
+      "time_s": 4.599123205509386,
+      "time_includes_compile": false,
+      "error": 0.01684849634255175,
+      "error_linf": 0.03761293917002195,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.05,
+      "dt_requested": 0.05,
       "steps": 1000,
       "nfe": 4000,
-      "error": 2.780624575279811
+      "time_s": 2.246148719001212,
+      "time_includes_compile": false,
+      "error": 0.04326543305488499,
+      "error_linf": 0.09623690224548076,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.1,
+      "dt_requested": 0.1,
       "steps": 500,
       "nfe": 2000,
-      "error": 2.7022191363175985
+      "time_s": 1.7539644194912398,
+      "time_includes_compile": false,
+      "error": 0.07518636320495055,
+      "error_linf": 0.1664384154363181,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.2,
+      "dt_requested": 0.2,
       "steps": 250,
       "nfe": 1000,
-      "error": 2.374411017144906
+      "time_s": 1.7127434670110233,
+      "time_includes_compile": false,
+      "error": 0.18754350495187366,
+      "error_linf": 0.4401985117341427,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.5,
+      "dt_requested": 0.5,
       "steps": 100,
       "nfe": 400,
-      "error": NaN
+      "time_s": 0.9105442345025949,
+      "time_includes_compile": false,
+      "error": null,
+      "error_linf": null,
+      "finite": false,
+      "valid": false,
+      "above_10x_cross_check": null
     }
-  ]
+  ],
+  "reference_cross_check": 0.0001627116503770151,
+  "reference_info": {
+    "error_norm": "relative L2 of (u, v)",
+    "primary": {
+      "method": "ETDRK4",
+      "dt": 0.001,
+      "steps": 50000,
+      "time_s": 80.13725186898955
+    },
+    "secondary": {
+      "method": "RK4",
+      "dt": 0.00021629291251384274,
+      "steps": 231168,
+      "time_s": 196.54074177300208,
+      "finite": true
+    },
+    "flag": "above_10x_cross_check: error > 10 * reference_cross_check",
+    "quick": false,
+    "t_final": 50.0,
+    "solvers": "moljax library (integrate_fixed_dt, integrate_imex_fixed_dt, etd_integrate)",
+    "laplacian": "second-order central differences (moljax), periodic",
+    "jax_version": "0.11.2",
+    "device": "cuda:0"
+  }
 }

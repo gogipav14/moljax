@@ -2,61 +2,159 @@
   "IMEX-Strang": [
     {
       "dt": 0.0002,
+      "dt_requested": 0.0002,
       "steps": 25000,
       "nfe": 50000,
-      "error": 4.4564213785829505,
-      "time_s": 6.329881333999765
+      "time_s": 9.726827517006313,
+      "time_includes_compile": false,
+      "error": 0.3221048755728104,
+      "error_linf": 4.25027420110851,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.0005,
+      "dt_requested": 0.0005,
       "steps": 10000,
       "nfe": 20000,
-      "error": 4.442007567404089,
-      "time_s": 2.8055463395003244
+      "time_s": 3.847649959498085,
+      "time_includes_compile": false,
+      "error": 0.4552670747828863,
+      "error_linf": 4.244934778908201,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.001,
+      "dt_requested": 0.001,
       "steps": 5000,
       "nfe": 10000,
-      "error": 4.214621714850243,
-      "time_s": 1.3525810410001213
+      "time_s": 1.8890917770040687,
+      "time_includes_compile": false,
+      "error": 0.7917942521879306,
+      "error_linf": 4.266866040550608,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
-      "dt": 0.0015,
+      "dt": 0.0014997000599880025,
+      "dt_requested": 0.0015,
       "steps": 3334,
       "nfe": 6668,
-      "error": 4.180701476905877,
-      "time_s": 0.9228986850002912
+      "time_s": 1.274718277491047,
+      "time_includes_compile": false,
+      "error": 0.8188565952427308,
+      "error_linf": 4.249187661354856,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     }
   ],
   "ETDRK4": [
     {
       "dt": 0.0005,
+      "dt_requested": 0.0005,
       "steps": 10000,
       "nfe": 40000,
-      "error": 0.11184062568709541,
-      "time_s": 11.138986689498779
+      "time_s": 15.207856487977551,
+      "time_includes_compile": false,
+      "error": 0.0006470836324290252,
+      "error_linf": 0.009647208662797446,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": false
     },
     {
       "dt": 0.001,
+      "dt_requested": 0.001,
       "steps": 5000,
       "nfe": 20000,
-      "error": 0.3848828816560026,
-      "time_s": 5.452517699501186
+      "time_s": 8.116109725509887,
+      "time_includes_compile": false,
+      "error": 0.0015888608350450061,
+      "error_linf": 0.02309132805293901,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.002,
+      "dt_requested": 0.002,
       "steps": 2500,
       "nfe": 10000,
-      "error": 4.289032938750346,
-      "time_s": 3.130267765500321
+      "time_s": 4.378975906496635,
+      "time_includes_compile": false,
+      "error": 0.005574696032645362,
+      "error_linf": 0.08894473706723849,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
     },
     {
       "dt": 0.005,
+      "dt_requested": 0.005,
       "steps": 1000,
       "nfe": 4000,
-      "error": 4.27755800894819,
-      "time_s": 1.5373050789994522
+      "time_s": 2.3521374835108873,
+      "time_includes_compile": false,
+      "error": 0.045129253369185614,
+      "error_linf": 0.7383153369122764,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
+    },
+    {
+      "dt": 0.01,
+      "dt_requested": 0.01,
+      "steps": 500,
+      "nfe": 2000,
+      "time_s": 1.651483827503398,
+      "time_includes_compile": false,
+      "error": 0.5621049756070995,
+      "error_linf": 4.2201876329685355,
+      "finite": true,
+      "valid": true,
+      "above_10x_cross_check": true
+    },
+    {
+      "dt": 0.02,
+      "dt_requested": 0.02,
+      "steps": 250,
+      "nfe": 1000,
+      "time_s": 1.5716367165005067,
+      "time_includes_compile": false,
+      "error": null,
+      "error_linf": null,
+      "finite": false,
+      "valid": false,
+      "above_10x_cross_check": null
     }
-  ]
+  ],
+  "reference_cross_check": 7.5557565481822e-05,
+  "reference_info": {
+    "error_norm": "relative L2 of (u, v)",
+    "primary": {
+      "method": "ETDRK4",
+      "dt": 0.0001,
+      "steps": 50000,
+      "time_s": 75.6561544080032
+    },
+    "secondary": {
+      "method": "RK4",
+      "dt": 1.2016284468711999e-05,
+      "steps": 416102,
+      "time_s": 364.8219628719962,
+      "finite": true
+    },
+    "flag": "above_10x_cross_check: error > 10 * reference_cross_check",
+    "quick": false,
+    "t_final": 5.0,
+    "solvers": "moljax library (integrate_fixed_dt, integrate_imex_fixed_dt, etd_integrate)",
+    "laplacian": "second-order central differences (moljax), periodic",
+    "jax_version": "0.11.2",
+    "device": "cuda:0"
+  }
 }

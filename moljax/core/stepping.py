@@ -478,6 +478,40 @@ def _imex_split_is_valid(model: MOLModel, diffusivities: dict[str, float]) -> No
             )
 
 
+def _split_equals_model_diffusion(model: MOLModel, diffusivities: dict[str, float]) -> bool:
+    """
+    Whether the IMEX split removes exactly the linear part of the model.
+
+    True only when the model states that its linear operators are
+    D * Laplacian (metadata['linear_ops_are_fft_diffusion']), names the
+    parameter that holds D for each field
+    (metadata['fft_diffusion_params'], for example {'u': 'Du', 'v': 'Dv'}),
+    and each value of ``diffusivities`` is equal to the current value of
+    that parameter in model.params.
+
+    The comparison uses model.params, which is what the linear operators
+    read, and not metadata['diffusivities']. A factory returns that
+    dictionary to the caller, so a caller who changes the split in place
+    would change the two sides of a comparison with it and get the direct
+    path for a split that does not match the model.
+
+    A value that is not concrete (a tracer) gives False: the general path
+    is always correct.
+    """
+    if not model.metadata.get("linear_ops_are_fft_diffusion", False):
+        return False
+    names = model.metadata.get("fft_diffusion_params")
+    if not names or set(names) != set(diffusivities):
+        return False
+    try:
+        return all(
+            name in model.params and float(diffusivities[field]) == float(model.params[name])
+            for field, name in names.items()
+        )
+    except (TypeError, ValueError, jax.errors.JAXTypeError):
+        return False
+
+
 def _imex_explicit_rhs(
     model: MOLModel,
     y: StateDict,
@@ -521,14 +555,14 @@ def _imex_explicit_rhs(
         return tree_zeros_like(y)
 
     # Direct path. A model can state that its linear operators are exactly
-    # the diffusion D * Laplacian of metadata['diffusivities'] (the
-    # create_*_periodic_fft factories do). When the split uses those same
-    # diffusivities, the subtraction below would remove the complete linear
-    # part, so the explicit part is the nonlinear part and nothing else.
+    # the diffusion D * Laplacian, with D read from model.params (the
+    # create_*_periodic_fft factories do; see _split_equals_model_diffusion).
+    # When the split uses those same values, the subtraction below would
+    # remove the complete linear part, so the explicit part is the nonlinear
+    # part and nothing else.
     # This saves one stencil Laplacian and one FFT Laplacian for each field
     # and stage. The two paths agree to rounding.
-    if (model.metadata.get("linear_ops_are_fft_diffusion", False)
-            and dict(model.metadata.get("diffusivities", {})) == dict(diffusivities)):
+    if _split_equals_model_diffusion(model, diffusivities):
         # model.rhs applies the boundary conditions first; do the same here.
         return model.nonlinear_rhs(model.apply_bcs(y, t), t)
 
@@ -1020,6 +1054,36 @@ def _validate_time_resolution(t0: float, t_end: float, dt: float, caller: str) -
         )
 
 
+# The IntegratorType values that adaptive_integrate and integrate_fixed_dt
+# can step. The IMEX values have their own drivers (adaptive_integrate_imex
+# and integrate_imex_fixed_dt), because they need an FFT cache and the
+# diffusivities.
+_MOL_METHODS = frozenset({
+    IntegratorType.EULER, IntegratorType.SSPRK3, IntegratorType.RK4,
+    IntegratorType.BE, IntegratorType.CN, IntegratorType.BDF2,
+})
+
+
+def _check_mol_method(method, caller: str) -> None:
+    """
+    Reject a method value that the MOLModel drivers cannot step.
+
+    The drivers select the step with "method < 3 is explicit, else
+    implicit". Without this check, an unknown value (for example an IMEX
+    value or 8) runs as BDF2 and gives no message.
+    """
+    try:
+        known = int(method) in _MOL_METHODS
+    except (TypeError, ValueError):
+        known = False
+    if not known:
+        names = ", ".join(f"{m.name}={int(m)}" for m in sorted(_MOL_METHODS))
+        raise ValueError(
+            f"{caller}: method {method!r} is not supported; use one of {names}. "
+            f"For the IMEX methods, use the IMEX drivers."
+        )
+
+
 def _error_estimate_converged(*solves) -> jnp.ndarray:
     """
     Whether every solve feeding an error estimate reached a finite answer.
@@ -1168,7 +1232,7 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
         # _time_dtype for why the clock does not follow the field's dtype.
         time_dtype = _time_dtype()
 
-        # Get method order for error scaling
+        # Get the power of h in this method's local error estimate.
         order = compute_error_order(method)
 
         # Compute initial CFL-limited dt for explicit methods, in the model's
@@ -1214,7 +1278,13 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
             running = state.status == StatusCode.RUNNING
             not_done = state.t < t_end
             space_left = state.write_idx < max_saves
-            return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
+            # max_steps is a limit on the accepted steps. The history
+            # capacity alone let a run take up to
+            # (max_steps // save_every + 1) * save_every accepted steps.
+            steps_left = state.n_accepted < max_steps
+            return jnp.logical_and(
+                jnp.logical_and(running, not_done), jnp.logical_and(space_left, steps_left)
+            )
 
         def body_fn(state: AdaptiveState) -> AdaptiveState:
             """Single step of adaptive integration."""
@@ -1457,7 +1527,9 @@ def _build_adaptive_driver(model, method, max_steps, save_every, cfl_params, pid
             final_state.t >= t_end,
             lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
             lambda: lax.cond(
-                final_state.write_idx >= max_saves,
+                jnp.logical_or(
+                    final_state.write_idx >= max_saves, final_state.n_accepted >= max_steps
+                ),
                 lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
                 lambda: final_state.status
             )
@@ -1529,8 +1601,13 @@ def adaptive_integrate(
         t0: Initial time
         t_end: Final time
         dt0: Initial time step
-        method: IntegratorType enum value
-        max_steps: Maximum number of steps (for buffer allocation)
+        method: IntegratorType enum value: EULER, SSPRK3, RK4, BE, CN or
+            BDF2. Other values raise ValueError (use adaptive_integrate_imex
+            for the IMEX methods).
+        max_steps: Maximum number of accepted steps. A run that needs more
+            stops with StatusCode.MAX_STEPS_REACHED after exactly max_steps
+            accepted steps. The value also sets the size of the history
+            buffers.
         cfl_params: CFL parameters (default created if None)
         pid_params: PID parameters (default created if None)
         preconditioner: Preconditioner for implicit methods
@@ -1562,6 +1639,7 @@ def adaptive_integrate(
     if nk_params is None:
         nk_params = NKParams()
 
+    _check_mol_method(method, "adaptive_integrate")
     _validate_time_resolution(t0, t_end, dt0, "adaptive_integrate")
 
     driver = _adaptive_driver(model, y0, method, max_steps, save_every, cfl_params,
@@ -1908,7 +1986,8 @@ def integrate_fixed_dt(
         t0: Initial time
         t_end: Final time
         dt: Fixed time step
-        method: IntegratorType
+        method: IntegratorType: EULER, SSPRK3, RK4, BE, CN or BDF2. Other
+            values raise ValueError (use integrate_imex_fixed_dt for IMEX).
         save_every: Keep the state after every save_every-th step
         preconditioner: For implicit methods
         nk_params: For implicit methods
@@ -1961,6 +2040,7 @@ def integrate_fixed_dt(
     if nk_params is None:
         nk_params = NKParams()
 
+    _check_mol_method(method, "integrate_fixed_dt")
     n_steps = _fixed_step_count(t0, t_end, dt, save_every)
     _validate_time_resolution(t0, t_end, dt, "integrate_fixed_dt")
 
@@ -1990,8 +2070,10 @@ def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max
         # See adaptive_integrate: the clock does not follow the field's dtype.
         time_dtype = _time_dtype()
 
-        # Order for error estimation
-        order = 2 if use_strang else 1
+        # Power of h in this method's local error estimate.
+        order = compute_error_order(
+            IntegratorType.IMEX_STRANG if use_strang else IntegratorType.IMEX_EULER
+        )
 
         # Compute initial IMEX CFL-limited dt (no diffusion limit), in the
         # model's dtype so the loop carry keeps one dtype
@@ -2030,7 +2112,13 @@ def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max
             running = state.status == StatusCode.RUNNING
             not_done = state.t < t_end
             space_left = state.write_idx < max_saves
-            return jnp.logical_and(running, jnp.logical_and(not_done, space_left))
+            # max_steps is a limit on the accepted steps. The history
+            # capacity alone let a run take up to
+            # (max_steps // save_every + 1) * save_every accepted steps.
+            steps_left = state.n_accepted < max_steps
+            return jnp.logical_and(
+                jnp.logical_and(running, not_done), jnp.logical_and(space_left, steps_left)
+            )
 
         def body_fn(state: AdaptiveState) -> AdaptiveState:
             # Clamp dt to not overshoot (see adaptive_integrate for the cast)
@@ -2172,7 +2260,9 @@ def _build_adaptive_imex_driver(model, fft_cache, diffusivities, use_strang, max
             final_state.t >= t_end,
             lambda: jnp.array(StatusCode.SUCCESS, dtype=jnp.int32),
             lambda: lax.cond(
-                final_state.write_idx >= max_saves,
+                jnp.logical_or(
+                    final_state.write_idx >= max_saves, final_state.n_accepted >= max_steps
+                ),
                 lambda: jnp.array(StatusCode.MAX_STEPS_REACHED, dtype=jnp.int32),
                 lambda: final_state.status
             )
@@ -2242,7 +2332,7 @@ def adaptive_integrate_imex(
         fft_cache: Precomputed FFT cache for diffusion solve
         diffusivities: Dict mapping field name to diffusion coefficient
         use_strang: Use Strang splitting (True) or IMEX Euler (False)
-        max_steps: Maximum number of steps
+        max_steps: Maximum number of accepted steps (see adaptive_integrate)
         cfl_params: CFL parameters (for advection/reaction limiting)
         pid_params: PID parameters
         save_every: Save every N accepted steps
