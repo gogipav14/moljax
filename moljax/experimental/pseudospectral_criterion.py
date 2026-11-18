@@ -394,18 +394,25 @@ def _contour_modulus_bound(
     contains the contour, ``|p'| <= sum_k k |c_k| R**(k-1) / scale**k``. Each
     edge is sampled so that every point lies within ``h / (2 K)`` of a sample,
     and the Lipschitz term covers the gap.  At each sample, Horner evaluation
-    is enclosed by Higham's standard forward-error bound
-    ``gamma_{2n} sum_i |a_i| |z|**i``.  The origin and translated contour-centred
-    bases are both enclosed and the tighter valid upper bound is used.  The
-    centred enclosure additionally propagates its coefficient-translation
-    error.  Thus floating-point evaluation cannot make the reported contour
-    maximum smaller.
+    is enclosed by ``gamma_{4n} sum_i |a_i| |z|**i`` for complex Horner.
+    The absolute and translation sums, complex modulus, and final additions
+    have separate upward allowances.  Rounded contour samples lie within
+    ``16u (R_abs + |c|)`` of their intended locations; the Lipschitz remainder
+    includes that displacement.  Both derivative enclosures, the edge length,
+    and the final sum are inflated for their arithmetic rounding.  Non-finite
+    intermediate bounds fail closed to infinity.
     """
     complex_coefficients = np.array([real + 1j * imag for real, imag in coefficients])
     orders = np.arange(1, complex_coefficients.size + 1)
-    radius = float(max(np.max(np.abs(starts)), np.max(np.abs(ends)))) / scale
-    origin_lipschitz = float(
-        np.sum(orders * np.abs(complex_coefficients) * radius ** (orders - 1)) / scale
+    degree = complex_coefficients.size
+    unit_roundoff = float(np.finfo(np.float64).eps) / 2.0
+    radius_abs = float(max(np.max(np.abs(starts)), np.max(np.abs(ends))))
+    edge_length = float(np.max(np.abs(ends - starts)))
+    # Keep the original grid: this estimate chooses K, while the inflated
+    # derivative and edge length below bound the continuous contour.
+    sampling_radius = radius_abs / scale
+    sampling_lipschitz = float(
+        np.sum(orders * np.abs(complex_coefficients) * sampling_radius ** (orders - 1)) / scale
     )
     center, translated, translation_errors, _ = _translate_polynomial_to_contour_center(
         starts,
@@ -413,24 +420,35 @@ def _contour_modulus_bound(
         complex_coefficients,
         scale,
     )
+    point_allowance = np.nextafter(16.0 * unit_roundoff * (radius_abs + abs(center)), np.inf)
+    # The enlarged radius covers rounded sample positions; gamma_{2n+8}
+    # covers the nonnegative power/product/sum and division operations.
+    radius = np.nextafter((radius_abs + point_allowance) / scale, np.inf)
+    origin_lipschitz = np.nextafter(
+        float(np.sum(orders * np.abs(complex_coefficients) * radius ** (orders - 1)) / scale)
+        * np.nextafter(1.0 + _roundoff_gamma(2 * degree + 8), np.inf),
+        np.inf,
+    )
+    geometry_allowance = 32.0 * unit_roundoff * max(1.0, abs(center), radius_abs)
     centered_lipschitz = _centered_polynomial_derivative_bound(
         starts,
         ends,
         complex_coefficients,
         scale,
+        extra_radius=point_allowance if geometry_allowance < point_allowance else 0.0,
     )
     # Both bounds follow from the triangle inequality on disks containing the
     # complete contour.  Their minimum is therefore valid and can only tighten
     # the previous origin-centred enclosure.
     lipschitz = min(origin_lipschitz, centered_lipschitz)
-    edge_length = float(np.max(np.abs(ends - starts)))
+    # Complex endpoint subtraction/modulus is covered by gamma_4.
+    edge_up = np.nextafter(edge_length * np.nextafter(1.0 + _roundoff_gamma(4), np.inf), np.inf)
+    sampling_need = sampling_lipschitz * edge_length / (2.0 * absolute_slack)
+    if not np.all(np.isfinite((sampling_need, origin_lipschitz, edge_up))):
+        return float("inf"), float("inf")
     subdivisions = int(
         min(
-            # Preserve the old origin-bound sampling grid.  The sampled
-            # maximum is then identical to the previous algorithm while the
-            # remainder can only decrease with the centred enclosure, making
-            # the complete contour bound monotone.
-            max(8, ceil(origin_lipschitz * edge_length / (2.0 * absolute_slack))),
+            max(8, ceil(sampling_need)),
             max_subdivisions,
         )
     )
@@ -454,7 +472,13 @@ def _contour_modulus_bound(
     use_centered = centered_absolute_sum < origin_absolute_sum
     sampled_upper = np.where(use_centered, centered_upper, origin_upper)
     sampled = float(np.max(sampled_upper))
-    return sampled + lipschitz * edge_length / (2.0 * subdivisions), lipschitz
+    # gamma_4 covers the remainder product and the final addition.
+    bound = np.nextafter(
+        (sampled + lipschitz * (edge_up / (2.0 * subdivisions) + point_allowance))
+        * np.nextafter(1.0 + _roundoff_gamma(4), np.inf),
+        np.inf,
+    )
+    return float(bound), lipschitz
 
 
 def _roundoff_gamma(operation_count: int) -> float:
@@ -537,8 +561,17 @@ def _horner_modulus_upper(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Enclose ``|p(z)|`` for ascending coefficients evaluated by Horner.
 
-    For degree ``n``, Higham's Horner bound gives
-    ``|fl(p(z)) - p(z)| <= gamma_{2n} sum_i |a_i| |z|**i``.
+    Each complex Horner step is ``fl(fl(s*z) + a)``.  Complex multiplication
+    has relative error at most ``sqrt(5)u`` (Brent, Percival and Zimmermann,
+    Math. Comp. 76 (2007), 1469--1481); Higham's Lemma 3.5 also gives the
+    sufficient ``sqrt(2) gamma_2`` bound.  Complex addition contributes at
+    most ``u``.  Since ``(1 + sqrt(5)u)(1 + u) <= (1 + u)**4``, Higham's
+    Lemma 3.1 gives ``|fl(p(z)) - p(z)| <= gamma_{4n} sum_i |a_i| |z|**i``
+    over ``n`` steps (Higham, *Accuracy and Stability of Numerical Algorithms*,
+    2nd ed., Sections 3.1, 3.6, 5.1).  The real Horner absolute and
+    translation sums use at most ``3n+1`` rounded operations, covered by
+    ``gamma_{4n}`` for ``n >= 1``.  A final ``gamma_4`` covers complex
+    modulus and the two additions.
     If coefficients themselves are enclosed, their propagated uncertainty is
     added separately.  The result fails closed to infinity on non-finite data.
     """
@@ -557,11 +590,22 @@ def _horner_modulus_upper(
         values = values * points + coefficient
         absolute_sum = absolute_sum * point_modulus + abs(coefficient)
         translation_sum = translation_sum * point_modulus + coefficient_error
-    gamma = _roundoff_gamma(2 * degree)
-    absolute_sum_upper = np.nextafter(absolute_sum * (1.0 + gamma), np.inf)
+    gamma = _roundoff_gamma(4 * degree)
+    inflation = np.nextafter(1.0 + gamma, np.inf)
+    absolute_sum_upper = np.nextafter(absolute_sum * inflation, np.inf)
+    translation_sum_upper = np.nextafter(translation_sum * inflation, np.inf)
     evaluation_error = np.nextafter(gamma * absolute_sum_upper, np.inf)
-    upper = np.nextafter(np.abs(values) + evaluation_error + translation_sum, np.inf)
-    finite = np.isfinite(upper) & np.isfinite(absolute_sum_upper) & np.isfinite(evaluation_error)
+    upper = np.nextafter(
+        (np.abs(values) + evaluation_error + translation_sum_upper)
+        * np.nextafter(1.0 + _roundoff_gamma(4), np.inf),
+        np.inf,
+    )
+    finite = (
+        np.isfinite(upper)
+        & np.isfinite(absolute_sum_upper)
+        & np.isfinite(evaluation_error)
+        & np.isfinite(translation_sum_upper)
+    )
     return (
         np.where(finite, upper, np.inf),
         np.where(finite, absolute_sum_upper, np.inf),
@@ -574,6 +618,8 @@ def _centered_polynomial_derivative_bound(
     ends: np.ndarray,
     coefficients: np.ndarray,
     scale: float,
+    *,
+    extra_radius: float = 0.0,
 ) -> float:
     """Bound ``max |p'|`` after translating the polynomial to the contour.
 
@@ -600,7 +646,7 @@ def _centered_polynomial_derivative_bound(
         coefficients,
         scale,
     )
-    normalized_radius = centered_radius / scale
+    normalized_radius = np.nextafter((centered_radius + extra_radius) / scale, np.inf)
     gamma = _roundoff_gamma(32 * (degree + 1) ** 2)
     if not np.isfinite(gamma):
         return float("inf")

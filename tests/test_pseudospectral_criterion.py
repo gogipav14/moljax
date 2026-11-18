@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
 from math import ceil, comb, pi
 
 import jax
@@ -144,6 +145,100 @@ def test_degree_40_evaluation_roundoff_is_included_in_contour_bound() -> None:
         1.0,
     )
     assert bound >= evaluation_error[0]
+
+
+def _exact_modulus_squared(coefficients: np.ndarray, point: tuple[Fraction, Fraction]) -> Fraction:
+    """Evaluate an ascending complex polynomial exactly from its float inputs."""
+    real = Fraction(0)
+    imag = Fraction(0)
+    x, y = point
+    for coefficient in coefficients[::-1]:
+        a = Fraction.from_float(float(coefficient.real))
+        b = Fraction.from_float(float(coefficient.imag))
+        real, imag = real * x - imag * y + a, real * y + imag * x + b
+    return real * real + imag * imag
+
+
+def _fraction_point(point: complex) -> tuple[Fraction, Fraction]:
+    return Fraction.from_float(float(point.real)), Fraction.from_float(float(point.imag))
+
+
+def test_horner_upper_encloses_exact_complex_polynomials() -> None:
+    """Check random, cancelling and coefficient-uncertain cases with rationals."""
+    rng = np.random.default_rng(20261118)
+    cases: list[tuple[np.ndarray, complex]] = []
+    for _ in range(300):
+        degree = int(rng.integers(1, 41))
+        moduli = 10.0 ** rng.uniform(-8.0, 8.0, degree + 1)
+        coefficients = moduli * np.exp(2j * pi * rng.random(degree + 1))
+        point = 10.0 ** rng.uniform(-3.0, 3.0) * np.exp(2j * pi * rng.random())
+        cases.append((coefficients, complex(point)))
+    for degree in (8, 16, 24, 32, 40):
+        radius = float(rng.uniform(0.5, 2.0))
+        coefficients = np.asarray(
+            [(-1) ** order * comb(degree, order) / radius**order for order in range(degree + 1)],
+            dtype=np.complex128,
+        )
+        cases.append((coefficients, complex(radius * (1.0 + 1.0e-6))))
+    cases.append(
+        (
+            np.asarray(
+                [(-1) ** order * comb(40, order) for order in range(41)],
+                dtype=np.complex128,
+            ),
+            1.0 + 0.0j,
+        )
+    )
+    for index, (coefficients, point) in enumerate(cases):
+        upper, _, _ = _horner_modulus_upper(np.asarray([point]), coefficients)
+        assert np.isfinite(upper[0])
+        bound_squared = Fraction.from_float(float(upper[0])) ** 2
+        assert bound_squared >= _exact_modulus_squared(coefficients, _fraction_point(point))
+        if index % 5 == 0:
+            errors = 0.01 * np.abs(coefficients)
+            perturbations = 0.25 * errors * rng.choice((-1.0, 1.0), coefficients.size)
+            uncertain_upper, _, _ = _horner_modulus_upper(
+                np.asarray([point]), coefficients, coefficient_errors=errors
+            )
+            perturbed = coefficients + perturbations
+            assert Fraction.from_float(float(uncertain_upper[0])) ** 2 >= _exact_modulus_squared(
+                perturbed, _fraction_point(point)
+            )
+
+
+def test_contour_upper_encloses_exact_points_between_samples() -> None:
+    """Check 100 random rectangles at 65 rational positions on each edge."""
+    rng = np.random.default_rng(20261118)
+    for _ in range(100):
+        center = complex(*rng.uniform(-1.0, 1.0, 2))
+        halfwidth, halfheight = rng.uniform(0.01, 0.5, 2)
+        corners = np.asarray(
+            [
+                center + complex(-halfwidth, -halfheight),
+                center + complex(halfwidth, -halfheight),
+                center + complex(halfwidth, halfheight),
+                center + complex(-halfwidth, halfheight),
+            ]
+        )
+        degree = int(rng.integers(1, 25))
+        coefficients = np.asarray(
+            [1.0, *(rng.normal(size=degree) + 1j * rng.normal(size=degree))],
+            dtype=np.complex128,
+        )
+        serialized = tuple((float(z.real), float(z.imag)) for z in coefficients[1:])
+        bound, _ = _contour_modulus_bound(corners, np.roll(corners, -1), serialized, 1.0)
+        assert np.isfinite(bound)
+        bound_squared = Fraction.from_float(float(bound)) ** 2
+        for start, end in zip(corners, np.roll(corners, -1), strict=True):
+            start_exact = _fraction_point(start)
+            end_exact = _fraction_point(end)
+            for index in range(65):
+                ratio = Fraction(index, 64)
+                point = (
+                    start_exact[0] + ratio * (end_exact[0] - start_exact[0]),
+                    start_exact[1] + ratio * (end_exact[1] - start_exact[1]),
+                )
+                assert bound_squared >= _exact_modulus_squared(coefficients, point)
 
 
 def test_centered_derivative_bound_covers_random_fitted_polynomials() -> None:
