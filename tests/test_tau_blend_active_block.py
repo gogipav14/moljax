@@ -35,8 +35,15 @@ def test_pending_direct_refresh_preserves_other_evidence(tmp_path: Path, monkeyp
     """The selected-degree refresh changes only the pending direct certificate."""
     source = Path(audit.__file__).parent / "results" / "tau_blend_active_block.json"
     output = tmp_path / source.name
-    output.write_bytes(source.read_bytes())
-    before = json.loads(output.read_text())
+    # Put the copy into the pending state. The test then does not depend on
+    # the state of the committed file.
+    before = json.loads(source.read_text())
+    pending = before["direct_regularized_full_MJ_certificates"][0]["certificate_ladder"][0]
+    pending["recomputation"] = {"status": "pending second-host recomputation"}
+    before["certificate_recomputation"]["pending_second_host"] = (
+        "direct regularized full MJ at N=128"
+    )
+    output.write_text(json.dumps(before))
 
     def refresh(row: dict) -> dict:
         selected = next(item for item in row["certificate_ladder"] if item["certified"])

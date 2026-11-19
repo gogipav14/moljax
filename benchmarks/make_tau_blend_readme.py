@@ -1470,6 +1470,24 @@ def render(results_dir: Path = RESULTS_DIR) -> str:
         ],
     )
     recomputation = active["certificate_recomputation"]
+    first_host_entries = recomputation["recomputed_ladder_entries"]
+    if "pending_second_host" in recomputation:
+        direct_128_recomputation = (
+            "The direct full-operator certificate at `N = 128` retains its committed\n"
+            "values and is pending recomputation on a second host."
+        )
+    else:
+        # The refresh of the direct N = 128 certificate adds one entry to the
+        # count. That entry has its own host and commit.
+        refresh = active["direct_regularized_full_MJ_certificates"][0]["certificate_ladder"][0][
+            "recomputation"
+        ]
+        first_host_entries -= 1
+        direct_128_recomputation = (
+            "The direct full-operator certificate at `N = 128` was recomputed on a\n"
+            f"{refresh['host']} on {refresh['utc_date']} at commit\n"
+            f"{refresh['git_commit']}."
+        )
     horner_commit = changes["Horner floating-point evaluation allowance"]
     correction_names = (
         "rounding allowances, including gamma_{4n} for complex Horner",
@@ -1782,11 +1800,10 @@ Source: `tau_blend_active_block.json`, `/configuration` [F6].
 
 **Recomputation.** On {recomputation["provenance"]["host"]} at commit
 {recomputation["provenance"]["git_commit"]},
-{recomputation["recomputed_ladder_entries"]} ladder entries were recomputed;
+{first_host_entries} ladder entries were recomputed;
 {recomputation["carried_over_ladder_entries"]} were carried over because
-connectivity or the compute cap decided them before contour evaluation. The
-direct full-operator certificate at `N = 128` retains its committed values and
-is pending recomputation on a second host.
+connectivity or the compute cap decided them before contour evaluation.
+{direct_128_recomputation}
 
 Source: `tau_blend_active_block.json`, `/certificate_recomputation`,
 `/direct_regularized_full_MJ_certificates/0/certificate_ladder/0/recomputation`.
