@@ -12957,7 +12957,6 @@
     "max_compared_selection_reduction": 0.880406916586236,
     "max_selected_allowance_effect": 1.589617326658299e-11,
     "max_selected_selection_reduction": 0.0007059058374271343,
-    "pending_second_host": "direct regularized full MJ at N=128",
     "provenance": {
       "backend": "cpu",
       "git_commit": "18f684dc8b8175c8d0fb4ee63ea44e93b16f04cf",
@@ -12970,7 +12969,7 @@
       "status": "recomputed",
       "utc_date": "2026-11-18"
     },
-    "recomputed_ladder_entries": 22
+    "recomputed_ladder_entries": 23
   },
   "configuration": {
     "case_cap_seconds": 14400.0,
@@ -13056,26 +13055,41 @@
         {
           "certified": true,
           "constraint_points": 375036,
-          "contour_floor": 0.11181621306732577,
-          "contour_modulus_bound": 3.487606499906192e-05,
+          "contour_floor": 0.11181621306731734,
+          "contour_modulus_bound": 3.4863020497588464e-05,
+          "contour_modulus_bound_origin_only": 0.09656994054576135,
           "criterion_predicted_iterations": 24,
           "degree": 12,
-          "eps_connect_grid": 0.006126159441593561,
-          "eps_connect_upper": 0.007973822094676558,
-          "epsilon_zero": 0.7158888176515071,
+          "eps_connect_grid": 0.006126159441593586,
+          "eps_connect_upper": 0.007973822094676584,
+          "epsilon_zero": 0.7158888176515066,
           "grid": 565,
           "lemma1_full_operator_iteration_bound": null,
-          "prefactor": 5.253893058404162,
+          "minimum_origin_only_contour_bound": 0.09656994054576135,
+          "prefactor": 5.253893058404735,
           "reason": "connected pseudospectral window excludes the origin",
           "recomputation": {
-            "status": "pending second-host recomputation"
+            "backend": "cpu",
+            "git_commit": "32c9ace45b5f079a7f27c3f8cf9897f7d020d170",
+            "host": "second host",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "numpy": "2.5.3",
+            "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+            "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+            "scipy": "1.18.1",
+            "script": "benchmarks/tau_blend_active_block.py",
+            "script_sha256": "1776cf386c1d9823ffc2d883671a43a2216d4cf396efada1c357a1dc27b34d89",
+            "status": "recomputed",
+            "utc_date": "2026-11-19",
+            "wall_seconds": 856.0873422269942
           },
-          "rho": 0.425151735789047,
-          "search_seconds": 27.83317468687892,
+          "rho": 0.4251384820877098,
+          "search_seconds": 43.78068404603982,
           "sigma_min_evaluations": 159896,
-          "sigma_min_seconds": 447.2295818645507,
-          "wall_seconds": 475.3262351974845,
-          "window_width": 0.7079149955568306
+          "sigma_min_seconds": 812.0227367880289,
+          "wall_seconds": 856.0873422269942,
+          "window_width": 0.70791499555683
         }
       ],
       "dimension": 128,

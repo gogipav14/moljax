@@ -244,8 +244,10 @@ At each selected contour and its prefactor, the criterion's predicted-iterations
 gives the following origin-only choice. The centred enclosure changes no verdict. It
 lowers the predicted iteration count in 7 of the 15 active-block certificates (most at N
 = 512, m = 8, one_inverse_cfl_mask: 576 → 384) and in 2 of the 2 recomputed direct
-certificates; in the others the origin enclosure alone gives the same prediction at
-degree 4.
+certificates with recorded origin-only comparisons; in the others the origin enclosure
+alone gives the same prediction at degree 4.
+
+The selected-degree-only direct refresh at N = 128 has no origin-only counterfactual.
 
 | N | m | Method | Operator | Reported degree | Reported iterations | Origin-only degree | Origin-only iterations | Degree differs | Prediction differs |
 |---:|---:|---|---|---:|---:|---:|---:|---|---|
@@ -298,8 +300,8 @@ Source: `tau_blend_active_block.json`, `/configuration` [F6].
 **Recomputation.** On laptop CPU (AMD Ryzen 7 5800H) at commit
 18f684dc8b8175c8d0fb4ee63ea44e93b16f04cf, 22 ladder entries were recomputed; 16 were
 carried over because connectivity or the compute cap decided them before contour
-evaluation. The direct full-operator certificate at `N = 128` retains its committed
-values and is pending recomputation on a second host.
+evaluation. The direct full-operator certificate at `N = 128` was recomputed on a second
+host on 2026-11-19 at commit 32c9ace45b5f079a7f27c3f8cf9897f7d020d170.
 
 Source: `tau_blend_active_block.json`, `/certificate_recomputation`,
 `/direct_regularized_full_MJ_certificates/0/certificate_ladder/0/recomputation`.
@@ -367,7 +369,7 @@ operator `M J` is certified directly:
 
 | N | grid | degree | rho | prefactor | GMRES `J` |
 |---:|---:|---:|---:|---:|---:|
-| 128 | 565 | 12 | 0.42515174 | 5.2538931 | 10 |
+| 128 | 565 | 12 | 0.42513848 | 5.2538931 | 10 |
 | 512 | 121 | 12 | 0.62776267 | 21.425118 | 15 |
 | 1024 | 121 | 8 | 0.72943227 | 55.105304 | 19 |
 
